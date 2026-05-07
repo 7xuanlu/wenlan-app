@@ -294,30 +294,42 @@ pub async fn set_api_key(state: tauri::State<'_, State>, key: String) -> Result<
     Ok(())
 }
 
+// Phase 5-D Phase 4: route config reads/writes through the daemon so the
+// daemon's in-memory cache stays consistent with on-disk config.json.
+// Direct `crate::config::load_config()` calls here would let app and daemon
+// drift (the daemon caches at startup; sensors keep using stale skip lists
+// after a local-only write).
+
 #[tauri::command]
-pub async fn get_skip_apps() -> Result<Vec<String>, String> {
-    let cfg = crate::config::load_config();
-    Ok(cfg.skip_apps)
+pub async fn get_skip_apps(state: tauri::State<'_, State>) -> Result<Vec<String>, String> {
+    let s = state.read().await;
+    s.client.get_skip_apps().await
 }
 
 #[tauri::command]
-pub async fn set_skip_apps(apps: Vec<String>) -> Result<(), String> {
-    let mut cfg = crate::config::load_config();
-    cfg.skip_apps = apps;
-    crate::config::save_config(&cfg).map_err(|e| e.to_string())
+pub async fn set_skip_apps(
+    state: tauri::State<'_, State>,
+    apps: Vec<String>,
+) -> Result<(), String> {
+    let s = state.read().await;
+    s.client.set_skip_apps(apps).await
 }
 
 #[tauri::command]
-pub async fn get_skip_title_patterns() -> Result<Vec<String>, String> {
-    let cfg = crate::config::load_config();
-    Ok(cfg.skip_title_patterns)
+pub async fn get_skip_title_patterns(
+    state: tauri::State<'_, State>,
+) -> Result<Vec<String>, String> {
+    let s = state.read().await;
+    s.client.get_skip_title_patterns().await
 }
 
 #[tauri::command]
-pub async fn set_skip_title_patterns(patterns: Vec<String>) -> Result<(), String> {
-    let mut cfg = crate::config::load_config();
-    cfg.skip_title_patterns = patterns;
-    crate::config::save_config(&cfg).map_err(|e| e.to_string())
+pub async fn set_skip_title_patterns(
+    state: tauri::State<'_, State>,
+    patterns: Vec<String>,
+) -> Result<(), String> {
+    let s = state.read().await;
+    s.client.set_skip_title_patterns(patterns).await
 }
 
 #[tauri::command]

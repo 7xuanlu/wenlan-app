@@ -303,4 +303,76 @@ impl OriginClient {
             self.post_json("/api/llm/test", &req).await?;
         Ok(resp.response)
     }
+
+    // ── Config ─────────────────────────────────────────────────────────────
+
+    /// GET /api/config — return the daemon's current config.
+    pub async fn get_config(&self) -> Result<origin_types::responses::ConfigResponse, String> {
+        self.get_json("/api/config").await
+    }
+
+    /// PUT /api/config — update one or more fields and return the new config.
+    /// Pass `Option<T>` fields; `None` leaves a field unchanged.
+    pub async fn update_config(
+        &self,
+        req: origin_types::requests::UpdateConfigRequest,
+    ) -> Result<origin_types::responses::ConfigResponse, String> {
+        self.put_json("/api/config", &req).await
+    }
+
+    pub async fn get_skip_apps(&self) -> Result<Vec<String>, String> {
+        Ok(self.get_config().await?.skip_apps)
+    }
+
+    pub async fn set_skip_apps(&self, apps: Vec<String>) -> Result<(), String> {
+        self.update_config(empty_update().with_skip_apps(apps))
+            .await
+            .map(|_| ())
+    }
+
+    pub async fn get_skip_title_patterns(&self) -> Result<Vec<String>, String> {
+        Ok(self.get_config().await?.skip_title_patterns)
+    }
+
+    pub async fn set_skip_title_patterns(&self, patterns: Vec<String>) -> Result<(), String> {
+        self.update_config(empty_update().with_skip_title_patterns(patterns))
+            .await
+            .map(|_| ())
+    }
+}
+
+// `UpdateConfigRequest` does not derive `Default` in origin-types 0.3.x, so
+// build a baseline with every field set to `None` here. When/if origin-types
+// adds the derive, these helpers can be deleted in favor of
+// `UpdateConfigRequest { skip_apps: Some(...), ..Default::default() }`.
+fn empty_update() -> origin_types::requests::UpdateConfigRequest {
+    origin_types::requests::UpdateConfigRequest {
+        skip_apps: None,
+        skip_title_patterns: None,
+        private_browsing_detection: None,
+        setup_completed: None,
+        clipboard_enabled: None,
+        screen_capture_enabled: None,
+        remote_access_enabled: None,
+        routine_model: None,
+        synthesis_model: None,
+        external_llm_endpoint: None,
+        external_llm_model: None,
+    }
+}
+
+trait UpdateConfigBuilder {
+    fn with_skip_apps(self, v: Vec<String>) -> Self;
+    fn with_skip_title_patterns(self, v: Vec<String>) -> Self;
+}
+
+impl UpdateConfigBuilder for origin_types::requests::UpdateConfigRequest {
+    fn with_skip_apps(mut self, v: Vec<String>) -> Self {
+        self.skip_apps = Some(v);
+        self
+    }
+    fn with_skip_title_patterns(mut self, v: Vec<String>) -> Self {
+        self.skip_title_patterns = Some(v);
+        self
+    }
 }
