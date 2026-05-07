@@ -19,3 +19,4 @@ app/dist/
 # Editor
 .idea/
 .vscode/
+app/gen/
