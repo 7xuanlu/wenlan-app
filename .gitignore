@@ -20,3 +20,5 @@ app/dist/
 .idea/
 .vscode/
 app/gen/
+app/eval/baselines/
+app/eval/data/
