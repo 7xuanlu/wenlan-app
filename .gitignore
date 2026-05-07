@@ -16,6 +16,9 @@ app/dist/
 # OS
 .DS_Store
 
+# Build artifacts
+*.tsbuildinfo
+
 # Editor
 .idea/
 .vscode/
