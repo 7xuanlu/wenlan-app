@@ -469,7 +469,7 @@ export default function PageDetail({ pageId, onBack, onMemoryClick, onPageClick 
               onClick={handleSave}
               disabled={updateMutation.isPending}
               className="text-[11px] font-medium px-3 py-1.5 rounded-md transition-all"
-              style={{ backgroundColor: "rgba(99, 102, 241, 0.15)", color: "var(--mem-accent-concept)" }}
+              style={{ backgroundColor: "rgba(99, 102, 241, 0.15)", color: "var(--mem-accent-page)" }}
             >
               {updateMutation.isPending ? "Saving..." : "Save (Cmd+Enter)"}
             </button>
@@ -487,7 +487,7 @@ export default function PageDetail({ pageId, onBack, onMemoryClick, onPageClick 
           {(page.summary || tldr) && (
             <div
               className="pl-4 py-2 mb-4"
-              style={{ borderLeft: "3px solid var(--mem-accent-concept)" }}
+              style={{ borderLeft: "3px solid var(--mem-accent-page)" }}
             >
               <p
                 style={{
@@ -531,7 +531,7 @@ export default function PageDetail({ pageId, onBack, onMemoryClick, onPageClick 
                 style={{ backgroundColor: "var(--mem-surface)", border: "1px solid var(--mem-border)" }}
               >
                 <div className="flex items-center gap-2">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ color: "var(--mem-accent-concept)" }} className="shrink-0">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ color: "var(--mem-accent-page)" }} className="shrink-0">
                     <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
                   </svg>
                   <span

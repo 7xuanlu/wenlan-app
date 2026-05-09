@@ -351,7 +351,7 @@ export default function Main({ initialMemoryId, initialView, onBackFromDetail }:
                         onClick={() => { setQuery(""); navigateTo({ kind: "page", pageId: c.id }); }}
                       >
                         <div className="flex items-center gap-2.5">
-                          <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: "var(--mem-accent-concept)" }} />
+                          <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: "var(--mem-accent-page)" }} />
                           <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "13px", fontWeight: 500, color: "var(--mem-text)" }}>
                             {c.title}
                           </span>

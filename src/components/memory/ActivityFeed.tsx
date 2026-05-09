@@ -49,9 +49,9 @@ function accentColor(action: string): string {
       return "var(--mem-accent-amber)"; // refinement / merge
     case "forget":
       return "var(--mem-accent-warm)"; // destructive
-    case "concept_create":
-    case "concept_grow":
-      return "var(--mem-accent-concept)"; // knowledge compilation
+    case "page_create":
+    case "page_grow":
+      return "var(--mem-accent-page)"; // knowledge compilation
     case "steep":
       return "var(--mem-accent-amber)"; // steeping — background consolidation
     default:
@@ -90,11 +90,11 @@ function naturalLanguage(item: AgentActivityItem): string {
       // Memory is gone after delete, so memory_titles will be empty —
       // title is carried in `detail` instead (see handle_delete_memory).
       return "forgot a memory";
-    case "concept_grow":
+    case "page_grow":
       // Concept title carried in `detail` (concepts aren't in the memories table,
       // so the title lookup in list_agent_activity won't find them).
       return "grew a concept";
-    case "concept_create":
+    case "page_create":
       return count > 0
         ? `compiled ${count} ${memoryWord} into a new concept`
         : "created a new concept";
@@ -144,9 +144,9 @@ function actionLabel(action: string): string {
       return "Refine";
     case "forget":
       return "Forget";
-    case "concept_create":
+    case "page_create":
       return "New concept";
-    case "concept_grow":
+    case "page_grow":
       return "Grow concept";
     case "steep":
       return "Steep";
@@ -460,7 +460,7 @@ function ActivityEntry({
   const color = accentColor(item.action);
   const memoryIds = parseMemoryIds(item.memory_ids);
   const isConceptEvent =
-    item.action === "concept_create" || item.action === "concept_grow";
+    item.action === "page_create" || item.action === "page_grow";
   const conceptTitle = isConceptEvent ? extractConceptTitle(item.detail) : null;
   const agentDisplay = resolveAgentDisplayName(item.agent_name, connectedAgents);
 
@@ -561,13 +561,13 @@ function ActivityEntry({
               style={{
                 padding: "5px 12px 5px 10px",
                 backgroundColor: "var(--mem-distilled-bg)",
-                border: "1px solid var(--mem-accent-concept)",
+                border: "1px solid var(--mem-accent-page)",
                 boxShadow: "0 0 12px var(--mem-shimmer-color)",
               }}
             >
               <span
                 className="w-1.5 h-1.5 rounded-full shrink-0"
-                style={{ backgroundColor: "var(--mem-accent-concept)" }}
+                style={{ backgroundColor: "var(--mem-accent-page)" }}
               />
               <span
                 style={{
@@ -576,7 +576,7 @@ function ActivityEntry({
                   fontWeight: 600,
                   letterSpacing: "0.08em",
                   textTransform: "uppercase",
-                  color: "var(--mem-accent-concept)",
+                  color: "var(--mem-accent-page)",
                 }}
               >
                 Concept
