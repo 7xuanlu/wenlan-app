@@ -275,10 +275,10 @@ Expected: output identifies the HTTP client methods, Tauri commands, and local R
 Target dependency:
 
 ```toml
-wenlan-types = "0.3.1"
+wenlan-types = "0.9.1"
 ```
 
-Use the version required by the current daemon release. If the crate version differs, update this plan before editing code.
+Use the version required by the current daemon release. This plan is pinned to the local Wenlan workspace version observed in `/Users/lucian/Repos/wenlan/Cargo.toml` on 2026-06-25.
 
 - [ ] **Step 5: Rename the client seam**
 
