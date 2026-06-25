@@ -10,15 +10,15 @@ mkdir -p "$OUT"
 "${SG[@]}" outline "$ROOT/src/lib/tauri.ts" > "$OUT/tauri-ts-outline.txt"
 "${SG[@]}" outline "$ROOT/app/src/api.rs" > "$OUT/api-rs-outline.txt"
 "${SG[@]}" outline "$ROOT/app/src/search.rs" > "$OUT/search-rs-outline.txt"
-"${SG[@]}" run -p 'invoke($CMD, $$$ARGS)' -l ts "$ROOT/src" > "$OUT/frontend-invokes.txt"
-"${SG[@]}" run -p 'pub struct $NAME { $$$FIELDS }' -l rs "$ROOT/app/src" > "$OUT/rust-structs.txt"
+"${SG[@]}" run -p 'invoke($CMD, $$$ARGS)' -l ts "$ROOT/src" \
+  | LC_ALL=C sort -t: -k1,1 -k2,2n > "$OUT/frontend-invokes.txt"
+"${SG[@]}" run -p 'pub struct $NAME { $$$FIELDS }' -l rs "$ROOT/app/src" \
+  | LC_ALL=C sort -t: -k1,1 -k2,2n > "$OUT/rust-structs.txt"
 
 {
   echo "# Wenlan App Structural Inventory"
   echo
-  echo "- generated_at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "- branch: $(git branch --show-current)"
-  echo "- head: $(git rev-parse --short HEAD)"
   echo
   echo "## Counts"
   printf -- "- frontend invoke calls: "

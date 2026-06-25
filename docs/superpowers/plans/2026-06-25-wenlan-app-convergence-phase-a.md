@@ -10,6 +10,12 @@
 
 ---
 
+## Execution Status
+
+- Task 1 and Task 2 prerequisites were completed in commit `63ed0ac`.
+- Task 3 prerequisite matrix is complete in `docs/superpowers/refactor/wenlan-app-parity-matrix.md`.
+- Task 4 and Task 5 intentionally have not started; they begin the functional typed-client and sidecar refactor run.
+
 ### Task 1: Lock Baseline Dependency Setup
 
 **Files:**

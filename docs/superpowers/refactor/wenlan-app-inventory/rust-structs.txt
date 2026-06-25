@@ -10,97 +10,10 @@
 /Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/activity.rs:23:    pub is_live: bool,
 /Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/activity.rs:24:    pub app_names: Vec<String>,
 /Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/activity.rs:25:}
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/tray_health.rs:32:pub struct HealthSignal {
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/tray_health.rs:33:    state: Arc<AtomicU8>,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/tray_health.rs:34:    consecutive_down: Arc<AtomicU8>,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/tray_health.rs:35:}
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/router/bundle.rs:41:pub struct WindowSnapshot {
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/router/bundle.rs:42:    pub app_name: String,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/router/bundle.rs:43:    pub window_title: String,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/router/bundle.rs:44:    pub text: String,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/router/bundle.rs:45:    #[allow(dead_code)]
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/router/bundle.rs:46:    pub observations: Vec<TextObservation>,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/router/bundle.rs:47:    pub focused: bool,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/router/bundle.rs:48:    pub url: Option<String>,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/router/bundle.rs:49:}
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/router/bundle.rs:53:pub struct ContextBundle {
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/router/bundle.rs:54:    pub trigger_type: TriggerSource,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/router/bundle.rs:55:    pub timestamp: DateTime<Utc>,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/router/bundle.rs:56:    #[allow(dead_code)]
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/router/bundle.rs:57:    pub intent: Option<IntentClassification>,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/router/bundle.rs:58:    pub windows: Vec<WindowSnapshot>,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/router/bundle.rs:59:    pub raw_text: Option<String>,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/router/bundle.rs:60:}
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/router/keywords.rs:17:pub struct IntentClassification {
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/router/keywords.rs:18:    pub intent: Intent,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/router/keywords.rs:19:    pub confidence: f64,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/router/keywords.rs:20:}
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:25:pub struct CaptureEvent {
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:26:    pub source: String,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:27:    pub source_id: String,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:28:    pub summary: String,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:29:    pub chunks: usize,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:30:    /// When true, AI is still processing this capture (LLM Pass 2 pending).
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:31:    pub processing: bool,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:32:}
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:35:pub struct IndexStatus {
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:36:    pub is_running: bool,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:37:    pub files_indexed: u64,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:38:    pub files_total: u64,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:39:    pub last_error: Option<String>,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:40:    pub sources_connected: Vec<String>,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:41:}
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:43:pub struct AppState {
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:44:    /// HTTP client for the origin-server daemon.
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:45:    pub client: OriginClient,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:46:    pub index_status: IndexStatus,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:47:    pub sources: HashMap<String, Box<dyn DataSource>>,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:48:    pub watch_paths: Vec<PathBuf>,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:49:    pub clipboard_enabled: bool,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:50:    pub last_ingestion_at: i64,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:51:    pub current_activity: Option<Activity>,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:52:    pub completed_activities: Vec<Activity>,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:53:    pub app_handle: Option<tauri::AppHandle>,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:54:    /// Unified trigger channel sender.
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:55:    pub trigger_tx: Option<tokio::sync::mpsc::Sender<crate::trigger::types::TriggerEvent>>,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:56:    /// Last context bundle received from the router.
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:57:    pub last_context_bundle: Option<crate::router::bundle::ContextBundle>,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:58:    /// Screen capture enabled.
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:59:    pub screen_capture_enabled: bool,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:60:    /// Remote access tunnel state.
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:61:    pub remote_access: tokio::sync::Mutex<RemoteAccessState>,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:62:    /// Rolling in-memory buffer of recent captures for zero-query Spotlight.
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:63:    ///
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:64:    /// Populated by the context consumer (`router/intent.rs`) when it ingests
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:65:    /// a screen/quick-thought capture. Served by the `get_working_memory`
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:66:    /// Tauri command. Lives in the app process because only the app has
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:67:    /// active sensors — captures happen only in the app process.
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:68:    pub working_memory: Arc<tokio::sync::Mutex<WorkingMemory>>,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:69:}
 /Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/api.rs:14:pub struct OriginClient {
 /Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/api.rs:15:    client: Client,
 /Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/api.rs:16:    base_url: String,
 /Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/api.rs:17:}
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/events.rs:12:pub struct TauriEmitter {
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/events.rs:13:    handle: tauri::AppHandle,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/events.rs:14:}
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sources/sync.rs:19:pub struct SyncStats {
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sources/sync.rs:20:    pub files_found: usize,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sources/sync.rs:21:    pub ingested: usize,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sources/sync.rs:22:    pub skipped: usize,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sources/sync.rs:23:    pub errors: usize,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sources/sync.rs:24:    /// Categorized error detail when `errors > 0`. Known values:
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sources/sync.rs:25:    /// "google_drive_offline", "file_read_errors".
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sources/sync.rs:26:    #[serde(default, skip_serializing_if = "Option::is_none")]
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sources/sync.rs:27:    pub error_detail: Option<String>,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sources/sync.rs:28:}
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/mcp_config.rs:7:pub struct McpClient {
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/mcp_config.rs:8:    pub name: String,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/mcp_config.rs:9:    pub client_type: String,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/mcp_config.rs:10:    pub config_path: String,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/mcp_config.rs:11:    pub detected: bool,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/mcp_config.rs:12:    pub already_configured: bool,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/mcp_config.rs:13:}
 /Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/config.rs:41:pub struct Config {
 /Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/config.rs:42:    /// Legacy field — kept for backward compat with old config files.
 /Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/config.rs:43:    /// Use `sources` instead. Migrated to Source structs by `migrate()`.
@@ -137,30 +50,16 @@
 /Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/config.rs:74:    #[serde(default)]
 /Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/config.rs:75:    pub external_llm_model: Option<String>,
 /Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/config.rs:76:}
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sensor/vision.rs:5:pub struct WindowCapture {
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sensor/vision.rs:6:    pub image: image::DynamicImage,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sensor/vision.rs:7:    pub app_name: String,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sensor/vision.rs:8:    pub window_name: String,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sensor/vision.rs:9:    pub focused: bool,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sensor/vision.rs:10:}
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sensor/vision.rs:14:pub struct TextObservation {
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sensor/vision.rs:15:    pub text: String,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sensor/vision.rs:16:    pub confidence: f64,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sensor/vision.rs:17:}
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sensor/vision.rs:21:pub struct WindowOcrResult {
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sensor/vision.rs:22:    pub window_name: String,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sensor/vision.rs:23:    pub app_name: String,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sensor/vision.rs:24:    pub text: String,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sensor/vision.rs:25:    pub observations: Vec<TextObservation>,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sensor/vision.rs:26:    pub focused: bool,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sensor/vision.rs:27:    #[allow(dead_code)]
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sensor/vision.rs:28:    pub confidence: f64,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sensor/vision.rs:29:}
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sources/local_files.rs:40:pub struct LocalFilesSource {
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sources/local_files.rs:41:    watch_paths: Vec<PathBuf>,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sources/local_files.rs:42:    last_sync: Option<i64>,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sources/local_files.rs:43:    document_count: u64,
-/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sources/local_files.rs:44:}
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/events.rs:12:pub struct TauriEmitter {
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/events.rs:13:    handle: tauri::AppHandle,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/events.rs:14:}
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/mcp_config.rs:7:pub struct McpClient {
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/mcp_config.rs:8:    pub name: String,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/mcp_config.rs:9:    pub client_type: String,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/mcp_config.rs:10:    pub config_path: String,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/mcp_config.rs:11:    pub detected: bool,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/mcp_config.rs:12:    pub already_configured: bool,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/mcp_config.rs:13:}
 /Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/remote_access.rs:106:pub struct RemoteAccessState {
 /Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/remote_access.rs:107:    pub status: RemoteAccessStatus,
 /Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/remote_access.rs:108:    pub mcp_child: Option<tauri_plugin_shell::process::CommandChild>,
@@ -170,6 +69,27 @@
 /Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/remote_access.rs:112:    /// Used by `tunnel_health_loop` to enforce a cooldown before burning another quick tunnel.
 /Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/remote_access.rs:113:    pub last_rate_limit_at: Option<std::time::Instant>,
 /Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/remote_access.rs:114:}
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/router/bundle.rs:41:pub struct WindowSnapshot {
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/router/bundle.rs:42:    pub app_name: String,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/router/bundle.rs:43:    pub window_title: String,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/router/bundle.rs:44:    pub text: String,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/router/bundle.rs:45:    #[allow(dead_code)]
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/router/bundle.rs:46:    pub observations: Vec<TextObservation>,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/router/bundle.rs:47:    pub focused: bool,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/router/bundle.rs:48:    pub url: Option<String>,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/router/bundle.rs:49:}
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/router/bundle.rs:53:pub struct ContextBundle {
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/router/bundle.rs:54:    pub trigger_type: TriggerSource,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/router/bundle.rs:55:    pub timestamp: DateTime<Utc>,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/router/bundle.rs:56:    #[allow(dead_code)]
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/router/bundle.rs:57:    pub intent: Option<IntentClassification>,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/router/bundle.rs:58:    pub windows: Vec<WindowSnapshot>,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/router/bundle.rs:59:    pub raw_text: Option<String>,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/router/bundle.rs:60:}
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/router/keywords.rs:17:pub struct IntentClassification {
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/router/keywords.rs:18:    pub intent: Intent,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/router/keywords.rs:19:    pub confidence: f64,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/router/keywords.rs:20:}
 /Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/search.rs:28:pub struct QuickCaptureRequest {
 /Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/search.rs:29:    pub title: Option<String>,
 /Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/search.rs:30:    pub content: String,
@@ -238,3 +158,83 @@
 /Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/search.rs:2201:    pub categories: Vec<String>,
 /Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/search.rs:2202:    pub document_categories: HashMap<String, String>,
 /Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/search.rs:2203:}
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sensor/vision.rs:5:pub struct WindowCapture {
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sensor/vision.rs:6:    pub image: image::DynamicImage,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sensor/vision.rs:7:    pub app_name: String,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sensor/vision.rs:8:    pub window_name: String,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sensor/vision.rs:9:    pub focused: bool,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sensor/vision.rs:10:}
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sensor/vision.rs:14:pub struct TextObservation {
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sensor/vision.rs:15:    pub text: String,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sensor/vision.rs:16:    pub confidence: f64,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sensor/vision.rs:17:}
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sensor/vision.rs:21:pub struct WindowOcrResult {
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sensor/vision.rs:22:    pub window_name: String,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sensor/vision.rs:23:    pub app_name: String,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sensor/vision.rs:24:    pub text: String,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sensor/vision.rs:25:    pub observations: Vec<TextObservation>,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sensor/vision.rs:26:    pub focused: bool,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sensor/vision.rs:27:    #[allow(dead_code)]
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sensor/vision.rs:28:    pub confidence: f64,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sensor/vision.rs:29:}
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sources/local_files.rs:40:pub struct LocalFilesSource {
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sources/local_files.rs:41:    watch_paths: Vec<PathBuf>,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sources/local_files.rs:42:    last_sync: Option<i64>,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sources/local_files.rs:43:    document_count: u64,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sources/local_files.rs:44:}
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sources/sync.rs:19:pub struct SyncStats {
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sources/sync.rs:20:    pub files_found: usize,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sources/sync.rs:21:    pub ingested: usize,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sources/sync.rs:22:    pub skipped: usize,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sources/sync.rs:23:    pub errors: usize,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sources/sync.rs:24:    /// Categorized error detail when `errors > 0`. Known values:
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sources/sync.rs:25:    /// "google_drive_offline", "file_read_errors".
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sources/sync.rs:26:    #[serde(default, skip_serializing_if = "Option::is_none")]
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sources/sync.rs:27:    pub error_detail: Option<String>,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/sources/sync.rs:28:}
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:25:pub struct CaptureEvent {
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:26:    pub source: String,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:27:    pub source_id: String,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:28:    pub summary: String,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:29:    pub chunks: usize,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:30:    /// When true, AI is still processing this capture (LLM Pass 2 pending).
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:31:    pub processing: bool,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:32:}
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:35:pub struct IndexStatus {
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:36:    pub is_running: bool,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:37:    pub files_indexed: u64,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:38:    pub files_total: u64,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:39:    pub last_error: Option<String>,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:40:    pub sources_connected: Vec<String>,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:41:}
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:43:pub struct AppState {
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:44:    /// HTTP client for the origin-server daemon.
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:45:    pub client: OriginClient,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:46:    pub index_status: IndexStatus,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:47:    pub sources: HashMap<String, Box<dyn DataSource>>,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:48:    pub watch_paths: Vec<PathBuf>,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:49:    pub clipboard_enabled: bool,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:50:    pub last_ingestion_at: i64,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:51:    pub current_activity: Option<Activity>,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:52:    pub completed_activities: Vec<Activity>,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:53:    pub app_handle: Option<tauri::AppHandle>,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:54:    /// Unified trigger channel sender.
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:55:    pub trigger_tx: Option<tokio::sync::mpsc::Sender<crate::trigger::types::TriggerEvent>>,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:56:    /// Last context bundle received from the router.
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:57:    pub last_context_bundle: Option<crate::router::bundle::ContextBundle>,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:58:    /// Screen capture enabled.
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:59:    pub screen_capture_enabled: bool,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:60:    /// Remote access tunnel state.
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:61:    pub remote_access: tokio::sync::Mutex<RemoteAccessState>,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:62:    /// Rolling in-memory buffer of recent captures for zero-query Spotlight.
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:63:    ///
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:64:    /// Populated by the context consumer (`router/intent.rs`) when it ingests
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:65:    /// a screen/quick-thought capture. Served by the `get_working_memory`
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:66:    /// Tauri command. Lives in the app process because only the app has
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:67:    /// active sensors — captures happen only in the app process.
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:68:    pub working_memory: Arc<tokio::sync::Mutex<WorkingMemory>>,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/state.rs:69:}
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/tray_health.rs:32:pub struct HealthSignal {
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/tray_health.rs:33:    state: Arc<AtomicU8>,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/tray_health.rs:34:    consecutive_down: Arc<AtomicU8>,
+/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence/app/src/tray_health.rs:35:}

@@ -1,8 +1,6 @@
 # Wenlan App Structural Inventory
 
-- generated_at: 2026-06-25T20:06:02Z
 - branch: codex/wenlan-app-convergence
-- head: af618e5
 
 ## Counts
 - frontend invoke calls: 136
