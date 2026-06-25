@@ -94,6 +94,7 @@ Go when all are true:
 
 - This matrix is committed.
 - `bash scripts/refactor/inventory.sh` runs and generated summary is current.
+- CodeGraph evaluation is recorded, `.codegraph/` is ignored, and cross-cutting edits use `codegraph sync` plus target-specific `query`/`impact`/`affected` probes before changing behavior.
 - `pnpm install --frozen-lockfile --offline` exits 0.
 - `pnpm test` exits 0.
 - The known `cargo build` sidecar failure is either still documented as the next Task 5 prerequisite or fixed with a tested sidecar strategy.

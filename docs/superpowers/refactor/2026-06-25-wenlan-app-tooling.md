@@ -36,6 +36,32 @@ Evidence:
 
 ## Structural Tools
 
+CodeGraph was evaluated against the exact requested project:
+
+```bash
+CODEGRAPH_TELEMETRY=0 DO_NOT_TRACK=1 npx -y @colbymchenry/codegraph init /Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence
+CODEGRAPH_TELEMETRY=0 DO_NOT_TRACK=1 npx -y @colbymchenry/codegraph status /Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence
+```
+
+Observed result:
+
+```text
+Indexed 153 files
+2,002 nodes, 4,814 edges in 910ms
+DB Size: 6.24 MB
+```
+
+Use it for symbol navigation, impact checks, and refactor blast-radius discovery:
+
+```bash
+CODEGRAPH_TELEMETRY=0 DO_NOT_TRACK=1 npx -y @colbymchenry/codegraph sync .
+CODEGRAPH_TELEMETRY=0 DO_NOT_TRACK=1 npx -y @colbymchenry/codegraph query OriginClient --json
+CODEGRAPH_TELEMETRY=0 DO_NOT_TRACK=1 npx -y @colbymchenry/codegraph impact OriginClient --json
+CODEGRAPH_TELEMETRY=0 DO_NOT_TRACK=1 npx -y @colbymchenry/codegraph affected app/src/api.rs --json
+```
+
+Do not commit `.codegraph/`; it is a generated local cache. Do not run `codegraph install` during this prereq phase because it mutates shared agent configuration.
+
 `ast-grep` is available through:
 
 ```bash
@@ -78,13 +104,16 @@ From the preflight scan:
 
 ## Refactor Optimizer Rules
 
-Use structural search first, then text search:
+Use CodeGraph and structural search first, then text search:
 
-1. Use `sg outline` to map exported TypeScript wrappers, Rust client methods, and Rust Tauri commands.
-2. Use `sg run -p 'invoke($CMD, $$$ARGS)' -l ts src` to inventory frontend command calls.
-3. Use `sg run -p 'pub struct $NAME { $$$FIELDS }' -l rs app/src` to find local DTO shadows before replacing them with `wenlan-types`.
-4. Use `rg` residual checks only after structural surfaces are mapped.
-5. Keep the first refactor steps contract-only: no shell redesign, no visual rewrite, no public rename before typed API and compatibility gates are in place.
+1. Use `codegraph sync .` before cross-cutting edits.
+2. Use `codegraph query <symbol> --json` and `codegraph impact <symbol> --json` for blast-radius orientation.
+3. Use `codegraph affected <file> --json` to seed targeted test selection, but treat it as advisory.
+4. Use `sg outline` to map exported TypeScript wrappers, Rust client methods, and Rust Tauri commands.
+5. Use `sg run -p 'invoke($CMD, $$$ARGS)' -l ts src` to inventory frontend command calls.
+6. Use `sg run -p 'pub struct $NAME { $$$FIELDS }' -l rs app/src` to find local DTO shadows before replacing them with `wenlan-types`.
+7. Use `rg` residual checks only after graph and structural surfaces are mapped.
+8. Keep the first refactor steps contract-only: no shell redesign, no visual rewrite, no public rename before typed API and compatibility gates are in place.
 
 ## Known Hotspots
 
@@ -100,5 +129,6 @@ Use structural search first, then text search:
 ## Stop Conditions
 
 - Do not start typed API edits until `scripts/refactor/inventory.sh` runs and its summary is committed or intentionally regenerated.
+- Do not start a cross-cutting edit until CodeGraph is either synced and queried for the target symbol/file or explicitly marked unavailable for that edit.
 - Do not start public identity rename until the sidecar contract has a tested `wenlan-server`/`wenlan-mcp` path and Origin bridge behavior.
 - Do not delete old MCP config entries automatically; migration UI must detect and report both old and new keys.
