@@ -115,6 +115,18 @@ Use CodeGraph and structural search first, then text search:
 7. Use `rg` residual checks only after graph and structural surfaces are mapped.
 8. Keep the first refactor steps contract-only: no shell redesign, no visual rewrite, no public rename before typed API and compatibility gates are in place.
 
+## Tool Authority Boundaries
+
+| Tool | Trust it for | Do not trust it for | Typical command |
+|---|---|---|---|
+| CodeGraph | "What code probably depends on this symbol/file?" and "which tests might be affected?" | deterministic counts, syntactic rewrite completeness, type correctness | `codegraph query OriginClient --json`; `codegraph impact OriginClient --json`; `codegraph affected app/src/api.rs --json` |
+| ast-grep | "Which code has this exact syntax shape?" and "what is the repeatable inventory/codemod surface?" | semantic call graph, type/import validity, runtime behavior | `sg run -p 'invoke($CMD, $$$ARGS)' -l ts src`; `sg run -p 'pub struct $NAME { $$$FIELDS }' -l rs app/src` |
+| LSP/compiler | "Do imports, types, signatures, and references still make sense?" | migration scope discovery, feature parity, runtime side effects | rust-analyzer/tsserver diagnostics; `cargo check`; `pnpm build` |
+| Tests/builds | "Does the edited behavior work?" | finding every impacted file before the edit | `pnpm test`; targeted Vitest; Rust tests; Tauri build checks |
+| `rg` | "Are stale strings or allowed legacy tokens still present?" | primary planning for cross-file behavior | `rg -n 'origin-types|origin_types::|OriginClient' app/Cargo.toml app/src` |
+
+The boundary is intentional: CodeGraph reduces token-heavy exploration, ast-grep makes inventory reproducible, LSP/compiler catches semantic breakage, and tests/builds provide evidence. A task is not complete merely because one lane is green.
+
 ## Known Hotspots
 
 - `src/lib/tauri.ts`: public frontend wrapper and many local TypeScript DTO shadows.

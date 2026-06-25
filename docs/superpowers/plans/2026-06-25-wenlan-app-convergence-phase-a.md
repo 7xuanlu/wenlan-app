@@ -4,9 +4,9 @@
 
 **Goal:** Prepare `origin-app` for the Wenlan convergence refactor with repeatable structural inventory, baseline checks, and finite Phase A/B gates before changing behavior.
 
-**Architecture:** Keep the app as a thin Tauri client. Use `wenlan-server` and `wenlan-types` as the source of truth, but first map the app's current Tauri command, HTTP wrapper, local DTO, sidecar, and identity surfaces with `ast-grep` and residual checks.
+**Architecture:** Keep the app as a thin Tauri client. Use `wenlan-server` and `wenlan-types` as the source of truth, but first map the app's current Tauri command, HTTP wrapper, local DTO, sidecar, and identity surfaces with CodeGraph, ast-grep, LSP/compiler diagnostics, and residual checks in separate authority lanes.
 
-**Tech Stack:** Tauri 2, Rust, React 19, TypeScript, pnpm, Cargo, ast-grep via `npx -p @ast-grep/cli`.
+**Tech Stack:** Tauri 2, Rust, React 19, TypeScript, pnpm, Cargo, CodeGraph via `npx -y @colbymchenry/codegraph`, ast-grep via `npx -p @ast-grep/cli`, rust-analyzer, tsserver.
 
 ---
 
@@ -14,7 +14,40 @@
 
 - Task 1 and Task 2 prerequisites were completed in commit `63ed0ac`.
 - Task 3 prerequisite matrix is complete in `docs/superpowers/refactor/wenlan-app-parity-matrix.md`.
+- CodeGraph evaluation is complete in `docs/superpowers/refactor/2026-06-25-codegraph-evaluation.md`; `.codegraph/` is ignored local cache.
 - Task 4 and Task 5 intentionally have not started; they begin the functional typed-client and sidecar refactor run.
+
+## Tool Boundary Protocol
+
+Use this split for every remaining cross-cutting task.
+
+| Tool | Use for | Required before | Do not use for |
+|---|---|---|---|
+| CodeGraph | symbol navigation, dependency orientation, impact/blast-radius discovery, initial affected-test hints | typed-client edits, sidecar edits, MCP bridge edits, runtime identity edits | deterministic inventory counts, rewrite safety, type correctness |
+| ast-grep | repeatable syntax inventory, structural command/DTO/wrapper lists, codemod candidate lists | bulk rename, local DTO removal, Tauri command inventory, frontend `invoke(...)` inventory | semantic call graph, compiler correctness |
+| LSP/compiler | type/import/signature diagnostics and semantic correctness | after each narrow edit batch and before claiming typed migration is green | route parity discovery, product-surface classification |
+| tests/builds | behavior and integration evidence | task completion | scope discovery |
+| `rg` | residual text checks and allowlist enforcement | after graph and structural scopes are known | first-pass cross-file planning |
+
+Canonical sequence, shown for the typed-client task. Later tasks list their own exact target symbols and files.
+
+```bash
+CODEGRAPH_TELEMETRY=0 DO_NOT_TRACK=1 npx -y @colbymchenry/codegraph sync .
+CODEGRAPH_TELEMETRY=0 DO_NOT_TRACK=1 npx -y @colbymchenry/codegraph query OriginClient --json
+CODEGRAPH_TELEMETRY=0 DO_NOT_TRACK=1 npx -y @colbymchenry/codegraph impact OriginClient --json
+npx -y -p @ast-grep/cli sg run -p 'pub struct $NAME { $$$FIELDS }' -l rs app/src
+cargo check
+pnpm build
+rg -n 'origin-types|origin_types::|use origin_types|OriginClient' app/Cargo.toml app/src
+```
+
+Boundary notes:
+
+- CodeGraph output may guide what to read next, but it does not replace deterministic inventory or verification.
+- ast-grep output can gate counts and residual syntax, but it does not prove type correctness or runtime behavior.
+- LSP/compiler diagnostics can approve imports/types/signatures, but they do not prove feature parity or migration safety.
+- `codegraph affected` test hints are advisory; run real targeted tests plus the task's required build/test command.
+- If CodeGraph is unavailable, record the exact failure and fall back to ast-grep + LSP + `rg`; do not silently skip the blast-radius step.
 
 ### Task 1: Lock Baseline Dependency Setup
 
@@ -199,7 +232,20 @@ git commit -m "docs: add wenlan app parity matrix"
 - Modify: `app/src/search.rs`
 - Modify: `src/lib/tauri.ts`
 
-- [ ] **Step 1: Write the failing Rust import check**
+- [ ] **Step 1: Capture CodeGraph typed-client blast radius**
+
+Run:
+
+```bash
+CODEGRAPH_TELEMETRY=0 DO_NOT_TRACK=1 npx -y @colbymchenry/codegraph sync .
+CODEGRAPH_TELEMETRY=0 DO_NOT_TRACK=1 npx -y @colbymchenry/codegraph query OriginClient --json
+CODEGRAPH_TELEMETRY=0 DO_NOT_TRACK=1 npx -y @colbymchenry/codegraph impact OriginClient --json
+CODEGRAPH_TELEMETRY=0 DO_NOT_TRACK=1 npx -y @colbymchenry/codegraph query origin_types --json
+```
+
+Expected: output names `app/src/api.rs`, `app/src/state.rs`, `app/src/search.rs`, and `origin_types` import sites. Record any additional impacted files in the task notes before editing.
+
+- [ ] **Step 2: Write the deterministic Rust import check**
 
 Run:
 
@@ -209,7 +255,19 @@ rg -n 'origin-types|origin_types|OriginClient' app/Cargo.toml app/src
 
 Expected before implementation: matches exist in `app/Cargo.toml`, `app/src/api.rs`, `app/src/state.rs`, and `app/src/search.rs`.
 
-- [ ] **Step 2: Replace the crate dependency**
+- [ ] **Step 3: Capture ast-grep structural surfaces**
+
+Run:
+
+```bash
+npx -y -p @ast-grep/cli sg outline app/src/api.rs
+npx -y -p @ast-grep/cli sg outline app/src/search.rs
+npx -y -p @ast-grep/cli sg run -p 'pub struct $NAME { $$$FIELDS }' -l rs app/src
+```
+
+Expected: output identifies the HTTP client methods, Tauri commands, and local Rust DTO shadows. Use this as the deterministic edit surface; CodeGraph remains the orientation layer.
+
+- [ ] **Step 4: Replace the crate dependency**
 
 Target dependency:
 
@@ -219,7 +277,7 @@ wenlan-types = "0.3.1"
 
 Use the version required by the current daemon release. If the crate version differs, update this plan before editing code.
 
-- [ ] **Step 3: Rename the client seam**
+- [ ] **Step 5: Rename the client seam**
 
 Target names:
 
@@ -234,7 +292,18 @@ pub struct WenlanClient {
 pub client: WenlanClient,
 ```
 
-- [ ] **Step 4: Verify no stale typed imports remain**
+- [ ] **Step 6: Run LSP/compiler semantic checks**
+
+Run:
+
+```bash
+cargo check
+pnpm build
+```
+
+Expected: `cargo check` may still fail on the known sidecar/build contract if Task 5 has not run, but it must not fail on unresolved `origin_types`, `OriginClient`, or request/response type names introduced by this task. `pnpm build` must not report TypeScript wrapper type errors from the typed-client rename.
+
+- [ ] **Step 7: Verify no stale typed imports remain**
 
 Run:
 
@@ -244,7 +313,7 @@ rg -n 'origin-types|origin_types::|use origin_types|OriginClient' app/Cargo.toml
 
 Expected after implementation: only intentional compatibility comments or fixtures remain.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add app/Cargo.toml app/src/api.rs app/src/state.rs app/src/search.rs src/lib/tauri.ts
@@ -260,7 +329,21 @@ git commit -m "refactor: converge app client on wenlan types"
 - Modify: `app/src/lib.rs`
 - Modify: `app/src/lifecycle.rs`
 
-- [ ] **Step 1: Capture current failing sidecar contract**
+- [ ] **Step 1: Capture CodeGraph sidecar and lifecycle blast radius**
+
+Run:
+
+```bash
+CODEGRAPH_TELEMETRY=0 DO_NOT_TRACK=1 npx -y @colbymchenry/codegraph sync .
+CODEGRAPH_TELEMETRY=0 DO_NOT_TRACK=1 npx -y @colbymchenry/codegraph query spawn_sidecar --json
+CODEGRAPH_TELEMETRY=0 DO_NOT_TRACK=1 npx -y @colbymchenry/codegraph query origin-server --json
+CODEGRAPH_TELEMETRY=0 DO_NOT_TRACK=1 npx -y @colbymchenry/codegraph affected app/src/lib.rs --json
+CODEGRAPH_TELEMETRY=0 DO_NOT_TRACK=1 npx -y @colbymchenry/codegraph affected app/src/lifecycle.rs --json
+```
+
+Expected: output or explicit no-match notes for sidecar spawn, sidecar names, lifecycle tests, and affected frontend/Rust tests. Record no-match output; it is useful evidence for choosing ast-grep/`rg` follow-up.
+
+- [ ] **Step 2: Capture current failing sidecar contract**
 
 Run:
 
@@ -274,7 +357,19 @@ Expected before implementation:
 resource path `binaries/origin-server-aarch64-apple-darwin` doesn't exist
 ```
 
-- [ ] **Step 2: Define sidecar names without public app rename**
+- [ ] **Step 3: Capture ast-grep and residual sidecar surfaces**
+
+Run:
+
+```bash
+npx -y -p @ast-grep/cli sg outline app/src/lib.rs
+npx -y -p @ast-grep/cli sg outline app/src/lifecycle.rs
+rg -n 'origin-server|origin-mcp|cloudflared|externalBin|com\.origin|Origin\.app|Wenlan\.app' package.json app/tauri.conf.json app/capabilities/default.json app/src
+```
+
+Expected: deterministic list of config, sidecar, LaunchAgent, and stable app path references. This list gates the edit surface; do not rely on CodeGraph alone for string/config references.
+
+- [ ] **Step 4: Define sidecar names without public app rename**
 
 Target rule:
 
@@ -282,7 +377,7 @@ Target rule:
 Use wenlan-server and wenlan-mcp sidecar binaries for new builds, while detecting old Origin launch agents and config during bridge releases.
 ```
 
-- [ ] **Step 3: Add tests around stable app target validation**
+- [ ] **Step 5: Add tests around stable app target validation**
 
 Required cases:
 
@@ -293,7 +388,17 @@ Required cases:
 random Downloads app path rejected
 ```
 
-- [ ] **Step 4: Verify sidecar build reaches app code**
+- [ ] **Step 6: Run LSP/compiler semantic checks**
+
+Run:
+
+```bash
+cargo check
+```
+
+Expected: no unresolved sidecar constants, lifecycle function names, or stale `origin-server` binary path references introduced by the edit. Remaining failures must be listed with exact error text.
+
+- [ ] **Step 7: Verify sidecar build reaches app code**
 
 Run:
 
@@ -303,7 +408,7 @@ cargo build
 
 Expected after implementation: no missing `binaries/origin-server-*` error.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add package.json app/tauri.conf.json app/capabilities/default.json app/src/lib.rs app/src/lifecycle.rs
