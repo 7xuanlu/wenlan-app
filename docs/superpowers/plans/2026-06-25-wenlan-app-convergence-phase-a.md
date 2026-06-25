@@ -233,6 +233,13 @@ git commit -m "docs: add wenlan app parity matrix"
 - Modify: `app/src/api.rs`
 - Modify: `app/src/state.rs`
 - Modify: `app/src/search.rs`
+- Modify: `app/src/router/intent.rs`
+- Modify: `app/src/events.rs`
+- Modify: `app/src/system_info.rs`
+- Modify: `app/src/config.rs`
+- Modify: `app/src/sources/mod.rs`
+- Modify: `app/src/sources/data_source.rs`
+- Modify: `app/src/sources/local_files.rs`
 - Modify: `src/lib/tauri.ts`
 
 - [ ] **Step 1: Capture CodeGraph typed-client blast radius**
@@ -256,7 +263,7 @@ Run:
 rg -n 'origin-types|origin_types|OriginClient' app/Cargo.toml app/src
 ```
 
-Expected before implementation: matches exist in `app/Cargo.toml`, `app/src/api.rs`, `app/src/state.rs`, and `app/src/search.rs`.
+Expected before implementation: matches exist in `app/Cargo.toml`, `app/src/api.rs`, `app/src/state.rs`, `app/src/search.rs`, and supporting app modules that import shared wire types.
 
 - [ ] **Step 3: Capture ast-grep structural surfaces**
 
@@ -319,7 +326,7 @@ Expected after implementation: only intentional compatibility comments or fixtur
 - [ ] **Step 8: Commit**
 
 ```bash
-git add app/Cargo.toml app/src/api.rs app/src/state.rs app/src/search.rs src/lib/tauri.ts
+git add app/Cargo.toml app/src/api.rs app/src/state.rs app/src/search.rs app/src/router/intent.rs app/src/events.rs app/src/system_info.rs app/src/config.rs app/src/sources/mod.rs app/src/sources/data_source.rs app/src/sources/local_files.rs src/lib/tauri.ts
 git commit -m "refactor: converge app client on wenlan types"
 ```
 
