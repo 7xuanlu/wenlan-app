@@ -124,8 +124,9 @@ Use CodeGraph and structural search first, then text search:
 | LSP/compiler | "Do imports, types, signatures, and references still make sense?" | migration scope discovery, feature parity, runtime side effects | rust-analyzer/tsserver diagnostics; `cargo check`; `pnpm build` |
 | Tests/builds | "Does the edited behavior work?" | finding every impacted file before the edit | `pnpm test`; targeted Vitest; Rust tests; Tauri build checks |
 | `rg` | "Are stale strings or allowed legacy tokens still present?" | primary planning for cross-file behavior | `rg -n 'origin-types|origin_types::|OriginClient' app/Cargo.toml app/src` |
+| `grep` | "What text can I still find when the better tools are unavailable?" | structural inventory, semantic correctness, rewrite safety | `grep -RIn --exclude-dir=node_modules --exclude-dir=target --exclude-dir=.codegraph 'OriginClient' app src` |
 
-The boundary is intentional: CodeGraph reduces token-heavy exploration, ast-grep makes inventory reproducible, LSP/compiler catches semantic breakage, and tests/builds provide evidence. A task is not complete merely because one lane is green.
+The boundary is intentional: CodeGraph reduces token-heavy exploration, ast-grep makes inventory reproducible, LSP/compiler catches semantic breakage, and tests/builds provide evidence. `rg` is the normal residual text check. `grep` is the fallback if none of the higher-signal lanes work for the current surface. A task is not complete merely because one lane is green.
 
 ## Known Hotspots
 

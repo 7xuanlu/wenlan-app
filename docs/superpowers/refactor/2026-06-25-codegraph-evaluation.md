@@ -85,6 +85,8 @@ Before a cross-cutting typed-client, sidecar, MCP, or runtime-identity edit:
 3. Run `codegraph impact <symbol> --json` or `codegraph affected <file> --json`.
 4. Use `ast-grep` to generate deterministic inventories and residual checks.
 5. Verify with LSP/build/test output before treating the change as safe.
+6. Use `rg` for residual text checks after the graph and structural surfaces are known.
+7. Use bounded `grep` only if CodeGraph, ast-grep, LSP/compiler, tests/builds, and `rg` are unavailable or unsuitable for the current surface.
 
 Initial high-value queries for Phase A/B:
 

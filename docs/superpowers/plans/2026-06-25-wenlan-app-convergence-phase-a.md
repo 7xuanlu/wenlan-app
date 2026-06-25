@@ -28,6 +28,7 @@ Use this split for every remaining cross-cutting task.
 | LSP/compiler | type/import/signature diagnostics and semantic correctness | after each narrow edit batch and before claiming typed migration is green | route parity discovery, product-surface classification |
 | tests/builds | behavior and integration evidence | task completion | scope discovery |
 | `rg` | residual text checks and allowlist enforcement | after graph and structural scopes are known | first-pass cross-file planning |
+| `grep` | last-resort bounded text search | only when CodeGraph, ast-grep, LSP/compiler, tests/builds, and `rg` are unavailable or unsuitable | structural inventory, semantic correctness, rewrite safety |
 
 Canonical sequence, shown for the typed-client task. Later tasks list their own exact target symbols and files.
 
@@ -39,6 +40,7 @@ npx -y -p @ast-grep/cli sg run -p 'pub struct $NAME { $$$FIELDS }' -l rs app/src
 cargo check
 pnpm build
 rg -n 'origin-types|origin_types::|use origin_types|OriginClient' app/Cargo.toml app/src
+grep -RIn --exclude-dir=node_modules --exclude-dir=target --exclude-dir=.codegraph 'OriginClient' app src
 ```
 
 Boundary notes:
@@ -48,6 +50,7 @@ Boundary notes:
 - LSP/compiler diagnostics can approve imports/types/signatures, but they do not prove feature parity or migration safety.
 - `codegraph affected` test hints are advisory; run real targeted tests plus the task's required build/test command.
 - If CodeGraph is unavailable, record the exact failure and fall back to ast-grep + LSP + `rg`; do not silently skip the blast-radius step.
+- If those lanes also fail or are unavailable for the current surface, use bounded `grep` with include/exclude filters and record why every stronger tool was unavailable.
 
 ### Task 1: Lock Baseline Dependency Setup
 
