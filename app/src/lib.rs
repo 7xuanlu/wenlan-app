@@ -829,6 +829,7 @@ pub fn run() {
             search::confirm_observation_cmd,
             search::list_memories_cmd,
             search::get_memory_detail,
+            search::get_enrichment_status,
             search::list_memories_by_ids,
             search::get_memory_stats_cmd,
             search::get_home_stats,

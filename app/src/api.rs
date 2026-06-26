@@ -260,6 +260,14 @@ impl WenlanClient {
         self.get_json(&path).await
     }
 
+    pub async fn get_enrichment_status(
+        &self,
+        source_id: &str,
+    ) -> Result<wenlan_types::EnrichmentStatusResponse, String> {
+        let path = format!("/api/memory/{}/enrichment-status", source_id);
+        self.get_json(&path).await
+    }
+
     pub async fn list_unconfirmed_memories(
         &self,
         limit: i64,
@@ -539,6 +547,27 @@ mod tests {
         assert_eq!(status.local_model_selected, None);
         assert_eq!(status.local_model_loaded, None);
         assert!(!status.local_model_cached);
+    }
+
+    #[test]
+    fn wenlan_client_exposes_enrichment_status_method() {
+        let _get_enrichment_status = WenlanClient::get_enrichment_status;
+    }
+
+    #[test]
+    fn enrichment_status_response_deserializes_daemon_payload() {
+        let status: wenlan_types::EnrichmentStatusResponse =
+            serde_json::from_value(serde_json::json!({
+                "source_id": "mem-1",
+                "summary": "complete",
+                "steps": [
+                    { "step": "classify", "status": "done", "error": null, "attempts": 1 }
+                ]
+            }))
+            .unwrap();
+
+        assert_eq!(status.source_id, "mem-1");
+        assert_eq!(status.steps[0].step, "classify");
     }
 
     #[test]

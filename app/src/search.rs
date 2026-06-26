@@ -1108,6 +1108,18 @@ pub async fn get_memory_detail(
 }
 
 #[tauri::command]
+pub async fn get_enrichment_status(
+    state: tauri::State<'_, State>,
+    source_id: String,
+) -> Result<wenlan_types::EnrichmentStatusResponse, String> {
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+    client.get_enrichment_status(&source_id).await
+}
+
+#[tauri::command]
 pub async fn list_memories_by_ids(
     state: tauri::State<'_, State>,
     ids: Vec<String>,

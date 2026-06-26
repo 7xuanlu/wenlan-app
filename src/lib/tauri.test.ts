@@ -249,6 +249,23 @@ describe('unpinMemory', () => {
   });
 });
 
+describe('enrichment status', () => {
+  it('getEnrichmentStatus passes sourceId', async () => {
+    mockInvoke.mockResolvedValue({
+      source_id: 'mem-1',
+      summary: 'complete',
+      steps: [{ step: 'classify', status: 'done', error: null, attempts: 1 }],
+    });
+
+    const result = await tauri.getEnrichmentStatus('mem-1');
+
+    expect(mockInvoke).toHaveBeenCalledWith('get_enrichment_status', {
+      sourceId: 'mem-1',
+    });
+    expect(result.summary).toBe('complete');
+  });
+});
+
 describe('setup status', () => {
   it('gets daemon-backed setup status', async () => {
     const status = {

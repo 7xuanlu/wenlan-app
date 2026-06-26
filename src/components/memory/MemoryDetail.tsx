@@ -3,6 +3,7 @@ import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   getMemoryDetail,
+  getEnrichmentStatus,
   getVersionChain,
   listEntities,
   listAllTags,
@@ -75,6 +76,14 @@ export default function MemoryDetail({
     queryKey: ["memoryDetail", sourceId],
     queryFn: () => getMemoryDetail(sourceId),
     refetchInterval: 5000,
+  });
+
+  const { data: enrichmentStatus } = useQuery({
+    queryKey: ["enrichment-status", sourceId],
+    queryFn: () => getEnrichmentStatus(sourceId),
+    enabled: !!sourceId,
+    staleTime: 30000,
+    retry: false,
   });
 
   const { data: versionChain = [] } = useQuery({
@@ -723,6 +732,32 @@ export default function MemoryDetail({
                 }}
               >
                 Low quality
+              </span>
+            </div>
+          )}
+
+          {/* Enrichment status */}
+          {enrichmentStatus && (
+            <div className="flex items-center gap-3">
+              <span
+                style={{
+                  fontFamily: "var(--mem-font-mono)",
+                  fontSize: "11px",
+                  color: "var(--mem-text-tertiary)",
+                  width: "80px",
+                }}
+              >
+                Enrichment
+              </span>
+              <span
+                className="px-1.5 py-0.5 rounded text-[10px] font-medium"
+                title={enrichmentStatus.steps.map((s) => `${s.step}: ${s.status}`).join("\n")}
+                style={{
+                  backgroundColor: "var(--mem-indigo-bg)",
+                  color: "var(--mem-accent-indigo)",
+                }}
+              >
+                {enrichmentStatus.summary}
               </span>
             </div>
           )}

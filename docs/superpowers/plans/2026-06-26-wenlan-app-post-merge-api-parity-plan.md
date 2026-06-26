@@ -49,7 +49,7 @@ curl -fsS "http://127.0.0.1:7878/api/health" | jq -e '.status == "ok" and (.vers
 For ID-bearing probes, use `jq -er`, reject empty/null IDs, and assert the response envelope shape:
 
 ```bash
-MEMORY_ID=$(curl -fsS "http://127.0.0.1:7878/api/memory/list?limit=1" | jq -er '.memories[0].source_id // .memories[0].id')
+MEMORY_ID=$(curl -fsS "http://127.0.0.1:7878/api/memory/recent?limit=1" | jq -er '.[0].id')
 test -n "${MEMORY_ID}" && test "${MEMORY_ID}" != "null"
 export MEMORY_ID
 curl -fsS "http://127.0.0.1:7878/api/memory/${MEMORY_ID}/enrichment-status" | jq -e '.source_id == env.MEMORY_ID and (.steps | type == "array")'
@@ -369,7 +369,7 @@ Live daemon probe:
 ```bash
 set -euo pipefail
 curl -fsS "http://127.0.0.1:7878/api/health" | jq -e '.status == "ok" and (.version | startswith("0.9."))'
-MEMORY_ID=$(curl -fsS "http://127.0.0.1:7878/api/memory/list?limit=1" | jq -er '.memories[0].source_id // .memories[0].id')
+MEMORY_ID=$(curl -fsS "http://127.0.0.1:7878/api/memory/recent?limit=1" | jq -er '.[0].id')
 test -n "${MEMORY_ID}" && test "${MEMORY_ID}" != "null"
 export MEMORY_ID
 curl -fsS "http://127.0.0.1:7878/api/memory/${MEMORY_ID}/enrichment-status" | jq -e '.source_id == env.MEMORY_ID and (.steps | type == "array")'
@@ -1255,7 +1255,7 @@ Live daemon probes:
 ```bash
 set -euo pipefail
 curl -fsS "http://127.0.0.1:7878/api/health" | jq -e '.status == "ok" and (.version | startswith("0.9."))'
-MEMORY_ID=$(curl -fsS "http://127.0.0.1:7878/api/memory/list?limit=1" | jq -er '.memories[0].source_id // .memories[0].id')
+MEMORY_ID=$(curl -fsS "http://127.0.0.1:7878/api/memory/recent?limit=1" | jq -er '.[0].id')
 PAGE_ID=$(curl -fsS "http://127.0.0.1:7878/api/pages?limit=1" | jq -er '.pages[0].id')
 test -n "${MEMORY_ID}" && test "${MEMORY_ID}" != "null"
 test -n "${PAGE_ID}" && test "${PAGE_ID}" != "null"

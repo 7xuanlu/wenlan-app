@@ -1022,6 +1022,25 @@ export async function getMemoryDetail(sourceId: string): Promise<MemoryItem | nu
   return memory ? withDomain(memory) : null;
 }
 
+export interface EnrichmentStepStatus {
+  step: string;
+  status: string;
+  error?: string | null;
+  attempts: number;
+}
+
+export interface EnrichmentStatusResponse {
+  source_id: string;
+  summary: string;
+  steps: EnrichmentStepStatus[];
+}
+
+export async function getEnrichmentStatus(
+  sourceId: string,
+): Promise<EnrichmentStatusResponse> {
+  return invoke("get_enrichment_status", { sourceId });
+}
+
 /** Batch-fetch multiple memories by source_id in one round trip. Missing ids are silently omitted. */
 export async function listMemoriesByIds(ids: string[]): Promise<MemoryItem[]> {
   if (ids.length === 0) return [];
