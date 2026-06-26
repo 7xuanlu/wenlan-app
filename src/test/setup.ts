@@ -5,6 +5,7 @@ import '@testing-library/jest-dom/vitest';
 // Mock @tauri-apps/api/core — all invoke() calls go through this
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
+  convertFileSrc: vi.fn((path: string) => `asset://localhost/${path}`),
 }));
 
 // Mock Tauri event system

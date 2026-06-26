@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { convertFileSrc } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   getProfile,
@@ -12,6 +11,7 @@ import {
   regenerateNarrative,
   listMemoriesRich,
 } from "../../lib/tauri";
+import ProfileAvatar from "./ProfileAvatar";
 
 interface ProfilePageProps {
   onBack: () => void;
@@ -273,8 +273,6 @@ export default function ProfilePage({ onBack, onSelectMemory }: ProfilePageProps
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["profile-narrative"] }),
   });
 
-  const avatarUrl = profile?.avatar_path ? convertFileSrc(profile.avatar_path) : null;
-
   const handlePickAvatar = async () => {
     try {
       const selected = await open({
@@ -292,12 +290,6 @@ export default function ProfilePage({ onBack, onSelectMemory }: ProfilePageProps
   if (!profile) return null;
 
   const displayName = profile.display_name || profile.name;
-  const initials = displayName
-    .split(" ")
-    .map((w: string) => w[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
 
   return (
     <div className="flex flex-col gap-8 max-w-2xl mx-auto py-4">
@@ -320,33 +312,14 @@ export default function ProfilePage({ onBack, onSelectMemory }: ProfilePageProps
               style={{ width: 72, height: 72, cursor: "pointer", border: "none", padding: 0, background: "none" }}
               title="Change profile photo"
             >
-              {avatarUrl ? (
-                <img
-                  src={avatarUrl}
-                  alt={displayName}
-                  style={{ width: 72, height: 72, borderRadius: "50%", objectFit: "cover" }}
-                />
-              ) : (
-                <div
-                  style={{
-                    width: 72,
-                    height: 72,
-                    borderRadius: "50%",
-                    background: "linear-gradient(135deg, var(--mem-accent-warm), var(--mem-accent-amber))",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontFamily: "var(--mem-font-heading)",
-                    fontSize: "24px",
-                    color: "white",
-                    fontWeight: 500,
-                  }}
-                >
-                  {initials}
-                </div>
-              )}
+              <ProfileAvatar
+                avatarPath={profile.avatar_path}
+                displayName={displayName}
+                size={72}
+                fontSize={24}
+              />
             </button>
-            {avatarUrl && (
+            {profile.avatar_path && (
               <button
                 onClick={() => removeAvatarMutation.mutate()}
                 className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-150"

@@ -805,6 +805,27 @@ mod tests {
         );
     }
 
+    #[test]
+    fn tauri_asset_scope_allows_wenlan_and_legacy_avatar_roots() {
+        let config: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let allowed = config["app"]["security"]["assetProtocol"]["scope"]["allow"]
+            .as_array()
+            .unwrap();
+        assert!(
+            allowed
+                .iter()
+                .any(|path| path.as_str() == Some("$LOCALDATA/wenlan/avatars/**")),
+            "new avatars are stored under the Wenlan data root"
+        );
+        assert!(
+            allowed
+                .iter()
+                .any(|path| path.as_str() == Some("$DATA/origin/avatars/**")),
+            "legacy Origin avatar paths must keep rendering during migration"
+        );
+    }
+
     /// Mock that observes concurrent launchctl invocations. `in_flight`
     /// tracks how many calls are currently executing; `max_in_flight`
     /// records the high-water mark. If the caller properly serializes via

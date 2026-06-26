@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useQuery } from "@tanstack/react-query";
-import { convertFileSrc } from "@tauri-apps/api/core";
 import { listEntities, getEntityDetail, getProfile } from "../../lib/tauri";
+import ProfileAvatar from "./ProfileAvatar";
 
 interface IdentityCardProps {
   onOpenDetail: (entityId: string) => void;
@@ -73,14 +73,6 @@ export default function IdentityCard({ onOpenDetail }: IdentityCardProps) {
     );
   }
 
-  const initials = displayName
-    .split(" ")
-    .map((w) => w[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-  const avatarUrl = profile?.avatar_path ? convertFileSrc(profile.avatar_path) : null;
-
   return (
     <button
       onClick={() => onOpenDetail("__create_profile__")}
@@ -90,27 +82,13 @@ export default function IdentityCard({ onOpenDetail }: IdentityCardProps) {
         border: "1px solid var(--mem-border)",
       }}
     >
-      {avatarUrl ? (
-        <img
-          src={avatarUrl}
-          alt={displayName}
-          className="mx-auto mb-3"
-          style={{ width: 56, height: 56, borderRadius: "50%", objectFit: "cover" }}
-        />
-      ) : (
-        <div
-          className="w-14 h-14 rounded-full mx-auto mb-3 flex items-center justify-center"
-          style={{
-            background: "linear-gradient(135deg, var(--mem-accent-warm), var(--mem-accent-amber))",
-            fontFamily: "var(--mem-font-heading)",
-            fontSize: "20px",
-            color: "white",
-            fontWeight: 500,
-          }}
-        >
-          {initials}
-        </div>
-      )}
+      <ProfileAvatar
+        avatarPath={profile?.avatar_path}
+        displayName={displayName}
+        size={56}
+        fontSize={20}
+        className="mx-auto mb-3"
+      />
 
       <p
         className="text-center font-medium"
