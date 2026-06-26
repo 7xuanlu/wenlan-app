@@ -7,8 +7,10 @@ dist/
 *.log
 
 # Tauri
+app/binaries/
 app/binaries/origin-server-*
 app/binaries/origin-mcp-*
+app/binaries/wenlan-*
 app/binaries/wenlan-server-*
 app/binaries/wenlan-mcp-*
 app/binaries/cloudflared-*

@@ -47,8 +47,10 @@ case "$TRIPLE" in
 esac
 SERVER_SRC="$SOURCE_DIR/wenlan-server$EXE_SUFFIX"
 MCP_SRC="$SOURCE_DIR/wenlan-mcp$EXE_SUFFIX"
+CLI_SRC="$SOURCE_DIR/wenlan$EXE_SUFFIX"
 SERVER_DEST="$BIN_DIR/wenlan-server-$TRIPLE$EXE_SUFFIX"
 MCP_DEST="$BIN_DIR/wenlan-mcp-$TRIPLE$EXE_SUFFIX"
+CLI_DEST="$BIN_DIR/wenlan-$TRIPLE$EXE_SUFFIX"
 CLOUDFLARED_DEST="$BIN_DIR/cloudflared-$TRIPLE$EXE_SUFFIX"
 CLOUDFLARED_SRC=""
 
@@ -71,22 +73,24 @@ fi
 if [[ "$PRINT_PATHS" == "true" ]]; then
   printf 'server_src=%s\n' "$SERVER_SRC"
   printf 'mcp_src=%s\n' "$MCP_SRC"
+  printf 'cli_src=%s\n' "$CLI_SRC"
   printf 'server_dest=%s\n' "$SERVER_DEST"
   printf 'mcp_dest=%s\n' "$MCP_DEST"
+  printf 'cli_dest=%s\n' "$CLI_DEST"
   printf 'cloudflared_src=%s\n' "${CLOUDFLARED_SRC:-<CLOUDFLARED_BIN required for cross-target>}"
   printf 'cloudflared_dest=%s\n' "$CLOUDFLARED_DEST"
   exit 0
 fi
 
-if [[ "$FORCE_BUILD" == "true" || ! -x "$SERVER_SRC" || ! -x "$MCP_SRC" ]]; then
+if [[ "$FORCE_BUILD" == "true" || ! -x "$SERVER_SRC" || ! -x "$MCP_SRC" || ! -x "$CLI_SRC" ]]; then
   if [[ -n "${TARGET_TRIPLE:-}" && "$PROFILE" == "release" ]]; then
-    cargo build --manifest-path "$BACKEND_DIR/Cargo.toml" --target "$TRIPLE" --release -p wenlan-server -p wenlan-mcp
+    cargo build --manifest-path "$BACKEND_DIR/Cargo.toml" --target "$TRIPLE" --release -p wenlan-server -p wenlan-mcp -p wenlan
   elif [[ -n "${TARGET_TRIPLE:-}" ]]; then
-    cargo build --manifest-path "$BACKEND_DIR/Cargo.toml" --target "$TRIPLE" -p wenlan-server -p wenlan-mcp
+    cargo build --manifest-path "$BACKEND_DIR/Cargo.toml" --target "$TRIPLE" -p wenlan-server -p wenlan-mcp -p wenlan
   elif [[ "$PROFILE" == "release" ]]; then
-    cargo build --manifest-path "$BACKEND_DIR/Cargo.toml" --release -p wenlan-server -p wenlan-mcp
+    cargo build --manifest-path "$BACKEND_DIR/Cargo.toml" --release -p wenlan-server -p wenlan-mcp -p wenlan
   else
-    cargo build --manifest-path "$BACKEND_DIR/Cargo.toml" -p wenlan-server -p wenlan-mcp
+    cargo build --manifest-path "$BACKEND_DIR/Cargo.toml" -p wenlan-server -p wenlan-mcp -p wenlan
   fi
 else
   echo "Using existing backend sidecars from $SOURCE_DIR"
@@ -96,6 +100,7 @@ mkdir -p "$BIN_DIR"
 
 install -m 755 "$SERVER_SRC" "$SERVER_DEST"
 install -m 755 "$MCP_SRC" "$MCP_DEST"
+install -m 755 "$CLI_SRC" "$CLI_DEST"
 
 if [[ -n "$CLOUDFLARED_SRC" ]]; then
   install -m 755 "$CLOUDFLARED_SRC" "$CLOUDFLARED_DEST"

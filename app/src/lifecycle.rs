@@ -95,6 +95,16 @@ pub fn legacy_server_plist_path() -> Result<PathBuf> {
         .join(format!("{}.plist", LEGACY_SERVER_PLIST_LABEL)))
 }
 
+pub fn current_server_plist_exists() -> bool {
+    server_plist_path().map(|p| p.exists()).unwrap_or(false)
+}
+
+pub fn legacy_server_plist_exists() -> bool {
+    legacy_server_plist_path()
+        .map(|p| p.exists())
+        .unwrap_or(false)
+}
+
 fn log_dir() -> Result<PathBuf> {
     Ok(dirs::data_local_dir()
         .context("data_local_dir unavailable")?
@@ -216,35 +226,42 @@ pub fn cleanup_legacy_server_plist(launchctl: &dyn LaunchctlExec) -> Result<()> 
     Ok(())
 }
 
-/// Run `wenlan-server install`. Resolves the binary alongside our exe.
-pub fn install_server_plist_via_subprocess() -> Result<()> {
-    let bin = current_app_path()?
-        .parent()
-        .context("no parent dir")?
-        .join("wenlan-server");
-    let out = Command::new(&bin).arg("install").output()?;
+fn service_cli_path_for_app_exe(app_exe: &Path) -> Result<PathBuf> {
+    let mut bin = app_exe.parent().context("no parent dir")?.join("wenlan");
+    if cfg!(target_os = "windows") {
+        bin.set_extension("exe");
+    }
+    Ok(bin)
+}
+
+fn service_cli_path() -> Result<PathBuf> {
+    service_cli_path_for_app_exe(&current_app_path()?)
+}
+
+fn run_service_cli(subcommand: &str) -> Result<()> {
+    let bin = service_cli_path()?;
+    let out = Command::new(&bin).arg(subcommand).output()?;
     if !out.status.success() {
         anyhow::bail!(
-            "wenlan-server install failed: {}",
+            "wenlan {} failed: {}",
+            subcommand,
             String::from_utf8_lossy(&out.stderr)
         );
     }
     Ok(())
 }
 
+/// Run `wenlan install`. Resolves the CLI binary alongside our exe; the CLI
+/// owns service-manager integration and expects `wenlan-server` next to it.
+pub fn install_server_plist_via_subprocess() -> Result<()> {
+    run_service_cli("install")
+}
+
 pub fn uninstall_server_plist_via_subprocess() -> Result<()> {
-    let bin = current_app_path()?
-        .parent()
-        .context("no parent dir")?
-        .join("wenlan-server");
-    let out = Command::new(&bin).arg("uninstall").output()?;
-    if !out.status.success() {
-        anyhow::bail!(
-            "wenlan-server uninstall failed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
+    if !server_plist_path().map(|p| p.exists()).unwrap_or(false) {
+        return Ok(());
     }
-    Ok(())
+    run_service_cli("uninstall")
 }
 
 /// Returns true iff BOTH plists are loaded in launchctl.
@@ -312,12 +329,16 @@ pub fn first_run_install_if_needed(launchctl: &dyn LaunchctlExec) -> Result<()> 
         })
         .unwrap_or(true);
 
+    if let Err(e) = cleanup_legacy_server_plist(launchctl) {
+        log::warn!("[first-run] legacy server plist cleanup failed: {e}");
+    }
+
     if !app_plist_stale && !server_plist_stale {
         return Ok(());
     }
 
     if let Err(e) = install_server_plist_via_subprocess() {
-        log::warn!("[first-run] wenlan-server install failed: {e}");
+        log::warn!("[first-run] wenlan install failed: {e}");
     }
     install_app_plist(launchctl)?;
     log::info!("[first-run] LaunchAgents installed");
@@ -343,10 +364,10 @@ pub async fn set_run_at_login(enabled: bool, launchctl: &dyn LaunchctlExec) -> R
     } else {
         set_user_opted_out(true)?;
         uninstall_app_plist(launchctl)?;
-        let uninstall_result = uninstall_server_plist_via_subprocess();
         let legacy_cleanup_result = cleanup_legacy_server_plist(launchctl);
-        uninstall_result?;
+        let uninstall_result = uninstall_server_plist_via_subprocess();
         legacy_cleanup_result?;
+        uninstall_result?;
     }
     Ok(())
 }
@@ -728,6 +749,59 @@ mod tests {
                 .iter()
                 .any(|c| c[0] == "unload" && c[1] == plist.to_string_lossy()),
             "legacy server plist unloaded before removal"
+        );
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn legacy_server_plist_does_not_count_as_current_wenlan_service() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::set_var("HOME", tmp.path());
+        let plist = legacy_server_plist_path().unwrap();
+        std::fs::create_dir_all(plist.parent().unwrap()).unwrap();
+        std::fs::write(&plist, "<plist/>").unwrap();
+
+        assert!(legacy_server_plist_exists());
+        assert!(
+            !current_server_plist_exists(),
+            "legacy Origin service must not suppress Wenlan sidecar fallback"
+        );
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn current_server_plist_counts_as_wenlan_service() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::set_var("HOME", tmp.path());
+        let plist = server_plist_path().unwrap();
+        std::fs::create_dir_all(plist.parent().unwrap()).unwrap();
+        std::fs::write(&plist, "<plist/>").unwrap();
+
+        assert!(current_server_plist_exists());
+    }
+
+    #[test]
+    fn service_management_uses_wenlan_cli_next_to_app_binary() {
+        let path = service_cli_path_for_app_exe(std::path::Path::new(
+            "/Applications/Origin.app/Contents/MacOS/origin-app",
+        ))
+        .unwrap();
+        assert_eq!(
+            path,
+            std::path::Path::new("/Applications/Origin.app/Contents/MacOS/wenlan")
+        );
+    }
+
+    #[test]
+    fn tauri_bundle_declares_wenlan_cli_sidecar_for_service_management() {
+        let config: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let external_bins = config["bundle"]["externalBin"].as_array().unwrap();
+        assert!(
+            external_bins
+                .iter()
+                .any(|bin| bin.as_str() == Some("binaries/wenlan")),
+            "wenlan CLI must be bundled because lifecycle service management runs `wenlan install/uninstall`"
         );
     }
 

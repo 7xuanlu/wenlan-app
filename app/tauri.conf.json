@@ -63,6 +63,7 @@
       "icons/icon.ico"
     ],
     "externalBin": [
+      "binaries/wenlan",
       "binaries/wenlan-server",
       "binaries/wenlan-mcp",
       "binaries/cloudflared"
