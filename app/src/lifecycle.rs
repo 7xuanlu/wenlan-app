@@ -18,7 +18,8 @@ static QUITTING: AtomicBool = AtomicBool::new(false);
 /// the toggle to prevent concurrent install/uninstall races (G2).
 static RUN_AT_LOGIN_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
-pub const SERVER_PLIST_LABEL: &str = "com.origin.server";
+pub const SERVER_PLIST_LABEL: &str = "com.wenlan.server";
+pub const LEGACY_SERVER_PLIST_LABEL: &str = "com.origin.server";
 pub const APP_PLIST_LABEL: &str = "com.origin.desktop";
 
 const APP_PLIST_TEMPLATE: &str = include_str!("../resources/com.origin.desktop.plist");
@@ -88,6 +89,12 @@ pub fn server_plist_path() -> Result<PathBuf> {
         .join(format!("{}.plist", SERVER_PLIST_LABEL)))
 }
 
+pub fn legacy_server_plist_path() -> Result<PathBuf> {
+    Ok(home_dir()?
+        .join("Library/LaunchAgents")
+        .join(format!("{}.plist", LEGACY_SERVER_PLIST_LABEL)))
+}
+
 fn log_dir() -> Result<PathBuf> {
     Ok(dirs::data_local_dir()
         .context("data_local_dir unavailable")?
@@ -100,13 +107,20 @@ fn current_app_path() -> Result<PathBuf> {
     std::fs::canonicalize(&exe).context("canonicalize current_exe")
 }
 
-fn is_stable_launch_agent_target(exe: &Path) -> bool {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StableLaunchAgentTarget {
+    Current,
+    LegacyOrigin,
+    Rejected,
+}
+
+fn classify_stable_launch_agent_target(exe: &Path) -> StableLaunchAgentTarget {
     // Accept both legacy "origin" and renamed "origin-app" binary names.
     // Tauri crate package was renamed origin -> origin-app in Phase 3 PR1, but
     // existing user installs may still have the old binary path on disk.
     let name = exe.file_name().and_then(|s| s.to_str());
     if name != Some("origin-app") && name != Some("origin") {
-        return false;
+        return StableLaunchAgentTarget::Rejected;
     }
 
     let Some(app_bundle) = exe.ancestors().find(|p| {
@@ -114,17 +128,35 @@ fn is_stable_launch_agent_target(exe: &Path) -> bool {
             .and_then(|ext| ext.to_str())
             .is_some_and(|ext| ext == "app")
     }) else {
-        return false;
+        return StableLaunchAgentTarget::Rejected;
     };
 
-    if app_bundle.file_name().and_then(|s| s.to_str()) != Some("Origin.app") {
-        return false;
+    let Some(bundle_name) = app_bundle.file_name().and_then(|s| s.to_str()) else {
+        return StableLaunchAgentTarget::Rejected;
+    };
+
+    let in_system_apps = app_bundle == Path::new("/Applications/Wenlan.app")
+        || app_bundle == Path::new("/Applications/Origin.app");
+    let in_user_apps = dirs::home_dir()
+        .map(|home| {
+            app_bundle == home.join("Applications/Wenlan.app")
+                || app_bundle == home.join("Applications/Origin.app")
+        })
+        .unwrap_or(false);
+
+    if !in_system_apps && !in_user_apps {
+        return StableLaunchAgentTarget::Rejected;
     }
 
-    app_bundle == Path::new("/Applications/Origin.app")
-        || dirs::home_dir()
-            .map(|home| app_bundle == home.join("Applications/Origin.app"))
-            .unwrap_or(false)
+    match bundle_name {
+        "Wenlan.app" => StableLaunchAgentTarget::Current,
+        "Origin.app" => StableLaunchAgentTarget::LegacyOrigin,
+        _ => StableLaunchAgentTarget::Rejected,
+    }
+}
+
+fn is_stable_launch_agent_target(exe: &Path) -> bool {
+    classify_stable_launch_agent_target(exe) != StableLaunchAgentTarget::Rejected
 }
 
 pub fn install_app_plist(launchctl: &dyn LaunchctlExec) -> Result<()> {
@@ -174,16 +206,16 @@ pub fn uninstall_app_plist(launchctl: &dyn LaunchctlExec) -> Result<()> {
     Ok(())
 }
 
-/// Run `origin-server install`. Resolves the binary alongside our exe.
+/// Run `wenlan-server install`. Resolves the binary alongside our exe.
 pub fn install_server_plist_via_subprocess() -> Result<()> {
     let bin = current_app_path()?
         .parent()
         .context("no parent dir")?
-        .join("origin-server");
+        .join("wenlan-server");
     let out = Command::new(&bin).arg("install").output()?;
     if !out.status.success() {
         anyhow::bail!(
-            "origin-server install failed: {}",
+            "wenlan-server install failed: {}",
             String::from_utf8_lossy(&out.stderr)
         );
     }
@@ -194,11 +226,11 @@ pub fn uninstall_server_plist_via_subprocess() -> Result<()> {
     let bin = current_app_path()?
         .parent()
         .context("no parent dir")?
-        .join("origin-server");
+        .join("wenlan-server");
     let out = Command::new(&bin).arg("uninstall").output()?;
     if !out.status.success() {
         anyhow::bail!(
-            "origin-server uninstall failed: {}",
+            "wenlan-server uninstall failed: {}",
             String::from_utf8_lossy(&out.stderr)
         );
     }
@@ -216,9 +248,12 @@ pub fn is_run_at_login_enabled(launchctl: &dyn LaunchctlExec) -> bool {
         Err(_) => return false,
     };
     let stdout = String::from_utf8_lossy(&out.stdout);
-    let server = stdout
-        .lines()
-        .any(|line| line.split_whitespace().nth(2) == Some(SERVER_PLIST_LABEL));
+    let server = stdout.lines().any(|line| {
+        matches!(
+            line.split_whitespace().nth(2),
+            Some(SERVER_PLIST_LABEL) | Some(LEGACY_SERVER_PLIST_LABEL)
+        )
+    });
     let app = stdout
         .lines()
         .any(|line| line.split_whitespace().nth(2) == Some(APP_PLIST_LABEL));
@@ -261,7 +296,7 @@ pub fn first_run_install_if_needed(launchctl: &dyn LaunchctlExec) -> Result<()> 
         .map(|content| {
             let expected_server = exe_canonical
                 .parent()
-                .map(|p| p.join("origin-server").to_string_lossy().to_string())
+                .map(|p| p.join("wenlan-server").to_string_lossy().to_string())
                 .unwrap_or_default();
             !content.contains(&expected_server)
         })
@@ -272,7 +307,7 @@ pub fn first_run_install_if_needed(launchctl: &dyn LaunchctlExec) -> Result<()> 
     }
 
     if let Err(e) = install_server_plist_via_subprocess() {
-        log::warn!("[first-run] origin-server install failed: {e}");
+        log::warn!("[first-run] wenlan-server install failed: {e}");
     }
     install_app_plist(launchctl)?;
     log::info!("[first-run] LaunchAgents installed");
@@ -446,28 +481,50 @@ mod tests {
 
     #[test]
     #[serial_test::serial]
-    fn stable_launch_agent_target_rejects_private_tmp_app_bundle() {
-        assert!(!is_stable_launch_agent_target(std::path::Path::new(
-            "/private/tmp/origin-update-test/Origin.app/Contents/MacOS/origin"
-        )));
+    fn stable_launch_agent_target_accepts_system_wenlan_app_bundle() {
+        assert_eq!(
+            classify_stable_launch_agent_target(std::path::Path::new(
+                "/Applications/Wenlan.app/Contents/MacOS/origin-app"
+            )),
+            StableLaunchAgentTarget::Current
+        );
     }
 
     #[test]
     #[serial_test::serial]
-    fn stable_launch_agent_target_allows_applications_app_bundle() {
-        assert!(is_stable_launch_agent_target(std::path::Path::new(
-            "/Applications/Origin.app/Contents/MacOS/origin"
-        )));
+    fn stable_launch_agent_target_accepts_user_wenlan_app_bundle() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::set_var("HOME", tmp.path());
+        let exe = tmp
+            .path()
+            .join("Applications/Wenlan.app/Contents/MacOS/origin-app");
+
+        assert_eq!(
+            classify_stable_launch_agent_target(&exe),
+            StableLaunchAgentTarget::Current
+        );
     }
 
     #[test]
     #[serial_test::serial]
-    fn stable_launch_agent_target_allows_renamed_origin_app_binary() {
-        // After Phase 3 PR1 rename (origin -> origin-app), new installs ship
-        // with binary path `.../MacOS/origin-app`. The check must accept both.
-        assert!(is_stable_launch_agent_target(std::path::Path::new(
-            "/Applications/Origin.app/Contents/MacOS/origin-app"
-        )));
+    fn stable_launch_agent_target_detects_legacy_origin_app_bundle() {
+        assert_eq!(
+            classify_stable_launch_agent_target(std::path::Path::new(
+                "/Applications/Origin.app/Contents/MacOS/origin"
+            )),
+            StableLaunchAgentTarget::LegacyOrigin
+        );
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn stable_launch_agent_target_rejects_downloads_app_bundle() {
+        assert_eq!(
+            classify_stable_launch_agent_target(std::path::Path::new(
+                "/Users/alice/Downloads/Wenlan.app/Contents/MacOS/origin-app"
+            )),
+            StableLaunchAgentTarget::Rejected
+        );
     }
 
     #[test]
