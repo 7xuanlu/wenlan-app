@@ -30,6 +30,23 @@ use state::AppState;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+#[cfg(target_os = "macos")]
+fn activation_policy_for_main_window_visible(visible: bool) -> tauri::ActivationPolicy {
+    if visible {
+        tauri::ActivationPolicy::Regular
+    } else {
+        tauri::ActivationPolicy::Accessory
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn set_main_window_dock_visibility<R: tauri::Runtime>(app: &tauri::AppHandle<R>, visible: bool) {
+    let _ = app.set_activation_policy(activation_policy_for_main_window_visible(visible));
+}
+
+#[cfg(not(target_os = "macos"))]
+fn set_main_window_dock_visibility<R: tauri::Runtime>(_app: &tauri::AppHandle<R>, _visible: bool) {}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Log sinks: stderr (for terminal launches, `pnpm tauri dev`) AND a
@@ -87,6 +104,7 @@ pub fn run() {
         tauri::Builder::default().plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             use tauri::Manager;
             if let Some(window) = app.get_webview_window("main") {
+                set_main_window_dock_visibility(app, true);
                 let _ = window.show();
                 let _ = window.unminimize();
                 let _ = window.set_focus();
@@ -120,7 +138,7 @@ pub fn run() {
             // this call ensures it stays hidden even if Tauri ever resets the policy.
             #[cfg(target_os = "macos")]
             {
-                app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+                app.set_activation_policy(activation_policy_for_main_window_visible(false));
             }
 
             // Tray-app pattern: red-X on the main window hides instead of closing.
@@ -134,10 +152,12 @@ pub fn run() {
                 use tauri::{Manager, WindowEvent};
                 if let Some(main_window) = app.get_webview_window("main") {
                     let win = main_window.clone();
+                    let app_for_close = handle.clone();
                     main_window.on_window_event(move |event| {
                         if let WindowEvent::CloseRequested { api, .. } = event {
                             api.prevent_close();
                             let _ = win.hide();
+                            set_main_window_dock_visibility(&app_for_close, false);
                         }
                     });
                 }
@@ -207,8 +227,10 @@ pub fn run() {
                     {
                         use tauri::Listener;
                         let win_for_ready = win.clone();
+                        let app_for_ready = handle.clone();
                         // Listen for the frontend "app-ready" event
                         handle.listen("app-ready", move |_| {
+                            set_main_window_dock_visibility(&app_for_ready, true);
                             let _ = win_for_ready.show();
                             let _ = win_for_ready.set_focus();
                         });
@@ -386,7 +408,9 @@ pub fn run() {
                             if let Some(window) = handle_for_shortcuts.get_webview_window("main") {
                                 if window.is_visible().unwrap_or(false) {
                                     let _ = window.hide();
+                                    set_main_window_dock_visibility(&handle_for_shortcuts, false);
                                 } else {
+                                    set_main_window_dock_visibility(&handle_for_shortcuts, true);
                                     let _ = window.show();
                                     let _ = window.set_focus();
                                     let _ = handle_for_shortcuts.emit("show-memory", ());
@@ -510,7 +534,9 @@ pub fn run() {
                                 if let Some(win) = handle_for_tray.get_webview_window("main") {
                                     if win.is_visible().unwrap_or(false) {
                                         let _ = win.hide();
+                                        set_main_window_dock_visibility(&handle_for_tray, false);
                                     } else {
+                                        set_main_window_dock_visibility(&handle_for_tray, true);
                                         let _ = win.show();
                                         let _ = win.set_focus();
                                     }
@@ -523,6 +549,7 @@ pub fn run() {
                     tray.on_menu_event(move |_tray, event| match event.id().as_ref() {
                         "show" => {
                             if let Some(win) = handle_for_menu.get_webview_window("main") {
+                                set_main_window_dock_visibility(&handle_for_menu, true);
                                 let _ = win.show();
                                 let _ = win.set_focus();
                             }
@@ -890,9 +917,31 @@ pub fn run() {
                     if !has_visible_windows {
                         let _ = app.emit("show-memory", ());
                     }
+                    set_main_window_dock_visibility(app, true);
                     let _ = window.show();
                     let _ = window.set_focus();
                 }
             }
         });
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn visible_main_window_uses_regular_activation_policy() {
+        assert!(matches!(
+            activation_policy_for_main_window_visible(true),
+            tauri::ActivationPolicy::Regular
+        ));
+    }
+
+    #[test]
+    fn hidden_main_window_uses_accessory_activation_policy() {
+        assert!(matches!(
+            activation_policy_for_main_window_visible(false),
+            tauri::ActivationPolicy::Accessory
+        ));
+    }
 }

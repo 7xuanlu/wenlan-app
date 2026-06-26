@@ -3,16 +3,16 @@
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 :root {
-  --bg-primary: #1a1a2e;
-  --bg-secondary: #16213e;
-  --bg-tertiary: #0f3460;
-  --text-primary: #e8e8e8;
-  --text-secondary: #a0a0b0;
-  --accent: #6c63ff;
-  --accent-hover: #5a52d5;
-  --border: #2a2a4a;
-  --text-tertiary: #6a6a8a;
-  --separator: rgba(42, 42, 74, 0.65);
+  --bg-primary: #121217;
+  --bg-secondary: #171A24;
+  --bg-tertiary: #1D2535;
+  --text-primary: #eef2f8;
+  --text-secondary: #a7afbf;
+  --accent: #5BA3E6;
+  --accent-hover: #4AC8E8;
+  --border: #2B3548;
+  --text-tertiary: #6f788b;
+  --separator: rgba(43, 53, 72, 0.65);
   --overlay-subtle: rgba(255, 255, 255, 0.04);
   --overlay-hover: rgba(255, 255, 255, 0.06);
   --overlay-active: rgba(255, 255, 255, 0.08);
@@ -134,26 +134,26 @@ body {
 /* Dark (default — matches logo navy palette) */
 :root,
 html[data-theme="dark"] {
-  --mem-bg: #1a1a2e;
-  --mem-surface: #1e2140;
-  --mem-sidebar: #161830;
-  --mem-text: #e8e8f0;
-  --mem-text-secondary: #a0a0be;
-  --mem-text-tertiary: #6a6a8a;
+  --mem-bg: #121217;
+  --mem-surface: #171A24;
+  --mem-sidebar: #10121A;
+  --mem-text: #eef2f8;
+  --mem-text-secondary: #a7afbf;
+  --mem-text-tertiary: #6f788b;
   --mem-accent-warm: #d4884a;
   --mem-accent-amber: #e0a850;
-  --mem-accent-indigo: #7B7BE8;
-  --mem-accent-page: #7B7BE8;
+  --mem-accent-indigo: #5BA3E6;
+  --mem-accent-page: #5BA3E6;
   --mem-accent-sage: #8ab892;
   --mem-accent-glow: #e8c97a;
-  --mem-border: #2a2a4a;
-  --mem-hover: rgba(123, 123, 232, 0.05);
-  --mem-hover-strong: rgba(123, 123, 232, 0.09);
+  --mem-border: #2B3548;
+  --mem-hover: rgba(91, 163, 230, 0.06);
+  --mem-hover-strong: rgba(91, 163, 230, 0.11);
   --mem-confirm-bg: rgba(212, 136, 74, 0.12);
-  --mem-indigo-bg: rgba(108, 99, 255, 0.12);
-  --mem-distilled-border: rgba(123, 123, 232, 0.4);
-  --mem-distilled-bg: rgba(108, 99, 255, 0.06);
-  --mem-shimmer-color: rgba(108, 99, 255, 0.15);
+  --mem-indigo-bg: rgba(91, 163, 230, 0.12);
+  --mem-distilled-border: rgba(91, 163, 230, 0.4);
+  --mem-distilled-bg: rgba(91, 163, 230, 0.07);
+  --mem-shimmer-color: rgba(74, 200, 232, 0.16);
   /* Depth on dark: pronounced drop with a soft secondary halo so surfaces
      lift cleanly off the navy canvas without a grey cast. */
   --mem-shadow-toast:
