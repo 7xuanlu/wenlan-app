@@ -228,12 +228,12 @@ mod tests {
     // --- save_config / load_config I/O roundtrip ---
 
     #[test]
+    #[serial_test::serial]
     fn save_load_config_roundtrip() {
         let tmp = tempfile::tempdir().unwrap();
         // Point config_path() at our temp dir via the env override.
-        // serial_test is not used here because env mutation is process-wide;
-        // each call sets and then the test's scope owns the dir, and the dir
-        // is unique per invocation, so races are avoided.
+        // Env mutation is process-wide, so this must not race with other tests
+        // that read or write ORIGIN_DATA_DIR.
         std::env::set_var("ORIGIN_DATA_DIR", tmp.path());
         let mut config = Config {
             clipboard_enabled: true,
