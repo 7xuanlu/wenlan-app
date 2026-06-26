@@ -5,14 +5,14 @@
 - **App branch:** `codex/wenlan-app-convergence`
 - **Wenlan backend source:** `/Users/lucian/Repos/wenlan`
 - **Purpose:** prerequisite matrix before the full `origin-app` -> `wenlan-app` refactor run.
-- **Current status:** refreshed on 2026-06-26 after typed-client, sidecar, MCP bridge, Dock/app-activation, avatar path, neutral theme fallback, and Home pending-revision review work.
+- **Current status:** refreshed on 2026-06-26 after typed-client, sidecar, MCP bridge, Dock/app-activation, avatar path, neutral theme fallback, Home pending-revision review work, and daemon-backed setup status work.
 
 ## Evidence Snapshot
 
 | Evidence | Current value | Source |
 |---|---:|---|
-| Frontend `invoke(...)` calls | 122 | `docs/superpowers/refactor/wenlan-app-inventory/frontend-invokes.txt` |
-| Registered Tauri commands | 166 | `app/src/lib.rs` + `search-rs-outline.txt` |
+| Frontend `invoke(...)` calls | 123 | `docs/superpowers/refactor/wenlan-app-inventory/frontend-invokes.txt` |
+| Registered Tauri commands | 167 | `app/src/lib.rs` + `search-rs-outline.txt` |
 | Rust `origin_types` references | 0 | `app/src` residual scan |
 | Runtime identity references | 222 | `Origin`/`origin-server`/`origin-mcp`/`com.origin`/relay residual scan |
 | Stale taxonomy references | 239 | `concept`/`goal`/`domain` residual scan |
@@ -46,8 +46,8 @@ These block "caught up enough for full refactor run".
 | `/api/memory/contradiction/{source_id}/dismiss` | `ContradictionDismissResponse` | present command returns typed response | surface in review queue | optional if contradictions route absent |
 | `/api/memory/{source_id}/enrichment-status` | `EnrichmentStatusResponse` | missing direct wrapper; store response has partial enrichment string | add typed direct status wrapper and post-store polling/invalidation | optional per-memory route; show unknown state if absent |
 | `/api/sources` | daemon source routes | present via `wenlan_types::sources` in source modules plus remaining app-local Tauri DTOs | converge any remaining DTO shadows with current daemon/source types, keep source registry daemon-owned | required for source management |
-| `/api/config` | `ConfigResponse`, `UpdateConfigRequest` | switched to `wenlan-types`; app-local builder helper still wraps shared type | remove stale comments/helpers when shared defaults exist | required for settings |
-| `/api/setup/status` | daemon setup route | missing explicit wrapper/UI | add typed setup status; use for setup wizard instead of local-only inference | required for setup correctness |
+| `/api/config` | `ConfigResponse`, `UpdateConfigRequest` | switched to `wenlan-types`; wizard completion now updates `setup_completed` through daemon config; app-local builder helper still wraps shared type | converge remaining Settings/local toggles to daemon config or mark them app-local sensors; remove stale comments/helpers when shared defaults exist | required for settings |
+| `/api/setup/status` | daemon setup route | explicit app DTO, Tauri command, TS wrapper, and wizard gating are present | keep as setup source of truth; broaden settings diagnostics around mode/model/key state | required for setup correctness |
 | MCP config bridge | `app/src/mcp_config.rs`, setup wizard | writes `wenlan`; detects and preserves legacy `origin` entries | keep bridge behavior through at least one compatibility release | bridge release required |
 | Remote access bridge | `app/src/remote_access.rs` | Origin relay URL and `~/.config/origin-mcp` token/relay id | preserve old token/relay id; define relay endpoint strategy before URL rename | bridge release required |
 | Sidecar build contract | `app/tauri.conf.json`, `package.json`, `scripts/prepare-sidecars.sh` | uses `wenlan-server`/`wenlan-mcp`; `cargo build` passes | keep repeatable sidecar prep; next rename product/runtime identity separately | required before build verification |

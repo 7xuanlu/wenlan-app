@@ -275,42 +275,45 @@
 1517: export interface McpClient {
         field: name, client_type, config_path, detected, already_configured
 1525: export async function shouldShowWizard(): Promise<boolean> {
-1529: export async function getSetupCompleted(): Promise<boolean> {
-1533: export async function setSetupCompleted(completed: boolean): Promise<void> {
-1537: export async function detectMcpClients(): Promise<McpClient[]> {
-1541: export async function writeMcpConfig(clientType: string): Promise<void> {
-1547: export async function getWenlanMcpEntry(): Promise<{
-1556: export type MilestoneId =
-1564: export interface MilestoneRecord {
+1529: export interface SetupStatus {
+        field: setup_completed, mode, anthropic_key_configured, local_model_selected, local_model_loaded, local_model_cached
+1538: export async function getSetupStatus(): Promise<SetupStatus> {
+1542: export async function getSetupCompleted(): Promise<boolean> {
+1546: export async function setSetupCompleted(completed: boolean): Promise<void> {
+1550: export async function detectMcpClients(): Promise<McpClient[]> {
+1554: export async function writeMcpConfig(clientType: string): Promise<void> {
+1560: export async function getWenlanMcpEntry(): Promise<{
+1569: export type MilestoneId =
+1577: export interface MilestoneRecord {
         field: id, first_triggered_at, acknowledged_at, payload
-1571: export async function listOnboardingMilestones(): Promise<MilestoneRecord[]> {
-1575: export async function acknowledgeOnboardingMilestone(id: MilestoneId): Promise<void> {
-1579: export async function resetOnboardingMilestones(): Promise<void> {
-1585: export interface BriefingResponse {
+1584: export async function listOnboardingMilestones(): Promise<MilestoneRecord[]> {
+1588: export async function acknowledgeOnboardingMilestone(id: MilestoneId): Promise<void> {
+1592: export async function resetOnboardingMilestones(): Promise<void> {
+1598: export interface BriefingResponse {
         field: content, new_today, primary_agent, generated_at, is_stale
-1593: export interface ContradictionItem {
+1606: export interface ContradictionItem {
         field: id, new_content, existing_content, new_source_id, existing_source_id
-1601: export async function getBriefing(): Promise<BriefingResponse> {
-1605: export async function getPendingContradictions(): Promise<ContradictionItem[]> {
-1611: export interface NarrativeResponse {
+1614: export async function getBriefing(): Promise<BriefingResponse> {
+1618: export async function getPendingContradictions(): Promise<ContradictionItem[]> {
+1624: export interface NarrativeResponse {
         field: content, generated_at, is_stale, memory_count
-1618: export async function getProfileNarrative(): Promise<NarrativeResponse> {
-1622: export async function regenerateNarrative(): Promise<NarrativeResponse> {
-1628: export interface AgentActivityItem {
+1631: export async function getProfileNarrative(): Promise<NarrativeResponse> {
+1635: export async function regenerateNarrative(): Promise<NarrativeResponse> {
+1641: export interface AgentActivityItem {
         field: id, timestamp, agent_name, action, memory_ids, query, detail, memory_titles
-1639: export async function listAgentActivity(
-1653: export type RemoteAccessStatus =
-1659: export async function toggleRemoteAccess(
-1665: export async function getRemoteAccessStatus(): Promise<RemoteAccessStatus> {
-1669: export async function rotateRemoteToken(): Promise<string> {
-1674: export interface RemoteConnectionTest {
+1652: export async function listAgentActivity(
+1666: export type RemoteAccessStatus =
+1672: export async function toggleRemoteAccess(
+1678: export async function getRemoteAccessStatus(): Promise<RemoteAccessStatus> {
+1682: export async function rotateRemoteToken(): Promise<string> {
+1687: export interface RemoteConnectionTest {
         field: ok, latency_ms, error
-1682: export async function testRemoteMcpConnection(): Promise<RemoteConnectionTest> {
-1688: export async function getNurtureCards(limit?: number, domain?: string): Promise<MemoryItem[]> {
-1696: export async function setStability(sourceId: string, stability: "new" | "learned" | "confirmed"): Promise<void> {
-1700: export async function correctMemory(sourceId: string, correctionPrompt: string): Promise<string> {
-1706: export async function listDecisions(
-1717: export async function listDecisionDomains(): Promise<string[]> {
-1723: export async function isRunAtLoginEnabled(): Promise<boolean> {
-1727: export async function setRunAtLogin(enabled: boolean): Promise<void> {
-1731: export async function quitOriginFull(): Promise<void> {
+1695: export async function testRemoteMcpConnection(): Promise<RemoteConnectionTest> {
+1701: export async function getNurtureCards(limit?: number, domain?: string): Promise<MemoryItem[]> {
+1709: export async function setStability(sourceId: string, stability: "new" | "learned" | "confirmed"): Promise<void> {
+1713: export async function correctMemory(sourceId: string, correctionPrompt: string): Promise<string> {
+1719: export async function listDecisions(
+1730: export async function listDecisionDomains(): Promise<string[]> {
+1736: export async function isRunAtLoginEnabled(): Promise<boolean> {
+1740: export async function setRunAtLogin(enabled: boolean): Promise<void> {
+1744: export async function quitOriginFull(): Promise<void> {

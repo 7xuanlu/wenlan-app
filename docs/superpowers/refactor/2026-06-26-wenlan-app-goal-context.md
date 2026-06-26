@@ -31,7 +31,7 @@ The rebuilt debug app bundle launches from:
 Current live process evidence:
 
 ```text
-PID 13170
+PID 45700
 ```
 
 The bundle is still named `Origin.app`; product/runtime rename remains a future migration step. Do not treat this as a failed repo rename.
@@ -40,8 +40,8 @@ Current structural inventory from `bash scripts/refactor/inventory.sh`:
 
 | Surface | Count |
 |---|---:|
-| frontend `invoke(...)` calls | 122 |
-| registered Tauri commands | 166 |
+| frontend `invoke(...)` calls | 123 |
+| registered Tauri commands | 167 |
 | Rust `origin_types` references | 0 |
 | runtime identity references | 222 |
 | stale taxonomy references | 239 |
@@ -51,8 +51,10 @@ Current build evidence:
 
 ```text
 cargo build -> Finished `dev` profile [unoptimized + debuginfo]
+cargo test -p origin-app --lib -> 111 passed
 pnpm build -> passed, with existing Vite chunk/dynamic-import warnings
-pnpm vitest run src/themeTokens.test.ts src/components/memory/HomePage.redesign.test.ts -> 12 passed, 1 skipped
+pnpm test -> 329 passed, 1 skipped
+GET /api/setup/status -> {"setup_completed":true,"mode":"basic-memory","anthropic_key_configured":false,"local_model_selected":null,"local_model_loaded":null,"local_model_cached":false}
 ```
 
 Tauri debug bundle generation reaches a built `.app`, then exits at updater signing when `TAURI_SIGNING_PRIVATE_KEY` is unset. That is expected local debug behavior unless signing secrets are present.
@@ -72,6 +74,7 @@ Already landed in this branch history:
 | revision signal bridge | `StoreMemoryResponse` preserves `triggered_revisions` and `auto_superseded`; revision/contradiction mutation wrappers return typed daemon responses; `listPendingRevisions` wraps `/api/memory/pending-revisions` |
 | neutral theme baseline | failed palette experiment replaced with conservative graphite-gray tokens; revisit visual design later |
 | pending revision Home review lane | `listPendingRevisions` feeds Worth-a-glance cards; Accept/Dismiss call typed daemon wrappers and invalidate relevant caches |
+| setup status bridge | `getSetupStatus` wraps `/api/setup/status`; wizard gating and completion now use daemon-backed setup state instead of app-local config writes |
 
 ## Tool Boundaries
 
@@ -103,7 +106,7 @@ Current daemon/API parity gaps from read-only subagent exploration:
 
 | Gap | Priority | Action |
 |---|---|---|
-| setup/config source of truth is split | P0 | make Settings/Wizard use daemon `get_config`, `update_config`, `setup_status`, and model/setup wrappers; reduce local config writes to app-local sensors only |
+| setup/config source of truth is split | P0 | setup status and wizard completion now use daemon `setup_status`/`update_config`; remaining work is converging Settings/local toggles to daemon config or explicitly app-local sensors |
 | store/revision signals need UI surfacing | P0 | Rust and TypeScript wrappers now preserve `triggered_revisions` and `auto_superseded`; Home now surfaces pending revisions; post-store notification surfacing still remains |
 | revision/contradiction accept/dismiss need consumer handling | P0 | wrappers return typed daemon responses; pending-revision Accept/Dismiss now consumes them through Home cache invalidation |
 | pending revisions need central UI | P0 | Home Worth-a-glance now lists pending revisions with Accept/Dismiss; expand later only if volume requires a dedicated review screen |

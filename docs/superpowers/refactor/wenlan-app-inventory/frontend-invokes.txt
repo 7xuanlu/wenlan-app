@@ -109,15 +109,15 @@
 /Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1448:    label: label ?? null,
 /Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1449:  });
 /Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1504:  return invoke("set_avatar", { sourcePath });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1534:  return invoke("set_setup_completed", { completed });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1542:  return invoke("write_mcp_config", { clientType });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1576:  return invoke("acknowledge_onboarding_milestone", { id });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1644:  return invoke("list_agent_activity", {
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1645:    limit: limit ?? 50,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1646:    agentName: agentName ?? null,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1647:    since: since ?? null,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1648:  });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1697:  return invoke("set_stability_cmd", { sourceId, stability });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1701:  return invoke("correct_memory_cmd", { sourceId, correctionPrompt });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1718:  return invoke("list_decision_domains_cmd", {});
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1728:  return invoke("set_run_at_login", { enabled });
+/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1547:  return invoke("set_setup_completed", { completed });
+/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1555:  return invoke("write_mcp_config", { clientType });
+/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1589:  return invoke("acknowledge_onboarding_milestone", { id });
+/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1657:  return invoke("list_agent_activity", {
+/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1658:    limit: limit ?? 50,
+/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1659:    agentName: agentName ?? null,
+/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1660:    since: since ?? null,
+/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1661:  });
+/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1710:  return invoke("set_stability_cmd", { sourceId, stability });
+/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1714:  return invoke("correct_memory_cmd", { sourceId, correctionPrompt });
+/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1731:  return invoke("list_decision_domains_cmd", {});
+/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1741:  return invoke("set_run_at_login", { enabled });

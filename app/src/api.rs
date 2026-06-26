@@ -16,6 +16,16 @@ pub struct WenlanClient {
     base_url: String,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct SetupStatusResponse {
+    pub setup_completed: bool,
+    pub mode: String,
+    pub anthropic_key_configured: bool,
+    pub local_model_selected: Option<String>,
+    pub local_model_loaded: Option<String>,
+    pub local_model_cached: bool,
+}
+
 impl Default for WenlanClient {
     fn default() -> Self {
         Self::new()
@@ -320,6 +330,18 @@ impl WenlanClient {
         self.put_json("/api/config", &req).await
     }
 
+    /// GET /api/setup/status — return daemon-owned setup/model/key state.
+    pub async fn get_setup_status(&self) -> Result<SetupStatusResponse, String> {
+        self.get_json("/api/setup/status").await
+    }
+
+    /// Mark setup complete/incomplete through the daemon config endpoint.
+    pub async fn set_setup_completed(&self, completed: bool) -> Result<(), String> {
+        self.update_config(empty_update().with_setup_completed(completed))
+            .await
+            .map(|_| ())
+    }
+
     pub async fn get_skip_apps(&self) -> Result<Vec<String>, String> {
         Ok(self.get_config().await?.skip_apps)
     }
@@ -364,6 +386,7 @@ fn empty_update() -> wenlan_types::requests::UpdateConfigRequest {
 trait UpdateConfigBuilder {
     fn with_skip_apps(self, v: Vec<String>) -> Self;
     fn with_skip_title_patterns(self, v: Vec<String>) -> Self;
+    fn with_setup_completed(self, v: bool) -> Self;
 }
 
 impl UpdateConfigBuilder for wenlan_types::requests::UpdateConfigRequest {
@@ -374,5 +397,43 @@ impl UpdateConfigBuilder for wenlan_types::requests::UpdateConfigRequest {
     fn with_skip_title_patterns(mut self, v: Vec<String>) -> Self {
         self.skip_title_patterns = Some(v);
         self
+    }
+    fn with_setup_completed(mut self, v: bool) -> Self {
+        self.setup_completed = Some(v);
+        self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn update_config_builder_can_set_setup_completed() {
+        let req = empty_update().with_setup_completed(true);
+
+        assert_eq!(req.setup_completed, Some(true));
+        assert_eq!(req.skip_apps, None);
+        assert_eq!(req.skip_title_patterns, None);
+    }
+
+    #[test]
+    fn setup_status_response_deserializes_daemon_payload() {
+        let status: SetupStatusResponse = serde_json::from_value(serde_json::json!({
+            "setup_completed": false,
+            "mode": "basic-memory",
+            "anthropic_key_configured": false,
+            "local_model_selected": null,
+            "local_model_loaded": null,
+            "local_model_cached": false
+        }))
+        .expect("daemon setup status payload should deserialize");
+
+        assert!(!status.setup_completed);
+        assert_eq!(status.mode, "basic-memory");
+        assert!(!status.anthropic_key_configured);
+        assert_eq!(status.local_model_selected, None);
+        assert_eq!(status.local_model_loaded, None);
+        assert!(!status.local_model_cached);
     }
 }

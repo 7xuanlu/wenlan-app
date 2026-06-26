@@ -25,172 +25,173 @@
  341: pub async fn set_skip_title_patterns(
  350: pub async fn get_private_browsing_detection() -> Result<bool, String>
  356: pub async fn set_private_browsing_detection(enabled: bool) -> Result<(), String>
- 363: pub async fn get_setup_completed() -> Result<bool, String>
- 369: pub async fn set_setup_completed(completed: bool) -> Result<(), String>
- 376: pub async fn should_show_wizard() -> Result<bool, String>
- 382: pub async fn detect_mcp_clients_cmd() -> Result<Vec<crate::mcp_config::McpClient>, String>
- 387: pub async fn write_mcp_config(client_type: String) -> Result<(), String>
- 400: pub async fn get_wenlan_mcp_entry() -> Result<serde_json::Value, String>
- 405: pub async fn get_screen_capture_enabled(state: tauri::State<'_, State>) -> Result<bool, String>
- 410: pub async fn set_screen_capture_enabled(
- 427: pub async fn list_activities(
- 435: pub async fn rebuild_activities(state: tauri::State<'_, State>) -> Result<usize, String>
- 443: pub async fn get_capture_stats(
- 457: pub async fn trigger_manual_capture(state: tauri::State<'_, State>) -> Result<(), String>
- 470: pub async fn toggle_remote_access(
- 497: pub async fn get_remote_access_status(
- 506: pub struct RemoteConnectionTest
+ 363: pub async fn get_setup_status(
+ 374: pub async fn get_setup_completed(state: tauri::State<'_, State>) -> Result<bool, String>
+ 383: pub async fn set_setup_completed(
+ 395: pub async fn should_show_wizard(state: tauri::State<'_, State>) -> Result<bool, String>
+ 404: pub async fn detect_mcp_clients_cmd() -> Result<Vec<crate::mcp_config::McpClient>, String>
+ 409: pub async fn write_mcp_config(client_type: String) -> Result<(), String>
+ 422: pub async fn get_wenlan_mcp_entry() -> Result<serde_json::Value, String>
+ 427: pub async fn get_screen_capture_enabled(state: tauri::State<'_, State>) -> Result<bool, String>
+ 432: pub async fn set_screen_capture_enabled(
+ 449: pub async fn list_activities(
+ 457: pub async fn rebuild_activities(state: tauri::State<'_, State>) -> Result<usize, String>
+ 465: pub async fn get_capture_stats(
+ 479: pub async fn trigger_manual_capture(state: tauri::State<'_, State>) -> Result<(), String>
+ 492: pub async fn toggle_remote_access(
+ 519: pub async fn get_remote_access_status(
+ 528: pub struct RemoteConnectionTest
         field: ok, latency_ms, error
- 513: pub async fn test_remote_mcp_connection(
- 601: pub async fn rotate_remote_token(
- 611: pub async fn open_file(path: String) -> Result<(), String>
- 622: pub async fn get_index_status(state: tauri::State<'_, State>) -> Result<IndexStatus, String>
- 628: pub async fn list_watch_paths(state: tauri::State<'_, State>) -> Result<Vec<String>, String>
- 638: pub async fn add_watch_path(
- 717: pub async fn remove_watch_path(
- 760: pub async fn reindex(state: tauri::State<'_, State>) -> Result<(), String>
- 771: pub async fn connect_source(
- 790: pub async fn disconnect_source(
- 809: pub async fn sync_source(
- 823: pub async fn list_sources(state: tauri::State<'_, State>) -> Result<Vec<SourceStatus>, String>
- 830: async fn save_current_config(
- 856: pub async fn search(
- 874: pub async fn search_memory(
- 897: pub async fn store_memory(
- 928: pub async fn confirm_memory(
- 943: pub async fn set_stability_cmd(
- 968: pub async fn list_memories(
- 985: pub async fn delete_memory(
- 998: pub async fn reclassify_memory_cmd(
-1015: pub async fn list_memories_cmd(
-1077: pub async fn get_memory_detail(
-1089: pub async fn list_memories_by_ids(
-1105: pub async fn get_memory_stats_cmd(state: tauri::State<'_, State>) -> Result<MemoryStats, String>
-1112: pub async fn get_home_stats(state: tauri::State<'_, State>) -> Result<HomeStats, String>
-1118: pub async fn update_memory_cmd(
-1141: pub async fn get_version_chain_cmd(
-1156: pub async fn list_indexed_files(
-1165: pub async fn get_chunks(
-1179: pub async fn update_chunk(
-1194: pub async fn delete_file_chunks(
-1208: pub async fn delete_by_time_range(
-1228: pub struct BulkDeleteItem
+ 535: pub async fn test_remote_mcp_connection(
+ 623: pub async fn rotate_remote_token(
+ 633: pub async fn open_file(path: String) -> Result<(), String>
+ 644: pub async fn get_index_status(state: tauri::State<'_, State>) -> Result<IndexStatus, String>
+ 650: pub async fn list_watch_paths(state: tauri::State<'_, State>) -> Result<Vec<String>, String>
+ 660: pub async fn add_watch_path(
+ 739: pub async fn remove_watch_path(
+ 782: pub async fn reindex(state: tauri::State<'_, State>) -> Result<(), String>
+ 793: pub async fn connect_source(
+ 812: pub async fn disconnect_source(
+ 831: pub async fn sync_source(
+ 845: pub async fn list_sources(state: tauri::State<'_, State>) -> Result<Vec<SourceStatus>, String>
+ 852: async fn save_current_config(
+ 878: pub async fn search(
+ 896: pub async fn search_memory(
+ 919: pub async fn store_memory(
+ 950: pub async fn confirm_memory(
+ 965: pub async fn set_stability_cmd(
+ 990: pub async fn list_memories(
+1007: pub async fn delete_memory(
+1020: pub async fn reclassify_memory_cmd(
+1037: pub async fn list_memories_cmd(
+1099: pub async fn get_memory_detail(
+1111: pub async fn list_memories_by_ids(
+1127: pub async fn get_memory_stats_cmd(state: tauri::State<'_, State>) -> Result<MemoryStats, String>
+1134: pub async fn get_home_stats(state: tauri::State<'_, State>) -> Result<HomeStats, String>
+1140: pub async fn update_memory_cmd(
+1163: pub async fn get_version_chain_cmd(
+1178: pub async fn list_indexed_files(
+1187: pub async fn get_chunks(
+1201: pub async fn update_chunk(
+1216: pub async fn delete_file_chunks(
+1230: pub async fn delete_by_time_range(
+1250: pub struct BulkDeleteItem
         field: source, source_id
-1234: pub async fn delete_bulk(
-1256: pub async fn quick_capture(
-1303: pub async fn ingest_clipboard(
-1346: pub async fn import_memories_cmd(
-1370: pub async fn import_chat_export(
-1379: pub async fn list_pending_imports(
-1389: pub async fn list_onboarding_milestones(
-1403: pub async fn acknowledge_onboarding_milestone(
-1415: pub async fn reset_onboarding_milestones(state: tauri::State<'_, State>) -> Result<(), String>
-1424: pub async fn save_temp_file(bytes: Vec<u8>, filename: String) -> Result<String, String>
-1446: pub async fn create_entity_cmd(
-1466: pub async fn list_entities_cmd(
-1484: pub async fn search_entities_cmd(
-1502: pub async fn get_entity_detail_cmd(
-1513: pub async fn update_observation_cmd(
-1531: pub async fn delete_observation_cmd(
-1544: pub async fn delete_entity_cmd(
-1557: pub async fn confirm_entity_cmd(
-1572: pub async fn confirm_observation_cmd(
-1590: pub async fn add_observation_cmd(
-1612: pub async fn get_profile(state: tauri::State<'_, State>) -> Result<Option<Profile>, String>
-1634: pub async fn update_profile(
-1656: pub async fn list_agents(state: tauri::State<'_, State>) -> Result<Vec<AgentConnection>, String>
-1678: pub async fn get_agent(
-1706: pub async fn update_agent(
-1731: pub async fn delete_agent(state: tauri::State<'_, State>, name: String) -> Result<(), String>
-1742: fn avatar_storage_dir() -> PathBuf
-1754: pub async fn set_avatar(
-1791: pub async fn get_avatar_data_url(state: tauri::State<'_, State>) -> Result<Option<String>, String>
-1826: pub async fn remove_avatar(state: tauri::State<'_, State>) -> Result<(), String>
-1855: pub async fn pin_memory(state: tauri::State<'_, State>, source_id: String) -> Result<(), String>
-1865: pub async fn unpin_memory(state: tauri::State<'_, State>, source_id: String) -> Result<(), String>
-1875: pub async fn list_pinned_memories(
-1886: pub async fn accept_pending_revision(
-1897: pub async fn dismiss_pending_revision(
-1910: pub async fn dismiss_contradiction(
-1921: pub async fn get_pending_revision(
-1934: pub async fn list_pending_revisions(
-1949: pub async fn get_briefing(state: tauri::State<'_, State>) -> Result<BriefingResponse, String>
-1956: pub async fn get_pending_contradictions(
-1963: pub async fn get_profile_narrative(
-1972: pub async fn regenerate_narrative(
-1986: pub async fn list_agent_activity(
-2007: pub struct EntitySuggestion
+1256: pub async fn delete_bulk(
+1278: pub async fn quick_capture(
+1325: pub async fn ingest_clipboard(
+1368: pub async fn import_memories_cmd(
+1392: pub async fn import_chat_export(
+1401: pub async fn list_pending_imports(
+1411: pub async fn list_onboarding_milestones(
+1425: pub async fn acknowledge_onboarding_milestone(
+1437: pub async fn reset_onboarding_milestones(state: tauri::State<'_, State>) -> Result<(), String>
+1446: pub async fn save_temp_file(bytes: Vec<u8>, filename: String) -> Result<String, String>
+1468: pub async fn create_entity_cmd(
+1488: pub async fn list_entities_cmd(
+1506: pub async fn search_entities_cmd(
+1524: pub async fn get_entity_detail_cmd(
+1535: pub async fn update_observation_cmd(
+1553: pub async fn delete_observation_cmd(
+1566: pub async fn delete_entity_cmd(
+1579: pub async fn confirm_entity_cmd(
+1594: pub async fn confirm_observation_cmd(
+1612: pub async fn add_observation_cmd(
+1634: pub async fn get_profile(state: tauri::State<'_, State>) -> Result<Option<Profile>, String>
+1656: pub async fn update_profile(
+1678: pub async fn list_agents(state: tauri::State<'_, State>) -> Result<Vec<AgentConnection>, String>
+1700: pub async fn get_agent(
+1728: pub async fn update_agent(
+1753: pub async fn delete_agent(state: tauri::State<'_, State>, name: String) -> Result<(), String>
+1764: fn avatar_storage_dir() -> PathBuf
+1776: pub async fn set_avatar(
+1813: pub async fn get_avatar_data_url(state: tauri::State<'_, State>) -> Result<Option<String>, String>
+1848: pub async fn remove_avatar(state: tauri::State<'_, State>) -> Result<(), String>
+1877: pub async fn pin_memory(state: tauri::State<'_, State>, source_id: String) -> Result<(), String>
+1887: pub async fn unpin_memory(state: tauri::State<'_, State>, source_id: String) -> Result<(), String>
+1897: pub async fn list_pinned_memories(
+1908: pub async fn accept_pending_revision(
+1919: pub async fn dismiss_pending_revision(
+1932: pub async fn dismiss_contradiction(
+1943: pub async fn get_pending_revision(
+1956: pub async fn list_pending_revisions(
+1971: pub async fn get_briefing(state: tauri::State<'_, State>) -> Result<BriefingResponse, String>
+1978: pub async fn get_pending_contradictions(
+1985: pub async fn get_profile_narrative(
+1994: pub async fn regenerate_narrative(
+2008: pub async fn list_agent_activity(
+2029: pub struct EntitySuggestion
         field: id, entity_name, source_ids, confidence, created_at
-2016: pub async fn get_entity_suggestions_cmd(
-2035: pub async fn approve_entity_suggestion_cmd(
-2046: pub async fn dismiss_entity_suggestion_cmd(
-2061: pub async fn list_spaces(state: tauri::State<'_, State>) -> Result<Vec<Space>, String>
-2067: pub async fn get_space(
-2078: pub async fn create_space(
-2089: pub async fn update_space(
-2106: pub async fn delete_space(
-2120: pub async fn confirm_space(state: tauri::State<'_, State>, name: String) -> Result<(), String>
-2130: pub async fn reorder_space(
-2142: pub async fn toggle_space_starred(
-2159: pub async fn set_document_space(
-2177: pub async fn add_space(
-2193: pub async fn remove_space(state: tauri::State<'_, State>, space_id: String) -> Result<(), String>
-2203: pub async fn rename_space(
-2221: pub async fn pin_space(state: tauri::State<'_, State>, space_id: String) -> Result<(), String>
-2233: pub struct TagData
+2038: pub async fn get_entity_suggestions_cmd(
+2057: pub async fn approve_entity_suggestion_cmd(
+2068: pub async fn dismiss_entity_suggestion_cmd(
+2083: pub async fn list_spaces(state: tauri::State<'_, State>) -> Result<Vec<Space>, String>
+2089: pub async fn get_space(
+2100: pub async fn create_space(
+2111: pub async fn update_space(
+2128: pub async fn delete_space(
+2142: pub async fn confirm_space(state: tauri::State<'_, State>, name: String) -> Result<(), String>
+2152: pub async fn reorder_space(
+2164: pub async fn toggle_space_starred(
+2181: pub async fn set_document_space(
+2199: pub async fn add_space(
+2215: pub async fn remove_space(state: tauri::State<'_, State>, space_id: String) -> Result<(), String>
+2225: pub async fn rename_space(
+2243: pub async fn pin_space(state: tauri::State<'_, State>, space_id: String) -> Result<(), String>
+2255: pub struct TagData
         field: tags, document_tags, categories, document_categories
-2241: pub async fn list_all_tags(_state: tauri::State<'_, State>) -> Result<TagData, String>
-2252: pub async fn set_document_tags(
-2267: pub async fn delete_tag(state: tauri::State<'_, State>, name: String) -> Result<(), String>
-2275: pub async fn suggest_tags(
-2321: fn percent_encode(s: &str) -> String
-2336: pub async fn get_working_memory(
-2351: pub async fn get_session_snapshots(
-2361: pub async fn get_snapshot_captures(
-2372: pub async fn get_snapshot_captures_with_content(
-2386: pub async fn delete_snapshot(
-2401: pub async fn get_nurture_cards_cmd(
-2412: pub async fn correct_memory_cmd(
-2434: struct GetPageWire
+2263: pub async fn list_all_tags(_state: tauri::State<'_, State>) -> Result<TagData, String>
+2274: pub async fn set_document_tags(
+2289: pub async fn delete_tag(state: tauri::State<'_, State>, name: String) -> Result<(), String>
+2297: pub async fn suggest_tags(
+2343: fn percent_encode(s: &str) -> String
+2358: pub async fn get_working_memory(
+2373: pub async fn get_session_snapshots(
+2383: pub async fn get_snapshot_captures(
+2394: pub async fn get_snapshot_captures_with_content(
+2408: pub async fn delete_snapshot(
+2423: pub async fn get_nurture_cards_cmd(
+2434: pub async fn correct_memory_cmd(
+2456: struct GetPageWire
         field: page
-2439: pub async fn get_page(state: tauri::State<'_, State>, id: String) -> Result<Option<Page>, String>
-2463: pub async fn update_page(
-2481: pub async fn archive_page(state: tauri::State<'_, State>, id: String) -> Result<(), String>
-2491: pub async fn delete_page(state: tauri::State<'_, State>, id: String) -> Result<(), String>
-2501: struct ListPagesWire
+2461: pub async fn get_page(state: tauri::State<'_, State>, id: String) -> Result<Option<Page>, String>
+2485: pub async fn update_page(
+2503: pub async fn archive_page(state: tauri::State<'_, State>, id: String) -> Result<(), String>
+2513: pub async fn delete_page(state: tauri::State<'_, State>, id: String) -> Result<(), String>
+2523: struct ListPagesWire
         field: pages
-2506: pub async fn list_pages(
-2538: pub async fn search_pages(
-2554: pub async fn get_page_sources(
-2563: pub async fn export_pages_to_obsidian(
-2577: pub async fn export_page_to_obsidian(
-2590: pub async fn get_knowledge_path(state: tauri::State<'_, State>) -> Result<String, String>
-2597: pub async fn count_knowledge_files(state: tauri::State<'_, State>) -> Result<u64, String>
-2606: pub async fn get_rejection_log(
-2618: pub async fn list_decisions_cmd(
-2633: pub async fn list_decision_domains_cmd(
-2647: pub async fn add_source(
-2726: pub async fn remove_source(state: tauri::State<'_, State>, id: String) -> Result<(), String>
-2747: pub async fn list_registered_sources() -> Result<Vec<crate::sources::Source>, String>
-2753: pub async fn sync_registered_source(
-2783: pub async fn get_model_choice() -> Result<(Option<String>, Option<String>), String>
-2789: pub async fn set_model_choice(
-2802: pub async fn get_system_info() -> Result<wenlan_types::system_info::SystemInfo, String>
-2807: pub async fn get_external_llm() -> Result<(Option<String>, Option<String>), String>
-2813: pub async fn set_external_llm(
-2826: pub async fn test_external_llm(
-2840: pub async fn get_on_device_model(
-2856: pub async fn download_on_device_model(
-2875: pub async fn list_recent_retrievals(
-2887: pub async fn list_recent_changes(
-2899: pub async fn list_recent_memories(
-2914: pub async fn list_unconfirmed_memories(
-2926: pub async fn list_recent_pages(
-2941: pub async fn list_recent_relations(
-2956: pub async fn is_run_at_login_enabled() -> Result<bool, String>
-2962: pub async fn set_run_at_login(enabled: bool) -> Result<(), String>
-2970: pub async fn quit_origin_full(app_handle: tauri::AppHandle) -> Result<(), String>
-2977: mod avatar_path_tests
+2528: pub async fn list_pages(
+2560: pub async fn search_pages(
+2576: pub async fn get_page_sources(
+2585: pub async fn export_pages_to_obsidian(
+2599: pub async fn export_page_to_obsidian(
+2612: pub async fn get_knowledge_path(state: tauri::State<'_, State>) -> Result<String, String>
+2619: pub async fn count_knowledge_files(state: tauri::State<'_, State>) -> Result<u64, String>
+2628: pub async fn get_rejection_log(
+2640: pub async fn list_decisions_cmd(
+2655: pub async fn list_decision_domains_cmd(
+2669: pub async fn add_source(
+2748: pub async fn remove_source(state: tauri::State<'_, State>, id: String) -> Result<(), String>
+2769: pub async fn list_registered_sources() -> Result<Vec<crate::sources::Source>, String>
+2775: pub async fn sync_registered_source(
+2805: pub async fn get_model_choice() -> Result<(Option<String>, Option<String>), String>
+2811: pub async fn set_model_choice(
+2824: pub async fn get_system_info() -> Result<wenlan_types::system_info::SystemInfo, String>
+2829: pub async fn get_external_llm() -> Result<(Option<String>, Option<String>), String>
+2835: pub async fn set_external_llm(
+2848: pub async fn test_external_llm(
+2862: pub async fn get_on_device_model(
+2878: pub async fn download_on_device_model(
+2897: pub async fn list_recent_retrievals(
+2909: pub async fn list_recent_changes(
+2921: pub async fn list_recent_memories(
+2936: pub async fn list_unconfirmed_memories(
+2948: pub async fn list_recent_pages(
+2963: pub async fn list_recent_relations(
+2978: pub async fn is_run_at_login_enabled() -> Result<bool, String>
+2984: pub async fn set_run_at_login(enabled: bool) -> Result<(), String>
+2992: pub async fn quit_origin_full(app_handle: tauri::AppHandle) -> Result<(), String>
+2999: mod avatar_path_tests
         function: restore_env, avatar_storage_dir_prefers_wenlan_data_dir, avatar_storage_dir_falls_back_to_legacy_origin_data_dir
-3022: mod revision_response_tests
+3044: mod revision_response_tests
         function: store_memory_response_preserves_revision_signals, store_memory_response_defaults_revision_signals_for_old_daemons

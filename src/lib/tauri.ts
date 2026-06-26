@@ -1526,6 +1526,19 @@ export async function shouldShowWizard(): Promise<boolean> {
   return invoke("should_show_wizard");
 }
 
+export interface SetupStatus {
+  setup_completed: boolean;
+  mode: "basic-memory" | "local-model" | "anthropic-key" | string;
+  anthropic_key_configured: boolean;
+  local_model_selected: string | null;
+  local_model_loaded: string | null;
+  local_model_cached: boolean;
+}
+
+export async function getSetupStatus(): Promise<SetupStatus> {
+  return invoke("get_setup_status");
+}
+
 export async function getSetupCompleted(): Promise<boolean> {
   return invoke("get_setup_completed");
 }

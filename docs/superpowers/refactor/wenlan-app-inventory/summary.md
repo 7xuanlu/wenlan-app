@@ -3,8 +3,8 @@
 - branch: codex/wenlan-app-convergence
 
 ## Counts
-- frontend invoke calls: 122
-- registered Tauri commands: 166
+- frontend invoke calls: 123
+- registered Tauri commands: 167
 - origin_types references in Rust app code: 0
 - runtime identity references: 222
 - stale taxonomy references: 239

@@ -360,22 +360,44 @@ pub async fn set_private_browsing_detection(enabled: bool) -> Result<(), String>
 }
 
 #[tauri::command]
-pub async fn get_setup_completed() -> Result<bool, String> {
-    let cfg = crate::config::load_config();
-    Ok(cfg.setup_completed)
+pub async fn get_setup_status(
+    state: tauri::State<'_, State>,
+) -> Result<crate::api::SetupStatusResponse, String> {
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+    client.get_setup_status().await
 }
 
 #[tauri::command]
-pub async fn set_setup_completed(completed: bool) -> Result<(), String> {
-    let mut cfg = crate::config::load_config();
-    cfg.setup_completed = completed;
-    crate::config::save_config(&cfg).map_err(|e| e.to_string())
+pub async fn get_setup_completed(state: tauri::State<'_, State>) -> Result<bool, String> {
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+    Ok(client.get_setup_status().await?.setup_completed)
 }
 
 #[tauri::command]
-pub async fn should_show_wizard() -> Result<bool, String> {
-    let cfg = crate::config::load_config();
-    Ok(!cfg.setup_completed)
+pub async fn set_setup_completed(
+    state: tauri::State<'_, State>,
+    completed: bool,
+) -> Result<(), String> {
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+    client.set_setup_completed(completed).await
+}
+
+#[tauri::command]
+pub async fn should_show_wizard(state: tauri::State<'_, State>) -> Result<bool, String> {
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+    Ok(!client.get_setup_status().await?.setup_completed)
 }
 
 #[tauri::command]

@@ -866,6 +866,7 @@ pub fn run() {
             // Activity feed command
             search::list_agent_activity,
             // Setup wizard commands
+            search::get_setup_status,
             search::get_setup_completed,
             search::set_setup_completed,
             search::should_show_wizard,
