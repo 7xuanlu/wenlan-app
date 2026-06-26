@@ -12,6 +12,7 @@ BACKEND_DIR="$(cd "$BACKEND_DIR" && pwd)"
 
 PROFILE="debug"
 FORCE_BUILD=false
+PRINT_PATHS=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --release)
@@ -20,8 +21,11 @@ while [[ $# -gt 0 ]]; do
     --force-build)
       FORCE_BUILD=true
       ;;
+    --print-paths)
+      PRINT_PATHS=true
+      ;;
     *)
-      echo "usage: $0 [--release] [--force-build]" >&2
+      echo "usage: $0 [--release] [--force-build] [--print-paths]" >&2
       exit 2
       ;;
   esac
@@ -31,6 +35,7 @@ done
 HOST_TRIPLE="$(rustc -vV | awk '/^host:/ { print $2 }')"
 TRIPLE="${TARGET_TRIPLE:-$HOST_TRIPLE}"
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$BACKEND_DIR/target}"
+BIN_DIR="$REPO_ROOT/app/binaries"
 if [[ -n "${TARGET_TRIPLE:-}" ]]; then
   SOURCE_DIR="$CARGO_TARGET_DIR/$TRIPLE/$PROFILE"
 else
@@ -42,6 +47,18 @@ case "$TRIPLE" in
 esac
 SERVER_SRC="$SOURCE_DIR/wenlan-server$EXE_SUFFIX"
 MCP_SRC="$SOURCE_DIR/wenlan-mcp$EXE_SUFFIX"
+SERVER_DEST="$BIN_DIR/wenlan-server-$TRIPLE$EXE_SUFFIX"
+MCP_DEST="$BIN_DIR/wenlan-mcp-$TRIPLE$EXE_SUFFIX"
+CLOUDFLARED_DEST="$BIN_DIR/cloudflared-$TRIPLE$EXE_SUFFIX"
+
+if [[ "$PRINT_PATHS" == "true" ]]; then
+  printf 'server_src=%s\n' "$SERVER_SRC"
+  printf 'mcp_src=%s\n' "$MCP_SRC"
+  printf 'server_dest=%s\n' "$SERVER_DEST"
+  printf 'mcp_dest=%s\n' "$MCP_DEST"
+  printf 'cloudflared_dest=%s\n' "$CLOUDFLARED_DEST"
+  exit 0
+fi
 
 if [[ "$FORCE_BUILD" == "true" || ! -x "$SERVER_SRC" || ! -x "$MCP_SRC" ]]; then
   if [[ -n "${TARGET_TRIPLE:-}" && "$PROFILE" == "release" ]]; then
@@ -57,14 +74,13 @@ else
   echo "Using existing backend sidecars from $SOURCE_DIR"
 fi
 
-BIN_DIR="$REPO_ROOT/app/binaries"
 mkdir -p "$BIN_DIR"
 
-install -m 755 "$SERVER_SRC" "$BIN_DIR/wenlan-server-$TRIPLE"
-install -m 755 "$MCP_SRC" "$BIN_DIR/wenlan-mcp-$TRIPLE"
+install -m 755 "$SERVER_SRC" "$SERVER_DEST"
+install -m 755 "$MCP_SRC" "$MCP_DEST"
 
 if command -v cloudflared >/dev/null 2>&1; then
-  install -m 755 "$(command -v cloudflared)" "$BIN_DIR/cloudflared-$TRIPLE"
+  install -m 755 "$(command -v cloudflared)" "$CLOUDFLARED_DEST"
 else
   echo "warning: cloudflared not found in PATH; raw Tauri builds may still fail on binaries/cloudflared-$TRIPLE" >&2
 fi
