@@ -20,14 +20,14 @@ function rootToken(name: string): string | null {
 
 describe("dark theme brand tokens", () => {
   it("uses the logo/social-preview navy palette instead of purple surfaces", () => {
-    expect(rootToken("--bg-primary")).toBe("#121217");
-    expect(rootToken("--bg-secondary")).toBe("#171A24");
-    expect(rootToken("--border")).toBe("#2B3548");
+    expect(rootToken("--bg-primary")).toBe("#1A1A2E");
+    expect(rootToken("--bg-secondary")).toBe("#202338");
+    expect(rootToken("--border")).toBe("#313A52");
 
-    expect(darkToken("--mem-bg")).toBe("#121217");
-    expect(darkToken("--mem-surface")).toBe("#171A24");
-    expect(darkToken("--mem-sidebar")).toBe("#10121A");
-    expect(darkToken("--mem-border")).toBe("#2B3548");
+    expect(darkToken("--mem-bg")).toBe("#1A1A2E");
+    expect(darkToken("--mem-surface")).toBe("#202338");
+    expect(darkToken("--mem-sidebar")).toBe("#16182B");
+    expect(darkToken("--mem-border")).toBe("#313A52");
     expect(darkToken("--mem-accent-indigo")).toBe("#5BA3E6");
   });
 });
