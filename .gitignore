@@ -23,6 +23,7 @@ app/dist/
 # Build artifacts
 *.tsbuildinfo
 .codegraph/
+.worktrees/
 
 # Editor
 .idea/
