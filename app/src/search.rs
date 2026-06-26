@@ -2632,6 +2632,24 @@ pub async fn get_page_sources(
 }
 
 #[tauri::command]
+pub async fn get_page_links(
+    state: tauri::State<'_, State>,
+    page_id: String,
+) -> Result<responses::PageLinksResponse, String> {
+    let client = { state.read().await.client.clone() };
+    client.get_page_links(&page_id).await
+}
+
+#[tauri::command]
+pub async fn list_orphan_links(
+    state: tauri::State<'_, State>,
+    min_count: Option<usize>,
+) -> Result<responses::OrphanLinksResponse, String> {
+    let client = { state.read().await.client.clone() };
+    client.list_orphan_links(min_count).await
+}
+
+#[tauri::command]
 pub async fn export_pages_to_obsidian(
     state: tauri::State<'_, State>,
     vault_path: String,

@@ -60,8 +60,8 @@ These are required for feature parity but can follow the P0 review/status/setup 
 |---|---|---|---|---|
 | `/api/memory/{id}/revisions` | `ListMemoryRevisionsResponse` | missing; app has older `/versions` chain wrapper | add typed memory revision history panel | hide revisions panel if route absent |
 | `/api/pages/{id}/revisions` | `ListPageRevisionsResponse` | missing | add typed page revision panel | hide revisions panel if route absent |
-| `/api/pages/{id}/links` | `PageLinksResponse` | missing wrapper/UI | add page detail inbound/outbound link affordance | hide links section if route absent |
-| `/api/pages/orphan-links` | `OrphanLinksResponse` | missing wrapper/UI | add orphan link review or diagnostics section | optional diagnostics until route exists |
+| `/api/pages/{id}/links` | `PageLinksResponse` | typed Rust/Tauri/TS wrappers present; PageDetail uses daemon outbound/inbound links and no longer infers links via `listPages` | keep non-blocking link UI; unresolved outbound labels stay inert | hide links section if route absent or errors |
+| `/api/pages/orphan-links` | `OrphanLinksResponse` | typed Rust/Tauri/TS wrappers present; no dedicated UI yet | add orphan link review or diagnostics section | optional diagnostics until route exists |
 | `/api/pages/{id}/sources` | `PageSourceWithMemory` | present via `getPageSources` | keep and type through `wenlan-types` | optional |
 | `/api/pages/export` | export response | present as `exportPagesToObsidian` | keep; rename "concept" UI/file wording where user-facing | optional |
 | `/api/pages/{id}/export` | export response | present as `exportPageToObsidian` | keep; rename "concept" UI/file wording where user-facing | optional |

@@ -895,6 +895,8 @@ pub fn run() {
             // Page commands
             search::get_page,
             search::get_page_sources,
+            search::get_page_links,
+            search::list_orphan_links,
             search::update_page,
             search::archive_page,
             search::delete_page,

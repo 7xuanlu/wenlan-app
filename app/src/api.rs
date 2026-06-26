@@ -357,6 +357,25 @@ impl WenlanClient {
         self.get_json(&path).await
     }
 
+    pub async fn get_page_links(
+        &self,
+        page_id: &str,
+    ) -> Result<wenlan_types::responses::PageLinksResponse, String> {
+        let path = format!("/api/pages/{}/links", page_id);
+        self.get_json(&path).await
+    }
+
+    pub async fn list_orphan_links(
+        &self,
+        min_count: Option<usize>,
+    ) -> Result<wenlan_types::responses::OrphanLinksResponse, String> {
+        let path = match min_count {
+            Some(min_count) => format!("/api/pages/orphan-links?min_count={}", min_count),
+            None => "/api/pages/orphan-links".to_string(),
+        };
+        self.get_json(&path).await
+    }
+
     pub async fn test_llm(&self, endpoint: String, model: String) -> Result<String, String> {
         let req = wenlan_types::requests::TestLlmRequest {
             endpoint,
@@ -637,5 +656,11 @@ mod tests {
         let _add = WenlanClient::add_source;
         let _remove = WenlanClient::remove_source;
         let _sync = WenlanClient::sync_source;
+    }
+
+    #[test]
+    fn wenlan_client_exposes_page_link_methods() {
+        let _get = WenlanClient::get_page_links;
+        let _list = WenlanClient::list_orphan_links;
     }
 }

@@ -837,6 +837,31 @@ export interface PageSourceWithMemory {
 /** @deprecated Use {@link PageSourceWithMemory} instead. Kept for gradual migration. */
 export type ConceptSourceWithMemory = PageSourceWithMemory;
 
+export interface PageLinkOutbound {
+  label: string;
+  target_page_id: string | null;
+}
+
+export interface PageLinkInbound {
+  source_page_id: string;
+  label: string;
+}
+
+export interface PageLinksResponse {
+  outbound: PageLinkOutbound[];
+  inbound: PageLinkInbound[];
+}
+
+export interface OrphanLink {
+  label: string;
+  count: number;
+}
+
+export interface OrphanLinksResponse {
+  min_count: number;
+  orphan_labels: OrphanLink[];
+}
+
 export async function getPageSources(
   pageId: string,
 ): Promise<PageSourceWithMemory[]> {
@@ -852,6 +877,14 @@ export async function getConceptSources(
   conceptId: string,
 ): Promise<PageSourceWithMemory[]> {
   return getPageSources(conceptId);
+}
+
+export async function getPageLinks(pageId: string): Promise<PageLinksResponse> {
+  return invoke("get_page_links", { pageId });
+}
+
+export async function listOrphanLinks(minCount?: number): Promise<OrphanLinksResponse> {
+  return invoke("list_orphan_links", { minCount: minCount ?? null });
 }
 
 // ── Profiles & Agent Connections ─────────────────────────────────────

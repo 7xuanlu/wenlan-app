@@ -851,3 +851,21 @@ describe('page domain compatibility', () => {
     expect(pages[0].domain).toBe('work');
   });
 });
+
+describe('page links wrappers', () => {
+  it('getPageLinks invokes the daemon page link command', async () => {
+    mockInvoke.mockResolvedValue({ outbound: [], inbound: [] });
+
+    await tauri.getPageLinks('page-1');
+
+    expect(mockInvoke).toHaveBeenCalledWith('get_page_links', { pageId: 'page-1' });
+  });
+
+  it('listOrphanLinks invokes the daemon orphan link command with minCount', async () => {
+    mockInvoke.mockResolvedValue({ min_count: 2, orphan_labels: [] });
+
+    await tauri.listOrphanLinks(2);
+
+    expect(mockInvoke).toHaveBeenCalledWith('list_orphan_links', { minCount: 2 });
+  });
+});
