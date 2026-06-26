@@ -4,10 +4,17 @@ import { createPortal } from "react-dom";
 import type { ActivityKind, RecentActivityItem } from "../../lib/tauri";
 import { updateMemory, getMemoryDetail } from "../../lib/tauri";
 
+export type WorthAGlanceItem = RecentActivityItem & {
+  reviewKind?: "pending_revision" | "refinement";
+  reviewId?: string;
+  canConfirm?: boolean;
+  sourceAgent?: string | null;
+};
+
 interface Props {
-  items: RecentActivityItem[];
-  onConfirm: (id: string) => void;
-  onDelete: (id: string) => void;
+  items: WorthAGlanceItem[];
+  onConfirm: (item: WorthAGlanceItem) => void;
+  onDelete: (item: WorthAGlanceItem) => void;
   onEdit: (kind: ActivityKind, id: string) => void;
   onNavigate: (kind: ActivityKind, id: string) => void;
   recapCount?: number;
@@ -38,7 +45,7 @@ function SproutIcon() {
 }
 
 export function WorthAGlanceScroll({ items, onConfirm, onDelete, onEdit, onNavigate, recapCount, onViewRecaps }: Props) {
-  const [editingItem, setEditingItem] = useState<RecentActivityItem | null>(null);
+  const [editingItem, setEditingItem] = useState<WorthAGlanceItem | null>(null);
 
   if (items.length === 0) return null;
 
@@ -113,7 +120,7 @@ export function WorthAGlanceScroll({ items, onConfirm, onDelete, onEdit, onNavig
             onDismiss={() => setEditingItem(null)}
             onSave={async (newContent, _newTitle) => {
               await updateMemory(editingItem.id, newContent);
-              onConfirm(editingItem.id);
+              onConfirm(editingItem);
               onEdit(editingItem.kind, editingItem.id);
               setEditingItem(null);
             }}
@@ -131,16 +138,23 @@ function WorthAGlanceCard({
   onEditClick,
   onNavigate,
 }: {
-  item: RecentActivityItem;
-  onConfirm: (id: string) => void;
-  onDelete: (id: string) => void;
+  item: WorthAGlanceItem;
+  onConfirm: (item: WorthAGlanceItem) => void;
+  onDelete: (item: WorthAGlanceItem) => void;
   onEditClick: () => void;
   onNavigate: (kind: ActivityKind, id: string) => void;
 }) {
   const [hover, setHover] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const isPendingRevision = item.reviewKind === "pending_revision";
+  const isRefinement = item.reviewKind === "refinement";
+  const isReviewAction = isPendingRevision || isRefinement;
+  const canConfirm = item.canConfirm !== false;
   const title = item.title || item.snippet || "(untitled)";
   const showSnippet = Boolean(item.snippet && item.title);
+  const confirmLabel = isReviewAction ? "Accept" : "Looks good";
+  const secondaryLabel = isReviewAction ? "Dismiss" : "Edit";
+  const actionsVisible = hover || isReviewAction;
 
   const baseBg = "var(--mem-surface)";
   const hoverBg = "var(--mem-hover)";
@@ -169,9 +183,9 @@ function WorthAGlanceCard({
         onClick={(e) => {
           e.stopPropagation();
           setConfirming(true);
-          setTimeout(() => onDelete(item.id), 300);
+          setTimeout(() => onDelete(item), 300);
         }}
-        aria-label="Delete"
+        aria-label={isReviewAction ? "Dismiss" : "Delete"}
         className="absolute right-2 top-2 text-xs leading-none p-1 rounded transition-colors"
         style={{
           color: "var(--mem-text-tertiary)",
@@ -219,40 +233,47 @@ function WorthAGlanceCard({
       <div
         className="flex gap-2 mt-auto"
         style={{
-          opacity: hover ? 1 : 0,
+          opacity: actionsVisible ? 1 : 0,
           transition: "opacity 150ms",
-          pointerEvents: hover ? "auto" : "none",
+          pointerEvents: actionsVisible ? "auto" : "none",
         }}
       >
+        {canConfirm && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setConfirming(true);
+              setTimeout(() => onConfirm(item), 300);
+            }}
+            className="rounded-md px-3 py-1.5 text-xs font-medium transition-colors"
+            style={{
+              color: "var(--mem-accent-warm)",
+              backgroundColor:
+                "color-mix(in srgb, var(--mem-accent-warm) 12%, transparent)",
+            }}
+            onMouseEnter={(e) =>
+              (e.currentTarget.style.backgroundColor =
+                "color-mix(in srgb, var(--mem-accent-warm) 22%, transparent)")
+            }
+            onMouseLeave={(e) =>
+              (e.currentTarget.style.backgroundColor =
+                "color-mix(in srgb, var(--mem-accent-warm) 12%, transparent)")
+            }
+          >
+            {confirmLabel}
+          </button>
+        )}
         <button
           type="button"
           onClick={(e) => {
             e.stopPropagation();
-            setConfirming(true);
-            setTimeout(() => onConfirm(item.id), 300);
-          }}
-          className="rounded-md px-3 py-1.5 text-xs font-medium transition-colors"
-          style={{
-            color: "var(--mem-accent-warm)",
-            backgroundColor:
-              "color-mix(in srgb, var(--mem-accent-warm) 12%, transparent)",
-          }}
-          onMouseEnter={(e) =>
-            (e.currentTarget.style.backgroundColor =
-              "color-mix(in srgb, var(--mem-accent-warm) 22%, transparent)")
-          }
-          onMouseLeave={(e) =>
-            (e.currentTarget.style.backgroundColor =
-              "color-mix(in srgb, var(--mem-accent-warm) 12%, transparent)")
-          }
-        >
-          Looks good
-        </button>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onEditClick();
+            if (isReviewAction) {
+              setConfirming(true);
+              setTimeout(() => onDelete(item), 300);
+            } else {
+              onEditClick();
+            }
           }}
           className="rounded-md border px-3 py-1.5 text-xs font-medium transition-colors"
           style={{
@@ -267,7 +288,7 @@ function WorthAGlanceCard({
             (e.currentTarget.style.backgroundColor = "transparent")
           }
         >
-          Edit
+          {secondaryLabel}
         </button>
       </div>
     </article>

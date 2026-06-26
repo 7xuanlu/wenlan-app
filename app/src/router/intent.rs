@@ -12,9 +12,9 @@ use std::sync::Arc;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::RwLock;
 
-use origin_types::requests::IngestTextRequest;
-use origin_types::responses::IngestResponse;
-use origin_types::working_memory::{WorkingMemoryEntry, MAX_SNIPPET_CHARS};
+use wenlan_types::requests::IngestTextRequest;
+use wenlan_types::responses::IngestResponse;
+use wenlan_types::working_memory::{WorkingMemoryEntry, MAX_SNIPPET_CHARS};
 
 /// Default keyword classification threshold (matches TuningConfig default).
 const DEFAULT_KEYWORD_MIN_THRESHOLD: f64 = 0.005;

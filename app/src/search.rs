@@ -10,17 +10,25 @@ use crate::activity;
 use crate::config;
 use crate::sources::SourceStatus;
 use crate::state::{AppState, IndexStatus};
-use origin_types::requests;
-use origin_types::responses;
-use origin_types::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use wenlan_types::requests;
+use wenlan_types::responses;
+use wenlan_types::*;
 
 type State = Arc<RwLock<AppState>>;
 type WatcherState = Arc<tokio::sync::Mutex<Option<crate::indexer::FileWatcher>>>;
+
+fn app_env_var_compat(wenlan_key: &str) -> Option<std::ffi::OsString> {
+    if let Some(value) = std::env::var_os(wenlan_key) {
+        return Some(value);
+    }
+    let legacy = wenlan_key.replacen("WENLAN_", "ORIGIN_", 1);
+    std::env::var_os(legacy)
+}
 
 // ── Request types (kept for Tauri IPC deserialization) ─────────────────
 
@@ -80,6 +88,12 @@ pub struct StoreMemoryResponse {
     /// enrichment will run.
     #[serde(default)]
     pub hint: String,
+    /// Protected memories now flagged for human revision by the daemon.
+    #[serde(default)]
+    pub triggered_revisions: Vec<String>,
+    /// Protected memories auto-accepted by a full-trust agent write.
+    #[serde(default)]
+    pub auto_superseded: Vec<String>,
 }
 
 // ── Window / UI commands (kept as-is) ─────────────────────────────────
@@ -346,22 +360,44 @@ pub async fn set_private_browsing_detection(enabled: bool) -> Result<(), String>
 }
 
 #[tauri::command]
-pub async fn get_setup_completed() -> Result<bool, String> {
-    let cfg = crate::config::load_config();
-    Ok(cfg.setup_completed)
+pub async fn get_setup_status(
+    state: tauri::State<'_, State>,
+) -> Result<crate::api::SetupStatusResponse, String> {
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+    client.get_setup_status().await
 }
 
 #[tauri::command]
-pub async fn set_setup_completed(completed: bool) -> Result<(), String> {
-    let mut cfg = crate::config::load_config();
-    cfg.setup_completed = completed;
-    crate::config::save_config(&cfg).map_err(|e| e.to_string())
+pub async fn get_setup_completed(state: tauri::State<'_, State>) -> Result<bool, String> {
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+    Ok(client.get_setup_status().await?.setup_completed)
 }
 
 #[tauri::command]
-pub async fn should_show_wizard() -> Result<bool, String> {
-    let cfg = crate::config::load_config();
-    Ok(!cfg.setup_completed)
+pub async fn set_setup_completed(
+    state: tauri::State<'_, State>,
+    completed: bool,
+) -> Result<(), String> {
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+    client.set_setup_completed(completed).await
+}
+
+#[tauri::command]
+pub async fn should_show_wizard(state: tauri::State<'_, State>) -> Result<bool, String> {
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+    Ok(!client.get_setup_status().await?.setup_completed)
 }
 
 #[tauri::command]
@@ -374,17 +410,17 @@ pub async fn write_mcp_config(client_type: String) -> Result<(), String> {
     let config_path = crate::mcp_config::client_config_path(&client_type)
         .ok_or(format!("Unknown client type: {}", client_type))?;
     let is_claude_code = client_type == "claude_code";
-    crate::mcp_config::write_origin_entry(&config_path, is_claude_code).map_err(|e| e.to_string())
+    crate::mcp_config::write_wenlan_entry(&config_path, is_claude_code).map_err(|e| e.to_string())
 }
 
-/// Returns the current `origin` MCP server entry (command + args) that Origin
+/// Returns the current `wenlan` MCP server entry (command + args) that Origin
 /// uses when writing client configs. Prefers a local binary in dev, falls back
-/// to `npx -y origin-mcp` otherwise. The frontend uses this to build a
+/// to `npx -y wenlan-mcp` otherwise. The frontend uses this to build a
 /// copy-pasteable manual-setup JSON snippet with real values instead of
-/// `/path/to/origin-mcp` placeholder text.
+/// `/path/to/wenlan-mcp` placeholder text.
 #[tauri::command]
-pub async fn get_origin_mcp_entry() -> Result<serde_json::Value, String> {
-    Ok(crate::mcp_config::origin_mcp_entry())
+pub async fn get_wenlan_mcp_entry() -> Result<serde_json::Value, String> {
+    Ok(crate::mcp_config::wenlan_mcp_entry())
 }
 
 #[tauri::command]
@@ -543,7 +579,7 @@ pub async fn test_remote_mcp_connection(
         }
     };
     let start = std::time::Instant::now();
-    // Raw tunnel URL: probe `/health` (origin-mcp serves it; expect 2xx).
+    // Raw tunnel URL: probe `/health` (wenlan-mcp serves it; expect 2xx).
     // Relay URL: probe the URL directly — any HTTP response (even 4xx from
     // method-not-allowed on GET /mcp) proves DNS + TLS + worker reachable;
     // only 5xx / connection errors indicate a real problem.
@@ -833,7 +869,7 @@ async fn save_current_config(
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// DATA COMMANDS — proxied through the daemon via OriginClient
+// DATA COMMANDS — proxied through the daemon via WenlanClient
 // ═══════════════════════════════════════════════════════════════════════
 
 // ── Search ────────────────────────────────────────────────────────────
@@ -850,7 +886,7 @@ pub async fn search(
         query,
         limit: limit.unwrap_or(10),
         source_filter,
-        domain: None,
+        space: None,
     };
     let resp: responses::SearchResponse = s.client.post_json("/api/search", &req).await?;
     Ok(resp.results)
@@ -866,8 +902,9 @@ pub async fn search_memory(
         query: req.query,
         limit: req.limit.unwrap_or(10),
         memory_type: req.memory_type,
-        domain: req.domain,
+        space: req.domain,
         source_agent: req.source_agent,
+        rerank: false,
     };
     let resp: responses::SearchMemoryResponse = s
         .client
@@ -887,7 +924,7 @@ pub async fn store_memory(
     let daemon_req = requests::StoreMemoryRequest {
         content: req.content,
         memory_type: req.memory_type,
-        domain: req.domain,
+        space: req.domain,
         source_agent: req.source_agent,
         title: req.title,
         confidence: req.confidence,
@@ -904,6 +941,8 @@ pub async fn store_memory(
         warnings: resp.warnings,
         enrichment: resp.enrichment,
         hint: resp.hint,
+        triggered_revisions: resp.triggered_revisions,
+        auto_superseded: resp.auto_superseded,
     })
 }
 
@@ -955,8 +994,9 @@ pub async fn list_memories(
     let s = state.read().await;
     let daemon_req = requests::ListMemoriesRequest {
         memory_type: req.memory_type,
-        domain: req.domain,
+        space: req.domain,
         limit: req.limit.unwrap_or(100),
+        confirmed: None,
     };
     let resp: responses::ListMemoriesResponse =
         s.client.post_json("/api/memory/list", &daemon_req).await?;
@@ -1004,17 +1044,17 @@ pub async fn list_memories_cmd(
     let s = state.read().await;
     let daemon_req = requests::ListMemoriesRequest {
         memory_type,
-        domain,
+        space: domain,
         limit: limit.unwrap_or(200),
+        confirmed,
     };
     let resp: responses::ListMemoriesResponse =
         s.client.post_json("/api/memory/list", &daemon_req).await?;
 
     // The daemon returns IndexedFileInfo; the UI expects MemoryItem. Most
-    // fields overlap; the extras (content, entity_id, quality, etc.) aren't
-    // surfaced by the list endpoint and aren't needed for the list view.
-    // Filter by `confirmed` client-side since the daemon request type doesn't
-    // support it yet.
+    // fields overlap; extras like entity_id and quality aren't surfaced by
+    // the list endpoint and aren't needed for the list view.
+    // Keep the client-side filter as a defensive fallback for older daemons.
     let items: Vec<MemoryItem> = resp
         .memories
         .into_iter()
@@ -1025,10 +1065,10 @@ pub async fn list_memories_cmd(
         .map(|info| MemoryItem {
             source_id: info.source_id.clone(),
             title: info.title,
-            content: String::new(),
+            content: info.content,
             summary: info.summary,
             memory_type: info.memory_type,
-            domain: info.domain,
+            space: info.space,
             source_agent: info.source_agent,
             confidence: info.confidence,
             confirmed: info.confirmed.unwrap_or(false),
@@ -1048,6 +1088,8 @@ pub async fn list_memories_cmd(
             access_count: 0,
             version: 1,
             changelog: None,
+            pending_revision: false,
+            merged_from: None,
         })
         .collect();
     Ok(items)
@@ -1106,7 +1148,7 @@ pub async fn update_memory_cmd(
     let s = state.read().await;
     let req = requests::UpdateMemoryRequest {
         content,
-        domain,
+        space: domain,
         confirmed,
         memory_type,
     };
@@ -1350,7 +1392,7 @@ pub async fn import_memories_cmd(
 pub async fn import_chat_export(
     state: tauri::State<'_, State>,
     path: String,
-) -> Result<origin_types::import::ImportChatExportResponse, String> {
+) -> Result<wenlan_types::import::ImportChatExportResponse, String> {
     let s = state.read().await;
     s.client.import_chat_export(&path).await
 }
@@ -1358,7 +1400,7 @@ pub async fn import_chat_export(
 #[tauri::command]
 pub async fn list_pending_imports(
     state: tauri::State<'_, State>,
-) -> Result<Vec<origin_types::import::PendingImport>, String> {
+) -> Result<Vec<wenlan_types::import::PendingImport>, String> {
     let s = state.read().await;
     s.client.list_pending_imports().await
 }
@@ -1368,10 +1410,10 @@ pub async fn list_pending_imports(
 #[tauri::command]
 pub async fn list_onboarding_milestones(
     state: tauri::State<'_, State>,
-) -> Result<Vec<origin_types::onboarding::MilestoneRecord>, String> {
+) -> Result<Vec<wenlan_types::onboarding::MilestoneRecord>, String> {
     // Snapshot the client out of the guard so we never hold the RwLock across
     // the HTTP .await — holding it would block all writers for the duration
-    // of the request. `OriginClient` is `Clone` and cheap to clone.
+    // of the request. `WenlanClient` is `Clone` and cheap to clone.
     let client = {
         let s = state.read().await;
         s.client.clone()
@@ -1433,7 +1475,7 @@ pub async fn create_entity_cmd(
     let req = requests::CreateEntityRequest {
         name,
         entity_type,
-        domain,
+        space: domain,
         source_agent: None,
         confidence: None,
     };
@@ -1451,7 +1493,7 @@ pub async fn list_entities_cmd(
     let s = state.read().await;
     let req = requests::ListEntitiesRequest {
         entity_type,
-        domain,
+        space: domain,
     };
     let resp: responses::ListEntitiesResponse = s
         .client
@@ -1719,6 +1761,17 @@ pub async fn delete_agent(state: tauri::State<'_, State>, name: String) -> Resul
 
 // ── Avatar commands ───────────────────────────────────────────────────
 
+fn avatar_storage_dir() -> PathBuf {
+    let root = app_env_var_compat("WENLAN_DATA_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            dirs::data_local_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join("wenlan")
+        });
+    root.join("avatars")
+}
+
 #[tauri::command]
 pub async fn set_avatar(
     state: tauri::State<'_, State>,
@@ -1731,10 +1784,7 @@ pub async fn set_avatar(
 
     let ext = source.extension().and_then(|e| e.to_str()).unwrap_or("png");
 
-    let avatars_dir = dirs::data_dir()
-        .ok_or("Could not determine data directory")?
-        .join("origin")
-        .join("avatars");
+    let avatars_dir = avatar_storage_dir();
     std::fs::create_dir_all(&avatars_dir)
         .map_err(|e| format!("Failed to create avatars directory: {}", e))?;
 
@@ -1858,26 +1908,22 @@ pub async fn list_pinned_memories(
 pub async fn accept_pending_revision(
     state: tauri::State<'_, State>,
     source_id: String,
-) -> Result<(), String> {
+) -> Result<responses::RevisionAcceptResponse, String> {
     let s = state.read().await;
-    let _resp: serde_json::Value = s
-        .client
+    s.client
         .post_empty(&format!("/api/memory/revision/{}/accept", source_id))
-        .await?;
-    Ok(())
+        .await
 }
 
 #[tauri::command]
 pub async fn dismiss_pending_revision(
     state: tauri::State<'_, State>,
     source_id: String,
-) -> Result<(), String> {
+) -> Result<responses::RevisionDismissResponse, String> {
     let s = state.read().await;
-    let _resp: serde_json::Value = s
-        .client
+    s.client
         .post_empty(&format!("/api/memory/revision/{}/dismiss", source_id))
-        .await?;
-    Ok(())
+        .await
 }
 
 // ── Contradiction flags ────────────────────────────────────────────────
@@ -1886,13 +1932,49 @@ pub async fn dismiss_pending_revision(
 pub async fn dismiss_contradiction(
     state: tauri::State<'_, State>,
     source_id: String,
-) -> Result<(), String> {
+) -> Result<responses::ContradictionDismissResponse, String> {
     let s = state.read().await;
-    let _resp: serde_json::Value = s
-        .client
+    s.client
         .post_empty(&format!("/api/memory/contradiction/{}/dismiss", source_id))
-        .await?;
-    Ok(())
+        .await
+}
+
+// ── Refinery queue ──────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn list_refinements(
+    state: tauri::State<'_, State>,
+    limit: Option<usize>,
+) -> Result<responses::ListRefinementsResponse, String> {
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+    client.list_refinements(limit).await
+}
+
+#[tauri::command]
+pub async fn accept_refinement(
+    state: tauri::State<'_, State>,
+    id: String,
+) -> Result<responses::AcceptRefinementResponse, String> {
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+    client.accept_refinement(&id).await
+}
+
+#[tauri::command]
+pub async fn reject_refinement(
+    state: tauri::State<'_, State>,
+    id: String,
+) -> Result<responses::RejectRefinementResponse, String> {
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+    client.reject_refinement(&id).await
 }
 
 #[tauri::command]
@@ -1906,6 +1988,19 @@ pub async fn get_pending_revision(
         .get_json(&format!("/api/memory/pending-revision/{}", source_id))
         .await?;
     Ok(revision)
+}
+
+#[tauri::command]
+pub async fn list_pending_revisions(
+    state: tauri::State<'_, State>,
+    limit: Option<usize>,
+) -> Result<Vec<responses::PendingRevisionItem>, String> {
+    let s = state.read().await;
+    let path = match limit {
+        Some(limit) => format!("/api/memory/pending-revisions?limit={limit}"),
+        None => "/api/memory/pending-revisions".to_string(),
+    };
+    s.client.get_json(&path).await
 }
 
 // ── Briefing / narrative ──────────────────────────────────────────────
@@ -1982,7 +2077,7 @@ pub async fn get_entity_suggestions_cmd(
     state: tauri::State<'_, State>,
 ) -> Result<Vec<EntitySuggestion>, String> {
     let s = state.read().await;
-    let suggestions: Vec<origin_types::EntitySuggestion> =
+    let suggestions: Vec<wenlan_types::EntitySuggestion> =
         s.client.get_json("/api/memory/entity-suggestions").await?;
     Ok(suggestions
         .into_iter()
@@ -2253,7 +2348,7 @@ pub async fn suggest_tags(
     // Activities are tracked in-process by the Tauri app (the daemon has
     // no view of them), so look the app name up here and pass it to the
     // daemon as a merge hint.
-    let (client, activity_app): (crate::api::OriginClient, Option<String>) = {
+    let (client, activity_app): (crate::api::WenlanClient, Option<String>) = {
         let s = state.read().await;
         let activity_app = s
             .list_activity_summaries()
@@ -2300,7 +2395,7 @@ fn percent_encode(s: &str) -> String {
 #[tauri::command]
 pub async fn get_working_memory(
     state: tauri::State<'_, State>,
-) -> Result<Vec<origin_types::working_memory::WorkingMemoryEntry>, String> {
+) -> Result<Vec<wenlan_types::working_memory::WorkingMemoryEntry>, String> {
     // Working memory is in-process state populated by the context consumer
     // (`router/intent.rs`). Sensors run only in the app process, so this
     // is served from the app's local rolling buffer rather than an HTTP endpoint.
@@ -2316,7 +2411,7 @@ pub async fn get_working_memory(
 pub async fn get_session_snapshots(
     state: tauri::State<'_, State>,
     limit: Option<usize>,
-) -> Result<Vec<origin_types::SessionSnapshot>, String> {
+) -> Result<Vec<wenlan_types::SessionSnapshot>, String> {
     let s = state.read().await;
     let path = format!("/api/snapshots?limit={}", limit.unwrap_or(10));
     s.client.get_json(&path).await
@@ -2326,7 +2421,7 @@ pub async fn get_session_snapshots(
 pub async fn get_snapshot_captures(
     state: tauri::State<'_, State>,
     snapshot_id: String,
-) -> Result<Vec<origin_types::SnapshotCapture>, String> {
+) -> Result<Vec<wenlan_types::SnapshotCapture>, String> {
     let s = state.read().await;
     s.client
         .get_json(&format!("/api/snapshots/{}/captures", snapshot_id))
@@ -2337,7 +2432,7 @@ pub async fn get_snapshot_captures(
 pub async fn get_snapshot_captures_with_content(
     state: tauri::State<'_, State>,
     snapshot_id: String,
-) -> Result<Vec<origin_types::SnapshotCaptureWithContent>, String> {
+) -> Result<Vec<wenlan_types::SnapshotCaptureWithContent>, String> {
     let s = state.read().await;
     s.client
         .get_json(&format!(
@@ -2431,7 +2526,10 @@ pub async fn update_page(
     content: String,
 ) -> Result<(), String> {
     let s = state.read().await;
-    let req = requests::UpdatePageRequest { content };
+    let req = requests::UpdatePageRequest {
+        content,
+        source_memory_ids: Vec::new(),
+    };
     let _resp: responses::SuccessResponse = s
         .client
         .post_json(&format!("/api/memory/{}/update-page", id), &req)
@@ -2458,7 +2556,7 @@ pub async fn delete_page(state: tauri::State<'_, State>, id: String) -> Result<(
 
 /// Wire wrapper matching the daemon's `{ "pages": [...] }` response shape.
 /// Kept local to search.rs because `Page` lives in origin-core (not
-/// origin-types), so we can't put this in the shared response types.
+/// wenlan-types), so we can't put this in the shared response types.
 #[derive(serde::Deserialize)]
 struct ListPagesWire {
     pages: Vec<Page>,
@@ -2503,7 +2601,11 @@ pub async fn search_pages(
     limit: Option<usize>,
 ) -> Result<Vec<Page>, String> {
     let client = state.read().await.client.clone();
-    let req = requests::SearchPagesRequest { query, limit };
+    let req = requests::SearchPagesRequest {
+        query,
+        limit,
+        page_type: None,
+    };
     let resp: ListPagesWire = client.post_json("/api/pages/search", &req).await?;
     Ok(resp.pages)
 }
@@ -2512,7 +2614,7 @@ pub async fn search_pages(
 pub async fn get_page_sources(
     state: tauri::State<'_, State>,
     page_id: String,
-) -> Result<Vec<origin_types::PageSourceWithMemory>, String> {
+) -> Result<Vec<wenlan_types::PageSourceWithMemory>, String> {
     let client = { state.read().await.client.clone() };
     client.get_page_sources(&page_id).await
 }
@@ -2738,44 +2840,60 @@ pub async fn sync_registered_source(
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
-pub async fn get_model_choice() -> Result<(Option<String>, Option<String>), String> {
-    let config = config::load_config();
-    Ok((config.routine_model, config.synthesis_model))
+pub async fn get_model_choice(
+    state: tauri::State<'_, State>,
+) -> Result<(Option<String>, Option<String>), String> {
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+    client.get_model_choice().await
 }
 
 #[tauri::command]
 pub async fn set_model_choice(
+    state: tauri::State<'_, State>,
     routine_model: Option<String>,
     synthesis_model: Option<String>,
 ) -> Result<(), String> {
-    let mut cfg = config::load_config();
-    cfg.routine_model = routine_model;
-    cfg.synthesis_model = synthesis_model;
-    config::save_config(&cfg).map_err(|e| e.to_string())?;
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+    client
+        .set_model_choice(routine_model, synthesis_model)
+        .await?;
     log::info!("[settings] Model choice updated — restart daemon to apply");
     Ok(())
 }
 
 #[tauri::command]
-pub async fn get_system_info() -> Result<origin_types::system_info::SystemInfo, String> {
+pub async fn get_system_info() -> Result<wenlan_types::system_info::SystemInfo, String> {
     Ok(crate::system_info::detect_system_info())
 }
 
 #[tauri::command]
-pub async fn get_external_llm() -> Result<(Option<String>, Option<String>), String> {
-    let config = config::load_config();
-    Ok((config.external_llm_endpoint, config.external_llm_model))
+pub async fn get_external_llm(
+    state: tauri::State<'_, State>,
+) -> Result<(Option<String>, Option<String>), String> {
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+    client.get_external_llm().await
 }
 
 #[tauri::command]
 pub async fn set_external_llm(
+    state: tauri::State<'_, State>,
     endpoint: Option<String>,
     model: Option<String>,
 ) -> Result<(), String> {
-    let mut cfg = config::load_config();
-    cfg.external_llm_endpoint = endpoint;
-    cfg.external_llm_model = model;
-    config::save_config(&cfg).map_err(|e| e.to_string())?;
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+    client.set_external_llm(endpoint, model).await?;
     log::info!("[settings] External LLM config updated — restart daemon to apply");
     Ok(())
 }
@@ -2833,7 +2951,7 @@ pub async fn download_on_device_model(
 pub async fn list_recent_retrievals(
     state: tauri::State<'_, State>,
     limit: Option<i64>,
-) -> Result<Vec<origin_types::RetrievalEvent>, String> {
+) -> Result<Vec<wenlan_types::RetrievalEvent>, String> {
     let client = {
         let s = state.read().await;
         s.client.clone()
@@ -2845,7 +2963,7 @@ pub async fn list_recent_retrievals(
 pub async fn list_recent_changes(
     state: tauri::State<'_, State>,
     limit: Option<i64>,
-) -> Result<Vec<origin_types::PageChange>, String> {
+) -> Result<Vec<wenlan_types::PageChange>, String> {
     let client = {
         let s = state.read().await;
         s.client.clone()
@@ -2858,7 +2976,7 @@ pub async fn list_recent_memories(
     state: tauri::State<'_, State>,
     limit: Option<i64>,
     since_ms: Option<i64>,
-) -> Result<Vec<origin_types::RecentActivityItem>, String> {
+) -> Result<Vec<wenlan_types::RecentActivityItem>, String> {
     let client = {
         let s = state.read().await;
         s.client.clone()
@@ -2872,7 +2990,7 @@ pub async fn list_recent_memories(
 pub async fn list_unconfirmed_memories(
     state: tauri::State<'_, State>,
     limit: Option<i64>,
-) -> Result<Vec<origin_types::RecentActivityItem>, String> {
+) -> Result<Vec<wenlan_types::RecentActivityItem>, String> {
     let client = {
         let s = state.read().await;
         s.client.clone()
@@ -2885,7 +3003,7 @@ pub async fn list_recent_pages(
     state: tauri::State<'_, State>,
     limit: Option<i64>,
     since_ms: Option<i64>,
-) -> Result<Vec<origin_types::RecentActivityItem>, String> {
+) -> Result<Vec<wenlan_types::RecentActivityItem>, String> {
     let client = {
         let s = state.read().await;
         s.client.clone()
@@ -2900,7 +3018,7 @@ pub async fn list_recent_relations(
     state: tauri::State<'_, State>,
     limit: Option<usize>,
     since_ms: Option<i64>,
-) -> Result<Vec<origin_types::RecentRelation>, String> {
+) -> Result<Vec<wenlan_types::RecentRelation>, String> {
     let client = {
         let s = state.read().await;
         s.client.clone()
@@ -2929,4 +3047,91 @@ pub async fn quit_origin_full(app_handle: tauri::AppHandle) -> Result<(), String
     crate::lifecycle::quit_origin(&app_handle)
         .await
         .map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod avatar_path_tests {
+    use super::*;
+    use std::ffi::OsString;
+
+    fn restore_env(key: &str, previous: Option<OsString>) {
+        match previous {
+            Some(value) => std::env::set_var(key, value),
+            None => std::env::remove_var(key),
+        }
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn avatar_storage_dir_prefers_wenlan_data_dir() {
+        let previous_wenlan = std::env::var_os("WENLAN_DATA_DIR");
+        let previous_origin = std::env::var_os("ORIGIN_DATA_DIR");
+        let tmp = tempfile::tempdir().unwrap();
+
+        std::env::set_var("WENLAN_DATA_DIR", tmp.path());
+        std::env::set_var("ORIGIN_DATA_DIR", "/tmp/legacy-origin-avatar-root");
+
+        assert_eq!(avatar_storage_dir(), tmp.path().join("avatars"));
+
+        restore_env("WENLAN_DATA_DIR", previous_wenlan);
+        restore_env("ORIGIN_DATA_DIR", previous_origin);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn avatar_storage_dir_falls_back_to_legacy_origin_data_dir() {
+        let previous_wenlan = std::env::var_os("WENLAN_DATA_DIR");
+        let previous_origin = std::env::var_os("ORIGIN_DATA_DIR");
+        let tmp = tempfile::tempdir().unwrap();
+
+        std::env::remove_var("WENLAN_DATA_DIR");
+        std::env::set_var("ORIGIN_DATA_DIR", tmp.path());
+
+        assert_eq!(avatar_storage_dir(), tmp.path().join("avatars"));
+
+        restore_env("WENLAN_DATA_DIR", previous_wenlan);
+        restore_env("ORIGIN_DATA_DIR", previous_origin);
+    }
+}
+
+#[cfg(test)]
+mod revision_response_tests {
+    use super::*;
+
+    #[test]
+    fn store_memory_response_preserves_revision_signals() {
+        let response = StoreMemoryResponse {
+            source_id: "mem_new".to_string(),
+            warnings: vec![],
+            enrichment: "pending".to_string(),
+            hint: "Review the protected memory update.".to_string(),
+            triggered_revisions: vec!["mem_target".to_string()],
+            auto_superseded: vec!["mem_old".to_string()],
+        };
+
+        let json = serde_json::to_value(&response).unwrap();
+        assert_eq!(
+            json["triggered_revisions"],
+            serde_json::json!(["mem_target"])
+        );
+        assert_eq!(json["auto_superseded"], serde_json::json!(["mem_old"]));
+
+        let decoded: StoreMemoryResponse = serde_json::from_value(json).unwrap();
+        assert_eq!(decoded.triggered_revisions, vec!["mem_target"]);
+        assert_eq!(decoded.auto_superseded, vec!["mem_old"]);
+    }
+
+    #[test]
+    fn store_memory_response_defaults_revision_signals_for_old_daemons() {
+        let decoded: StoreMemoryResponse = serde_json::from_value(serde_json::json!({
+            "source_id": "mem_new",
+            "warnings": [],
+            "enrichment": "not_needed",
+            "hint": ""
+        }))
+        .unwrap();
+
+        assert!(decoded.triggered_revisions.is_empty());
+        assert!(decoded.auto_superseded.is_empty());
+    }
 }

@@ -2,20 +2,26 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  acceptPendingRevision,
+  acceptRefinement,
   confirmMemory,
   deleteFileChunks,
   dismissContradiction,
+  dismissPendingRevision,
   getMemoryStats,
   listPages,
   listMemoriesRich,
+  listPendingRevisions,
+  listRefinements,
   listRecentChanges,
   listRecentPages,
   listRecentMemories,
   listRecentRetrievals,
   listUnconfirmedMemories,
+  rejectRefinement,
 } from "../../lib/tauri";
 import { Greeting } from "./Greeting";
-import { WorthAGlanceScroll } from "./WorthAGlanceScroll";
+import { WorthAGlanceScroll, type WorthAGlanceItem } from "./WorthAGlanceScroll";
 import { RefiningList } from "./RefiningList";
 import { ConnectionsList } from "./ConnectionsList";
 import { RetrievalsList } from "./RetrievalsList";
@@ -48,6 +54,27 @@ function deriveHomePageState(params: {
   if (params.memoryCount > 0) return "gathering";
   if (params.intelligenceReady) return "listening";
   return "seed";
+}
+
+function refinementTitle(action: string): string {
+  switch (action) {
+    case "entity_merge":
+      return "Entity merge";
+    case "relation_conflict":
+      return "Relation conflict";
+    case "detect_contradiction":
+      return "Contradiction check";
+    case "suggest_entity":
+      return "Entity suggestion";
+    case "dedup_merge":
+      return "Duplicate memory";
+    default:
+      return "Refinement proposal";
+  }
+}
+
+function canAcceptRefinementAction(action: string): boolean {
+  return action === "entity_merge" || action === "relation_conflict" || action === "detect_contradiction";
 }
 
 export default function HomePage({
@@ -103,6 +130,18 @@ export default function HomePage({
     refetchInterval: 30_000,
   });
 
+  const { data: pendingRevisions = [] } = useQuery({
+    queryKey: ["pendingRevisions"],
+    queryFn: () => listPendingRevisions(6),
+    refetchInterval: 30_000,
+  });
+
+  const { data: refinementQueue = { proposals: [] } } = useQuery({
+    queryKey: ["refineryQueue"],
+    queryFn: () => listRefinements(6),
+    refetchInterval: 30_000,
+  });
+
   const { data: retrievals = [] } = useQuery({
     queryKey: ["recentRetrievals"],
     queryFn: () => listRecentRetrievals(12),
@@ -144,17 +183,56 @@ export default function HomePage({
     [recentConceptItems, recentMemoryItems],
   );
 
+  const pendingRevisionItems = useMemo<WorthAGlanceItem[]>(
+    () =>
+      pendingRevisions.map((revision) => ({
+        kind: "memory",
+        id: revision.target_source_id,
+        title: "Proposed update",
+        snippet: revision.revision_content,
+        timestamp_ms: revision.last_modified * 1000,
+        badge: { kind: "needs_review" },
+        reviewKind: "pending_revision",
+        sourceAgent: revision.source_agent,
+      })),
+    [pendingRevisions],
+  );
+
+  const refinementItems = useMemo<WorthAGlanceItem[]>(
+    () =>
+      refinementQueue.proposals.map((proposal) => {
+        const timestamp = Date.parse(proposal.created_at);
+        return {
+          kind: "memory",
+          id: proposal.source_ids[0] ?? proposal.id,
+          title: refinementTitle(proposal.action),
+          snippet: `${Math.round(proposal.confidence * 100)}% confidence · ${proposal.source_ids.length} ${proposal.source_ids.length === 1 ? "memory" : "memories"}`,
+          timestamp_ms: Number.isNaN(timestamp) ? Date.now() : timestamp,
+          badge: { kind: "needs_review" },
+          reviewKind: "refinement",
+          reviewId: proposal.id,
+          canConfirm: canAcceptRefinementAction(proposal.action),
+        };
+      }),
+    [refinementQueue.proposals],
+  );
+
   // Worth-a-glance surfaces items that benefit from a quick confirm/edit pass:
-  //   (1) contradiction-flagged items from the recent activity stream
-  //   (2) explicitly unconfirmed memories (confirmed=0), regardless of age
+  //   (1) daemon pending revisions awaiting accept/dismiss
+  //   (2) contradiction-flagged items from the recent activity stream
+  //   (3) explicitly unconfirmed memories (confirmed=0), regardless of age
   // Dedupe by id so a contradiction-flagged unconfirmed memory doesn't appear
   // twice. Contradictions take precedence in ordering.
   const worthAGlanceItems = useMemo(() => {
+    const seen = new Set(pendingRevisionItems.map((i) => i.id));
+    const freshRefinements = refinementItems.filter((i) => !seen.has(i.id));
+    for (const item of freshRefinements) seen.add(item.id);
     const contradictions = activityItems.filter((i) => i.badge.kind === "needs_review");
-    const seen = new Set(contradictions.map((i) => i.id));
+    const freshContradictions = contradictions.filter((i) => !seen.has(i.id));
+    for (const item of freshContradictions) seen.add(item.id);
     const extras = unconfirmedItems.filter((i) => !seen.has(i.id));
-    return [...contradictions, ...extras].slice(0, 6);
-  }, [activityItems, unconfirmedItems]);
+    return [...pendingRevisionItems, ...freshRefinements, ...freshContradictions, ...extras].slice(0, 6);
+  }, [activityItems, pendingRevisionItems, refinementItems, unconfirmedItems]);
 
   const memoryCount = stats?.total ?? 0;
   const conceptCount = recentConcepts.length;
@@ -214,7 +292,29 @@ export default function HomePage({
     firstConceptShownCount <= MAX_MODAL_SHOWS;
 
   const isEmpty =
-    activityItems.length === 0 && retrievals.length === 0 && changes.length === 0;
+    activityItems.length === 0 &&
+    pendingRevisionItems.length === 0 &&
+    refinementItems.length === 0 &&
+    retrievals.length === 0 &&
+    changes.length === 0;
+
+  const invalidateReviewActivity = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["refineryQueue"] }),
+      queryClient.invalidateQueries({ queryKey: ["recentConceptItems"] }),
+      queryClient.invalidateQueries({ queryKey: ["recentMemoryItems"] }),
+      queryClient.invalidateQueries({ queryKey: ["recentChanges"] }),
+    ]);
+  };
+
+  const invalidateRefineryAcceptEffects = async () => {
+    await Promise.all([
+      invalidateReviewActivity(),
+      queryClient.invalidateQueries({ queryKey: ["pendingRevisions"] }),
+      queryClient.invalidateQueries({ queryKey: ["connections-concepts"] }),
+      queryClient.invalidateQueries({ queryKey: ["connections-entities"] }),
+    ]);
+  };
 
   return (
     <div className="flex flex-col gap-8 pb-16">
@@ -246,17 +346,43 @@ export default function HomePage({
         <>
           <WorthAGlanceScroll
             items={worthAGlanceItems}
-            onConfirm={async (id) => {
+            onConfirm={async (item) => {
+              if (item.reviewKind === "pending_revision") {
+                await acceptPendingRevision(item.id);
+                await queryClient.invalidateQueries({ queryKey: ["pendingRevisions"] });
+                await queryClient.invalidateQueries({ queryKey: ["recentMemoryItems"] });
+                return;
+              }
+
+              if (item.reviewKind === "refinement") {
+                if (item.canConfirm === false) return;
+                await acceptRefinement(item.reviewId ?? item.id);
+                await invalidateRefineryAcceptEffects();
+                return;
+              }
+
               await Promise.all([
-                dismissContradiction(id).catch(() => undefined),
-                confirmMemory(id, true).catch(() => undefined),
+                dismissContradiction(item.id).catch(() => undefined),
+                confirmMemory(item.id, true).catch(() => undefined),
               ]);
               await queryClient.invalidateQueries({ queryKey: ["recentConceptItems"] });
               await queryClient.invalidateQueries({ queryKey: ["recentMemoryItems"] });
               await queryClient.invalidateQueries({ queryKey: ["unconfirmedMemories"] });
             }}
-            onDelete={async (id) => {
-              await deleteFileChunks("memory", id);
+            onDelete={async (item) => {
+              if (item.reviewKind === "pending_revision") {
+                await dismissPendingRevision(item.id);
+                await queryClient.invalidateQueries({ queryKey: ["pendingRevisions"] });
+                return;
+              }
+
+              if (item.reviewKind === "refinement") {
+                await rejectRefinement(item.reviewId ?? item.id);
+                await invalidateReviewActivity();
+                return;
+              }
+
+              await deleteFileChunks("memory", item.id);
               await queryClient.invalidateQueries({ queryKey: ["recentConceptItems"] });
               await queryClient.invalidateQueries({ queryKey: ["recentMemoryItems"] });
               await queryClient.invalidateQueries({ queryKey: ["unconfirmedMemories"] });

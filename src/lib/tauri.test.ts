@@ -249,6 +249,66 @@ describe('unpinMemory', () => {
   });
 });
 
+describe('setup status', () => {
+  it('gets daemon-backed setup status', async () => {
+    const status = {
+      setup_completed: false,
+      mode: 'basic-memory',
+      anthropic_key_configured: false,
+      local_model_selected: null,
+      local_model_loaded: null,
+      local_model_cached: false,
+    };
+    mockInvoke.mockResolvedValue(status);
+
+    await expect(tauri.getSetupStatus()).resolves.toEqual(status);
+
+    expect(mockInvoke).toHaveBeenCalledWith('get_setup_status');
+  });
+});
+
+describe('refinery queue', () => {
+  it('lists daemon refinery proposals with a limit', async () => {
+    const response = {
+      proposals: [
+        {
+          id: 'ref-1',
+          action: 'entity_merge',
+          source_ids: ['mem-a', 'mem-b'],
+          payload: {
+            action: 'entity_merge',
+            existing_id: 'ent-a',
+            new_id: 'ent-b',
+            similarity: 0.86,
+          },
+          confidence: 0.86,
+          created_at: '2026-06-26T00:00:00Z',
+        },
+      ],
+    };
+    mockInvoke.mockResolvedValue(response);
+
+    await expect(tauri.listRefinements(6)).resolves.toEqual(response);
+
+    expect(mockInvoke).toHaveBeenCalledWith('list_refinements', { limit: 6 });
+  });
+
+  it('accepts and rejects daemon refinery proposals by id', async () => {
+    mockInvoke
+      .mockResolvedValueOnce({ id: 'ref-1', action_applied: 'entity_merge' })
+      .mockResolvedValueOnce({ id: 'ref-1' });
+
+    await expect(tauri.acceptRefinement('ref-1')).resolves.toEqual({
+      id: 'ref-1',
+      action_applied: 'entity_merge',
+    });
+    await expect(tauri.rejectRefinement('ref-1')).resolves.toEqual({ id: 'ref-1' });
+
+    expect(mockInvoke).toHaveBeenNthCalledWith(1, 'accept_refinement', { id: 'ref-1' });
+    expect(mockInvoke).toHaveBeenNthCalledWith(2, 'reject_refinement', { id: 'ref-1' });
+  });
+});
+
 // --- Additional wrappers for coverage ---
 
 describe('reindex', () => {
@@ -466,6 +526,18 @@ describe('version chain', () => {
 });
 
 describe('pending revisions', () => {
+  it('listPendingRevisions passes default limit', async () => {
+    mockInvoke.mockResolvedValue([]);
+    await tauri.listPendingRevisions();
+    expect(mockInvoke).toHaveBeenCalledWith('list_pending_revisions', { limit: null });
+  });
+
+  it('listPendingRevisions passes explicit limit', async () => {
+    mockInvoke.mockResolvedValue([]);
+    await tauri.listPendingRevisions(25);
+    expect(mockInvoke).toHaveBeenCalledWith('list_pending_revisions', { limit: 25 });
+  });
+
   it('acceptPendingRevision passes sourceId', async () => {
     await tauri.acceptPendingRevision('src-1');
     expect(mockInvoke).toHaveBeenCalledWith('accept_pending_revision', { sourceId: 'src-1' });
@@ -673,5 +745,48 @@ describe('getMemoryStats', () => {
     mockInvoke.mockResolvedValue({ total: 0, new_today: 0, confirmed: 0, domains: [] });
     await tauri.getMemoryStats();
     expect(mockInvoke).toHaveBeenCalledWith('get_memory_stats_cmd');
+  });
+});
+
+describe('page domain compatibility', () => {
+  const pageFromWenlanTypes = {
+    id: 'page-1',
+    title: 'Page',
+    summary: null,
+    content: 'Body',
+    entity_id: null,
+    space: 'work',
+    source_memory_ids: [],
+    version: 1,
+    status: 'active',
+    created_at: '2026-06-25T00:00:00Z',
+    last_compiled: '2026-06-25T00:00:00Z',
+    last_modified: '2026-06-25T00:00:00Z',
+  };
+
+  it('maps getPage space to domain', async () => {
+    mockInvoke.mockResolvedValue(pageFromWenlanTypes);
+    const page = await tauri.getPage('page-1');
+    expect(mockInvoke).toHaveBeenCalledWith('get_page', { id: 'page-1' });
+    expect(page?.domain).toBe('work');
+  });
+
+  it('maps searchPages space to domain', async () => {
+    mockInvoke.mockResolvedValue([pageFromWenlanTypes]);
+    const pages = await tauri.searchPages('query', 3);
+    expect(mockInvoke).toHaveBeenCalledWith('search_pages', { query: 'query', limit: 3 });
+    expect(pages[0].domain).toBe('work');
+  });
+
+  it('maps listPages space to domain', async () => {
+    mockInvoke.mockResolvedValue([pageFromWenlanTypes]);
+    const pages = await tauri.listPages('active', 'work', 10, 2);
+    expect(mockInvoke).toHaveBeenCalledWith('list_pages', {
+      status: 'active',
+      domain: 'work',
+      limit: 10,
+      offset: 2,
+    });
+    expect(pages[0].domain).toBe('work');
   });
 });

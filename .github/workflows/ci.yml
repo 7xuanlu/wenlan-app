@@ -46,15 +46,16 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install
 
-      # Tauri's tauri.conf.json declares externalBin sidecars (origin-server,
-      # origin-mcp, cloudflared) that the build script resolves at compile
+      # Tauri's tauri.conf.json declares externalBin sidecars (wenlan,
+      # wenlan-server, wenlan-mcp, cloudflared) that the build script resolves at compile
       # time. CI doesn't ship the daemon, so create empty placeholders.
       # Production DMG builds happen elsewhere with real binaries.
       - name: Create sidecar placeholders for Tauri build script
         run: |
           mkdir -p app/binaries
-          touch app/binaries/origin-server-aarch64-apple-darwin
-          touch app/binaries/origin-mcp-aarch64-apple-darwin
+          touch app/binaries/wenlan-aarch64-apple-darwin
+          touch app/binaries/wenlan-server-aarch64-apple-darwin
+          touch app/binaries/wenlan-mcp-aarch64-apple-darwin
           touch app/binaries/cloudflared-aarch64-apple-darwin
 
       - name: Check Rust formatting

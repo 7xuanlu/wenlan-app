@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { convertFileSrc } from "@tauri-apps/api/core";
 import {
   getProfile,
   listPinnedMemories,
@@ -9,6 +8,7 @@ import {
   MEMORY_FACETS,
   type MemoryType,
 } from "../../lib/tauri";
+import ProfileAvatar from "./ProfileAvatar";
 
 interface ProfileSummaryCardProps {
   onClick: () => void;
@@ -60,15 +60,6 @@ export default function ProfileSummaryCard({ onClick }: ProfileSummaryCardProps)
   if (!profile) return null;
 
   const displayName = profile.display_name || profile.name;
-  const initials = displayName
-    .split(" ")
-    .map((w) => w[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-
-  const avatarUrl = profile.avatar_path ? convertFileSrc(profile.avatar_path) : null;
-
   const toggleCollapsed = (e: React.MouseEvent) => {
     e.stopPropagation();
     const next = !collapsed;
@@ -98,38 +89,13 @@ export default function ProfileSummaryCard({ onClick }: ProfileSummaryCardProps)
         onClick={onClick}
       >
         {/* Avatar */}
-        {avatarUrl ? (
-          <img
-            src={avatarUrl}
-            alt={displayName}
-            style={{
-              width: 40,
-              height: 40,
-              borderRadius: "50%",
-              objectFit: "cover",
-              flexShrink: 0,
-            }}
-          />
-        ) : (
-          <div
-            style={{
-              width: 40,
-              height: 40,
-              borderRadius: "50%",
-              background: "linear-gradient(135deg, var(--mem-accent-warm), var(--mem-accent-amber))",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              flexShrink: 0,
-              fontFamily: "var(--mem-font-heading)",
-              fontSize: "15px",
-              color: "white",
-              fontWeight: 500,
-            }}
-          >
-            {initials}
-          </div>
-        )}
+        <ProfileAvatar
+          avatarPath={profile.avatar_path}
+          displayName={displayName}
+          size={40}
+          fontSize={15}
+          style={{ flexShrink: 0 }}
+        />
 
         {/* Name */}
         <span

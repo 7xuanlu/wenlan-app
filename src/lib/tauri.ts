@@ -20,6 +20,7 @@ export interface SearchResult {
   semantic_unit?: string;
   memory_type?: string;
   domain?: string;
+  space?: string | null;
   source_agent?: string;
   confidence?: number;
   confirmed?: boolean;
@@ -49,16 +50,28 @@ export interface SourceStatus {
   error: string | null;
 }
 
+type DomainCompat = { domain?: string | null; space?: string | null };
+
+function withDomain<T extends DomainCompat>(item: T): T {
+  if (item.domain !== undefined || item.space === undefined) return item;
+  return { ...item, domain: item.space };
+}
+
+function withDomainArray<T extends DomainCompat>(items: T[]): T[] {
+  return items.map(withDomain);
+}
+
 export async function search(
   query: string,
   limit?: number,
   sourceFilter?: string,
 ): Promise<SearchResult[]> {
-  return invoke("search", {
+  const results = await invoke<SearchResult[]>("search", {
     query,
     limit: limit ?? 10,
     sourceFilter: sourceFilter ?? null,
   });
+  return withDomainArray(results);
 }
 
 export async function getIndexStatus(): Promise<IndexStatus> {
@@ -161,6 +174,7 @@ export interface IndexedFileInfo {
   processing?: boolean;
   memory_type?: string | null;
   domain?: string | null;
+  space?: string | null;
   source_agent?: string | null;
   confidence?: number | null;
   confirmed?: boolean | null;
@@ -168,7 +182,8 @@ export interface IndexedFileInfo {
 }
 
 export async function listIndexedFiles(): Promise<IndexedFileInfo[]> {
-  return invoke("list_indexed_files");
+  const files = await invoke<IndexedFileInfo[]>("list_indexed_files");
+  return withDomainArray(files);
 }
 
 export async function deleteFileChunks(source: string, sourceId: string): Promise<void> {
@@ -258,6 +273,7 @@ export async function getModelChoice(): Promise<[string | null, string | null]> 
   return invoke("get_model_choice");
 }
 
+// The daemon config endpoint is patch-based: null preserves the current value.
 export async function setModelChoice(
   routineModel: string | null,
   synthesisModel: string | null
@@ -283,6 +299,7 @@ export async function getExternalLlm(): Promise<[string | null, string | null]> 
   return invoke("get_external_llm");
 }
 
+// The daemon config endpoint is patch-based: null preserves the current value.
 export async function setExternalLlm(
   endpoint: string | null,
   model: string | null
@@ -633,6 +650,30 @@ export interface PendingRevision {
   source_agent: string | null;
 }
 
+export interface PendingRevisionItem {
+  target_source_id: string;
+  revision_source_id: string;
+  revision_content: string;
+  source_agent: string | null;
+  last_modified: number;
+}
+
+export interface RevisionAcceptResponse {
+  target_source_id: string;
+  revision_source_id: string;
+  wrote: boolean;
+}
+
+export interface RevisionDismissResponse {
+  target_source_id: string;
+  wrote: boolean;
+}
+
+export interface ContradictionDismissResponse {
+  source_id: string;
+  wrote: boolean;
+}
+
 export interface MemoryVersionItem {
   source_id: string;
   title: string;
@@ -650,6 +691,7 @@ export interface Entity {
   name: string;
   entity_type: string;
   domain: string | null;
+  space?: string | null;
   source_agent: string | null;
   confidence: number | null;
   confirmed: boolean;
@@ -697,6 +739,7 @@ export interface MemoryItem {
   source_text?: string | null;
   memory_type: string | null;
   domain: string | null;
+  space?: string | null;
   source_agent: string | null;
   confidence: number | null;
   confirmed: boolean;
@@ -760,6 +803,7 @@ export interface Page {
   content: string;
   entity_id: string | null;
   domain: string | null;
+  space?: string | null;
   source_memory_ids: string[];
   version: number;
   status: string;
@@ -796,7 +840,11 @@ export type ConceptSourceWithMemory = PageSourceWithMemory;
 export async function getPageSources(
   pageId: string,
 ): Promise<PageSourceWithMemory[]> {
-  return invoke("get_page_sources", { pageId });
+  const sources = await invoke<PageSourceWithMemory[]>("get_page_sources", { pageId });
+  return sources.map((source) => ({
+    ...source,
+    memory: source.memory ? withDomain(source.memory) : null,
+  }));
 }
 
 /** @deprecated Use {@link getPageSources} instead. */
@@ -853,24 +901,30 @@ export async function listEntities(
   entityType?: string,
   domain?: string,
 ): Promise<Entity[]> {
-  return invoke("list_entities_cmd", {
+  const entities = await invoke<Entity[]>("list_entities_cmd", {
     entityType: entityType ?? null,
     domain: domain ?? null,
   });
+  return withDomainArray(entities);
 }
 
 export async function searchEntities(
   query: string,
   limit?: number,
 ): Promise<EntitySearchResult[]> {
-  return invoke("search_entities_cmd", {
+  const results = await invoke<EntitySearchResult[]>("search_entities_cmd", {
     query,
     limit: limit ?? null,
   });
+  return results.map((result) => ({
+    ...result,
+    entity: withDomain(result.entity),
+  }));
 }
 
 export async function getEntityDetail(entityId: string): Promise<EntityDetail> {
-  return invoke("get_entity_detail_cmd", { entityId });
+  const detail = await invoke<EntityDetail>("get_entity_detail_cmd", { entityId });
+  return { ...detail, entity: withDomain(detail.entity) };
 }
 
 export async function updateObservation(observationId: string, content: string): Promise<void> {
@@ -938,6 +992,8 @@ export interface StoreMemoryResponse {
    * is not_needed.
    */
   hint?: string;
+  triggered_revisions?: string[];
+  auto_superseded?: string[];
 }
 
 export async function storeMemory(req: StoreMemoryRequest): Promise<StoreMemoryResponse> {
@@ -952,22 +1008,25 @@ export async function listMemoriesRich(
   confirmed?: boolean,
   limit?: number,
 ): Promise<MemoryItem[]> {
-  return invoke("list_memories_cmd", {
+  const memories = await invoke<MemoryItem[]>("list_memories_cmd", {
     domain: domain ?? null,
     memoryType: memoryType ?? null,
     confirmed: confirmed ?? null,
     limit: limit ?? null,
   });
+  return withDomainArray(memories);
 }
 
 export async function getMemoryDetail(sourceId: string): Promise<MemoryItem | null> {
-  return invoke("get_memory_detail", { sourceId });
+  const memory = await invoke<MemoryItem | null>("get_memory_detail", { sourceId });
+  return memory ? withDomain(memory) : null;
 }
 
 /** Batch-fetch multiple memories by source_id in one round trip. Missing ids are silently omitted. */
 export async function listMemoriesByIds(ids: string[]): Promise<MemoryItem[]> {
   if (ids.length === 0) return [];
-  return invoke("list_memories_by_ids", { ids });
+  const memories = await invoke<MemoryItem[]>("list_memories_by_ids", { ids });
+  return withDomainArray(memories);
 }
 
 export async function getMemoryStats(): Promise<MemoryStats> {
@@ -1034,15 +1093,19 @@ export async function getVersionChain(
   return invoke("get_version_chain_cmd", { sourceId });
 }
 
-export async function acceptPendingRevision(sourceId: string): Promise<void> {
+export async function listPendingRevisions(limit?: number): Promise<PendingRevisionItem[]> {
+  return invoke("list_pending_revisions", { limit: limit ?? null });
+}
+
+export async function acceptPendingRevision(sourceId: string): Promise<RevisionAcceptResponse> {
   return invoke("accept_pending_revision", { sourceId });
 }
 
-export async function dismissPendingRevision(sourceId: string): Promise<void> {
+export async function dismissPendingRevision(sourceId: string): Promise<RevisionDismissResponse> {
   return invoke("dismiss_pending_revision", { sourceId });
 }
 
-export async function dismissContradiction(sourceId: string): Promise<void> {
+export async function dismissContradiction(sourceId: string): Promise<ContradictionDismissResponse> {
   return invoke("dismiss_contradiction", { sourceId });
 }
 
@@ -1052,6 +1115,69 @@ export async function confirmMemory(sourceId: string, confirmed: boolean = true)
 
 export async function getPendingRevision(sourceId: string): Promise<PendingRevision | null> {
   return invoke("get_pending_revision", { sourceId });
+}
+
+// ===== Refinery Queue =====
+
+export type ProposalAction =
+  | "entity_merge"
+  | "relation_conflict"
+  | "detect_contradiction"
+  | "suggest_entity"
+  | "dedup_merge";
+
+export type RefinementPayload =
+  | {
+      action: "entity_merge";
+      existing_id: string;
+      new_id: string;
+      similarity: number;
+    }
+  | {
+      action: "relation_conflict";
+      existing_id: string;
+      new_id: string;
+      from: string;
+      to: string;
+      old_type: string;
+      new_type: string;
+    }
+  | { action: "detect_contradiction" }
+  | { action: "suggest_entity"; name_hint?: string | null }
+  | { action: "dedup_merge" };
+
+export interface RefinementProposalSummary {
+  id: string;
+  action: ProposalAction;
+  source_ids: string[];
+  payload?: RefinementPayload | null;
+  confidence: number;
+  created_at: string;
+}
+
+export interface ListRefinementsResponse {
+  proposals: RefinementProposalSummary[];
+}
+
+export interface AcceptRefinementResponse {
+  id: string;
+  action_applied: string;
+}
+
+export interface RejectRefinementResponse {
+  id: string;
+}
+
+export async function listRefinements(limit?: number): Promise<ListRefinementsResponse> {
+  return invoke("list_refinements", { limit: limit ?? null });
+}
+
+export async function acceptRefinement(id: string): Promise<AcceptRefinementResponse> {
+  return invoke("accept_refinement", { id });
+}
+
+export async function rejectRefinement(id: string): Promise<RejectRefinementResponse> {
+  return invoke("reject_refinement", { id });
 }
 
 // ===== Entity Suggestions =====
@@ -1071,7 +1197,8 @@ export async function dismissEntitySuggestion(id: string): Promise<void> {
 // ===== Pages =====
 
 export async function getPage(id: string): Promise<Page | null> {
-  return invoke("get_page", { id });
+  const page = await invoke<Page | null>("get_page", { id });
+  return page ? withDomain(page) : null;
 }
 
 /** @deprecated Use {@link getPage} instead. */
@@ -1110,7 +1237,8 @@ export async function searchPages(
   query: string,
   limit?: number,
 ): Promise<Page[]> {
-  return invoke("search_pages", { query, limit: limit ?? 5 });
+  const pages = await invoke<Page[]>("search_pages", { query, limit: limit ?? 5 });
+  return withDomainArray(pages);
 }
 
 /** @deprecated Use {@link searchPages} instead. */
@@ -1127,7 +1255,8 @@ export async function listPages(
   limit?: number,
   offset?: number,
 ): Promise<Page[]> {
-  return invoke("list_pages", { status, domain, limit, offset });
+  const pages = await invoke<Page[]>("list_pages", { status, domain, limit, offset });
+  return withDomainArray(pages);
 }
 
 /** @deprecated Use {@link listPages} instead. */
@@ -1357,7 +1486,8 @@ export async function unpinMemory(sourceId: string): Promise<void> {
 }
 
 export async function listPinnedMemories(): Promise<MemoryItem[]> {
-  return invoke("list_pinned_memories");
+  const memories = await invoke<MemoryItem[]>("list_pinned_memories");
+  return withDomainArray(memories);
 }
 
 // ===== Import =====
@@ -1461,6 +1591,19 @@ export async function shouldShowWizard(): Promise<boolean> {
   return invoke("should_show_wizard");
 }
 
+export interface SetupStatus {
+  setup_completed: boolean;
+  mode: "basic-memory" | "local-model" | "anthropic-key" | string;
+  anthropic_key_configured: boolean;
+  local_model_selected: string | null;
+  local_model_loaded: string | null;
+  local_model_cached: boolean;
+}
+
+export async function getSetupStatus(): Promise<SetupStatus> {
+  return invoke("get_setup_status");
+}
+
 export async function getSetupCompleted(): Promise<boolean> {
   return invoke("get_setup_completed");
 }
@@ -1477,13 +1620,13 @@ export async function writeMcpConfig(clientType: string): Promise<void> {
   return invoke("write_mcp_config", { clientType });
 }
 
-/** Returns the `origin` MCP server entry (command + args) with real values —
- *  either a resolved local binary path (dev) or `npx -y origin-mcp` (prod). */
-export async function getOriginMcpEntry(): Promise<{
+/** Returns the `wenlan` MCP server entry (command + args) with real values —
+ *  either a resolved local binary path (dev) or `npx -y wenlan-mcp` (prod). */
+export async function getWenlanMcpEntry(): Promise<{
   command: string;
   args: string[];
 }> {
-  return invoke("get_origin_mcp_entry");
+  return invoke("get_wenlan_mcp_entry");
 }
 
 // ===== Onboarding Journey Milestones =====
@@ -1621,7 +1764,11 @@ export async function testRemoteMcpConnection(): Promise<RemoteConnectionTest> {
 // ── Nurturing Garden ────────────────────────────────────────────────
 
 export async function getNurtureCards(limit?: number, domain?: string): Promise<MemoryItem[]> {
-  return invoke("get_nurture_cards_cmd", { limit: limit ?? 3, domain: domain ?? null });
+  const memories = await invoke<MemoryItem[]>("get_nurture_cards_cmd", {
+    limit: limit ?? 3,
+    domain: domain ?? null,
+  });
+  return withDomainArray(memories);
 }
 
 export async function setStability(sourceId: string, stability: "new" | "learned" | "confirmed"): Promise<void> {
@@ -1638,10 +1785,11 @@ export async function listDecisions(
   domain?: string,
   limit?: number,
 ): Promise<MemoryItem[]> {
-  return invoke("list_decisions_cmd", {
+  const memories = await invoke<MemoryItem[]>("list_decisions_cmd", {
     domain: domain ?? null,
     limit: limit ?? null,
   });
+  return withDomainArray(memories);
 }
 
 export async function listDecisionDomains(): Promise<string[]> {

@@ -2,7 +2,7 @@
 //! System information detection for the Tauri app.
 //! Inlined from origin-core::system_info in Phase 5-D PR2 to remove the dep.
 
-use origin_types::system_info::SystemInfo;
+use wenlan_types::system_info::SystemInfo;
 
 /// Detect system capabilities and hardware information.
 pub fn detect_system_info() -> SystemInfo {

@@ -7,7 +7,9 @@ use tauri::Manager;
 use tauri_plugin_shell::ShellExt;
 use tokio::time::{sleep, timeout, Duration};
 
-/// Port range for origin-mcp serve (high ports to avoid collisions).
+const MCP_SIDECAR_NAME: &str = "wenlan-mcp";
+
+/// Port range for wenlan-mcp serve (high ports to avoid collisions).
 pub const PORT_RANGE_START: u16 = 18080;
 
 /// Relay URL for stable MCP endpoint.
@@ -190,6 +192,15 @@ fn token_file_path() -> std::path::PathBuf {
         .join("token")
 }
 
+fn token_generate_args(path: &std::path::Path) -> Vec<String> {
+    vec![
+        "token".to_string(),
+        "generate".to_string(),
+        "--output".to_string(),
+        path.to_string_lossy().into_owned(),
+    ]
+}
+
 /// Read the bearer token from disk.
 pub fn read_token() -> Result<String, String> {
     let path = token_file_path();
@@ -198,7 +209,7 @@ pub fn read_token() -> Result<String, String> {
         .map_err(|e| format!("Failed to read token at {}: {}", path.display(), e))
 }
 
-/// Start the remote access tunnel (origin-mcp serve + cloudflared).
+/// Start the remote access tunnel (wenlan-mcp serve + cloudflared).
 /// Async — emits `remote-access-status` events as state changes.
 /// Called from Tauri command handler — the command returns `Starting`
 /// immediately and this runs in a background task.
@@ -361,7 +372,7 @@ const MAX_MCP_RETRIES: u32 = 3;
 /// Maximum full restart attempts (creates new tunnel — costs Cloudflare quota).
 const MAX_TUNNEL_RETRIES: u32 = 3;
 
-/// Spawn origin-mcp serve on a given port (without cloudflared).
+/// Spawn wenlan-mcp serve on a given port (without cloudflared).
 /// Reusable for both initial start and MCP-only restarts.
 async fn spawn_mcp(
     app_handle: &tauri::AppHandle,
@@ -373,11 +384,15 @@ async fn spawn_mcp(
     ),
     String,
 > {
-    log::warn!("[remote-access] spawning origin-mcp serve on port {}", port);
+    log::warn!(
+        "[remote-access] spawning {} serve on port {}",
+        MCP_SIDECAR_NAME,
+        port
+    );
     let (mcp_rx, mcp_child) = app_handle
         .shell()
-        .sidecar("origin-mcp")
-        .map_err(|e| format!("origin-mcp sidecar not found: {}", e))?
+        .sidecar(MCP_SIDECAR_NAME)
+        .map_err(|e| format!("{} sidecar not found: {}", MCP_SIDECAR_NAME, e))?
         .args([
             "serve",
             "--port",
@@ -389,7 +404,7 @@ async fn spawn_mcp(
             "https://claude.ai,https://chatgpt.com",
         ])
         .spawn()
-        .map_err(|e| format!("Failed to spawn origin-mcp serve: {}", e))?;
+        .map_err(|e| format!("Failed to spawn {} serve: {}", MCP_SIDECAR_NAME, e))?;
 
     let health_url = format!("http://127.0.0.1:{}/health", port);
     let health_ok = timeout(Duration::from_secs(5), async {
@@ -409,7 +424,10 @@ async fn spawn_mcp(
 
     if !health_ok {
         let _ = mcp_child.kill();
-        return Err("origin-mcp serve failed to start (health check timeout).".to_string());
+        return Err(format!(
+            "{} serve failed to start (health check timeout).",
+            MCP_SIDECAR_NAME
+        ));
     }
 
     Ok((mcp_rx, mcp_child))
@@ -422,7 +440,7 @@ enum ExitedProcess {
 }
 
 /// Monitor sidecar processes for unexpected exits.
-/// - If origin-mcp exits: respawn only origin-mcp (tunnel stays alive, no Cloudflare cost).
+/// - If wenlan-mcp exits: respawn only wenlan-mcp (tunnel stays alive, no Cloudflare cost).
 /// - If cloudflared exits: full restart needed (new tunnel URL required).
 pub async fn monitor_processes(
     app_handle: tauri::AppHandle,
@@ -443,7 +461,8 @@ pub async fn monitor_processes(
         match exited {
             ExitedProcess::Mcp(reason) => {
                 log::warn!(
-                    "[remote-access] origin-mcp exited: {} — attempting MCP-only restart",
+                    "[remote-access] {} exited: {} — attempting MCP-only restart",
+                    MCP_SIDECAR_NAME,
                     reason
                 );
 
@@ -764,7 +783,7 @@ async fn start_tunnel(
     ),
     String,
 > {
-    // 0. Clean up any orphaned origin-mcp processes from previous app sessions
+    // 0. Clean up any orphaned MCP processes from previous app sessions
     cleanup_orphaned_mcp();
 
     // 1. Find available port
@@ -782,11 +801,11 @@ async fn start_tunnel(
         let shell = app_handle.shell();
         log::warn!("[remote-access] generating token via sidecar...");
         let cmd = shell
-            .sidecar("origin-mcp")
-            .map_err(|e| format!("origin-mcp sidecar not found: {}", e))?;
+            .sidecar(MCP_SIDECAR_NAME)
+            .map_err(|e| format!("{} sidecar not found: {}", MCP_SIDECAR_NAME, e))?;
         log::warn!("[remote-access] sidecar command created, executing token generate...");
         let output = cmd
-            .args(["token", "generate"])
+            .args(token_generate_args(&token_path))
             .output()
             .await
             .map_err(|e| format!("Failed to generate token (exec error: {})", e))?;
@@ -804,7 +823,7 @@ async fn start_tunnel(
     }
     let token = read_token()?;
 
-    // 3. Spawn origin-mcp serve (with health check)
+    // 3. Spawn wenlan-mcp serve (with health check)
     let (mcp_rx, mcp_child) = spawn_mcp(app_handle, port).await?;
 
     // 4. Spawn cloudflared tunnel
@@ -904,16 +923,17 @@ pub async fn toggle_off(app_handle: &tauri::AppHandle) {
     let _ = app_handle.emit("remote-access-status", &RemoteAccessStatus::Off);
 }
 
-/// Rotate the bearer token — generate a new token then kill the old origin-mcp.
-/// The crash recovery monitor detects the MCP exit and respawns only origin-mcp
+/// Rotate the bearer token — generate a new token then kill the old wenlan-mcp.
+/// The crash recovery monitor detects the MCP exit and respawns only wenlan-mcp
 /// (tunnel stays alive). The new instance reads the updated token from disk.
 pub async fn rotate_token(app_handle: &tauri::AppHandle) -> Result<String, String> {
     // 1. Generate new token first (before killing anything)
+    let token_path = token_file_path();
     let shell = app_handle.shell();
     let output = shell
-        .sidecar("origin-mcp")
-        .map_err(|e| format!("origin-mcp sidecar not found: {}", e))?
-        .args(["token", "generate"])
+        .sidecar(MCP_SIDECAR_NAME)
+        .map_err(|e| format!("{} sidecar not found: {}", MCP_SIDECAR_NAME, e))?
+        .args(token_generate_args(&token_path))
         .output()
         .await
         .map_err(|e| format!("Failed to generate token: {}", e))?;
@@ -926,7 +946,7 @@ pub async fn rotate_token(app_handle: &tauri::AppHandle) -> Result<String, Strin
 
     let token = read_token()?;
 
-    // 2. Kill old origin-mcp — crash recovery monitor will detect this,
+    // 2. Kill old wenlan-mcp — crash recovery monitor will detect this,
     //    kill cloudflared, wait 2s, and restart everything with the new token
     //    (already written to disk above).
     {
@@ -1026,6 +1046,25 @@ mod tests {
         assert_eq!(
             url,
             Some("https://first-tunnel.trycloudflare.com".to_string())
+        );
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_token_generate_args_include_legacy_output_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::set_var("HOME", tmp.path());
+        let path = token_file_path();
+        let expected_path = tmp.path().join(".config/origin-mcp/token");
+
+        assert_eq!(
+            token_generate_args(&path),
+            vec![
+                "token".to_string(),
+                "generate".to_string(),
+                "--output".to_string(),
+                expected_path.to_string_lossy().into_owned()
+            ]
         );
     }
 }

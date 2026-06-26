@@ -36,6 +36,7 @@
         "enable": true,
         "scope": {
           "allow": [
+            "$LOCALDATA/wenlan/avatars/**",
             "$DATA/origin/avatars/**"
           ]
         }
@@ -63,8 +64,9 @@
       "icons/icon.ico"
     ],
     "externalBin": [
-      "binaries/origin-server",
-      "binaries/origin-mcp",
+      "binaries/wenlan",
+      "binaries/wenlan-server",
+      "binaries/wenlan-mcp",
       "binaries/cloudflared"
     ]
   },

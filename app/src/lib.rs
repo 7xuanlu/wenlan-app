@@ -30,6 +30,49 @@ use state::AppState;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+#[cfg(target_os = "macos")]
+fn macos_dock_icon_bytes() -> &'static [u8] {
+    include_bytes!("../icons/icon.png")
+}
+
+#[cfg(target_os = "macos")]
+#[allow(deprecated)]
+fn set_macos_application_icon_once() {
+    use cocoa::appkit::{NSApp, NSApplication, NSImage};
+    use cocoa::base::{id, nil};
+    use cocoa::foundation::{NSData, NSUInteger};
+    use std::ffi::c_void;
+    use std::sync::Once;
+
+    static SET_APPLICATION_ICON: Once = Once::new();
+    SET_APPLICATION_ICON.call_once(|| unsafe {
+        let icon = macos_dock_icon_bytes();
+        let data = NSData::dataWithBytes_length_(
+            nil,
+            icon.as_ptr() as *const c_void,
+            icon.len() as NSUInteger,
+        );
+        let image: id = NSImage::initWithData_(NSImage::alloc(nil), data);
+        if image != nil {
+            NSApp().setApplicationIconImage_(image);
+        }
+    });
+}
+
+#[cfg(target_os = "macos")]
+fn activation_policy_for_main_window_visible(_visible: bool) -> tauri::ActivationPolicy {
+    tauri::ActivationPolicy::Regular
+}
+
+#[cfg(target_os = "macos")]
+fn set_main_window_dock_visibility<R: tauri::Runtime>(app: &tauri::AppHandle<R>, visible: bool) {
+    set_macos_application_icon_once();
+    let _ = app.set_activation_policy(activation_policy_for_main_window_visible(visible));
+}
+
+#[cfg(not(target_os = "macos"))]
+fn set_main_window_dock_visibility<R: tauri::Runtime>(_app: &tauri::AppHandle<R>, _visible: bool) {}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Log sinks: stderr (for terminal launches, `pnpm tauri dev`) AND a
@@ -87,6 +130,7 @@ pub fn run() {
         tauri::Builder::default().plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             use tauri::Manager;
             if let Some(window) = app.get_webview_window("main") {
+                set_main_window_dock_visibility(app, true);
                 let _ = window.show();
                 let _ = window.unminimize();
                 let _ = window.set_focus();
@@ -115,12 +159,11 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle().clone();
 
-            // Hide Dock icon at runtime (belt-and-suspenders with Info.plist LSUIElement).
-            // Info.plist LSUIElement=true suppresses the icon before the process starts;
-            // this call ensures it stays hidden even if Tauri ever resets the policy.
+            // Keep the app LaunchServices-friendly: the UI process is a normal
+            // Dock app from startup, while close/hide only affects the window.
             #[cfg(target_os = "macos")]
             {
-                app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+                app.set_activation_policy(activation_policy_for_main_window_visible(false));
             }
 
             // Tray-app pattern: red-X on the main window hides instead of closing.
@@ -134,10 +177,12 @@ pub fn run() {
                 use tauri::{Manager, WindowEvent};
                 if let Some(main_window) = app.get_webview_window("main") {
                     let win = main_window.clone();
+                    let app_for_close = handle.clone();
                     main_window.on_window_event(move |event| {
                         if let WindowEvent::CloseRequested { api, .. } = event {
                             api.prevent_close();
                             let _ = win.hide();
+                            set_main_window_dock_visibility(&app_for_close, false);
                         }
                     });
                 }
@@ -207,8 +252,10 @@ pub fn run() {
                     {
                         use tauri::Listener;
                         let win_for_ready = win.clone();
+                        let app_for_ready = handle.clone();
                         // Listen for the frontend "app-ready" event
                         handle.listen("app-ready", move |_| {
+                            set_main_window_dock_visibility(&app_for_ready, true);
                             let _ = win_for_ready.show();
                             let _ = win_for_ready.set_focus();
                         });
@@ -386,7 +433,9 @@ pub fn run() {
                             if let Some(window) = handle_for_shortcuts.get_webview_window("main") {
                                 if window.is_visible().unwrap_or(false) {
                                     let _ = window.hide();
+                                    set_main_window_dock_visibility(&handle_for_shortcuts, false);
                                 } else {
+                                    set_main_window_dock_visibility(&handle_for_shortcuts, true);
                                     let _ = window.show();
                                     let _ = window.set_focus();
                                     let _ = handle_for_shortcuts.emit("show-memory", ());
@@ -510,7 +559,9 @@ pub fn run() {
                                 if let Some(win) = handle_for_tray.get_webview_window("main") {
                                     if win.is_visible().unwrap_or(false) {
                                         let _ = win.hide();
+                                        set_main_window_dock_visibility(&handle_for_tray, false);
                                     } else {
+                                        set_main_window_dock_visibility(&handle_for_tray, true);
                                         let _ = win.show();
                                         let _ = win.set_focus();
                                     }
@@ -523,6 +574,7 @@ pub fn run() {
                     tray.on_menu_event(move |_tray, event| match event.id().as_ref() {
                         "show" => {
                             if let Some(win) = handle_for_menu.get_webview_window("main") {
+                                set_main_window_dock_visibility(&handle_for_menu, true);
                                 let _ = win.show();
                                 let _ = win.set_focus();
                             }
@@ -541,33 +593,26 @@ pub fn run() {
                 }
             }
 
-            // Launch origin-server daemon as a sidecar process.
+            // Launch wenlan-server daemon as a sidecar process.
             // If a daemon is already running on the port, the sidecar exits cleanly.
             // The shell plugin kills the child when the Tauri app exits.
             //
-            // Skip the sidecar entirely when launchd is managing the daemon
-            // (i.e. com.origin.server.plist is on disk). Otherwise app's
-            // sidecar wins the port race against launchd's daemon, which then
-            // exits 0 ("Existing healthy daemon"), gets marked successful by
-            // KeepAlive.SuccessfulExit=false, and refuses to respawn — so a
-            // later kill of the sidecar leaves no daemon at all. The fallback
-            // path (no plist on disk) is still useful for first-run before the
-            // first-run install runs and for dev environments without launchd.
-            let launchd_managed = dirs::home_dir()
-                .map(|h| h.join("Library/LaunchAgents/com.origin.server.plist"))
-                .map(|p| p.exists())
-                .unwrap_or(false);
+            // Skip the sidecar only when the current Wenlan launchd service is
+            // installed. A legacy Origin server plist is migration state, but
+            // it must not suppress the new sidecar fallback. Stable first-run
+            // install, Run at Login disable, and Quit handle legacy cleanup.
+            let launchd_managed = crate::lifecycle::current_server_plist_exists();
             if launchd_managed {
                 log::info!(
                     "[init] launchd-managed daemon detected, skipping sidecar spawn"
                 );
             } else {
                 use tauri_plugin_shell::ShellExt;
-                match app.shell().sidecar("origin-server") {
+                match app.shell().sidecar("wenlan-server") {
                     Ok(sidecar) => match sidecar.spawn() {
                         Ok((mut rx, _child)) => {
                             log::info!(
-                                "[init] Spawned origin-server daemon (pid {})",
+                                "[init] Spawned wenlan-server daemon (pid {})",
                                 _child.pid()
                             );
                             tauri::async_runtime::spawn(async move {
@@ -596,11 +641,11 @@ pub fn run() {
                             });
                         }
                         Err(e) => {
-                            log::error!("[init] Failed to spawn origin-server sidecar: {}. Run: xattr -cr /Applications/Origin.app", e);
+                            log::error!("[init] Failed to spawn wenlan-server sidecar: {}. Run: xattr -cr /Applications/Origin.app or /Applications/Wenlan.app", e);
                         }
                     },
                     Err(e) => {
-                        log::error!("[init] Failed to create origin-server sidecar command: {}", e);
+                        log::error!("[init] Failed to create wenlan-server sidecar command: {}", e);
                     }
                 }
             }
@@ -795,6 +840,7 @@ pub fn run() {
             search::accept_pending_revision,
             search::dismiss_pending_revision,
             search::get_pending_revision,
+            search::list_pending_revisions,
             // Contradiction flag commands
             search::dismiss_contradiction,
             // Profile & agent management commands
@@ -814,18 +860,23 @@ pub fn run() {
             // Briefing commands
             search::get_briefing,
             search::get_pending_contradictions,
+            // Refinery queue commands
+            search::list_refinements,
+            search::accept_refinement,
+            search::reject_refinement,
             // Narrative commands
             search::get_profile_narrative,
             search::regenerate_narrative,
             // Activity feed command
             search::list_agent_activity,
             // Setup wizard commands
+            search::get_setup_status,
             search::get_setup_completed,
             search::set_setup_completed,
             search::should_show_wizard,
             search::detect_mcp_clients_cmd,
             search::write_mcp_config,
-            search::get_origin_mcp_entry,
+            search::get_wenlan_mcp_entry,
             // Entity suggestion commands
             search::get_entity_suggestions_cmd,
             search::approve_entity_suggestion_cmd,
@@ -897,9 +948,47 @@ pub fn run() {
                     if !has_visible_windows {
                         let _ = app.emit("show-memory", ());
                     }
+                    set_main_window_dock_visibility(app, true);
                     let _ = window.show();
                     let _ = window.set_focus();
                 }
             }
         });
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn visible_main_window_uses_regular_activation_policy() {
+        assert!(matches!(
+            activation_policy_for_main_window_visible(true),
+            tauri::ActivationPolicy::Regular
+        ));
+    }
+
+    #[test]
+    fn hidden_main_window_stays_regular_activation_policy() {
+        assert!(matches!(
+            activation_policy_for_main_window_visible(false),
+            tauri::ActivationPolicy::Regular
+        ));
+    }
+
+    #[test]
+    fn info_plist_does_not_make_main_app_an_agent() {
+        let info_plist = include_str!("../Info.plist");
+
+        assert!(!info_plist.contains("<key>LSUIElement</key>\n    <true/>"));
+    }
+
+    #[test]
+    fn dock_icon_uses_full_app_icon_asset_not_tray_template() {
+        let dock_icon = macos_dock_icon_bytes();
+        let tray_icon = include_bytes!("../icons/tray-icon.png");
+
+        assert_eq!(&dock_icon[..8], b"\x89PNG\r\n\x1a\n");
+        assert!(dock_icon.len() > tray_icon.len() * 10);
+    }
 }

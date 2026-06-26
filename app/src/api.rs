@@ -4,25 +4,35 @@
 //! Thin wrapper around `reqwest::Client` that maps each daemon endpoint
 //! to a typed method. The Tauri app uses this instead of direct DB access.
 
-use origin_types::responses::HealthResponse;
 use reqwest::Client;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use wenlan_types::responses::HealthResponse;
 
 /// HTTP client that proxies requests to the origin-server daemon.
 #[derive(Clone)]
-pub struct OriginClient {
+pub struct WenlanClient {
     client: Client,
     base_url: String,
 }
 
-impl Default for OriginClient {
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct SetupStatusResponse {
+    pub setup_completed: bool,
+    pub mode: String,
+    pub anthropic_key_configured: bool,
+    pub local_model_selected: Option<String>,
+    pub local_model_loaded: Option<String>,
+    pub local_model_cached: bool,
+}
+
+impl Default for WenlanClient {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl OriginClient {
+impl WenlanClient {
     pub fn new() -> Self {
         let port: u16 = std::env::var("ORIGIN_PORT")
             .ok()
@@ -167,8 +177,8 @@ impl OriginClient {
     pub async fn import_chat_export(
         &self,
         path: &str,
-    ) -> Result<origin_types::import::ImportChatExportResponse, String> {
-        let req = origin_types::import::ImportChatExportRequest {
+    ) -> Result<wenlan_types::import::ImportChatExportResponse, String> {
+        let req = wenlan_types::import::ImportChatExportRequest {
             path: path.to_string(),
         };
         self.post_json("/api/import/chat-export", &req).await
@@ -176,7 +186,7 @@ impl OriginClient {
 
     pub async fn list_pending_imports(
         &self,
-    ) -> Result<Vec<origin_types::import::PendingImport>, String> {
+    ) -> Result<Vec<wenlan_types::import::PendingImport>, String> {
         self.get_json("/api/import/state").await
     }
 
@@ -184,7 +194,7 @@ impl OriginClient {
 
     pub async fn list_onboarding_milestones(
         &self,
-    ) -> Result<Vec<origin_types::onboarding::MilestoneRecord>, String> {
+    ) -> Result<Vec<wenlan_types::onboarding::MilestoneRecord>, String> {
         self.get_json("/api/onboarding/milestones").await
     }
 
@@ -225,7 +235,7 @@ impl OriginClient {
     pub async fn list_recent_retrievals(
         &self,
         limit: i64,
-    ) -> Result<Vec<origin_types::RetrievalEvent>, String> {
+    ) -> Result<Vec<wenlan_types::RetrievalEvent>, String> {
         let path = format!("/api/retrievals/recent?limit={}", limit);
         self.get_json(&path).await
     }
@@ -233,7 +243,7 @@ impl OriginClient {
     pub async fn list_recent_changes(
         &self,
         limit: i64,
-    ) -> Result<Vec<origin_types::PageChange>, String> {
+    ) -> Result<Vec<wenlan_types::PageChange>, String> {
         let path = format!("/api/pages/recent-changes?limit={}", limit);
         self.get_json(&path).await
     }
@@ -242,7 +252,7 @@ impl OriginClient {
         &self,
         limit: i64,
         since_ms: Option<i64>,
-    ) -> Result<Vec<origin_types::RecentActivityItem>, String> {
+    ) -> Result<Vec<wenlan_types::RecentActivityItem>, String> {
         let path = match since_ms {
             Some(ms) => format!("/api/memory/recent?limit={}&since_ms={}", limit, ms),
             None => format!("/api/memory/recent?limit={}", limit),
@@ -253,7 +263,7 @@ impl OriginClient {
     pub async fn list_unconfirmed_memories(
         &self,
         limit: i64,
-    ) -> Result<Vec<origin_types::RecentActivityItem>, String> {
+    ) -> Result<Vec<wenlan_types::RecentActivityItem>, String> {
         let path = format!("/api/memory/unconfirmed?limit={}", limit);
         self.get_json(&path).await
     }
@@ -262,7 +272,7 @@ impl OriginClient {
         &self,
         limit: i64,
         since_ms: Option<i64>,
-    ) -> Result<Vec<origin_types::RecentActivityItem>, String> {
+    ) -> Result<Vec<wenlan_types::RecentActivityItem>, String> {
         let path = match since_ms {
             Some(ms) => format!("/api/pages/recent?limit={}&since_ms={}", limit, ms),
             None => format!("/api/pages/recent?limit={}", limit),
@@ -274,7 +284,7 @@ impl OriginClient {
         &self,
         limit: Option<usize>,
         since_ms: Option<i64>,
-    ) -> Result<Vec<origin_types::RecentRelation>, String> {
+    ) -> Result<Vec<wenlan_types::RecentRelation>, String> {
         let mut path = format!(
             "/api/knowledge/recent-relations?limit={}",
             limit.unwrap_or(10)
@@ -288,26 +298,55 @@ impl OriginClient {
     pub async fn get_page_sources(
         &self,
         page_id: &str,
-    ) -> Result<Vec<origin_types::PageSourceWithMemory>, String> {
+    ) -> Result<Vec<wenlan_types::PageSourceWithMemory>, String> {
         let path = format!("/api/pages/{}/sources", page_id);
         self.get_json(&path).await
     }
 
     pub async fn test_llm(&self, endpoint: String, model: String) -> Result<String, String> {
-        let req = origin_types::requests::TestLlmRequest {
+        let req = wenlan_types::requests::TestLlmRequest {
             endpoint,
             model,
             prompt: None,
         };
-        let resp: origin_types::requests::TestLlmResponse =
+        let resp: wenlan_types::requests::TestLlmResponse =
             self.post_json("/api/llm/test", &req).await?;
         Ok(resp.response)
+    }
+
+    // ── Refinery queue ─────────────────────────────────────────────────────
+
+    pub async fn list_refinements(
+        &self,
+        limit: Option<usize>,
+    ) -> Result<wenlan_types::responses::ListRefinementsResponse, String> {
+        let mut path = "/api/refinery/queue".to_string();
+        if let Some(limit) = limit {
+            path.push_str(&format!("?limit={limit}"));
+        }
+        self.get_json(&path).await
+    }
+
+    pub async fn accept_refinement(
+        &self,
+        id: &str,
+    ) -> Result<wenlan_types::responses::AcceptRefinementResponse, String> {
+        self.post_empty(&format!("/api/refinery/queue/{id}/accept"))
+            .await
+    }
+
+    pub async fn reject_refinement(
+        &self,
+        id: &str,
+    ) -> Result<wenlan_types::responses::RejectRefinementResponse, String> {
+        self.post_empty(&format!("/api/refinery/queue/{id}/reject"))
+            .await
     }
 
     // ── Config ─────────────────────────────────────────────────────────────
 
     /// GET /api/config — return the daemon's current config.
-    pub async fn get_config(&self) -> Result<origin_types::responses::ConfigResponse, String> {
+    pub async fn get_config(&self) -> Result<wenlan_types::responses::ConfigResponse, String> {
         self.get_json("/api/config").await
     }
 
@@ -315,9 +354,53 @@ impl OriginClient {
     /// Pass `Option<T>` fields; `None` leaves a field unchanged.
     pub async fn update_config(
         &self,
-        req: origin_types::requests::UpdateConfigRequest,
-    ) -> Result<origin_types::responses::ConfigResponse, String> {
+        req: wenlan_types::requests::UpdateConfigRequest,
+    ) -> Result<wenlan_types::responses::ConfigResponse, String> {
         self.put_json("/api/config", &req).await
+    }
+
+    /// GET /api/setup/status — return daemon-owned setup/model/key state.
+    pub async fn get_setup_status(&self) -> Result<SetupStatusResponse, String> {
+        self.get_json("/api/setup/status").await
+    }
+
+    /// Mark setup complete/incomplete through the daemon config endpoint.
+    pub async fn set_setup_completed(&self, completed: bool) -> Result<(), String> {
+        self.update_config(empty_update().with_setup_completed(completed))
+            .await
+            .map(|_| ())
+    }
+
+    pub async fn get_model_choice(&self) -> Result<(Option<String>, Option<String>), String> {
+        let cfg = self.get_config().await?;
+        Ok((cfg.routine_model, cfg.synthesis_model))
+    }
+
+    /// Patch daemon model selection. `None` preserves the existing daemon value.
+    pub async fn set_model_choice(
+        &self,
+        routine_model: Option<String>,
+        synthesis_model: Option<String>,
+    ) -> Result<(), String> {
+        self.update_config(empty_update().with_model_choice(routine_model, synthesis_model))
+            .await
+            .map(|_| ())
+    }
+
+    pub async fn get_external_llm(&self) -> Result<(Option<String>, Option<String>), String> {
+        let cfg = self.get_config().await?;
+        Ok((cfg.external_llm_endpoint, cfg.external_llm_model))
+    }
+
+    /// Patch daemon external LLM config. `None` preserves the existing daemon value.
+    pub async fn set_external_llm(
+        &self,
+        endpoint: Option<String>,
+        model: Option<String>,
+    ) -> Result<(), String> {
+        self.update_config(empty_update().with_external_llm(endpoint, model))
+            .await
+            .map(|_| ())
     }
 
     pub async fn get_skip_apps(&self) -> Result<Vec<String>, String> {
@@ -341,12 +424,12 @@ impl OriginClient {
     }
 }
 
-// `UpdateConfigRequest` does not derive `Default` in origin-types 0.3.x, so
-// build a baseline with every field set to `None` here. When/if origin-types
+// `UpdateConfigRequest` does not derive `Default` in wenlan-types, so
+// build a baseline with every field set to `None` here. When/if wenlan-types
 // adds the derive, these helpers can be deleted in favor of
 // `UpdateConfigRequest { skip_apps: Some(...), ..Default::default() }`.
-fn empty_update() -> origin_types::requests::UpdateConfigRequest {
-    origin_types::requests::UpdateConfigRequest {
+fn empty_update() -> wenlan_types::requests::UpdateConfigRequest {
+    wenlan_types::requests::UpdateConfigRequest {
         skip_apps: None,
         skip_title_patterns: None,
         private_browsing_detection: None,
@@ -364,9 +447,16 @@ fn empty_update() -> origin_types::requests::UpdateConfigRequest {
 trait UpdateConfigBuilder {
     fn with_skip_apps(self, v: Vec<String>) -> Self;
     fn with_skip_title_patterns(self, v: Vec<String>) -> Self;
+    fn with_setup_completed(self, v: bool) -> Self;
+    fn with_model_choice(
+        self,
+        routine_model: Option<String>,
+        synthesis_model: Option<String>,
+    ) -> Self;
+    fn with_external_llm(self, endpoint: Option<String>, model: Option<String>) -> Self;
 }
 
-impl UpdateConfigBuilder for origin_types::requests::UpdateConfigRequest {
+impl UpdateConfigBuilder for wenlan_types::requests::UpdateConfigRequest {
     fn with_skip_apps(mut self, v: Vec<String>) -> Self {
         self.skip_apps = Some(v);
         self
@@ -374,5 +464,95 @@ impl UpdateConfigBuilder for origin_types::requests::UpdateConfigRequest {
     fn with_skip_title_patterns(mut self, v: Vec<String>) -> Self {
         self.skip_title_patterns = Some(v);
         self
+    }
+    fn with_setup_completed(mut self, v: bool) -> Self {
+        self.setup_completed = Some(v);
+        self
+    }
+    fn with_model_choice(
+        mut self,
+        routine_model: Option<String>,
+        synthesis_model: Option<String>,
+    ) -> Self {
+        self.routine_model = routine_model;
+        self.synthesis_model = synthesis_model;
+        self
+    }
+    fn with_external_llm(mut self, endpoint: Option<String>, model: Option<String>) -> Self {
+        self.external_llm_endpoint = endpoint;
+        self.external_llm_model = model;
+        self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn update_config_builder_can_set_setup_completed() {
+        let req = empty_update().with_setup_completed(true);
+
+        assert_eq!(req.setup_completed, Some(true));
+        assert_eq!(req.skip_apps, None);
+        assert_eq!(req.skip_title_patterns, None);
+    }
+
+    #[test]
+    fn update_config_builder_patches_model_fields_without_touching_other_config() {
+        let req = empty_update().with_model_choice(Some("claude-haiku-4-5-20251001".into()), None);
+
+        assert_eq!(
+            req.routine_model,
+            Some("claude-haiku-4-5-20251001".to_string())
+        );
+        assert_eq!(req.synthesis_model, None);
+        assert_eq!(req.external_llm_endpoint, None);
+        assert_eq!(req.external_llm_model, None);
+    }
+
+    #[test]
+    fn update_config_builder_patches_external_llm_fields_without_touching_models() {
+        let req = empty_update().with_external_llm(None, Some("qwen3".into()));
+
+        assert_eq!(req.external_llm_endpoint, None);
+        assert_eq!(req.external_llm_model, Some("qwen3".to_string()));
+        assert_eq!(req.routine_model, None);
+        assert_eq!(req.synthesis_model, None);
+    }
+
+    #[test]
+    fn setup_status_response_deserializes_daemon_payload() {
+        let status: SetupStatusResponse = serde_json::from_value(serde_json::json!({
+            "setup_completed": false,
+            "mode": "basic-memory",
+            "anthropic_key_configured": false,
+            "local_model_selected": null,
+            "local_model_loaded": null,
+            "local_model_cached": false
+        }))
+        .expect("daemon setup status payload should deserialize");
+
+        assert!(!status.setup_completed);
+        assert_eq!(status.mode, "basic-memory");
+        assert!(!status.anthropic_key_configured);
+        assert_eq!(status.local_model_selected, None);
+        assert_eq!(status.local_model_loaded, None);
+        assert!(!status.local_model_cached);
+    }
+
+    #[test]
+    fn wenlan_client_exposes_refinery_queue_methods() {
+        let _list = WenlanClient::list_refinements;
+        let _accept = WenlanClient::accept_refinement;
+        let _reject = WenlanClient::reject_refinement;
+    }
+
+    #[test]
+    fn wenlan_client_exposes_daemon_model_config_methods() {
+        let _get_model_choice = WenlanClient::get_model_choice;
+        let _set_model_choice = WenlanClient::set_model_choice;
+        let _get_external_llm = WenlanClient::get_external_llm;
+        let _set_external_llm = WenlanClient::set_external_llm;
     }
 }

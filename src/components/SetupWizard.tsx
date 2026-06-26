@@ -4,7 +4,7 @@ import {
   detectMcpClients,
   writeMcpConfig,
   listAgents,
-  getOriginMcpEntry,
+  getWenlanMcpEntry,
   type ImportResult,
 } from "../lib/tauri";
 import { ImportView } from "./memory/ImportView";
@@ -361,15 +361,15 @@ function ConnectStep({
     }
   }, [isError]);
 
-  const { data: originMcpEntry } = useQuery({
-    queryKey: ["origin-mcp-entry"],
-    queryFn: getOriginMcpEntry,
+  const { data: wenlanMcpEntry } = useQuery({
+    queryKey: ["wenlan-mcp-entry"],
+    queryFn: getWenlanMcpEntry,
     staleTime: Infinity,
   });
 
   const mcpJsonSnippet = `{
   "mcpServers": {
-    "origin": ${JSON.stringify(originMcpEntry ?? { command: "npx", args: ["-y", "origin-mcp"] }, null, 6).replace(/\n/g, "\n    ")}
+    "wenlan": ${JSON.stringify(wenlanMcpEntry ?? { command: "npx", args: ["-y", "wenlan-mcp"] }, null, 6).replace(/\n/g, "\n    ")}
   }
 }`;
 
@@ -694,9 +694,9 @@ function ConnectStep({
                 marginTop: "6px",
               }}
             >
-              {originMcpEntry?.command === "npx"
-                ? "Production default — resolves origin-mcp from npm at runtime."
-                : "Development path (local build). Shipped installs use npx -y origin-mcp."}
+              {wenlanMcpEntry?.command === "npx"
+                ? "Production default — resolves wenlan-mcp from npm at runtime."
+                : "Development path (local build). Shipped installs use npx -y wenlan-mcp."}
             </p>
           </div>
         )}

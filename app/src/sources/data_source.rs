@@ -4,8 +4,8 @@
 //! (origin-server never references DataSource directly).
 use crate::error::AppError;
 use async_trait::async_trait;
-use origin_types::sources::{RawDocument, SourceStatus};
 use std::any::Any;
+use wenlan_types::sources::{RawDocument, SourceStatus};
 
 /// Trait that all data source connectors must implement.
 ///
@@ -14,7 +14,7 @@ use std::any::Any;
 /// no origin-core dependency (Phase 5-D PR2 dropped it for license + bloat
 /// reasons), so the trait declaration is mirrored here with `AppError` in
 /// place of `OriginError`. The shared data shapes (`RawDocument`,
-/// `SourceStatus`) live in origin-types so connectors can move freely
+/// `SourceStatus`) live in wenlan-types so connectors can move freely
 /// between crates.
 #[async_trait]
 pub trait DataSource: Send + Sync {
