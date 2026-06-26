@@ -1014,8 +1014,8 @@ pub async fn list_memories_cmd(
         s.client.post_json("/api/memory/list", &daemon_req).await?;
 
     // The daemon returns IndexedFileInfo; the UI expects MemoryItem. Most
-    // fields overlap; the extras (content, entity_id, quality, etc.) aren't
-    // surfaced by the list endpoint and aren't needed for the list view.
+    // fields overlap; extras like entity_id and quality aren't surfaced by
+    // the list endpoint and aren't needed for the list view.
     // Keep the client-side filter as a defensive fallback for older daemons.
     let items: Vec<MemoryItem> = resp
         .memories
@@ -1027,7 +1027,7 @@ pub async fn list_memories_cmd(
         .map(|info| MemoryItem {
             source_id: info.source_id.clone(),
             title: info.title,
-            content: String::new(),
+            content: info.content,
             summary: info.summary,
             memory_type: info.memory_type,
             space: info.space,

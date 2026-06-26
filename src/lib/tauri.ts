@@ -777,6 +777,7 @@ export interface Page {
   content: string;
   entity_id: string | null;
   domain: string | null;
+  space?: string | null;
   source_memory_ids: string[];
   version: number;
   status: string;
@@ -1101,7 +1102,8 @@ export async function dismissEntitySuggestion(id: string): Promise<void> {
 // ===== Pages =====
 
 export async function getPage(id: string): Promise<Page | null> {
-  return invoke("get_page", { id });
+  const page = await invoke<Page | null>("get_page", { id });
+  return page ? withDomain(page) : null;
 }
 
 /** @deprecated Use {@link getPage} instead. */
@@ -1140,7 +1142,8 @@ export async function searchPages(
   query: string,
   limit?: number,
 ): Promise<Page[]> {
-  return invoke("search_pages", { query, limit: limit ?? 5 });
+  const pages = await invoke<Page[]>("search_pages", { query, limit: limit ?? 5 });
+  return withDomainArray(pages);
 }
 
 /** @deprecated Use {@link searchPages} instead. */
@@ -1157,7 +1160,8 @@ export async function listPages(
   limit?: number,
   offset?: number,
 ): Promise<Page[]> {
-  return invoke("list_pages", { status, domain, limit, offset });
+  const pages = await invoke<Page[]>("list_pages", { status, domain, limit, offset });
+  return withDomainArray(pages);
 }
 
 /** @deprecated Use {@link listPages} instead. */

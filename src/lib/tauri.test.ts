@@ -675,3 +675,46 @@ describe('getMemoryStats', () => {
     expect(mockInvoke).toHaveBeenCalledWith('get_memory_stats_cmd');
   });
 });
+
+describe('page domain compatibility', () => {
+  const pageFromWenlanTypes = {
+    id: 'page-1',
+    title: 'Page',
+    summary: null,
+    content: 'Body',
+    entity_id: null,
+    space: 'work',
+    source_memory_ids: [],
+    version: 1,
+    status: 'active',
+    created_at: '2026-06-25T00:00:00Z',
+    last_compiled: '2026-06-25T00:00:00Z',
+    last_modified: '2026-06-25T00:00:00Z',
+  };
+
+  it('maps getPage space to domain', async () => {
+    mockInvoke.mockResolvedValue(pageFromWenlanTypes);
+    const page = await tauri.getPage('page-1');
+    expect(mockInvoke).toHaveBeenCalledWith('get_page', { id: 'page-1' });
+    expect(page?.domain).toBe('work');
+  });
+
+  it('maps searchPages space to domain', async () => {
+    mockInvoke.mockResolvedValue([pageFromWenlanTypes]);
+    const pages = await tauri.searchPages('query', 3);
+    expect(mockInvoke).toHaveBeenCalledWith('search_pages', { query: 'query', limit: 3 });
+    expect(pages[0].domain).toBe('work');
+  });
+
+  it('maps listPages space to domain', async () => {
+    mockInvoke.mockResolvedValue([pageFromWenlanTypes]);
+    const pages = await tauri.listPages('active', 'work', 10, 2);
+    expect(mockInvoke).toHaveBeenCalledWith('list_pages', {
+      status: 'active',
+      domain: 'work',
+      limit: 10,
+      offset: 2,
+    });
+    expect(pages[0].domain).toBe('work');
+  });
+});
