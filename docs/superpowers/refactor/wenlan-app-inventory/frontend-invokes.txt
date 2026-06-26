@@ -1,126 +1,131 @@
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:5:  return invoke("set_traffic_lights_visible", { visible });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:82:  return invoke("add_watch_path", { path });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:86:  return invoke("remove_watch_path", { path });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:98:  return invoke("connect_source", { sourceName });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:102:  return invoke("disconnect_source", { sourceName });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:106:  return invoke("sync_source", { sourceName });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:156:  return invoke("add_source", { sourceType, path });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:160:  return invoke("remove_source", { id });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:164:  return invoke("sync_registered_source", { id });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:190:  return invoke("delete_file_chunks", { source, sourceId });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:194:  return invoke("delete_by_time_range", { start, end });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:198:  return invoke("delete_bulk", {
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:199:    items: items.map((i) => ({ source: i.source, source_id: i.sourceId })),
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:200:  });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:205:  return invoke("open_file", { path });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:217:  return invoke("get_chunks", { source, sourceId });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:221:  return invoke("update_chunk", { id, content });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:232:  return invoke("quick_capture", { req });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:253:  return invoke("ingest_clipboard", { content });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:261:  return invoke("set_clipboard_enabled", { enabled });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:269:  return invoke("set_api_key", { key });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:281:  return invoke("set_model_choice", { routineModel, synthesisModel });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:307:  return invoke("set_external_llm", { endpoint, model });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:314:  return invoke("test_external_llm", { endpoint, model });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:341:  return invoke("download_on_device_model", { modelId });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:446:  return invoke("set_document_tags", { source, sourceId, tags });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:450:  return invoke("delete_tag", { name });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:458:  return invoke("suggest_tags", { source, sourceId, lastModified });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:466:  return invoke("get_space", { name });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:473:  return invoke("create_space", { name, description: description ?? null });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:481:  return invoke("update_space", { name, newName, description: description ?? null });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:485:  return invoke("delete_space", { name, memoryAction: memoryAction ?? null });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:489:  return invoke("confirm_space", { name });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:493:  return invoke("reorder_space", { name, newOrder });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:497:  return invoke("toggle_space_starred", { name });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:505:  return invoke("set_document_space", { source, sourceId, spaceId });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:513:  return invoke("add_space", { name, icon, color });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:517:  return invoke("remove_space", { spaceId });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:524:  return invoke("rename_space", { spaceId, newName });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:528:  return invoke("pin_space", { spaceId });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:545:  return invoke("get_session_snapshots", { limit: limit ?? 10 });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:557:  return invoke("get_snapshot_captures", { snapshotId });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:571:  return invoke("get_snapshot_captures_with_content", { snapshotId });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:575:  return invoke("delete_snapshot", { snapshotId });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:585:  return invoke("set_skip_apps", { apps });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:593:  return invoke("set_skip_title_patterns", { patterns });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:601:  return invoke("set_private_browsing_detection", { enabled });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:893:  return invoke("create_entity_cmd", {
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:894:    name,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:895:    entityType,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:896:    domain: domain ?? null,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:897:  });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:931:  return invoke("update_observation_cmd", { observationId, content });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:935:  return invoke("delete_observation_cmd", { observationId });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:944:  return invoke("add_observation_cmd", {
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:945:    entityId,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:946:    content,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:947:    sourceAgent: sourceAgent ?? null,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:948:    confidence: confidence ?? null,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:949:  });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:953:  return invoke("delete_entity_cmd", { entityId });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:957:  return invoke("confirm_entity_cmd", { entityId, confirmed });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:961:  return invoke("confirm_observation_cmd", { observationId, confirmed });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1000:  return invoke("store_memory", { req });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1074:  return invoke("update_memory_cmd", {
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1075:    sourceId,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1076:    content: content ?? null,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1077:    domain: domain ?? null,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1078:    confirmed: confirmed ?? null,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1079:    memoryType: memoryType ?? null,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1080:  });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1087:  return invoke("reclassify_memory_cmd", { sourceId, memoryType });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1093:  return invoke("get_version_chain_cmd", { sourceId });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1097:  return invoke("list_pending_revisions", { limit: limit ?? null });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1101:  return invoke("accept_pending_revision", { sourceId });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1105:  return invoke("dismiss_pending_revision", { sourceId });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1109:  return invoke("dismiss_contradiction", { sourceId });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1113:  return invoke("confirm_memory", { sourceId, confirmed });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1117:  return invoke("get_pending_revision", { sourceId });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1172:  return invoke("list_refinements", { limit: limit ?? null });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1176:  return invoke("accept_refinement", { id });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1180:  return invoke("reject_refinement", { id });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1190:  return invoke("approve_entity_suggestion_cmd", { id });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1194:  return invoke("dismiss_entity_suggestion_cmd", { id });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1210:  return invoke("update_page", { id, content });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1219:  return invoke("delete_page", { id });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1228:  return invoke("archive_page", { id });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1384:  return invoke("export_pages_to_obsidian", { vaultPath });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1398:  return invoke("export_page_to_obsidian", { pageId, vaultPath });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1433:  return invoke("update_profile", {
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1434:    id,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1435:    name: name ?? null,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1436:    display_name: displayName ?? null,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1437:    email: email ?? null,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1438:    bio: bio ?? null,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1439:    avatar_path: avatarPath ?? null,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1440:  });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1464:  return invoke("update_agent", {
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1465:    name,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1466:    agent_type: updates.agentType ?? null,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1467:    description: updates.description ?? null,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1468:    enabled: updates.enabled ?? null,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1469:    trust_level: updates.trustLevel ?? null,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1470:    display_name: updates.displayName ?? null,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1471:  });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1475:  return invoke("delete_agent", { name });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1481:  return invoke("pin_memory", { sourceId });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1485:  return invoke("unpin_memory", { sourceId });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1510:  return invoke("import_memories_cmd", {
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1511:    source,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1512:    content,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1513:    label: label ?? null,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1514:  });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1569:  return invoke("set_avatar", { sourcePath });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1612:  return invoke("set_setup_completed", { completed });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1620:  return invoke("write_mcp_config", { clientType });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1654:  return invoke("acknowledge_onboarding_milestone", { id });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1722:  return invoke("list_agent_activity", {
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1723:    limit: limit ?? 50,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1724:    agentName: agentName ?? null,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1725:    since: since ?? null,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1726:  });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1775:  return invoke("set_stability_cmd", { sourceId, stability });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1779:  return invoke("correct_memory_cmd", { sourceId, correctionPrompt });
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1796:  return invoke("list_decision_domains_cmd", {});
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/src/lib/tauri.ts:1806:  return invoke("set_run_at_login", { enabled });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:5:  return invoke("set_traffic_lights_visible", { visible });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:82:  return invoke("add_watch_path", { path });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:86:  return invoke("remove_watch_path", { path });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:98:  return invoke("connect_source", { sourceName });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:102:  return invoke("disconnect_source", { sourceName });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:106:  return invoke("sync_source", { sourceName });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:156:  return invoke("add_source", { sourceType, path });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:160:  return invoke("remove_source", { id });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:164:  return invoke("sync_registered_source", { id });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:190:  return invoke("delete_file_chunks", { source, sourceId });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:194:  return invoke("delete_by_time_range", { start, end });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:198:  return invoke("delete_bulk", {
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:199:    items: items.map((i) => ({ source: i.source, source_id: i.sourceId })),
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:200:  });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:205:  return invoke("open_file", { path });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:217:  return invoke("get_chunks", { source, sourceId });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:221:  return invoke("update_chunk", { id, content });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:232:  return invoke("quick_capture", { req });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:253:  return invoke("ingest_clipboard", { content });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:261:  return invoke("set_clipboard_enabled", { enabled });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:269:  return invoke("set_api_key", { key });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:281:  return invoke("set_model_choice", { routineModel, synthesisModel });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:307:  return invoke("set_external_llm", { endpoint, model });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:314:  return invoke("test_external_llm", { endpoint, model });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:341:  return invoke("download_on_device_model", { modelId });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:446:  return invoke("set_document_tags", { source, sourceId, tags });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:450:  return invoke("delete_tag", { name });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:458:  return invoke("suggest_tags", { source, sourceId, lastModified });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:466:  return invoke("get_space", { name });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:473:  return invoke("create_space", { name, description: description ?? null });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:481:  return invoke("update_space", { name, newName, description: description ?? null });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:485:  return invoke("delete_space", { name, memoryAction: memoryAction ?? null });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:489:  return invoke("confirm_space", { name });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:493:  return invoke("reorder_space", { name, newOrder });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:497:  return invoke("toggle_space_starred", { name });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:505:  return invoke("set_document_space", { source, sourceId, spaceId });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:513:  return invoke("add_space", { name, icon, color });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:517:  return invoke("remove_space", { spaceId });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:524:  return invoke("rename_space", { spaceId, newName });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:528:  return invoke("pin_space", { spaceId });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:545:  return invoke("get_session_snapshots", { limit: limit ?? 10 });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:557:  return invoke("get_snapshot_captures", { snapshotId });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:571:  return invoke("get_snapshot_captures_with_content", { snapshotId });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:575:  return invoke("delete_snapshot", { snapshotId });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:585:  return invoke("set_skip_apps", { apps });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:593:  return invoke("set_skip_title_patterns", { patterns });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:601:  return invoke("set_private_browsing_detection", { enabled });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:916:  return invoke("get_page_links", { pageId });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:920:  return invoke("list_orphan_links", { minCount: minCount ?? null });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:959:  return invoke("create_entity_cmd", {
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:960:    name,
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:961:    entityType,
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:962:    domain: domain ?? null,
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:963:  });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:997:  return invoke("update_observation_cmd", { observationId, content });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1001:  return invoke("delete_observation_cmd", { observationId });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1010:  return invoke("add_observation_cmd", {
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1011:    entityId,
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1012:    content,
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1013:    sourceAgent: sourceAgent ?? null,
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1014:    confidence: confidence ?? null,
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1015:  });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1019:  return invoke("delete_entity_cmd", { entityId });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1023:  return invoke("confirm_entity_cmd", { entityId, confirmed });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1027:  return invoke("confirm_observation_cmd", { observationId, confirmed });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1066:  return invoke("store_memory", { req });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1107:  return invoke("get_enrichment_status", { sourceId });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1159:  return invoke("update_memory_cmd", {
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1160:    sourceId,
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1161:    content: content ?? null,
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1162:    domain: domain ?? null,
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1163:    confirmed: confirmed ?? null,
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1164:    memoryType: memoryType ?? null,
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1165:  });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1172:  return invoke("reclassify_memory_cmd", { sourceId, memoryType });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1178:  return invoke("get_version_chain_cmd", { sourceId });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1184:  return invoke("get_memory_revisions", { sourceId });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1190:  return invoke("get_page_revisions", { pageId });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1194:  return invoke("list_pending_revisions", { limit: limit ?? null });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1198:  return invoke("accept_pending_revision", { sourceId });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1202:  return invoke("dismiss_pending_revision", { sourceId });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1206:  return invoke("dismiss_contradiction", { sourceId });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1210:  return invoke("confirm_memory", { sourceId, confirmed });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1214:  return invoke("get_pending_revision", { sourceId });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1269:  return invoke("list_refinements", { limit: limit ?? null });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1273:  return invoke("accept_refinement", { id });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1277:  return invoke("reject_refinement", { id });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1287:  return invoke("approve_entity_suggestion_cmd", { id });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1291:  return invoke("dismiss_entity_suggestion_cmd", { id });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1307:  return invoke("update_page", { id, content });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1316:  return invoke("delete_page", { id });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1325:  return invoke("archive_page", { id });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1481:  return invoke("export_pages_to_obsidian", { vaultPath });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1495:  return invoke("export_page_to_obsidian", { pageId, vaultPath });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1530:  return invoke("update_profile", {
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1531:    id,
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1532:    name: name ?? null,
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1533:    display_name: displayName ?? null,
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1534:    email: email ?? null,
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1535:    bio: bio ?? null,
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1536:    avatar_path: avatarPath ?? null,
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1537:  });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1561:  return invoke("update_agent", {
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1562:    name,
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1563:    agent_type: updates.agentType ?? null,
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1564:    description: updates.description ?? null,
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1565:    enabled: updates.enabled ?? null,
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1566:    trust_level: updates.trustLevel ?? null,
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1567:    display_name: updates.displayName ?? null,
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1568:  });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1572:  return invoke("delete_agent", { name });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1578:  return invoke("pin_memory", { sourceId });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1582:  return invoke("unpin_memory", { sourceId });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1607:  return invoke("import_memories_cmd", {
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1608:    source,
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1609:    content,
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1610:    label: label ?? null,
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1611:  });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1666:  return invoke("set_avatar", { sourcePath });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1709:  return invoke("set_setup_completed", { completed });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1717:  return invoke("write_mcp_config", { clientType });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1751:  return invoke("acknowledge_onboarding_milestone", { id });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1819:  return invoke("list_agent_activity", {
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1820:    limit: limit ?? 50,
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1821:    agentName: agentName ?? null,
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1822:    since: since ?? null,
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1823:  });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1872:  return invoke("set_stability_cmd", { sourceId, stability });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1876:  return invoke("correct_memory_cmd", { sourceId, correctionPrompt });
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1893:  return invoke("list_decision_domains_cmd", {});
+/Users/lucian/Repos/wenlan-app/src/lib/tauri.ts:1903:  return invoke("set_run_at_login", { enabled });

@@ -1,21 +1,21 @@
 # Wenlan App Parity and Compatibility Matrix
 
 - **Date:** 2026-06-25
-- **App worktree:** `/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence`
-- **App branch:** `codex/wenlan-app-convergence`
+- **App checkout:** `/Users/lucian/Repos/wenlan-app`
+- **App branch:** `main`
 - **Wenlan backend source:** `/Users/lucian/Repos/wenlan`
 - **Purpose:** prerequisite matrix before the full `origin-app` -> `wenlan-app` refactor run.
-- **Current status:** refreshed on 2026-06-26 after typed-client, sidecar, MCP bridge, Dock/app-activation, avatar path, neutral theme fallback, Home pending-revision/refinery review work, and daemon-backed setup status work.
+- **Current status:** refreshed on 2026-06-26 after typed-client, sidecar, MCP bridge, Dock/app-activation, avatar path, neutral theme fallback, Home pending-revision/refinery review work, daemon-backed setup status work, and post-merge API parity wrappers.
 
 ## Evidence Snapshot
 
 | Evidence | Current value | Source |
 |---|---:|---|
-| Frontend `invoke(...)` calls | 126 | `docs/superpowers/refactor/wenlan-app-inventory/frontend-invokes.txt` |
-| Registered Tauri commands | 170 | `app/src/lib.rs` + `search-rs-outline.txt` |
+| Frontend `invoke(...)` calls | 131 | `docs/superpowers/refactor/wenlan-app-inventory/frontend-invokes.txt` |
+| Registered Tauri commands | 175 | `app/src/lib.rs` + `search-rs-outline.txt` |
 | Rust `origin_types` references | 0 | `app/src` residual scan |
-| Runtime identity references | 221 | `Origin`/`origin-server`/`origin-mcp`/`com.origin`/relay residual scan |
-| Stale taxonomy references | 239 | `concept`/`goal`/`domain` residual scan |
+| Runtime identity references | 222 | `Origin`/`origin-server`/`origin-mcp`/`com.origin`/relay residual scan |
+| Stale taxonomy references | 241 | `concept`/`goal`/`domain` residual scan |
 | Wenlan typed request/response declarations in `requests.rs` + `responses.rs` | 99 | `wenlan-types` scan |
 
 ## Compatibility Gates
