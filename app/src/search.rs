@@ -2840,20 +2840,29 @@ pub async fn sync_registered_source(
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
-pub async fn get_model_choice() -> Result<(Option<String>, Option<String>), String> {
-    let config = config::load_config();
-    Ok((config.routine_model, config.synthesis_model))
+pub async fn get_model_choice(
+    state: tauri::State<'_, State>,
+) -> Result<(Option<String>, Option<String>), String> {
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+    client.get_model_choice().await
 }
 
 #[tauri::command]
 pub async fn set_model_choice(
+    state: tauri::State<'_, State>,
     routine_model: Option<String>,
     synthesis_model: Option<String>,
 ) -> Result<(), String> {
-    let mut cfg = config::load_config();
-    cfg.routine_model = routine_model;
-    cfg.synthesis_model = synthesis_model;
-    config::save_config(&cfg).map_err(|e| e.to_string())?;
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+    client
+        .set_model_choice(routine_model, synthesis_model)
+        .await?;
     log::info!("[settings] Model choice updated — restart daemon to apply");
     Ok(())
 }
@@ -2864,20 +2873,27 @@ pub async fn get_system_info() -> Result<wenlan_types::system_info::SystemInfo, 
 }
 
 #[tauri::command]
-pub async fn get_external_llm() -> Result<(Option<String>, Option<String>), String> {
-    let config = config::load_config();
-    Ok((config.external_llm_endpoint, config.external_llm_model))
+pub async fn get_external_llm(
+    state: tauri::State<'_, State>,
+) -> Result<(Option<String>, Option<String>), String> {
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+    client.get_external_llm().await
 }
 
 #[tauri::command]
 pub async fn set_external_llm(
+    state: tauri::State<'_, State>,
     endpoint: Option<String>,
     model: Option<String>,
 ) -> Result<(), String> {
-    let mut cfg = config::load_config();
-    cfg.external_llm_endpoint = endpoint;
-    cfg.external_llm_model = model;
-    config::save_config(&cfg).map_err(|e| e.to_string())?;
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+    client.set_external_llm(endpoint, model).await?;
     log::info!("[settings] External LLM config updated — restart daemon to apply");
     Ok(())
 }

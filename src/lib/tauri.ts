@@ -273,6 +273,7 @@ export async function getModelChoice(): Promise<[string | null, string | null]> 
   return invoke("get_model_choice");
 }
 
+// The daemon config endpoint is patch-based: null preserves the current value.
 export async function setModelChoice(
   routineModel: string | null,
   synthesisModel: string | null
@@ -298,6 +299,7 @@ export async function getExternalLlm(): Promise<[string | null, string | null]> 
   return invoke("get_external_llm");
 }
 
+// The daemon config endpoint is patch-based: null preserves the current value.
 export async function setExternalLlm(
   endpoint: string | null,
   model: string | null

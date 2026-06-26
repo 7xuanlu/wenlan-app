@@ -371,6 +371,38 @@ impl WenlanClient {
             .map(|_| ())
     }
 
+    pub async fn get_model_choice(&self) -> Result<(Option<String>, Option<String>), String> {
+        let cfg = self.get_config().await?;
+        Ok((cfg.routine_model, cfg.synthesis_model))
+    }
+
+    /// Patch daemon model selection. `None` preserves the existing daemon value.
+    pub async fn set_model_choice(
+        &self,
+        routine_model: Option<String>,
+        synthesis_model: Option<String>,
+    ) -> Result<(), String> {
+        self.update_config(empty_update().with_model_choice(routine_model, synthesis_model))
+            .await
+            .map(|_| ())
+    }
+
+    pub async fn get_external_llm(&self) -> Result<(Option<String>, Option<String>), String> {
+        let cfg = self.get_config().await?;
+        Ok((cfg.external_llm_endpoint, cfg.external_llm_model))
+    }
+
+    /// Patch daemon external LLM config. `None` preserves the existing daemon value.
+    pub async fn set_external_llm(
+        &self,
+        endpoint: Option<String>,
+        model: Option<String>,
+    ) -> Result<(), String> {
+        self.update_config(empty_update().with_external_llm(endpoint, model))
+            .await
+            .map(|_| ())
+    }
+
     pub async fn get_skip_apps(&self) -> Result<Vec<String>, String> {
         Ok(self.get_config().await?.skip_apps)
     }
@@ -416,6 +448,12 @@ trait UpdateConfigBuilder {
     fn with_skip_apps(self, v: Vec<String>) -> Self;
     fn with_skip_title_patterns(self, v: Vec<String>) -> Self;
     fn with_setup_completed(self, v: bool) -> Self;
+    fn with_model_choice(
+        self,
+        routine_model: Option<String>,
+        synthesis_model: Option<String>,
+    ) -> Self;
+    fn with_external_llm(self, endpoint: Option<String>, model: Option<String>) -> Self;
 }
 
 impl UpdateConfigBuilder for wenlan_types::requests::UpdateConfigRequest {
@@ -431,6 +469,20 @@ impl UpdateConfigBuilder for wenlan_types::requests::UpdateConfigRequest {
         self.setup_completed = Some(v);
         self
     }
+    fn with_model_choice(
+        mut self,
+        routine_model: Option<String>,
+        synthesis_model: Option<String>,
+    ) -> Self {
+        self.routine_model = routine_model;
+        self.synthesis_model = synthesis_model;
+        self
+    }
+    fn with_external_llm(mut self, endpoint: Option<String>, model: Option<String>) -> Self {
+        self.external_llm_endpoint = endpoint;
+        self.external_llm_model = model;
+        self
+    }
 }
 
 #[cfg(test)]
@@ -444,6 +496,29 @@ mod tests {
         assert_eq!(req.setup_completed, Some(true));
         assert_eq!(req.skip_apps, None);
         assert_eq!(req.skip_title_patterns, None);
+    }
+
+    #[test]
+    fn update_config_builder_patches_model_fields_without_touching_other_config() {
+        let req = empty_update().with_model_choice(Some("claude-haiku-4-5-20251001".into()), None);
+
+        assert_eq!(
+            req.routine_model,
+            Some("claude-haiku-4-5-20251001".to_string())
+        );
+        assert_eq!(req.synthesis_model, None);
+        assert_eq!(req.external_llm_endpoint, None);
+        assert_eq!(req.external_llm_model, None);
+    }
+
+    #[test]
+    fn update_config_builder_patches_external_llm_fields_without_touching_models() {
+        let req = empty_update().with_external_llm(None, Some("qwen3".into()));
+
+        assert_eq!(req.external_llm_endpoint, None);
+        assert_eq!(req.external_llm_model, Some("qwen3".to_string()));
+        assert_eq!(req.routine_model, None);
+        assert_eq!(req.synthesis_model, None);
     }
 
     #[test]
@@ -471,5 +546,13 @@ mod tests {
         let _list = WenlanClient::list_refinements;
         let _accept = WenlanClient::accept_refinement;
         let _reject = WenlanClient::reject_refinement;
+    }
+
+    #[test]
+    fn wenlan_client_exposes_daemon_model_config_methods() {
+        let _get_model_choice = WenlanClient::get_model_choice;
+        let _set_model_choice = WenlanClient::set_model_choice;
+        let _get_external_llm = WenlanClient::get_external_llm;
+        let _set_external_llm = WenlanClient::set_external_llm;
     }
 }
