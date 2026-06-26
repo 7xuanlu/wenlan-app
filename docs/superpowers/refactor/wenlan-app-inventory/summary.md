@@ -1,6 +1,6 @@
 # Wenlan App Structural Inventory
 
-- branch: main
+- branch: codex/wenlan-app-runtime-identity-plan
 
 ## Counts
 - frontend invoke calls: 131
