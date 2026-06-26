@@ -20,6 +20,7 @@ export interface SearchResult {
   semantic_unit?: string;
   memory_type?: string;
   domain?: string;
+  space?: string | null;
   source_agent?: string;
   confidence?: number;
   confirmed?: boolean;
@@ -49,16 +50,28 @@ export interface SourceStatus {
   error: string | null;
 }
 
+type DomainCompat = { domain?: string | null; space?: string | null };
+
+function withDomain<T extends DomainCompat>(item: T): T {
+  if (item.domain !== undefined || item.space === undefined) return item;
+  return { ...item, domain: item.space };
+}
+
+function withDomainArray<T extends DomainCompat>(items: T[]): T[] {
+  return items.map(withDomain);
+}
+
 export async function search(
   query: string,
   limit?: number,
   sourceFilter?: string,
 ): Promise<SearchResult[]> {
-  return invoke("search", {
+  const results = await invoke<SearchResult[]>("search", {
     query,
     limit: limit ?? 10,
     sourceFilter: sourceFilter ?? null,
   });
+  return withDomainArray(results);
 }
 
 export async function getIndexStatus(): Promise<IndexStatus> {
@@ -161,6 +174,7 @@ export interface IndexedFileInfo {
   processing?: boolean;
   memory_type?: string | null;
   domain?: string | null;
+  space?: string | null;
   source_agent?: string | null;
   confidence?: number | null;
   confirmed?: boolean | null;
@@ -168,7 +182,8 @@ export interface IndexedFileInfo {
 }
 
 export async function listIndexedFiles(): Promise<IndexedFileInfo[]> {
-  return invoke("list_indexed_files");
+  const files = await invoke<IndexedFileInfo[]>("list_indexed_files");
+  return withDomainArray(files);
 }
 
 export async function deleteFileChunks(source: string, sourceId: string): Promise<void> {
@@ -650,6 +665,7 @@ export interface Entity {
   name: string;
   entity_type: string;
   domain: string | null;
+  space?: string | null;
   source_agent: string | null;
   confidence: number | null;
   confirmed: boolean;
@@ -697,6 +713,7 @@ export interface MemoryItem {
   source_text?: string | null;
   memory_type: string | null;
   domain: string | null;
+  space?: string | null;
   source_agent: string | null;
   confidence: number | null;
   confirmed: boolean;
@@ -796,7 +813,11 @@ export type ConceptSourceWithMemory = PageSourceWithMemory;
 export async function getPageSources(
   pageId: string,
 ): Promise<PageSourceWithMemory[]> {
-  return invoke("get_page_sources", { pageId });
+  const sources = await invoke<PageSourceWithMemory[]>("get_page_sources", { pageId });
+  return sources.map((source) => ({
+    ...source,
+    memory: source.memory ? withDomain(source.memory) : null,
+  }));
 }
 
 /** @deprecated Use {@link getPageSources} instead. */
@@ -853,24 +874,30 @@ export async function listEntities(
   entityType?: string,
   domain?: string,
 ): Promise<Entity[]> {
-  return invoke("list_entities_cmd", {
+  const entities = await invoke<Entity[]>("list_entities_cmd", {
     entityType: entityType ?? null,
     domain: domain ?? null,
   });
+  return withDomainArray(entities);
 }
 
 export async function searchEntities(
   query: string,
   limit?: number,
 ): Promise<EntitySearchResult[]> {
-  return invoke("search_entities_cmd", {
+  const results = await invoke<EntitySearchResult[]>("search_entities_cmd", {
     query,
     limit: limit ?? null,
   });
+  return results.map((result) => ({
+    ...result,
+    entity: withDomain(result.entity),
+  }));
 }
 
 export async function getEntityDetail(entityId: string): Promise<EntityDetail> {
-  return invoke("get_entity_detail_cmd", { entityId });
+  const detail = await invoke<EntityDetail>("get_entity_detail_cmd", { entityId });
+  return { ...detail, entity: withDomain(detail.entity) };
 }
 
 export async function updateObservation(observationId: string, content: string): Promise<void> {
@@ -952,22 +979,25 @@ export async function listMemoriesRich(
   confirmed?: boolean,
   limit?: number,
 ): Promise<MemoryItem[]> {
-  return invoke("list_memories_cmd", {
+  const memories = await invoke<MemoryItem[]>("list_memories_cmd", {
     domain: domain ?? null,
     memoryType: memoryType ?? null,
     confirmed: confirmed ?? null,
     limit: limit ?? null,
   });
+  return withDomainArray(memories);
 }
 
 export async function getMemoryDetail(sourceId: string): Promise<MemoryItem | null> {
-  return invoke("get_memory_detail", { sourceId });
+  const memory = await invoke<MemoryItem | null>("get_memory_detail", { sourceId });
+  return memory ? withDomain(memory) : null;
 }
 
 /** Batch-fetch multiple memories by source_id in one round trip. Missing ids are silently omitted. */
 export async function listMemoriesByIds(ids: string[]): Promise<MemoryItem[]> {
   if (ids.length === 0) return [];
-  return invoke("list_memories_by_ids", { ids });
+  const memories = await invoke<MemoryItem[]>("list_memories_by_ids", { ids });
+  return withDomainArray(memories);
 }
 
 export async function getMemoryStats(): Promise<MemoryStats> {
@@ -1357,7 +1387,8 @@ export async function unpinMemory(sourceId: string): Promise<void> {
 }
 
 export async function listPinnedMemories(): Promise<MemoryItem[]> {
-  return invoke("list_pinned_memories");
+  const memories = await invoke<MemoryItem[]>("list_pinned_memories");
+  return withDomainArray(memories);
 }
 
 // ===== Import =====
@@ -1621,7 +1652,11 @@ export async function testRemoteMcpConnection(): Promise<RemoteConnectionTest> {
 // ── Nurturing Garden ────────────────────────────────────────────────
 
 export async function getNurtureCards(limit?: number, domain?: string): Promise<MemoryItem[]> {
-  return invoke("get_nurture_cards_cmd", { limit: limit ?? 3, domain: domain ?? null });
+  const memories = await invoke<MemoryItem[]>("get_nurture_cards_cmd", {
+    limit: limit ?? 3,
+    domain: domain ?? null,
+  });
+  return withDomainArray(memories);
 }
 
 export async function setStability(sourceId: string, stability: "new" | "learned" | "confirmed"): Promise<void> {
@@ -1638,10 +1673,11 @@ export async function listDecisions(
   domain?: string,
   limit?: number,
 ): Promise<MemoryItem[]> {
-  return invoke("list_decisions_cmd", {
+  const memories = await invoke<MemoryItem[]>("list_decisions_cmd", {
     domain: domain ?? null,
     limit: limit ?? null,
   });
+  return withDomainArray(memories);
 }
 
 export async function listDecisionDomains(): Promise<string[]> {

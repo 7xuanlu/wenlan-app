@@ -6,14 +6,14 @@
 //! Tauri-specific UI state: app_handle, sensors, feature flags, and the
 //! HTTP client that proxies data requests to the daemon.
 
-use crate::api::OriginClient;
+use crate::api::WenlanClient;
 use crate::remote_access::RemoteAccessState;
-use origin_types::working_memory::WorkingMemory;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::Emitter;
+use wenlan_types::working_memory::WorkingMemory;
 
 use crate::activity::{Activity, ActivitySummary, ACTIVITY_GAP_SECS};
 use crate::sources::{DataSource, SourceStatus};
@@ -42,7 +42,7 @@ pub struct IndexStatus {
 
 pub struct AppState {
     /// HTTP client for the origin-server daemon.
-    pub client: OriginClient,
+    pub client: WenlanClient,
     pub index_status: IndexStatus,
     pub sources: HashMap<String, Box<dyn DataSource>>,
     pub watch_paths: Vec<PathBuf>,
@@ -71,7 +71,7 @@ pub struct AppState {
 impl Default for AppState {
     fn default() -> Self {
         Self {
-            client: OriginClient::new(),
+            client: WenlanClient::new(),
             index_status: IndexStatus {
                 is_running: false,
                 files_indexed: 0,

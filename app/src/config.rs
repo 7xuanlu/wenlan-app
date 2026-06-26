@@ -6,9 +6,9 @@
 //!
 //! Copied from origin-core::config; uses AppError instead of OriginError.
 use crate::error::AppError;
-use origin_types::sources::{Source, SourceType, SyncStatus};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use wenlan_types::sources::{Source, SourceType, SyncStatus};
 
 fn default_true() -> bool {
     true

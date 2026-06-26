@@ -4101,7 +4101,6 @@ dependencies = [
  "notify",
  "notify-debouncer-full",
  "objc",
- "origin-types",
  "pdf-extract",
  "raw-window-handle",
  "regex",
@@ -4131,19 +4130,9 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "uuid",
+ "wenlan-types",
  "xcap 0.8.3",
  "zip 2.4.2",
-]
-
-[[package]]
-name = "origin-types"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dee6b31fef46f11cc7959c5a259544486ba97ba3c89e89e4d2b853f0b155b8f0"
-dependencies = [
- "anyhow",
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -7384,6 +7373,17 @@ name = "weezl"
 version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a28ac98ddc8b9274cb41bb4d9d4d5c425b6020c50c46f25559911905610b4a88"
+
+[[package]]
+name = "wenlan-types"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e66b3b21618e5ef9a8569b6c7585429485ad0b7e13a06c05d1b43fc545169683"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "widestring"

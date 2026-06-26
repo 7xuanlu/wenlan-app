@@ -4,10 +4,10 @@
 use crate::error::AppError;
 use crate::sources::data_source::DataSource;
 use async_trait::async_trait;
-use origin_types::sources::{RawDocument, SourceStatus};
 use std::any::Any;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use wenlan_types::sources::{RawDocument, SourceStatus};
 
 const DOCUMENT_EXTENSIONS: &[&str] = &["txt", "md", "csv", "log", "pdf", "docx", "rtf"];
 
@@ -195,7 +195,7 @@ impl LocalFilesSource {
             metadata: metadata_map,
             memory_type: None,
             source_agent: None,
-            domain: None,
+            space: None,
             confidence: None,
             confirmed: None,
             supersedes: None,

@@ -5,8 +5,8 @@
 //! core modules (MemoryDB, refinery, etc.) can push events to the Tauri
 //! frontend without depending on Tauri directly.
 
-use origin_types::events::EventEmitter;
 use tauri::Emitter;
+use wenlan_types::events::EventEmitter;
 
 /// Wraps a `tauri::AppHandle` and forwards events to the Tauri frontend.
 pub struct TauriEmitter {

@@ -4,25 +4,25 @@
 //! Thin wrapper around `reqwest::Client` that maps each daemon endpoint
 //! to a typed method. The Tauri app uses this instead of direct DB access.
 
-use origin_types::responses::HealthResponse;
 use reqwest::Client;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use wenlan_types::responses::HealthResponse;
 
 /// HTTP client that proxies requests to the origin-server daemon.
 #[derive(Clone)]
-pub struct OriginClient {
+pub struct WenlanClient {
     client: Client,
     base_url: String,
 }
 
-impl Default for OriginClient {
+impl Default for WenlanClient {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl OriginClient {
+impl WenlanClient {
     pub fn new() -> Self {
         let port: u16 = std::env::var("ORIGIN_PORT")
             .ok()
@@ -167,8 +167,8 @@ impl OriginClient {
     pub async fn import_chat_export(
         &self,
         path: &str,
-    ) -> Result<origin_types::import::ImportChatExportResponse, String> {
-        let req = origin_types::import::ImportChatExportRequest {
+    ) -> Result<wenlan_types::import::ImportChatExportResponse, String> {
+        let req = wenlan_types::import::ImportChatExportRequest {
             path: path.to_string(),
         };
         self.post_json("/api/import/chat-export", &req).await
@@ -176,7 +176,7 @@ impl OriginClient {
 
     pub async fn list_pending_imports(
         &self,
-    ) -> Result<Vec<origin_types::import::PendingImport>, String> {
+    ) -> Result<Vec<wenlan_types::import::PendingImport>, String> {
         self.get_json("/api/import/state").await
     }
 
@@ -184,7 +184,7 @@ impl OriginClient {
 
     pub async fn list_onboarding_milestones(
         &self,
-    ) -> Result<Vec<origin_types::onboarding::MilestoneRecord>, String> {
+    ) -> Result<Vec<wenlan_types::onboarding::MilestoneRecord>, String> {
         self.get_json("/api/onboarding/milestones").await
     }
 
@@ -225,7 +225,7 @@ impl OriginClient {
     pub async fn list_recent_retrievals(
         &self,
         limit: i64,
-    ) -> Result<Vec<origin_types::RetrievalEvent>, String> {
+    ) -> Result<Vec<wenlan_types::RetrievalEvent>, String> {
         let path = format!("/api/retrievals/recent?limit={}", limit);
         self.get_json(&path).await
     }
@@ -233,7 +233,7 @@ impl OriginClient {
     pub async fn list_recent_changes(
         &self,
         limit: i64,
-    ) -> Result<Vec<origin_types::PageChange>, String> {
+    ) -> Result<Vec<wenlan_types::PageChange>, String> {
         let path = format!("/api/pages/recent-changes?limit={}", limit);
         self.get_json(&path).await
     }
@@ -242,7 +242,7 @@ impl OriginClient {
         &self,
         limit: i64,
         since_ms: Option<i64>,
-    ) -> Result<Vec<origin_types::RecentActivityItem>, String> {
+    ) -> Result<Vec<wenlan_types::RecentActivityItem>, String> {
         let path = match since_ms {
             Some(ms) => format!("/api/memory/recent?limit={}&since_ms={}", limit, ms),
             None => format!("/api/memory/recent?limit={}", limit),
@@ -253,7 +253,7 @@ impl OriginClient {
     pub async fn list_unconfirmed_memories(
         &self,
         limit: i64,
-    ) -> Result<Vec<origin_types::RecentActivityItem>, String> {
+    ) -> Result<Vec<wenlan_types::RecentActivityItem>, String> {
         let path = format!("/api/memory/unconfirmed?limit={}", limit);
         self.get_json(&path).await
     }
@@ -262,7 +262,7 @@ impl OriginClient {
         &self,
         limit: i64,
         since_ms: Option<i64>,
-    ) -> Result<Vec<origin_types::RecentActivityItem>, String> {
+    ) -> Result<Vec<wenlan_types::RecentActivityItem>, String> {
         let path = match since_ms {
             Some(ms) => format!("/api/pages/recent?limit={}&since_ms={}", limit, ms),
             None => format!("/api/pages/recent?limit={}", limit),
@@ -274,7 +274,7 @@ impl OriginClient {
         &self,
         limit: Option<usize>,
         since_ms: Option<i64>,
-    ) -> Result<Vec<origin_types::RecentRelation>, String> {
+    ) -> Result<Vec<wenlan_types::RecentRelation>, String> {
         let mut path = format!(
             "/api/knowledge/recent-relations?limit={}",
             limit.unwrap_or(10)
@@ -288,18 +288,18 @@ impl OriginClient {
     pub async fn get_page_sources(
         &self,
         page_id: &str,
-    ) -> Result<Vec<origin_types::PageSourceWithMemory>, String> {
+    ) -> Result<Vec<wenlan_types::PageSourceWithMemory>, String> {
         let path = format!("/api/pages/{}/sources", page_id);
         self.get_json(&path).await
     }
 
     pub async fn test_llm(&self, endpoint: String, model: String) -> Result<String, String> {
-        let req = origin_types::requests::TestLlmRequest {
+        let req = wenlan_types::requests::TestLlmRequest {
             endpoint,
             model,
             prompt: None,
         };
-        let resp: origin_types::requests::TestLlmResponse =
+        let resp: wenlan_types::requests::TestLlmResponse =
             self.post_json("/api/llm/test", &req).await?;
         Ok(resp.response)
     }
@@ -307,7 +307,7 @@ impl OriginClient {
     // ── Config ─────────────────────────────────────────────────────────────
 
     /// GET /api/config — return the daemon's current config.
-    pub async fn get_config(&self) -> Result<origin_types::responses::ConfigResponse, String> {
+    pub async fn get_config(&self) -> Result<wenlan_types::responses::ConfigResponse, String> {
         self.get_json("/api/config").await
     }
 
@@ -315,8 +315,8 @@ impl OriginClient {
     /// Pass `Option<T>` fields; `None` leaves a field unchanged.
     pub async fn update_config(
         &self,
-        req: origin_types::requests::UpdateConfigRequest,
-    ) -> Result<origin_types::responses::ConfigResponse, String> {
+        req: wenlan_types::requests::UpdateConfigRequest,
+    ) -> Result<wenlan_types::responses::ConfigResponse, String> {
         self.put_json("/api/config", &req).await
     }
 
@@ -341,12 +341,12 @@ impl OriginClient {
     }
 }
 
-// `UpdateConfigRequest` does not derive `Default` in origin-types 0.3.x, so
-// build a baseline with every field set to `None` here. When/if origin-types
+// `UpdateConfigRequest` does not derive `Default` in wenlan-types, so
+// build a baseline with every field set to `None` here. When/if wenlan-types
 // adds the derive, these helpers can be deleted in favor of
 // `UpdateConfigRequest { skip_apps: Some(...), ..Default::default() }`.
-fn empty_update() -> origin_types::requests::UpdateConfigRequest {
-    origin_types::requests::UpdateConfigRequest {
+fn empty_update() -> wenlan_types::requests::UpdateConfigRequest {
+    wenlan_types::requests::UpdateConfigRequest {
         skip_apps: None,
         skip_title_patterns: None,
         private_browsing_detection: None,
@@ -366,7 +366,7 @@ trait UpdateConfigBuilder {
     fn with_skip_title_patterns(self, v: Vec<String>) -> Self;
 }
 
-impl UpdateConfigBuilder for origin_types::requests::UpdateConfigRequest {
+impl UpdateConfigBuilder for wenlan_types::requests::UpdateConfigRequest {
     fn with_skip_apps(mut self, v: Vec<String>) -> Self {
         self.skip_apps = Some(v);
         self

@@ -10,14 +10,14 @@ use crate::activity;
 use crate::config;
 use crate::sources::SourceStatus;
 use crate::state::{AppState, IndexStatus};
-use origin_types::requests;
-use origin_types::responses;
-use origin_types::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use wenlan_types::requests;
+use wenlan_types::responses;
+use wenlan_types::*;
 
 type State = Arc<RwLock<AppState>>;
 type WatcherState = Arc<tokio::sync::Mutex<Option<crate::indexer::FileWatcher>>>;
@@ -833,7 +833,7 @@ async fn save_current_config(
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// DATA COMMANDS — proxied through the daemon via OriginClient
+// DATA COMMANDS — proxied through the daemon via WenlanClient
 // ═══════════════════════════════════════════════════════════════════════
 
 // ── Search ────────────────────────────────────────────────────────────
@@ -850,7 +850,7 @@ pub async fn search(
         query,
         limit: limit.unwrap_or(10),
         source_filter,
-        domain: None,
+        space: None,
     };
     let resp: responses::SearchResponse = s.client.post_json("/api/search", &req).await?;
     Ok(resp.results)
@@ -866,8 +866,9 @@ pub async fn search_memory(
         query: req.query,
         limit: req.limit.unwrap_or(10),
         memory_type: req.memory_type,
-        domain: req.domain,
+        space: req.domain,
         source_agent: req.source_agent,
+        rerank: false,
     };
     let resp: responses::SearchMemoryResponse = s
         .client
@@ -887,7 +888,7 @@ pub async fn store_memory(
     let daemon_req = requests::StoreMemoryRequest {
         content: req.content,
         memory_type: req.memory_type,
-        domain: req.domain,
+        space: req.domain,
         source_agent: req.source_agent,
         title: req.title,
         confidence: req.confidence,
@@ -955,8 +956,9 @@ pub async fn list_memories(
     let s = state.read().await;
     let daemon_req = requests::ListMemoriesRequest {
         memory_type: req.memory_type,
-        domain: req.domain,
+        space: req.domain,
         limit: req.limit.unwrap_or(100),
+        confirmed: None,
     };
     let resp: responses::ListMemoriesResponse =
         s.client.post_json("/api/memory/list", &daemon_req).await?;
@@ -1004,8 +1006,9 @@ pub async fn list_memories_cmd(
     let s = state.read().await;
     let daemon_req = requests::ListMemoriesRequest {
         memory_type,
-        domain,
+        space: domain,
         limit: limit.unwrap_or(200),
+        confirmed,
     };
     let resp: responses::ListMemoriesResponse =
         s.client.post_json("/api/memory/list", &daemon_req).await?;
@@ -1013,8 +1016,7 @@ pub async fn list_memories_cmd(
     // The daemon returns IndexedFileInfo; the UI expects MemoryItem. Most
     // fields overlap; the extras (content, entity_id, quality, etc.) aren't
     // surfaced by the list endpoint and aren't needed for the list view.
-    // Filter by `confirmed` client-side since the daemon request type doesn't
-    // support it yet.
+    // Keep the client-side filter as a defensive fallback for older daemons.
     let items: Vec<MemoryItem> = resp
         .memories
         .into_iter()
@@ -1028,7 +1030,7 @@ pub async fn list_memories_cmd(
             content: String::new(),
             summary: info.summary,
             memory_type: info.memory_type,
-            domain: info.domain,
+            space: info.space,
             source_agent: info.source_agent,
             confidence: info.confidence,
             confirmed: info.confirmed.unwrap_or(false),
@@ -1048,6 +1050,8 @@ pub async fn list_memories_cmd(
             access_count: 0,
             version: 1,
             changelog: None,
+            pending_revision: false,
+            merged_from: None,
         })
         .collect();
     Ok(items)
@@ -1106,7 +1110,7 @@ pub async fn update_memory_cmd(
     let s = state.read().await;
     let req = requests::UpdateMemoryRequest {
         content,
-        domain,
+        space: domain,
         confirmed,
         memory_type,
     };
@@ -1350,7 +1354,7 @@ pub async fn import_memories_cmd(
 pub async fn import_chat_export(
     state: tauri::State<'_, State>,
     path: String,
-) -> Result<origin_types::import::ImportChatExportResponse, String> {
+) -> Result<wenlan_types::import::ImportChatExportResponse, String> {
     let s = state.read().await;
     s.client.import_chat_export(&path).await
 }
@@ -1358,7 +1362,7 @@ pub async fn import_chat_export(
 #[tauri::command]
 pub async fn list_pending_imports(
     state: tauri::State<'_, State>,
-) -> Result<Vec<origin_types::import::PendingImport>, String> {
+) -> Result<Vec<wenlan_types::import::PendingImport>, String> {
     let s = state.read().await;
     s.client.list_pending_imports().await
 }
@@ -1368,10 +1372,10 @@ pub async fn list_pending_imports(
 #[tauri::command]
 pub async fn list_onboarding_milestones(
     state: tauri::State<'_, State>,
-) -> Result<Vec<origin_types::onboarding::MilestoneRecord>, String> {
+) -> Result<Vec<wenlan_types::onboarding::MilestoneRecord>, String> {
     // Snapshot the client out of the guard so we never hold the RwLock across
     // the HTTP .await — holding it would block all writers for the duration
-    // of the request. `OriginClient` is `Clone` and cheap to clone.
+    // of the request. `WenlanClient` is `Clone` and cheap to clone.
     let client = {
         let s = state.read().await;
         s.client.clone()
@@ -1433,7 +1437,7 @@ pub async fn create_entity_cmd(
     let req = requests::CreateEntityRequest {
         name,
         entity_type,
-        domain,
+        space: domain,
         source_agent: None,
         confidence: None,
     };
@@ -1451,7 +1455,7 @@ pub async fn list_entities_cmd(
     let s = state.read().await;
     let req = requests::ListEntitiesRequest {
         entity_type,
-        domain,
+        space: domain,
     };
     let resp: responses::ListEntitiesResponse = s
         .client
@@ -1982,7 +1986,7 @@ pub async fn get_entity_suggestions_cmd(
     state: tauri::State<'_, State>,
 ) -> Result<Vec<EntitySuggestion>, String> {
     let s = state.read().await;
-    let suggestions: Vec<origin_types::EntitySuggestion> =
+    let suggestions: Vec<wenlan_types::EntitySuggestion> =
         s.client.get_json("/api/memory/entity-suggestions").await?;
     Ok(suggestions
         .into_iter()
@@ -2253,7 +2257,7 @@ pub async fn suggest_tags(
     // Activities are tracked in-process by the Tauri app (the daemon has
     // no view of them), so look the app name up here and pass it to the
     // daemon as a merge hint.
-    let (client, activity_app): (crate::api::OriginClient, Option<String>) = {
+    let (client, activity_app): (crate::api::WenlanClient, Option<String>) = {
         let s = state.read().await;
         let activity_app = s
             .list_activity_summaries()
@@ -2300,7 +2304,7 @@ fn percent_encode(s: &str) -> String {
 #[tauri::command]
 pub async fn get_working_memory(
     state: tauri::State<'_, State>,
-) -> Result<Vec<origin_types::working_memory::WorkingMemoryEntry>, String> {
+) -> Result<Vec<wenlan_types::working_memory::WorkingMemoryEntry>, String> {
     // Working memory is in-process state populated by the context consumer
     // (`router/intent.rs`). Sensors run only in the app process, so this
     // is served from the app's local rolling buffer rather than an HTTP endpoint.
@@ -2316,7 +2320,7 @@ pub async fn get_working_memory(
 pub async fn get_session_snapshots(
     state: tauri::State<'_, State>,
     limit: Option<usize>,
-) -> Result<Vec<origin_types::SessionSnapshot>, String> {
+) -> Result<Vec<wenlan_types::SessionSnapshot>, String> {
     let s = state.read().await;
     let path = format!("/api/snapshots?limit={}", limit.unwrap_or(10));
     s.client.get_json(&path).await
@@ -2326,7 +2330,7 @@ pub async fn get_session_snapshots(
 pub async fn get_snapshot_captures(
     state: tauri::State<'_, State>,
     snapshot_id: String,
-) -> Result<Vec<origin_types::SnapshotCapture>, String> {
+) -> Result<Vec<wenlan_types::SnapshotCapture>, String> {
     let s = state.read().await;
     s.client
         .get_json(&format!("/api/snapshots/{}/captures", snapshot_id))
@@ -2337,7 +2341,7 @@ pub async fn get_snapshot_captures(
 pub async fn get_snapshot_captures_with_content(
     state: tauri::State<'_, State>,
     snapshot_id: String,
-) -> Result<Vec<origin_types::SnapshotCaptureWithContent>, String> {
+) -> Result<Vec<wenlan_types::SnapshotCaptureWithContent>, String> {
     let s = state.read().await;
     s.client
         .get_json(&format!(
@@ -2431,7 +2435,10 @@ pub async fn update_page(
     content: String,
 ) -> Result<(), String> {
     let s = state.read().await;
-    let req = requests::UpdatePageRequest { content };
+    let req = requests::UpdatePageRequest {
+        content,
+        source_memory_ids: Vec::new(),
+    };
     let _resp: responses::SuccessResponse = s
         .client
         .post_json(&format!("/api/memory/{}/update-page", id), &req)
@@ -2458,7 +2465,7 @@ pub async fn delete_page(state: tauri::State<'_, State>, id: String) -> Result<(
 
 /// Wire wrapper matching the daemon's `{ "pages": [...] }` response shape.
 /// Kept local to search.rs because `Page` lives in origin-core (not
-/// origin-types), so we can't put this in the shared response types.
+/// wenlan-types), so we can't put this in the shared response types.
 #[derive(serde::Deserialize)]
 struct ListPagesWire {
     pages: Vec<Page>,
@@ -2503,7 +2510,11 @@ pub async fn search_pages(
     limit: Option<usize>,
 ) -> Result<Vec<Page>, String> {
     let client = state.read().await.client.clone();
-    let req = requests::SearchPagesRequest { query, limit };
+    let req = requests::SearchPagesRequest {
+        query,
+        limit,
+        page_type: None,
+    };
     let resp: ListPagesWire = client.post_json("/api/pages/search", &req).await?;
     Ok(resp.pages)
 }
@@ -2512,7 +2523,7 @@ pub async fn search_pages(
 pub async fn get_page_sources(
     state: tauri::State<'_, State>,
     page_id: String,
-) -> Result<Vec<origin_types::PageSourceWithMemory>, String> {
+) -> Result<Vec<wenlan_types::PageSourceWithMemory>, String> {
     let client = { state.read().await.client.clone() };
     client.get_page_sources(&page_id).await
 }
@@ -2757,7 +2768,7 @@ pub async fn set_model_choice(
 }
 
 #[tauri::command]
-pub async fn get_system_info() -> Result<origin_types::system_info::SystemInfo, String> {
+pub async fn get_system_info() -> Result<wenlan_types::system_info::SystemInfo, String> {
     Ok(crate::system_info::detect_system_info())
 }
 
@@ -2833,7 +2844,7 @@ pub async fn download_on_device_model(
 pub async fn list_recent_retrievals(
     state: tauri::State<'_, State>,
     limit: Option<i64>,
-) -> Result<Vec<origin_types::RetrievalEvent>, String> {
+) -> Result<Vec<wenlan_types::RetrievalEvent>, String> {
     let client = {
         let s = state.read().await;
         s.client.clone()
@@ -2845,7 +2856,7 @@ pub async fn list_recent_retrievals(
 pub async fn list_recent_changes(
     state: tauri::State<'_, State>,
     limit: Option<i64>,
-) -> Result<Vec<origin_types::PageChange>, String> {
+) -> Result<Vec<wenlan_types::PageChange>, String> {
     let client = {
         let s = state.read().await;
         s.client.clone()
@@ -2858,7 +2869,7 @@ pub async fn list_recent_memories(
     state: tauri::State<'_, State>,
     limit: Option<i64>,
     since_ms: Option<i64>,
-) -> Result<Vec<origin_types::RecentActivityItem>, String> {
+) -> Result<Vec<wenlan_types::RecentActivityItem>, String> {
     let client = {
         let s = state.read().await;
         s.client.clone()
@@ -2872,7 +2883,7 @@ pub async fn list_recent_memories(
 pub async fn list_unconfirmed_memories(
     state: tauri::State<'_, State>,
     limit: Option<i64>,
-) -> Result<Vec<origin_types::RecentActivityItem>, String> {
+) -> Result<Vec<wenlan_types::RecentActivityItem>, String> {
     let client = {
         let s = state.read().await;
         s.client.clone()
@@ -2885,7 +2896,7 @@ pub async fn list_recent_pages(
     state: tauri::State<'_, State>,
     limit: Option<i64>,
     since_ms: Option<i64>,
-) -> Result<Vec<origin_types::RecentActivityItem>, String> {
+) -> Result<Vec<wenlan_types::RecentActivityItem>, String> {
     let client = {
         let s = state.read().await;
         s.client.clone()
@@ -2900,7 +2911,7 @@ pub async fn list_recent_relations(
     state: tauri::State<'_, State>,
     limit: Option<usize>,
     since_ms: Option<i64>,
-) -> Result<Vec<origin_types::RecentRelation>, String> {
+) -> Result<Vec<wenlan_types::RecentRelation>, String> {
     let client = {
         let s = state.read().await;
         s.client.clone()
