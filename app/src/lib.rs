@@ -818,7 +818,7 @@ pub fn run() {
             search::should_show_wizard,
             search::detect_mcp_clients_cmd,
             search::write_mcp_config,
-            search::get_origin_mcp_entry,
+            search::get_wenlan_mcp_entry,
             // Entity suggestion commands
             search::get_entity_suggestions_cmd,
             search::approve_entity_suggestion_cmd,

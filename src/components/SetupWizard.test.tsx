@@ -14,7 +14,7 @@ vi.mock("../lib/tauri", () => ({
   detectMcpClients: vi.fn().mockResolvedValue([]),
   writeMcpConfig: vi.fn().mockResolvedValue(undefined),
   listAgents: vi.fn().mockResolvedValue([]),
-  getOriginMcpEntry: vi.fn().mockResolvedValue({ command: "npx", args: ["-y", "origin-mcp"] }),
+  getWenlanMcpEntry: vi.fn().mockResolvedValue({ command: "npx", args: ["-y", "wenlan-mcp"] }),
   getRemoteAccessStatus: vi.fn().mockResolvedValue({ status: "off" }),
   toggleRemoteAccess: vi.fn().mockResolvedValue({ status: "off" }),
   rotateRemoteToken: vi.fn().mockResolvedValue("new-token"),

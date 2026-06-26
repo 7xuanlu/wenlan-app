@@ -374,17 +374,17 @@ pub async fn write_mcp_config(client_type: String) -> Result<(), String> {
     let config_path = crate::mcp_config::client_config_path(&client_type)
         .ok_or(format!("Unknown client type: {}", client_type))?;
     let is_claude_code = client_type == "claude_code";
-    crate::mcp_config::write_origin_entry(&config_path, is_claude_code).map_err(|e| e.to_string())
+    crate::mcp_config::write_wenlan_entry(&config_path, is_claude_code).map_err(|e| e.to_string())
 }
 
-/// Returns the current `origin` MCP server entry (command + args) that Origin
+/// Returns the current `wenlan` MCP server entry (command + args) that Origin
 /// uses when writing client configs. Prefers a local binary in dev, falls back
-/// to `npx -y origin-mcp` otherwise. The frontend uses this to build a
+/// to `npx -y wenlan-mcp` otherwise. The frontend uses this to build a
 /// copy-pasteable manual-setup JSON snippet with real values instead of
-/// `/path/to/origin-mcp` placeholder text.
+/// `/path/to/wenlan-mcp` placeholder text.
 #[tauri::command]
-pub async fn get_origin_mcp_entry() -> Result<serde_json::Value, String> {
-    Ok(crate::mcp_config::origin_mcp_entry())
+pub async fn get_wenlan_mcp_entry() -> Result<serde_json::Value, String> {
+    Ok(crate::mcp_config::wenlan_mcp_entry())
 }
 
 #[tauri::command]
@@ -543,7 +543,7 @@ pub async fn test_remote_mcp_connection(
         }
     };
     let start = std::time::Instant::now();
-    // Raw tunnel URL: probe `/health` (origin-mcp serves it; expect 2xx).
+    // Raw tunnel URL: probe `/health` (wenlan-mcp serves it; expect 2xx).
     // Relay URL: probe the URL directly — any HTTP response (even 4xx from
     // method-not-allowed on GET /mcp) proves DNS + TLS + worker reachable;
     // only 5xx / connection errors indicate a real problem.

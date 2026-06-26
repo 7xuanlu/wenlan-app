@@ -26,12 +26,21 @@ pub fn client_config_path(client_type: &str) -> Option<PathBuf> {
     }
 }
 
-/// Check if a JSON config string already has an "origin" entry in mcpServers.
-fn has_origin_entry(json_str: &str) -> bool {
+const MCP_SERVER_KEY: &str = "wenlan";
+const LEGACY_MCP_SERVER_KEY: &str = "origin";
+
+/// Check if a JSON config string already has a Wenlan entry or legacy Origin entry.
+fn has_configured_entry(json_str: &str) -> bool {
     serde_json::from_str::<serde_json::Value>(json_str)
         .ok()
-        .and_then(|v| v.get("mcpServers")?.get("origin").cloned())
-        .is_some()
+        .and_then(|v| {
+            let servers = v.get("mcpServers")?;
+            Some(
+                servers.get(MCP_SERVER_KEY).is_some()
+                    || servers.get(LEGACY_MCP_SERVER_KEY).is_some(),
+            )
+        })
+        .unwrap_or(false)
 }
 
 /// Detect installed MCP-compatible tools and whether Origin is already configured.
@@ -54,7 +63,7 @@ pub fn detect_mcp_clients() -> Vec<McpClient> {
                         .unwrap_or(false);
                 let configured = config_path.exists()
                     && std::fs::read_to_string(&config_path)
-                        .map(|s| has_origin_entry(&s))
+                        .map(|s| has_configured_entry(&s))
                         .unwrap_or(false);
                 (app_exists, configured)
             } else {
@@ -62,7 +71,7 @@ pub fn detect_mcp_clients() -> Vec<McpClient> {
                 let exists = config_path.exists();
                 let configured = exists
                     && std::fs::read_to_string(&config_path)
-                        .map(|s| has_origin_entry(&s))
+                        .map(|s| has_configured_entry(&s))
                         .unwrap_or(false);
                 (exists, configured)
             };
@@ -78,22 +87,23 @@ pub fn detect_mcp_clients() -> Vec<McpClient> {
         .collect()
 }
 
-/// Search for a local origin-mcp binary (dev fallback).
-fn find_origin_mcp_binary() -> Option<PathBuf> {
+/// Search for a local wenlan-mcp binary (dev fallback).
+fn find_wenlan_mcp_binary() -> Option<PathBuf> {
     let candidates = [
-        dirs::home_dir().map(|h| h.join(".cargo/bin/origin-mcp")),
-        dirs::home_dir().map(|h| h.join("Repos/origin-mcp/target/release/origin-mcp")),
-        Some(PathBuf::from("/usr/local/bin/origin-mcp")),
+        dirs::home_dir().map(|h| h.join(".cargo/bin/wenlan-mcp")),
+        dirs::home_dir().map(|h| h.join("Repos/wenlan/target/release/wenlan-mcp")),
+        dirs::home_dir().map(|h| h.join("Repos/wenlan/target/debug/wenlan-mcp")),
+        Some(PathBuf::from("/usr/local/bin/wenlan-mcp")),
     ];
     candidates.into_iter().flatten().find(|p| p.exists())
 }
 
-/// The MCP config entry Origin writes into client config files.
-/// Default: npx (production path, requires origin-mcp published to npm).
+/// The MCP config entry Origin writes into client config files for Wenlan.
+/// Default: npx (production path, requires wenlan-mcp published to npm).
 /// Dev fallback: uses local binary if found on disk.
-pub fn origin_mcp_entry() -> serde_json::Value {
+pub fn wenlan_mcp_entry() -> serde_json::Value {
     // Dev fallback: use local binary if available
-    if let Some(binary_path) = find_origin_mcp_binary() {
+    if let Some(binary_path) = find_wenlan_mcp_binary() {
         return serde_json::json!({
             "command": binary_path.to_string_lossy(),
             "args": []
@@ -102,14 +112,15 @@ pub fn origin_mcp_entry() -> serde_json::Value {
     // Production default
     serde_json::json!({
         "command": "npx",
-        "args": ["-y", "origin-mcp"]
+        "args": ["-y", "wenlan-mcp"]
     })
 }
 
-/// Write the origin MCP server entry into a client's config file.
+/// Write the Wenlan MCP server entry into a client's config file.
+/// Existing legacy `origin` entries are preserved and still detected.
 /// If `is_claude_code` is true and the file doesn't exist, returns an error
 /// (Claude Code manages its own config file).
-pub fn write_origin_entry(
+pub fn write_wenlan_entry(
     config_path: &std::path::Path,
     is_claude_code: bool,
 ) -> Result<(), AppError> {
@@ -135,7 +146,7 @@ pub fn write_origin_entry(
     if root.get("mcpServers").is_none() {
         root["mcpServers"] = serde_json::json!({});
     }
-    root["mcpServers"]["origin"] = origin_mcp_entry();
+    root["mcpServers"][MCP_SERVER_KEY] = wenlan_mcp_entry();
 
     // Write back with pretty formatting
     if let Some(parent) = config_path.parent() {
@@ -180,75 +191,100 @@ mod tests {
     }
 
     #[test]
-    fn test_check_already_configured_finds_origin() {
+    fn test_check_already_configured_finds_legacy_origin() {
         let json =
             r#"{"mcpServers": {"origin": {"command": "npx", "args": ["-y", "origin-mcp"]}}}"#;
-        assert!(has_origin_entry(json));
+        assert!(has_configured_entry(json));
+    }
+
+    #[test]
+    fn test_check_already_configured_finds_wenlan() {
+        let json =
+            r#"{"mcpServers": {"wenlan": {"command": "npx", "args": ["-y", "wenlan-mcp"]}}}"#;
+        assert!(has_configured_entry(json));
     }
 
     #[test]
     fn test_check_already_configured_not_found() {
         let json = r#"{"mcpServers": {"other-server": {}}}"#;
-        assert!(!has_origin_entry(json));
+        assert!(!has_configured_entry(json));
     }
 
     #[test]
     fn test_check_already_configured_no_mcp_servers_key() {
         let json = r#"{"theme": "dark"}"#;
-        assert!(!has_origin_entry(json));
+        assert!(!has_configured_entry(json));
     }
 
     #[test]
     fn test_check_already_configured_invalid_json() {
-        assert!(!has_origin_entry("not json"));
+        assert!(!has_configured_entry("not json"));
     }
 
     #[test]
-    fn test_write_origin_entry_creates_new_file() {
+    fn test_write_wenlan_entry_creates_new_file() {
         let tmp = tempfile::tempdir().unwrap();
         let config_path = tmp.path().join("config.json");
-        write_origin_entry(&config_path, false).unwrap();
+        write_wenlan_entry(&config_path, false).unwrap();
         let contents = std::fs::read_to_string(&config_path).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&contents).unwrap();
         // Command is either a local binary path or npx (depending on host)
-        let cmd = parsed["mcpServers"]["origin"]["command"].as_str().unwrap();
+        let cmd = parsed["mcpServers"]["wenlan"]["command"].as_str().unwrap();
         assert!(
-            cmd == "npx" || cmd.ends_with("origin-mcp"),
-            "expected npx or path to origin-mcp, got: {cmd}"
+            cmd == "npx" || cmd.ends_with("wenlan-mcp"),
+            "expected npx or path to wenlan-mcp, got: {cmd}"
         );
+        assert!(parsed["mcpServers"]["origin"].is_null());
     }
 
     #[test]
-    fn test_write_origin_entry_preserves_existing_servers() {
+    fn test_write_wenlan_entry_preserves_existing_servers() {
         let tmp = tempfile::tempdir().unwrap();
         let config_path = tmp.path().join("config.json");
         let existing = r#"{"mcpServers": {"other": {"command": "other-cmd"}}}"#;
         std::fs::write(&config_path, existing).unwrap();
-        write_origin_entry(&config_path, false).unwrap();
+        write_wenlan_entry(&config_path, false).unwrap();
         let contents = std::fs::read_to_string(&config_path).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&contents).unwrap();
         assert!(parsed["mcpServers"]["other"].is_object());
-        assert!(parsed["mcpServers"]["origin"].is_object());
+        assert!(parsed["mcpServers"]["wenlan"].is_object());
     }
 
     #[test]
-    fn test_write_origin_entry_creates_mcp_servers_key() {
+    fn test_write_wenlan_entry_preserves_legacy_origin_entry() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config_path = tmp.path().join("config.json");
+        let existing =
+            r#"{"mcpServers": {"origin": {"command": "npx", "args": ["-y", "origin-mcp"]}}}"#;
+        std::fs::write(&config_path, existing).unwrap();
+        write_wenlan_entry(&config_path, false).unwrap();
+        let contents = std::fs::read_to_string(&config_path).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&contents).unwrap();
+        assert_eq!(
+            parsed["mcpServers"]["origin"]["args"],
+            serde_json::json!(["-y", "origin-mcp"])
+        );
+        assert!(parsed["mcpServers"]["wenlan"].is_object());
+    }
+
+    #[test]
+    fn test_write_wenlan_entry_creates_mcp_servers_key() {
         let tmp = tempfile::tempdir().unwrap();
         let config_path = tmp.path().join("config.json");
         std::fs::write(&config_path, r#"{"theme": "dark"}"#).unwrap();
-        write_origin_entry(&config_path, false).unwrap();
+        write_wenlan_entry(&config_path, false).unwrap();
         let contents = std::fs::read_to_string(&config_path).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&contents).unwrap();
         assert_eq!(parsed["theme"], "dark");
-        assert!(parsed["mcpServers"]["origin"].is_object());
+        assert!(parsed["mcpServers"]["wenlan"].is_object());
     }
 
     #[test]
-    fn test_write_origin_entry_creates_backup() {
+    fn test_write_wenlan_entry_creates_backup() {
         let tmp = tempfile::tempdir().unwrap();
         let config_path = tmp.path().join("config.json");
         std::fs::write(&config_path, r#"{"original": true}"#).unwrap();
-        write_origin_entry(&config_path, false).unwrap();
+        write_wenlan_entry(&config_path, false).unwrap();
         let backup = tmp.path().join("config.json.bak");
         assert!(backup.exists());
         let backup_contents = std::fs::read_to_string(&backup).unwrap();
@@ -256,20 +292,20 @@ mod tests {
     }
 
     #[test]
-    fn test_write_origin_entry_errors_on_invalid_json() {
+    fn test_write_wenlan_entry_errors_on_invalid_json() {
         let tmp = tempfile::tempdir().unwrap();
         let config_path = tmp.path().join("config.json");
         std::fs::write(&config_path, "not valid json").unwrap();
-        let result = write_origin_entry(&config_path, false);
+        let result = write_wenlan_entry(&config_path, false);
         assert!(result.is_err());
     }
 
     #[test]
-    fn test_write_origin_entry_refuses_create_for_claude_code() {
+    fn test_write_wenlan_entry_refuses_create_for_claude_code() {
         let tmp = tempfile::tempdir().unwrap();
         let config_path = tmp.path().join("claude.json");
         // is_claude_code = true, file doesn't exist → should error
-        let result = write_origin_entry(&config_path, true);
+        let result = write_wenlan_entry(&config_path, true);
         assert!(result.is_err());
     }
 }
