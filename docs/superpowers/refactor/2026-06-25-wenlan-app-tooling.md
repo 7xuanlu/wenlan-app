@@ -1,14 +1,15 @@
 # Wenlan App Refactor Tooling Preflight
 
 - **Date:** 2026-06-25
-- **Worktree:** `/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence`
+- **Worktree:** `/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence`
 - **Branch:** `codex/wenlan-app-convergence`
 - **Base:** `af618e5 frontend: align activity strings + CSS var with daemon page rename`
 - **Purpose:** establish repeatable structural search and baseline checks before API/identity refactor edits.
+- **Current status:** refreshed on 2026-06-26 after the local/GitHub repo rename to `wenlan-app`.
 
 ## Baseline
 
-Frontend setup is repeatable:
+Frontend setup remains repeatable:
 
 ```bash
 pnpm install --frozen-lockfile --offline
@@ -22,25 +23,27 @@ Test Files 35 passed (35)
 Tests 319 passed | 1 skipped (320)
 ```
 
-Rust build currently fails before app code compiles because the Tauri sidecar contract is stale:
+Rust sidecar setup has moved past the original stale `origin-server` failure. Current direct build evidence:
 
-```text
-resource path `binaries/origin-server-aarch64-apple-darwin` doesn't exist
+```bash
+cargo build
 ```
 
-Evidence:
+Observed on 2026-06-26:
 
-- `app/tauri.conf.json` still declares `externalBin` entries for `binaries/origin-server`, `binaries/origin-mcp`, and `binaries/cloudflared`.
-- `package.json` still tries `cargo build -p origin-server`, but this repo's Cargo workspace only contains `app`.
-- This is a pre-existing setup drift and a required migration item, not a reason to hand-copy a local binary before the refactor.
+```text
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 50.77s
+```
+
+Tauri debug bundle generation also reaches a built `.app`; it still exits at the updater bundle signing step when `TAURI_SIGNING_PRIVATE_KEY` is unset. That signing error is not an app compile or sidecar-contract failure.
 
 ## Structural Tools
 
 CodeGraph was evaluated against the exact requested project:
 
 ```bash
-CODEGRAPH_TELEMETRY=0 DO_NOT_TRACK=1 npx -y @colbymchenry/codegraph init /Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence
-CODEGRAPH_TELEMETRY=0 DO_NOT_TRACK=1 npx -y @colbymchenry/codegraph status /Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence
+CODEGRAPH_TELEMETRY=0 DO_NOT_TRACK=1 npx -y @colbymchenry/codegraph init /Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence
+CODEGRAPH_TELEMETRY=0 DO_NOT_TRACK=1 npx -y @colbymchenry/codegraph status /Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence
 ```
 
 Observed result:
@@ -55,8 +58,8 @@ Use it for symbol navigation, impact checks, and refactor blast-radius discovery
 
 ```bash
 CODEGRAPH_TELEMETRY=0 DO_NOT_TRACK=1 npx -y @colbymchenry/codegraph sync .
-CODEGRAPH_TELEMETRY=0 DO_NOT_TRACK=1 npx -y @colbymchenry/codegraph query OriginClient --json
-CODEGRAPH_TELEMETRY=0 DO_NOT_TRACK=1 npx -y @colbymchenry/codegraph impact OriginClient --json
+CODEGRAPH_TELEMETRY=0 DO_NOT_TRACK=1 npx -y @colbymchenry/codegraph query WenlanClient --json
+CODEGRAPH_TELEMETRY=0 DO_NOT_TRACK=1 npx -y @colbymchenry/codegraph impact WenlanClient --json
 CODEGRAPH_TELEMETRY=0 DO_NOT_TRACK=1 npx -y @colbymchenry/codegraph affected app/src/api.rs --json
 ```
 
@@ -89,18 +92,18 @@ It writes:
 - `docs/superpowers/refactor/wenlan-app-inventory/frontend-invokes.txt`
 - `docs/superpowers/refactor/wenlan-app-inventory/rust-structs.txt`
 
-## Initial Inventory Counts
+## Current Inventory Counts
 
-From the preflight scan:
+From `bash scripts/refactor/inventory.sh` after the typed-client and sidecar convergence work:
 
 | Surface | Count | Meaning |
 |---|---:|---|
-| `src/lib/tauri.ts` `invoke(...)` calls | 136 | frontend-to-Tauri wrapper surface |
+| `src/lib/tauri.ts` `invoke(...)` calls | 121 | frontend-to-Tauri wrapper surface |
 | `app/src/lib.rs` registered `search::...` commands | 165 | Rust command registration surface |
-| Rust `origin_types` references | 49 | typed contract migration surface |
-| runtime identity references | 282 | package/service/MCP/remote/app-name migration surface |
-| stale taxonomy references | 231 | `concept`/`goal`/`domain` review surface |
-| source files under `app/src` and `src` | 147 | working code surface size |
+| Rust `origin_types` references | 0 | typed contract migration is no longer blocked by stale crate imports |
+| runtime identity references | 221 | package/service/MCP/remote/app-name migration surface |
+| stale taxonomy references | 239 | `concept`/`goal`/`domain` review surface |
+| source files under `app/src` and `src` | 151 | working code surface size |
 
 ## Refactor Optimizer Rules
 
@@ -119,11 +122,11 @@ Use CodeGraph and structural search first, then text search:
 
 | Tool | Trust it for | Do not trust it for | Typical command |
 |---|---|---|---|
-| CodeGraph | "What code probably depends on this symbol/file?" and "which tests might be affected?" | deterministic counts, syntactic rewrite completeness, type correctness | `codegraph query OriginClient --json`; `codegraph impact OriginClient --json`; `codegraph affected app/src/api.rs --json` |
+| CodeGraph | "What code probably depends on this symbol/file?" and "which tests might be affected?" | deterministic counts, syntactic rewrite completeness, type correctness | `codegraph query WenlanClient --json`; `codegraph impact WenlanClient --json`; `codegraph affected app/src/api.rs --json` |
 | ast-grep | "Which code has this exact syntax shape?" and "what is the repeatable inventory/codemod surface?" | semantic call graph, type/import validity, runtime behavior | `sg run -p 'invoke($CMD, $$$ARGS)' -l ts src`; `sg run -p 'pub struct $NAME { $$$FIELDS }' -l rs app/src` |
 | LSP/compiler | "Do imports, types, signatures, and references still make sense?" | migration scope discovery, feature parity, runtime side effects | rust-analyzer/tsserver diagnostics; `cargo check`; `pnpm build` |
 | Tests/builds | "Does the edited behavior work?" | finding every impacted file before the edit | `pnpm test`; targeted Vitest; Rust tests; Tauri build checks |
-| `rg` | "Are stale strings or allowed legacy tokens still present?" | primary planning for cross-file behavior | `rg -n 'origin-types|origin_types::|OriginClient' app/Cargo.toml app/src` |
+| `rg` | "Are stale strings or allowed legacy tokens still present?" | primary planning for cross-file behavior | `rg -n 'origin-types|origin_types::|OriginClient|com\\.origin|Origin\\.app' app/Cargo.toml app/src` |
 | `grep` | "What text can I still find when the better tools are unavailable?" | structural inventory, semantic correctness, rewrite safety | `grep -RIn --exclude-dir=node_modules --exclude-dir=target --exclude-dir=.codegraph 'OriginClient' app src` |
 
 The boundary is intentional: CodeGraph reduces token-heavy exploration, ast-grep makes inventory reproducible, LSP/compiler catches semantic breakage, and tests/builds provide evidence. `rg` is the normal residual text check. `grep` is the fallback if none of the higher-signal lanes work for the current surface. A task is not complete merely because one lane is green.

@@ -39,16 +39,16 @@ function expectBlueNeutralNavy(hex: string | null): void {
 }
 
 describe("dark theme brand tokens", () => {
-  it("uses a blue-neutral navy scale instead of violet icon colors", () => {
-    expect(rootToken("--bg-primary")).toBe("#101722");
-    expect(rootToken("--bg-secondary")).toBe("#151C28");
-    expect(rootToken("--border")).toBe("#2B3748");
+  it("uses a professional graphite-blue scale instead of violet icon colors", () => {
+    expect(rootToken("--bg-primary")).toBe("#151A20");
+    expect(rootToken("--bg-secondary")).toBe("#1C242D");
+    expect(rootToken("--border")).toBe("#303A46");
 
-    expect(darkToken("--mem-bg")).toBe("#101722");
-    expect(darkToken("--mem-surface")).toBe("#151C28");
-    expect(darkToken("--mem-sidebar")).toBe("#0D131D");
-    expect(darkToken("--mem-border")).toBe("#2B3748");
-    expect(darkToken("--mem-accent-indigo")).toBe("#4FAED8");
+    expect(darkToken("--mem-bg")).toBe("#151A20");
+    expect(darkToken("--mem-surface")).toBe("#1C242D");
+    expect(darkToken("--mem-sidebar")).toBe("#10151B");
+    expect(darkToken("--mem-border")).toBe("#303A46");
+    expect(darkToken("--mem-accent-indigo")).toBe("#64B5D9");
   });
 
   it("keeps dark structural surfaces out of the purple hue family", () => {

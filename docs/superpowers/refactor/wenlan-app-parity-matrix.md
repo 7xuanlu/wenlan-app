@@ -1,20 +1,21 @@
 # Wenlan App Parity and Compatibility Matrix
 
 - **Date:** 2026-06-25
-- **App worktree:** `/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence`
+- **App worktree:** `/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence`
 - **App branch:** `codex/wenlan-app-convergence`
 - **Wenlan backend source:** `/Users/lucian/Repos/wenlan`
 - **Purpose:** prerequisite matrix before the full `origin-app` -> `wenlan-app` refactor run.
+- **Current status:** refreshed on 2026-06-26 after typed-client, sidecar, MCP bridge, Dock/app-activation, avatar path, and theme fallback work.
 
 ## Evidence Snapshot
 
 | Evidence | Current value | Source |
 |---|---:|---|
-| Frontend `invoke(...)` calls | 136 | `docs/superpowers/refactor/wenlan-app-inventory/frontend-invokes.txt` |
+| Frontend `invoke(...)` calls | 121 | `docs/superpowers/refactor/wenlan-app-inventory/frontend-invokes.txt` |
 | Registered Tauri commands | 165 | `app/src/lib.rs` + `search-rs-outline.txt` |
-| Rust `origin_types` references | 49 | `app/src` residual scan |
-| Runtime identity references | 282 | `Origin`/`origin-server`/`origin-mcp`/`com.origin`/relay residual scan |
-| Stale taxonomy references | 231 | `concept`/`goal`/`domain` residual scan |
+| Rust `origin_types` references | 0 | `app/src` residual scan |
+| Runtime identity references | 221 | `Origin`/`origin-server`/`origin-mcp`/`com.origin`/relay residual scan |
+| Stale taxonomy references | 239 | `concept`/`goal`/`domain` residual scan |
 | Wenlan typed request/response declarations in `requests.rs` + `responses.rs` | 99 | `wenlan-types` scan |
 
 ## Compatibility Gates
@@ -33,8 +34,8 @@ These block "caught up enough for full refactor run".
 
 | Surface | Current source | App status | Action | Daemon compatibility |
 |---|---|---|---|---|
-| `/api/health` | `wenlan-server/src/router.rs`; `HealthResponse` | present in `OriginClient.health`; stale naming | rename to `WenlanClient.health`; keep typed response | required; app cannot proceed without daemon |
-| `/api/status` | `StatusResponse`, `RerankerStatus` | missing user-facing status diagnostics | add typed wrapper and settings/diagnostics surface | required for capability gate; tolerate absent fields by feature-gating |
+| `/api/health` | `wenlan-server/src/router.rs`; `HealthResponse` | present in `WenlanClient.health` | keep typed daemon reachability gate | required; app cannot proceed without daemon |
+| `/api/status` | `StatusResponse`, `RerankerStatus` | typed response used by `get_capture_stats`; user-facing diagnostics still incomplete | add settings/diagnostics capability surface | required for capability gate; tolerate absent fields by feature-gating |
 | `/api/refinery/queue` | `ListRefinementsResponse` | missing wrapper and UI | add central review queue | require route for review queue; hide panel if absent |
 | `/api/refinery/queue/{id}/accept` | `AcceptRefinementResponse` | missing wrapper and UI | add accept action with typed response | optional until queue route exists |
 | `/api/refinery/queue/{id}/reject` | `RejectRefinementResponse` | missing wrapper and UI | add reject action with typed response | optional until queue route exists |
@@ -44,12 +45,12 @@ These block "caught up enough for full refactor run".
 | `/api/memory/revision/{id}/dismiss` | `RevisionDismissResponse` | present command accepts `sourceId`; response is `serde_json::Value` | confirm path parameter semantics, rename argument if revision id, type response | require typed response before review UI |
 | `/api/memory/contradiction/{source_id}/dismiss` | `ContradictionDismissResponse` | present command, untyped response | type response and surface in review queue | optional if contradictions route absent |
 | `/api/memory/{source_id}/enrichment-status` | `EnrichmentStatusResponse` | missing direct wrapper; store response has partial enrichment string | add typed direct status wrapper and post-store polling/invalidation | optional per-memory route; show unknown state if absent |
-| `/api/sources` | daemon source routes | present via local `RegisteredSource`/`SyncStats` DTOs | converge DTOs with current daemon/source types, keep source registry daemon-owned | required for source management |
-| `/api/config` | `ConfigResponse`, `UpdateConfigRequest` | partial Rust wrapper; `origin_types` 0.3 comments mention local builder | switch to `wenlan-types`; remove stale local builder when shared defaults exist | required for settings |
+| `/api/sources` | daemon source routes | present via `wenlan_types::sources` in source modules plus remaining app-local Tauri DTOs | converge any remaining DTO shadows with current daemon/source types, keep source registry daemon-owned | required for source management |
+| `/api/config` | `ConfigResponse`, `UpdateConfigRequest` | switched to `wenlan-types`; app-local builder helper still wraps shared type | remove stale comments/helpers when shared defaults exist | required for settings |
 | `/api/setup/status` | daemon setup route | missing explicit wrapper/UI | add typed setup status; use for setup wizard instead of local-only inference | required for setup correctness |
-| MCP config bridge | `app/src/mcp_config.rs`, setup wizard | Origin key/package only | write `wenlan`, detect `origin`, do not delete user-authored `origin` | bridge release required |
+| MCP config bridge | `app/src/mcp_config.rs`, setup wizard | writes `wenlan`; detects and preserves legacy `origin` entries | keep bridge behavior through at least one compatibility release | bridge release required |
 | Remote access bridge | `app/src/remote_access.rs` | Origin relay URL and `~/.config/origin-mcp` token/relay id | preserve old token/relay id; define relay endpoint strategy before URL rename | bridge release required |
-| Sidecar build contract | `app/tauri.conf.json`, `package.json` | stale `origin-server`/`origin-mcp`; `cargo build` fails missing sidecar | define `wenlan-server`/`wenlan-mcp` sidecar source and build/copy flow | required before build verification |
+| Sidecar build contract | `app/tauri.conf.json`, `package.json`, `scripts/prepare-sidecars.sh` | uses `wenlan-server`/`wenlan-mcp`; `cargo build` passes | keep repeatable sidecar prep; next rename product/runtime identity separately | required before build verification |
 
 ## P1 Matrix
 
@@ -97,8 +98,8 @@ Go when all are true:
 - CodeGraph evaluation is recorded, `.codegraph/` is ignored, and cross-cutting edits use `codegraph sync` plus target-specific `query`/`impact`/`affected` probes before changing behavior.
 - `pnpm install --frozen-lockfile --offline` exits 0.
 - `pnpm test` exits 0.
-- The known `cargo build` sidecar failure is either still documented as the next Task 5 prerequisite or fixed with a tested sidecar strategy.
-- Task 4 typed-client work has not started in the same commit as parity/matrix work.
+- `cargo build` exits 0 with the repeatable `wenlan-server`/`wenlan-mcp` sidecar strategy.
+- Remaining public rename work is gated by bridge classification: keep legacy Origin state readable, then migrate visible product/runtime identity in separate commits.
 
 No-go:
 

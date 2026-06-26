@@ -7,6 +7,12 @@ SG=(npx -y -p @ast-grep/cli sg)
 
 mkdir -p "$OUT"
 
+count_matches() {
+  local pattern="$1"
+  shift
+  { rg -n "$pattern" "$@" || true; } | wc -l | tr -d ' '
+}
+
 "${SG[@]}" outline "$ROOT/src/lib/tauri.ts" > "$OUT/tauri-ts-outline.txt"
 "${SG[@]}" outline "$ROOT/app/src/api.rs" > "$OUT/api-rs-outline.txt"
 "${SG[@]}" outline "$ROOT/app/src/search.rs" > "$OUT/search-rs-outline.txt"
@@ -22,16 +28,16 @@ mkdir -p "$OUT"
   echo
   echo "## Counts"
   printf -- "- frontend invoke calls: "
-  rg -n "invoke\\(" "$ROOT/src/lib/tauri.ts" | wc -l | tr -d ' '
+  count_matches "invoke\\(" "$ROOT/src/lib/tauri.ts"
   printf -- "- registered Tauri commands: "
-  rg -n "search::" "$ROOT/app/src/lib.rs" | wc -l | tr -d ' '
+  count_matches "search::" "$ROOT/app/src/lib.rs"
   printf -- "- origin_types references in Rust app code: "
-  rg -n "origin_types::|use origin_types" "$ROOT/app/src" | wc -l | tr -d ' '
+  count_matches "origin_types::|use origin_types" "$ROOT/app/src"
   printf -- "- runtime identity references: "
-  rg -n "origin-server|origin-mcp|Origin|com\\.origin|origin-relay|originmemory|\\.config/origin-mcp" \
-    "$ROOT/app" "$ROOT/src" "$ROOT/package.json" "$ROOT/README.md" "$ROOT/Cargo.toml" | wc -l | tr -d ' '
+  count_matches "origin-server|origin-mcp|Origin|com\\.origin|origin-relay|originmemory|\\.config/origin-mcp" \
+    "$ROOT/app" "$ROOT/src" "$ROOT/package.json" "$ROOT/README.md" "$ROOT/Cargo.toml"
   printf -- "- stale taxonomy references: "
-  rg -n "\\bconcept\\b|\\bgoal\\b|\\bdomain\\b" "$ROOT/src" "$ROOT/app/src" "$ROOT/app/tests" "$ROOT/package.json" "$ROOT/README.md" | wc -l | tr -d ' '
+  count_matches "\\bconcept\\b|\\bgoal\\b|\\bdomain\\b" "$ROOT/src" "$ROOT/app/src" "$ROOT/app/tests" "$ROOT/package.json" "$ROOT/README.md"
   printf -- "- source files under app/src and src: "
   rg --files "$ROOT/app/src" "$ROOT/src" | wc -l | tr -d ' '
   echo

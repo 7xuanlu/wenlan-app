@@ -3,8 +3,9 @@
 - **Date:** 2026-06-25
 - **Package:** `@colbymchenry/codegraph` 1.1.1
 - **Source:** <https://github.com/colbymchenry/codegraph>
-- **Worktree:** `/Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence`
+- **Worktree:** `/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence`
 - **Purpose:** validate whether CodeGraph improves token efficiency and refactor accuracy before the large `origin-app` to `wenlan-app` migration.
+- **Current status:** this evaluation started before the `WenlanClient` rename. For new probes, query `WenlanClient`, `wenlan_types`, sidecar symbols, and runtime identity files. The historical `OriginClient`/`origin_types` results remain useful only as pre-migration evidence.
 
 ## Decision
 
@@ -18,8 +19,8 @@ Keep `ast-grep` as the deterministic inventory gate, and keep `rust-analyzer`, `
 
 ```bash
 CODEGRAPH_TELEMETRY=0 DO_NOT_TRACK=1 npx -y @colbymchenry/codegraph version
-CODEGRAPH_TELEMETRY=0 DO_NOT_TRACK=1 npx -y @colbymchenry/codegraph init /Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence
-CODEGRAPH_TELEMETRY=0 DO_NOT_TRACK=1 npx -y @colbymchenry/codegraph status /Users/lucian/Repos/wenlan/.worktrees/origin-app-wenlan-app-convergence
+CODEGRAPH_TELEMETRY=0 DO_NOT_TRACK=1 npx -y @colbymchenry/codegraph init /Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence
+CODEGRAPH_TELEMETRY=0 DO_NOT_TRACK=1 npx -y @colbymchenry/codegraph status /Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence
 CODEGRAPH_TELEMETRY=0 DO_NOT_TRACK=1 npx -y @colbymchenry/codegraph query OriginClient --json
 CODEGRAPH_TELEMETRY=0 DO_NOT_TRACK=1 npx -y @colbymchenry/codegraph query origin_types --json
 CODEGRAPH_TELEMETRY=0 DO_NOT_TRACK=1 npx -y @colbymchenry/codegraph callers OriginClient --json

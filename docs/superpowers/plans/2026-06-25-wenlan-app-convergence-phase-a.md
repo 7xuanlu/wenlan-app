@@ -15,7 +15,10 @@
 - Task 1 and Task 2 prerequisites were completed in commit `63ed0ac`.
 - Task 3 prerequisite matrix is complete in `docs/superpowers/refactor/wenlan-app-parity-matrix.md`.
 - CodeGraph evaluation is complete in `docs/superpowers/refactor/2026-06-25-codegraph-evaluation.md`; `.codegraph/` is ignored local cache.
-- Task 4 and Task 5 intentionally have not started; they begin the functional typed-client and sidecar refactor run.
+- Task 4 typed-client convergence is complete in commit `7e32190` with follow-up doc pinning in `8e231c`; current `origin_types` residual count is `0`.
+- Task 5 sidecar compatibility is complete in commit `c7f44fb` with follow-up sidecar bridge hardening through `9e1d10d`; current `cargo build` exits 0.
+- Current renamed repo/worktree context is recorded in `docs/superpowers/refactor/2026-06-26-wenlan-app-goal-context.md`.
+- Next implementation work should start from Slice B1/B2 in the goal-context document, not from the historical Task 4/5 checkboxes below.
 
 ## Tool Boundary Protocol
 
@@ -34,12 +37,12 @@ Canonical sequence, shown for the typed-client task. Later tasks list their own 
 
 ```bash
 CODEGRAPH_TELEMETRY=0 DO_NOT_TRACK=1 npx -y @colbymchenry/codegraph sync .
-CODEGRAPH_TELEMETRY=0 DO_NOT_TRACK=1 npx -y @colbymchenry/codegraph query OriginClient --json
-CODEGRAPH_TELEMETRY=0 DO_NOT_TRACK=1 npx -y @colbymchenry/codegraph impact OriginClient --json
+CODEGRAPH_TELEMETRY=0 DO_NOT_TRACK=1 npx -y @colbymchenry/codegraph query WenlanClient --json
+CODEGRAPH_TELEMETRY=0 DO_NOT_TRACK=1 npx -y @colbymchenry/codegraph impact WenlanClient --json
 npx -y -p @ast-grep/cli sg run -p 'pub struct $NAME { $$$FIELDS }' -l rs app/src
 cargo check
 pnpm build
-rg -n 'origin-types|origin_types::|use origin_types|OriginClient' app/Cargo.toml app/src
+rg -n 'origin-types|origin_types::|use origin_types|OriginClient|serde_json::Value' app/Cargo.toml app/src
 grep -RIn --exclude-dir=node_modules --exclude-dir=target --exclude-dir=.codegraph 'OriginClient' app src
 ```
 
