@@ -546,16 +546,10 @@ pub fn run() {
             // The shell plugin kills the child when the Tauri app exits.
             //
             // Skip the sidecar only when the current Wenlan launchd service is
-            // installed. A legacy Origin server plist is migration state: clean
-            // it up, but do not let a stale legacy file suppress the new sidecar
-            // fallback.
+            // installed. A legacy Origin server plist is migration state, but
+            // it must not suppress the new sidecar fallback. Stable first-run
+            // install, Run at Login disable, and Quit handle legacy cleanup.
             let launchd_managed = crate::lifecycle::current_server_plist_exists();
-            if crate::lifecycle::legacy_server_plist_exists() {
-                let launchctl = crate::lifecycle::SystemLaunchctl;
-                if let Err(e) = crate::lifecycle::cleanup_legacy_server_plist(&launchctl) {
-                    log::warn!("[init] legacy Origin server plist cleanup failed: {e}");
-                }
-            }
             if launchd_managed {
                 log::info!(
                     "[init] launchd-managed daemon detected, skipping sidecar spawn"
