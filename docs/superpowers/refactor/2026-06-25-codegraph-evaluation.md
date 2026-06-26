@@ -119,3 +119,40 @@ Task 4 continued with the approved fallback ladder:
 - `pnpm build`
 - residual `rg`
 - `git diff --check`
+
+## Task 5 Execution Note
+
+Task 5 attempted the requested CodeGraph sidecar/lifecycle probes:
+
+```bash
+CODEGRAPH_TELEMETRY=0 DO_NOT_TRACK=1 npx -y @colbymchenry/codegraph sync .
+CODEGRAPH_TELEMETRY=0 DO_NOT_TRACK=1 npx -y @colbymchenry/codegraph query spawn_sidecar --json
+```
+
+The `sync` command produced no output for 40 seconds and was interrupted. The
+first `query` command also produced no output for 10 seconds and was
+interrupted. The remaining CodeGraph commands were intentionally skipped
+because this matched the same unavailable/sandboxed CodeGraph path captured in
+Task 4, and the Task 5 instructions said not to request escalation for that
+case.
+
+The ast-grep `npx` fallback commands were also attempted:
+
+```bash
+npx -y -p @ast-grep/cli sg outline app/src/lib.rs
+npx -y -p @ast-grep/cli sg outline app/src/lifecycle.rs
+```
+
+Both commands produced no output for 30 seconds and were interrupted. Task 5
+therefore used the deterministic fallback surface:
+
+- residual `rg` over sidecar/config/lifecycle strings
+- `cargo build` before and after sidecar-name edits
+- no-sidecar `TAURI_CONFIG` semantic `cargo check`
+- focused lifecycle tests for stable app target validation
+- JSON parse checks for Tauri/package/capability config
+- `git diff --check`
+
+Task 5 follow-up added `scripts/prepare-sidecars.sh` so raw Tauri builds can
+prepare generated, ignored `app/binaries/*-$TRIPLE` sidecars before running
+`cargo build`.
