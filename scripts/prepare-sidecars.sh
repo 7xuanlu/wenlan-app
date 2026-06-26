@@ -28,19 +28,33 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
-TRIPLE="${TARGET_TRIPLE:-$(rustc -vV | awk '/^host:/ { print $2 }')}"
+HOST_TRIPLE="$(rustc -vV | awk '/^host:/ { print $2 }')"
+TRIPLE="${TARGET_TRIPLE:-$HOST_TRIPLE}"
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$BACKEND_DIR/target}"
-SERVER_SRC="$CARGO_TARGET_DIR/$PROFILE/wenlan-server"
-MCP_SRC="$CARGO_TARGET_DIR/$PROFILE/wenlan-mcp"
+if [[ -n "${TARGET_TRIPLE:-}" ]]; then
+  SOURCE_DIR="$CARGO_TARGET_DIR/$TRIPLE/$PROFILE"
+else
+  SOURCE_DIR="$CARGO_TARGET_DIR/$PROFILE"
+fi
+case "$TRIPLE" in
+  *windows*) EXE_SUFFIX=".exe" ;;
+  *) EXE_SUFFIX="" ;;
+esac
+SERVER_SRC="$SOURCE_DIR/wenlan-server$EXE_SUFFIX"
+MCP_SRC="$SOURCE_DIR/wenlan-mcp$EXE_SUFFIX"
 
 if [[ "$FORCE_BUILD" == "true" || ! -x "$SERVER_SRC" || ! -x "$MCP_SRC" ]]; then
-  if [[ "$PROFILE" == "release" ]]; then
+  if [[ -n "${TARGET_TRIPLE:-}" && "$PROFILE" == "release" ]]; then
+    cargo build --manifest-path "$BACKEND_DIR/Cargo.toml" --target "$TRIPLE" --release -p wenlan-server -p wenlan-mcp
+  elif [[ -n "${TARGET_TRIPLE:-}" ]]; then
+    cargo build --manifest-path "$BACKEND_DIR/Cargo.toml" --target "$TRIPLE" -p wenlan-server -p wenlan-mcp
+  elif [[ "$PROFILE" == "release" ]]; then
     cargo build --manifest-path "$BACKEND_DIR/Cargo.toml" --release -p wenlan-server -p wenlan-mcp
   else
     cargo build --manifest-path "$BACKEND_DIR/Cargo.toml" -p wenlan-server -p wenlan-mcp
   fi
 else
-  echo "Using existing backend sidecars from $CARGO_TARGET_DIR/$PROFILE"
+  echo "Using existing backend sidecars from $SOURCE_DIR"
 fi
 
 BIN_DIR="$REPO_ROOT/app/binaries"

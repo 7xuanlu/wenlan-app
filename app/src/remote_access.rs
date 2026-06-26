@@ -192,6 +192,15 @@ fn token_file_path() -> std::path::PathBuf {
         .join("token")
 }
 
+fn token_generate_args(path: &std::path::Path) -> Vec<String> {
+    vec![
+        "token".to_string(),
+        "generate".to_string(),
+        "--output".to_string(),
+        path.to_string_lossy().into_owned(),
+    ]
+}
+
 /// Read the bearer token from disk.
 pub fn read_token() -> Result<String, String> {
     let path = token_file_path();
@@ -796,7 +805,7 @@ async fn start_tunnel(
             .map_err(|e| format!("{} sidecar not found: {}", MCP_SIDECAR_NAME, e))?;
         log::warn!("[remote-access] sidecar command created, executing token generate...");
         let output = cmd
-            .args(["token", "generate"])
+            .args(token_generate_args(&token_path))
             .output()
             .await
             .map_err(|e| format!("Failed to generate token (exec error: {})", e))?;
@@ -919,11 +928,12 @@ pub async fn toggle_off(app_handle: &tauri::AppHandle) {
 /// (tunnel stays alive). The new instance reads the updated token from disk.
 pub async fn rotate_token(app_handle: &tauri::AppHandle) -> Result<String, String> {
     // 1. Generate new token first (before killing anything)
+    let token_path = token_file_path();
     let shell = app_handle.shell();
     let output = shell
         .sidecar(MCP_SIDECAR_NAME)
         .map_err(|e| format!("{} sidecar not found: {}", MCP_SIDECAR_NAME, e))?
-        .args(["token", "generate"])
+        .args(token_generate_args(&token_path))
         .output()
         .await
         .map_err(|e| format!("Failed to generate token: {}", e))?;
@@ -1036,6 +1046,25 @@ mod tests {
         assert_eq!(
             url,
             Some("https://first-tunnel.trycloudflare.com".to_string())
+        );
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_token_generate_args_include_legacy_output_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::set_var("HOME", tmp.path());
+        let path = token_file_path();
+        let expected_path = tmp.path().join(".config/origin-mcp/token");
+
+        assert_eq!(
+            token_generate_args(&path),
+            vec![
+                "token".to_string(),
+                "generate".to_string(),
+                "--output".to_string(),
+                expected_path.to_string_lossy().into_owned()
+            ]
         );
     }
 }

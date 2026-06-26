@@ -206,6 +206,16 @@ pub fn uninstall_app_plist(launchctl: &dyn LaunchctlExec) -> Result<()> {
     Ok(())
 }
 
+pub fn cleanup_legacy_server_plist(launchctl: &dyn LaunchctlExec) -> Result<()> {
+    let plist = legacy_server_plist_path()?;
+    if !plist.exists() {
+        return Ok(());
+    }
+    let _ = launchctl.run(&["unload", &plist.to_string_lossy()]);
+    std::fs::remove_file(&plist)?;
+    Ok(())
+}
+
 /// Run `wenlan-server install`. Resolves the binary alongside our exe.
 pub fn install_server_plist_via_subprocess() -> Result<()> {
     let bin = current_app_path()?
@@ -333,7 +343,10 @@ pub async fn set_run_at_login(enabled: bool, launchctl: &dyn LaunchctlExec) -> R
     } else {
         set_user_opted_out(true)?;
         uninstall_app_plist(launchctl)?;
-        uninstall_server_plist_via_subprocess()?;
+        let uninstall_result = uninstall_server_plist_via_subprocess();
+        let legacy_cleanup_result = cleanup_legacy_server_plist(launchctl);
+        uninstall_result?;
+        legacy_cleanup_result?;
     }
     Ok(())
 }
@@ -355,6 +368,9 @@ pub async fn quit_origin(app_handle: &AppHandle) -> Result<()> {
     }
     if let Err(e) = uninstall_server_plist_via_subprocess() {
         log::warn!("[quit] uninstall_server_plist failed: {e}");
+    }
+    if let Err(e) = cleanup_legacy_server_plist(&launchctl) {
+        log::warn!("[quit] cleanup_legacy_server_plist failed: {e}");
     }
 
     // 1. Tell daemon to shut down cleanly
@@ -691,6 +707,28 @@ mod tests {
         let mock = MockLaunchctl::default();
         // No file present → succeed without error.
         uninstall_app_plist(&mock).unwrap();
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn cleanup_legacy_server_plist_unloads_and_removes_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::set_var("HOME", tmp.path());
+        let plist = legacy_server_plist_path().unwrap();
+        std::fs::create_dir_all(plist.parent().unwrap()).unwrap();
+        std::fs::write(&plist, "<plist/>").unwrap();
+
+        let mock = MockLaunchctl::default();
+        cleanup_legacy_server_plist(&mock).unwrap();
+
+        assert!(!plist.exists(), "legacy server plist removed");
+        let calls = mock.calls.lock().unwrap();
+        assert!(
+            calls
+                .iter()
+                .any(|c| c[0] == "unload" && c[1] == plist.to_string_lossy()),
+            "legacy server plist unloaded before removal"
+        );
     }
 
     /// Mock that observes concurrent launchctl invocations. `in_flight`
