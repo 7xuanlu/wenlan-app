@@ -135,17 +135,7 @@ impl Config {
 }
 
 fn config_path() -> PathBuf {
-    // Honor the `ORIGIN_DATA_DIR` override so a scratch daemon (e.g.
-    // `origin-server --data-dir /tmp/origin-demo`) reads and writes its own
-    // config file rather than clobbering the user's real one.
-    let root = std::env::var_os("ORIGIN_DATA_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            dirs::data_local_dir()
-                .unwrap_or_else(|| PathBuf::from("."))
-                .join("origin")
-        });
-    root.join("config.json")
+    crate::identity_paths::app_data_dir().join("config.json")
 }
 
 pub fn load_config() -> Config {
@@ -180,6 +170,59 @@ pub fn save_config(config: &Config) -> Result<(), AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct EnvGuard {
+        wenlan: Option<std::ffi::OsString>,
+        origin: Option<std::ffi::OsString>,
+    }
+
+    impl EnvGuard {
+        fn capture() -> Self {
+            Self {
+                wenlan: std::env::var_os("WENLAN_DATA_DIR"),
+                origin: std::env::var_os("ORIGIN_DATA_DIR"),
+            }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.wenlan {
+                Some(value) => std::env::set_var("WENLAN_DATA_DIR", value),
+                None => std::env::remove_var("WENLAN_DATA_DIR"),
+            }
+            match &self.origin {
+                Some(value) => std::env::set_var("ORIGIN_DATA_DIR", value),
+                None => std::env::remove_var("ORIGIN_DATA_DIR"),
+            }
+        }
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn config_path_prefers_wenlan_data_dir() {
+        let _env = EnvGuard::capture();
+        std::env::set_var("WENLAN_DATA_DIR", "/tmp/wenlan-config-test");
+        std::env::set_var("ORIGIN_DATA_DIR", "/tmp/origin-config-test");
+
+        assert_eq!(
+            config_path(),
+            PathBuf::from("/tmp/wenlan-config-test/config.json")
+        );
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn config_path_falls_back_to_origin_data_dir() {
+        let _env = EnvGuard::capture();
+        std::env::remove_var("WENLAN_DATA_DIR");
+        std::env::set_var("ORIGIN_DATA_DIR", "/tmp/origin-config-test");
+
+        assert_eq!(
+            config_path(),
+            PathBuf::from("/tmp/origin-config-test/config.json")
+        );
+    }
 
     #[test]
     fn test_config_default_values() {
@@ -230,10 +273,12 @@ mod tests {
     #[test]
     #[serial_test::serial]
     fn save_load_config_roundtrip() {
+        let _env = EnvGuard::capture();
         let tmp = tempfile::tempdir().unwrap();
         // Point config_path() at our temp dir via the env override.
         // Env mutation is process-wide, so this must not race with other tests
         // that read or write ORIGIN_DATA_DIR.
+        std::env::remove_var("WENLAN_DATA_DIR");
         std::env::set_var("ORIGIN_DATA_DIR", tmp.path());
         let mut config = Config {
             clipboard_enabled: true,
@@ -247,7 +292,6 @@ mod tests {
         assert_eq!(loaded.sources.len(), 1);
         assert_eq!(loaded.sources[0].path, PathBuf::from("/test/path"));
         assert!(loaded.watch_paths.is_empty());
-        std::env::remove_var("ORIGIN_DATA_DIR");
     }
 
     // --- setup_completed ---

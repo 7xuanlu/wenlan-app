@@ -37,13 +37,9 @@ impl LaunchctlExec for SystemLaunchctl {
     }
 }
 
-/// Resolve the data directory for the auto-start flag. Honors `ORIGIN_DATA_DIR`
-/// for isolated testing per CLAUDE.md.
+/// Resolve the data directory for the auto-start flag.
 fn data_dir() -> Result<PathBuf> {
-    if let Ok(custom) = std::env::var("ORIGIN_DATA_DIR") {
-        return Ok(PathBuf::from(custom));
-    }
-    Ok(dirs::data_dir().context("HOME not set")?.join("origin"))
+    Ok(crate::identity_paths::app_data_dir())
 }
 
 /// Path to the auto-start opt-out sentinel file. Owned by the app, not the
@@ -429,6 +425,39 @@ mod tests {
     use std::os::unix::process::ExitStatusExt;
     use std::sync::Mutex;
 
+    struct EnvGuard {
+        home: Option<std::ffi::OsString>,
+        wenlan: Option<std::ffi::OsString>,
+        origin: Option<std::ffi::OsString>,
+    }
+
+    impl EnvGuard {
+        fn capture() -> Self {
+            Self {
+                home: std::env::var_os("HOME"),
+                wenlan: std::env::var_os("WENLAN_DATA_DIR"),
+                origin: std::env::var_os("ORIGIN_DATA_DIR"),
+            }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.home {
+                Some(value) => std::env::set_var("HOME", value),
+                None => std::env::remove_var("HOME"),
+            }
+            match &self.wenlan {
+                Some(value) => std::env::set_var("WENLAN_DATA_DIR", value),
+                None => std::env::remove_var("WENLAN_DATA_DIR"),
+            }
+            match &self.origin {
+                Some(value) => std::env::set_var("ORIGIN_DATA_DIR", value),
+                None => std::env::remove_var("ORIGIN_DATA_DIR"),
+            }
+        }
+    }
+
     #[derive(Default)]
     struct MockLaunchctl {
         calls: Mutex<Vec<Vec<String>>>,
@@ -462,9 +491,11 @@ mod tests {
     #[test]
     #[serial_test::serial]
     fn opt_out_flag_round_trip() {
-        // Override HOME so dirs::data_dir() returns the tempdir on macOS.
+        let _env = EnvGuard::capture();
+        // Override HOME so the default app data root resolves under the tempdir.
         let tmp = tempfile::tempdir().unwrap();
         std::env::set_var("HOME", tmp.path());
+        std::env::remove_var("WENLAN_DATA_DIR");
         std::env::remove_var("ORIGIN_DATA_DIR");
 
         // Default = false
@@ -482,11 +513,13 @@ mod tests {
     #[test]
     #[serial_test::serial]
     fn opt_out_flag_does_not_touch_typed_config_json() {
+        let _env = EnvGuard::capture();
         // The opt-out sentinel must NOT live inside the daemon's typed
         // `config.json` — otherwise unrelated `Config::save` calls overwrite
         // the file and silently drop the user's opt-out preference (C1).
         let tmp = tempfile::tempdir().unwrap();
         std::env::set_var("HOME", tmp.path());
+        std::env::remove_var("WENLAN_DATA_DIR");
         std::env::remove_var("ORIGIN_DATA_DIR");
 
         // Pre-populate config.json without the flag
@@ -505,15 +538,31 @@ mod tests {
     #[test]
     #[serial_test::serial]
     fn opt_out_honors_origin_data_dir_env() {
+        let _env = EnvGuard::capture();
         let tmp = tempfile::tempdir().unwrap();
+        std::env::remove_var("WENLAN_DATA_DIR");
         std::env::set_var("ORIGIN_DATA_DIR", tmp.path());
 
         assert!(!user_opted_out());
         set_user_opted_out(true).unwrap();
         assert!(tmp.path().join("auto_start_disabled.flag").exists());
         assert!(user_opted_out());
+    }
 
-        std::env::remove_var("ORIGIN_DATA_DIR");
+    #[test]
+    #[serial_test::serial]
+    fn opt_out_prefers_wenlan_data_dir() {
+        let _env = EnvGuard::capture();
+        let current = tempfile::tempdir().unwrap();
+        let legacy = tempfile::tempdir().unwrap();
+
+        std::env::set_var("WENLAN_DATA_DIR", current.path());
+        std::env::set_var("ORIGIN_DATA_DIR", legacy.path());
+
+        set_user_opted_out(true).unwrap();
+
+        assert!(current.path().join("auto_start_disabled.flag").exists());
+        assert!(!legacy.path().join("auto_start_disabled.flag").exists());
     }
 
     #[test]

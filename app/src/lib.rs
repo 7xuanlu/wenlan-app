@@ -9,6 +9,7 @@ pub mod api;
 pub mod config;
 pub mod error;
 pub mod events;
+mod identity_paths;
 mod indexer;
 mod lifecycle;
 pub mod mcp_config;
