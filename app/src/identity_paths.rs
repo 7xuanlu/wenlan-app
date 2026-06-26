@@ -40,11 +40,19 @@ fn path_has_app_state(path: &std::path::Path) -> bool {
 }
 
 #[allow(dead_code)]
-pub fn mcp_config_dir() -> PathBuf {
+pub fn legacy_mcp_config_dir() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join(".config")
         .join("origin-mcp")
+}
+
+#[allow(dead_code)]
+pub fn mcp_config_dir() -> PathBuf {
+    dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".config")
+        .join("wenlan-mcp")
 }
 
 #[cfg(test)]
@@ -169,6 +177,52 @@ mod tests {
         std::env::set_var("HOME", tmp.path());
         std::env::remove_var("WENLAN_DATA_DIR");
         std::env::remove_var("ORIGIN_DATA_DIR");
-        assert_eq!(app_data_dir(), dirs::data_local_dir().unwrap().join("wenlan"));
+        assert_eq!(
+            app_data_dir(),
+            dirs::data_local_dir().unwrap().join("wenlan")
+        );
+    }
+}
+
+#[cfg(test)]
+mod mcp_tests {
+    use super::*;
+    use std::ffi::OsString;
+
+    struct HomeGuard {
+        home: Option<OsString>,
+    }
+
+    impl HomeGuard {
+        fn set(path: &std::path::Path) -> Self {
+            let home = std::env::var_os("HOME");
+            std::env::set_var("HOME", path);
+            Self { home }
+        }
+    }
+
+    impl Drop for HomeGuard {
+        fn drop(&mut self) {
+            match &self.home {
+                Some(value) => std::env::set_var("HOME", value),
+                None => std::env::remove_var("HOME"),
+            }
+        }
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn mcp_config_dir_uses_wenlan_mcp() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _home = HomeGuard::set(tmp.path());
+        assert!(mcp_config_dir().ends_with(".config/wenlan-mcp"));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn legacy_mcp_config_dir_uses_origin_mcp() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _home = HomeGuard::set(tmp.path());
+        assert!(legacy_mcp_config_dir().ends_with(".config/origin-mcp"));
     }
 }

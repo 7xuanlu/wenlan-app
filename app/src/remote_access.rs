@@ -2,6 +2,7 @@
 use regex::Regex;
 use serde::Serialize;
 use std::net::TcpListener;
+use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 use tauri::Manager;
 use tauri_plugin_shell::ShellExt;
@@ -13,16 +14,15 @@ const MCP_SIDECAR_NAME: &str = "wenlan-mcp";
 pub const PORT_RANGE_START: u16 = 18080;
 
 /// Relay URL for stable MCP endpoint.
+// Intentionally still the legacy Origin relay. Do not rename this constant
+// until a Wenlan relay endpoint exists and existing relay IDs have a migration
+// strategy.
 const RELAY_URL: &str = "https://origin-relay.originmemory.workers.dev";
 
 /// Get or create a persistent relay user ID.
-/// Stored in ~/.config/origin-mcp/relay_id
+/// Stored in ~/.config/wenlan-mcp/relay_id
 fn get_or_create_relay_id() -> String {
-    let path = dirs::home_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join(".config")
-        .join("origin-mcp")
-        .join("relay_id");
+    let path = relay_id_path();
 
     if let Ok(id) = std::fs::read_to_string(&path) {
         let id = id.trim().to_string();
@@ -130,7 +130,7 @@ impl Default for RemoteAccessState {
 /// Cooldown after a Cloudflare 429 before we'll try creating another quick tunnel.
 const RATE_LIMIT_COOLDOWN: Duration = Duration::from_secs(15 * 60);
 
-/// Kill any orphaned origin-mcp processes on the remote access port range.
+/// Kill any orphaned wenlan-mcp processes on the remote access port range.
 /// These accumulate when the Origin app restarts without cleanly shutting down
 /// its child processes (the in-memory handles are lost on restart).
 pub fn cleanup_orphaned_mcp() {
@@ -153,7 +153,7 @@ pub fn cleanup_orphaned_mcp() {
                         pid,
                         port
                     );
-                    // SIGTERM first, SIGKILL fallback — origin-mcp may ignore SIGTERM
+                    // SIGTERM first, SIGKILL fallback — wenlan-mcp may ignore SIGTERM
                     let _ = std::process::Command::new("kill")
                         .arg(pid.to_string())
                         .output();
@@ -181,15 +181,74 @@ pub fn parse_tunnel_url(stderr: &str) -> Option<String> {
     TUNNEL_URL_RE.find(stderr).map(|m| m.as_str().to_string())
 }
 
-/// Token file path for origin-mcp authentication.
-/// origin-mcp stores tokens at ~/.config/origin-mcp/token (XDG convention),
+fn import_nonempty_legacy_file(
+    current_dir: &Path,
+    legacy_dir: &Path,
+    file_name: &str,
+) -> Result<PathBuf, String> {
+    let current_path = current_dir.join(file_name);
+    if current_path.exists() {
+        return Ok(current_path);
+    }
+
+    let legacy_path = legacy_dir.join(file_name);
+    let contents = match std::fs::read_to_string(&legacy_path) {
+        Ok(contents) => contents,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(current_path),
+        Err(e) => {
+            return Err(format!(
+                "Failed to read legacy {} at {}: {}",
+                file_name,
+                legacy_path.display(),
+                e
+            ));
+        }
+    };
+
+    if contents.trim().is_empty() {
+        return Ok(current_path);
+    }
+
+    std::fs::create_dir_all(current_dir).map_err(|e| {
+        format!(
+            "Failed to create current {} directory at {}: {}",
+            file_name,
+            current_dir.display(),
+            e
+        )
+    })?;
+    std::fs::write(&current_path, contents).map_err(|e| {
+        format!(
+            "Failed to write imported {} to {}: {}",
+            file_name,
+            current_path.display(),
+            e
+        )
+    })?;
+
+    Ok(current_path)
+}
+
+fn token_file_path_for_dirs(current_dir: &Path, legacy_dir: &Path) -> Result<PathBuf, String> {
+    import_nonempty_legacy_file(current_dir, legacy_dir, "token")
+}
+
+fn relay_id_path_for_dirs(current_dir: &Path) -> PathBuf {
+    current_dir.join("relay_id")
+}
+
+/// Token file path for wenlan-mcp authentication.
+/// wenlan-mcp stores tokens at ~/.config/wenlan-mcp/token (XDG convention),
 /// NOT ~/Library/Application Support/ (macOS convention from dirs::config_dir).
-fn token_file_path() -> std::path::PathBuf {
-    dirs::home_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join(".config")
-        .join("origin-mcp")
-        .join("token")
+fn token_file_path() -> Result<PathBuf, String> {
+    token_file_path_for_dirs(
+        &crate::identity_paths::mcp_config_dir(),
+        &crate::identity_paths::legacy_mcp_config_dir(),
+    )
+}
+
+fn relay_id_path() -> PathBuf {
+    relay_id_path_for_dirs(&crate::identity_paths::mcp_config_dir())
 }
 
 fn token_generate_args(path: &std::path::Path) -> Vec<String> {
@@ -203,7 +262,7 @@ fn token_generate_args(path: &std::path::Path) -> Vec<String> {
 
 /// Read the bearer token from disk.
 pub fn read_token() -> Result<String, String> {
-    let path = token_file_path();
+    let path = token_file_path()?;
     std::fs::read_to_string(&path)
         .map(|s| s.trim().to_string())
         .map_err(|e| format!("Failed to read token at {}: {}", path.display(), e))
@@ -791,7 +850,7 @@ async fn start_tunnel(
         .ok_or_else(|| "All remote access ports (18080-18083) are in use.".to_string())?;
 
     // 2. Ensure token exists
-    let token_path = token_file_path();
+    let token_path = token_file_path()?;
     log::warn!(
         "[remote-access] token_path={}, exists={}",
         token_path.display(),
@@ -928,7 +987,7 @@ pub async fn toggle_off(app_handle: &tauri::AppHandle) {
 /// (tunnel stays alive). The new instance reads the updated token from disk.
 pub async fn rotate_token(app_handle: &tauri::AppHandle) -> Result<String, String> {
     // 1. Generate new token first (before killing anything)
-    let token_path = token_file_path();
+    let token_path = token_file_path()?;
     let shell = app_handle.shell();
     let output = shell
         .sidecar(MCP_SIDECAR_NAME)
@@ -965,6 +1024,28 @@ pub async fn rotate_token(app_handle: &tauri::AppHandle) -> Result<String, Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ffi::OsString;
+
+    struct HomeGuard {
+        home: Option<OsString>,
+    }
+
+    impl HomeGuard {
+        fn set(path: &Path) -> Self {
+            let home = std::env::var_os("HOME");
+            std::env::set_var("HOME", path);
+            Self { home }
+        }
+    }
+
+    impl Drop for HomeGuard {
+        fn drop(&mut self) {
+            match &self.home {
+                Some(value) => std::env::set_var("HOME", value),
+                None => std::env::remove_var("HOME"),
+            }
+        }
+    }
 
     #[test]
     fn test_status_default_is_off() {
@@ -1050,12 +1131,76 @@ mod tests {
     }
 
     #[test]
-    #[serial_test::serial]
-    fn test_token_generate_args_include_legacy_output_path() {
+    fn token_path_imports_nonempty_legacy_token_when_current_missing() {
         let tmp = tempfile::tempdir().unwrap();
-        std::env::set_var("HOME", tmp.path());
-        let path = token_file_path();
-        let expected_path = tmp.path().join(".config/origin-mcp/token");
+        let current = tmp.path().join("wenlan-mcp");
+        let legacy = tmp.path().join("origin-mcp");
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::write(legacy.join("token"), "legacy-token\n").unwrap();
+
+        let path = token_file_path_for_dirs(&current, &legacy).unwrap();
+
+        assert_eq!(path, current.join("token"));
+        assert_eq!(
+            std::fs::read_to_string(current.join("token")).unwrap(),
+            "legacy-token\n"
+        );
+    }
+
+    #[test]
+    fn token_path_keeps_current_token_when_present() {
+        let tmp = tempfile::tempdir().unwrap();
+        let current = tmp.path().join("wenlan-mcp");
+        let legacy = tmp.path().join("origin-mcp");
+        std::fs::create_dir_all(&current).unwrap();
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::write(current.join("token"), "current-token\n").unwrap();
+        std::fs::write(legacy.join("token"), "legacy-token\n").unwrap();
+
+        let path = token_file_path_for_dirs(&current, &legacy).unwrap();
+
+        assert_eq!(path, current.join("token"));
+        assert_eq!(
+            std::fs::read_to_string(current.join("token")).unwrap(),
+            "current-token\n"
+        );
+    }
+
+    #[test]
+    fn token_path_does_not_import_empty_legacy_token() {
+        let tmp = tempfile::tempdir().unwrap();
+        let current = tmp.path().join("wenlan-mcp");
+        let legacy = tmp.path().join("origin-mcp");
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::write(legacy.join("token"), " \n").unwrap();
+
+        let path = token_file_path_for_dirs(&current, &legacy).unwrap();
+
+        assert_eq!(path, current.join("token"));
+        assert!(!current.join("token").exists());
+    }
+
+    #[test]
+    fn relay_id_path_does_not_import_legacy_relay_id() {
+        let tmp = tempfile::tempdir().unwrap();
+        let current = tmp.path().join("wenlan-mcp");
+        let legacy = tmp.path().join("origin-mcp");
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::write(legacy.join("relay_id"), "stale-relay-id").unwrap();
+
+        let path = relay_id_path_for_dirs(&current);
+
+        assert_eq!(path, current.join("relay_id"));
+        assert!(!current.join("relay_id").exists());
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_token_generate_args_include_wenlan_output_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _home = HomeGuard::set(tmp.path());
+        let path = token_file_path().unwrap();
+        let expected_path = tmp.path().join(".config/wenlan-mcp/token");
 
         assert_eq!(
             token_generate_args(&path),
