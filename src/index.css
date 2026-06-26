@@ -3,16 +3,16 @@
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 :root {
-  --bg-primary: #1A1A2E;
-  --bg-secondary: #202338;
-  --bg-tertiary: #26304A;
+  --bg-primary: #101722;
+  --bg-secondary: #151C28;
+  --bg-tertiary: #1B2534;
   --text-primary: #eef2f8;
   --text-secondary: #a7afbf;
-  --accent: #5BA3E6;
-  --accent-hover: #4AC8E8;
-  --border: #313A52;
+  --accent: #4FAED8;
+  --accent-hover: #45C2D6;
+  --border: #2B3748;
   --text-tertiary: #6f788b;
-  --separator: rgba(49, 58, 82, 0.65);
+  --separator: rgba(43, 55, 72, 0.65);
   --overlay-subtle: rgba(255, 255, 255, 0.04);
   --overlay-hover: rgba(255, 255, 255, 0.06);
   --overlay-active: rgba(255, 255, 255, 0.08);
@@ -131,29 +131,29 @@ body {
   --mem-font-mono: 'JetBrains Mono', monospace;
 }
 
-/* Dark (default — matches logo navy palette) */
+/* Dark (default — brand navy without the app icon's violet cast) */
 :root,
 html[data-theme="dark"] {
-  --mem-bg: #1A1A2E;
-  --mem-surface: #202338;
-  --mem-sidebar: #16182B;
+  --mem-bg: #101722;
+  --mem-surface: #151C28;
+  --mem-sidebar: #0D131D;
   --mem-text: #eef2f8;
   --mem-text-secondary: #a7afbf;
   --mem-text-tertiary: #6f788b;
   --mem-accent-warm: #d4884a;
   --mem-accent-amber: #e0a850;
-  --mem-accent-indigo: #5BA3E6;
-  --mem-accent-page: #5BA3E6;
+  --mem-accent-indigo: #4FAED8;
+  --mem-accent-page: #4FAED8;
   --mem-accent-sage: #8ab892;
   --mem-accent-glow: #e8c97a;
-  --mem-border: #313A52;
-  --mem-hover: rgba(91, 163, 230, 0.06);
-  --mem-hover-strong: rgba(91, 163, 230, 0.11);
+  --mem-border: #2B3748;
+  --mem-hover: rgba(79, 174, 216, 0.06);
+  --mem-hover-strong: rgba(79, 174, 216, 0.11);
   --mem-confirm-bg: rgba(212, 136, 74, 0.12);
-  --mem-indigo-bg: rgba(91, 163, 230, 0.12);
-  --mem-distilled-border: rgba(91, 163, 230, 0.4);
-  --mem-distilled-bg: rgba(91, 163, 230, 0.07);
-  --mem-shimmer-color: rgba(74, 200, 232, 0.16);
+  --mem-indigo-bg: rgba(79, 174, 216, 0.12);
+  --mem-distilled-border: rgba(79, 174, 216, 0.4);
+  --mem-distilled-bg: rgba(79, 174, 216, 0.07);
+  --mem-shimmer-color: rgba(69, 194, 214, 0.16);
   /* Depth on dark: pronounced drop with a soft secondary halo so surfaces
      lift cleanly off the navy canvas without a grey cast. */
   --mem-shadow-toast:

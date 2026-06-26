@@ -60,19 +60,13 @@ fn set_macos_application_icon_once() {
 }
 
 #[cfg(target_os = "macos")]
-fn activation_policy_for_main_window_visible(visible: bool) -> tauri::ActivationPolicy {
-    if visible {
-        tauri::ActivationPolicy::Regular
-    } else {
-        tauri::ActivationPolicy::Accessory
-    }
+fn activation_policy_for_main_window_visible(_visible: bool) -> tauri::ActivationPolicy {
+    tauri::ActivationPolicy::Regular
 }
 
 #[cfg(target_os = "macos")]
 fn set_main_window_dock_visibility<R: tauri::Runtime>(app: &tauri::AppHandle<R>, visible: bool) {
-    if visible {
-        set_macos_application_icon_once();
-    }
+    set_macos_application_icon_once();
     let _ = app.set_activation_policy(activation_policy_for_main_window_visible(visible));
 }
 
@@ -165,9 +159,8 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle().clone();
 
-            // Hide Dock icon at runtime (belt-and-suspenders with Info.plist LSUIElement).
-            // Info.plist LSUIElement=true suppresses the icon before the process starts;
-            // this call ensures it stays hidden even if Tauri ever resets the policy.
+            // Keep the app LaunchServices-friendly: the UI process is a normal
+            // Dock app from startup, while close/hide only affects the window.
             #[cfg(target_os = "macos")]
             {
                 app.set_activation_policy(activation_policy_for_main_window_visible(false));
@@ -970,11 +963,18 @@ mod tests {
     }
 
     #[test]
-    fn hidden_main_window_uses_accessory_activation_policy() {
+    fn hidden_main_window_stays_regular_activation_policy() {
         assert!(matches!(
             activation_policy_for_main_window_visible(false),
-            tauri::ActivationPolicy::Accessory
+            tauri::ActivationPolicy::Regular
         ));
+    }
+
+    #[test]
+    fn info_plist_does_not_make_main_app_an_agent() {
+        let info_plist = include_str!("../Info.plist");
+
+        assert!(!info_plist.contains("<key>LSUIElement</key>\n    <true/>"));
     }
 
     #[test]

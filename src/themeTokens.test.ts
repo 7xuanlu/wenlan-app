@@ -18,16 +18,48 @@ function rootToken(name: string): string | null {
   return body.match(new RegExp(`${name}:\\s*([^;]+);`))?.[1].trim() ?? null;
 }
 
-describe("dark theme brand tokens", () => {
-  it("uses the logo/social-preview navy palette instead of purple surfaces", () => {
-    expect(rootToken("--bg-primary")).toBe("#1A1A2E");
-    expect(rootToken("--bg-secondary")).toBe("#202338");
-    expect(rootToken("--border")).toBe("#313A52");
+function rgb(hex: string): { r: number; g: number; b: number } {
+  const match = hex.match(/^#(?<r>[0-9A-F]{2})(?<g>[0-9A-F]{2})(?<b>[0-9A-F]{2})$/i);
+  if (!match?.groups) {
+    throw new Error(`Expected hex color, got ${hex}`);
+  }
+  return {
+    r: Number.parseInt(match.groups.r, 16),
+    g: Number.parseInt(match.groups.g, 16),
+    b: Number.parseInt(match.groups.b, 16),
+  };
+}
 
-    expect(darkToken("--mem-bg")).toBe("#1A1A2E");
-    expect(darkToken("--mem-surface")).toBe("#202338");
-    expect(darkToken("--mem-sidebar")).toBe("#16182B");
-    expect(darkToken("--mem-border")).toBe("#313A52");
-    expect(darkToken("--mem-accent-indigo")).toBe("#5BA3E6");
+function expectBlueNeutralNavy(hex: string | null): void {
+  expect(hex).not.toBeNull();
+  const color = rgb(hex ?? "");
+
+  expect(color.g).toBeGreaterThan(color.r);
+  expect(color.b).toBeGreaterThan(color.g);
+}
+
+describe("dark theme brand tokens", () => {
+  it("uses a blue-neutral navy scale instead of violet icon colors", () => {
+    expect(rootToken("--bg-primary")).toBe("#101722");
+    expect(rootToken("--bg-secondary")).toBe("#151C28");
+    expect(rootToken("--border")).toBe("#2B3748");
+
+    expect(darkToken("--mem-bg")).toBe("#101722");
+    expect(darkToken("--mem-surface")).toBe("#151C28");
+    expect(darkToken("--mem-sidebar")).toBe("#0D131D");
+    expect(darkToken("--mem-border")).toBe("#2B3748");
+    expect(darkToken("--mem-accent-indigo")).toBe("#4FAED8");
+  });
+
+  it("keeps dark structural surfaces out of the purple hue family", () => {
+    for (const token of [
+      rootToken("--bg-primary"),
+      rootToken("--bg-secondary"),
+      darkToken("--mem-bg"),
+      darkToken("--mem-surface"),
+      darkToken("--mem-sidebar"),
+    ]) {
+      expectBlueNeutralNavy(token);
+    }
   });
 });
