@@ -98,10 +98,10 @@ From `bash scripts/refactor/inventory.sh` after the typed-client and sidecar con
 
 | Surface | Count | Meaning |
 |---|---:|---|
-| `src/lib/tauri.ts` `invoke(...)` calls | 121 | frontend-to-Tauri wrapper surface |
-| `app/src/lib.rs` registered `search::...` commands | 165 | Rust command registration surface |
+| `src/lib/tauri.ts` `invoke(...)` calls | 122 | frontend-to-Tauri wrapper surface |
+| `app/src/lib.rs` registered `search::...` commands | 166 | Rust command registration surface |
 | Rust `origin_types` references | 0 | typed contract migration is no longer blocked by stale crate imports |
-| runtime identity references | 221 | package/service/MCP/remote/app-name migration surface |
+| runtime identity references | 222 | package/service/MCP/remote/app-name migration surface |
 | stale taxonomy references | 239 | `concept`/`goal`/`domain` review surface |
 | source files under `app/src` and `src` | 151 | working code surface size |
 

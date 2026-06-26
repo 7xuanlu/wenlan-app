@@ -88,6 +88,12 @@ pub struct StoreMemoryResponse {
     /// enrichment will run.
     #[serde(default)]
     pub hint: String,
+    /// Protected memories now flagged for human revision by the daemon.
+    #[serde(default)]
+    pub triggered_revisions: Vec<String>,
+    /// Protected memories auto-accepted by a full-trust agent write.
+    #[serde(default)]
+    pub auto_superseded: Vec<String>,
 }
 
 // ── Window / UI commands (kept as-is) ─────────────────────────────────
@@ -913,6 +919,8 @@ pub async fn store_memory(
         warnings: resp.warnings,
         enrichment: resp.enrichment,
         hint: resp.hint,
+        triggered_revisions: resp.triggered_revisions,
+        auto_superseded: resp.auto_superseded,
     })
 }
 
@@ -1878,26 +1886,22 @@ pub async fn list_pinned_memories(
 pub async fn accept_pending_revision(
     state: tauri::State<'_, State>,
     source_id: String,
-) -> Result<(), String> {
+) -> Result<responses::RevisionAcceptResponse, String> {
     let s = state.read().await;
-    let _resp: serde_json::Value = s
-        .client
+    s.client
         .post_empty(&format!("/api/memory/revision/{}/accept", source_id))
-        .await?;
-    Ok(())
+        .await
 }
 
 #[tauri::command]
 pub async fn dismiss_pending_revision(
     state: tauri::State<'_, State>,
     source_id: String,
-) -> Result<(), String> {
+) -> Result<responses::RevisionDismissResponse, String> {
     let s = state.read().await;
-    let _resp: serde_json::Value = s
-        .client
+    s.client
         .post_empty(&format!("/api/memory/revision/{}/dismiss", source_id))
-        .await?;
-    Ok(())
+        .await
 }
 
 // ── Contradiction flags ────────────────────────────────────────────────
@@ -1906,13 +1910,11 @@ pub async fn dismiss_pending_revision(
 pub async fn dismiss_contradiction(
     state: tauri::State<'_, State>,
     source_id: String,
-) -> Result<(), String> {
+) -> Result<responses::ContradictionDismissResponse, String> {
     let s = state.read().await;
-    let _resp: serde_json::Value = s
-        .client
+    s.client
         .post_empty(&format!("/api/memory/contradiction/{}/dismiss", source_id))
-        .await?;
-    Ok(())
+        .await
 }
 
 #[tauri::command]
@@ -1926,6 +1928,19 @@ pub async fn get_pending_revision(
         .get_json(&format!("/api/memory/pending-revision/{}", source_id))
         .await?;
     Ok(revision)
+}
+
+#[tauri::command]
+pub async fn list_pending_revisions(
+    state: tauri::State<'_, State>,
+    limit: Option<usize>,
+) -> Result<Vec<responses::PendingRevisionItem>, String> {
+    let s = state.read().await;
+    let path = match limit {
+        Some(limit) => format!("/api/memory/pending-revisions?limit={limit}"),
+        None => "/api/memory/pending-revisions".to_string(),
+    };
+    s.client.get_json(&path).await
 }
 
 // ── Briefing / narrative ──────────────────────────────────────────────
@@ -3000,5 +3015,47 @@ mod avatar_path_tests {
 
         restore_env("WENLAN_DATA_DIR", previous_wenlan);
         restore_env("ORIGIN_DATA_DIR", previous_origin);
+    }
+}
+
+#[cfg(test)]
+mod revision_response_tests {
+    use super::*;
+
+    #[test]
+    fn store_memory_response_preserves_revision_signals() {
+        let response = StoreMemoryResponse {
+            source_id: "mem_new".to_string(),
+            warnings: vec![],
+            enrichment: "pending".to_string(),
+            hint: "Review the protected memory update.".to_string(),
+            triggered_revisions: vec!["mem_target".to_string()],
+            auto_superseded: vec!["mem_old".to_string()],
+        };
+
+        let json = serde_json::to_value(&response).unwrap();
+        assert_eq!(
+            json["triggered_revisions"],
+            serde_json::json!(["mem_target"])
+        );
+        assert_eq!(json["auto_superseded"], serde_json::json!(["mem_old"]));
+
+        let decoded: StoreMemoryResponse = serde_json::from_value(json).unwrap();
+        assert_eq!(decoded.triggered_revisions, vec!["mem_target"]);
+        assert_eq!(decoded.auto_superseded, vec!["mem_old"]);
+    }
+
+    #[test]
+    fn store_memory_response_defaults_revision_signals_for_old_daemons() {
+        let decoded: StoreMemoryResponse = serde_json::from_value(serde_json::json!({
+            "source_id": "mem_new",
+            "warnings": [],
+            "enrichment": "not_needed",
+            "hint": ""
+        }))
+        .unwrap();
+
+        assert!(decoded.triggered_revisions.is_empty());
+        assert!(decoded.auto_superseded.is_empty());
     }
 }

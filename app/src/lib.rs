@@ -840,6 +840,7 @@ pub fn run() {
             search::accept_pending_revision,
             search::dismiss_pending_revision,
             search::get_pending_revision,
+            search::list_pending_revisions,
             // Contradiction flag commands
             search::dismiss_contradiction,
             // Profile & agent management commands

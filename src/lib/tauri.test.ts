@@ -466,6 +466,18 @@ describe('version chain', () => {
 });
 
 describe('pending revisions', () => {
+  it('listPendingRevisions passes default limit', async () => {
+    mockInvoke.mockResolvedValue([]);
+    await tauri.listPendingRevisions();
+    expect(mockInvoke).toHaveBeenCalledWith('list_pending_revisions', { limit: null });
+  });
+
+  it('listPendingRevisions passes explicit limit', async () => {
+    mockInvoke.mockResolvedValue([]);
+    await tauri.listPendingRevisions(25);
+    expect(mockInvoke).toHaveBeenCalledWith('list_pending_revisions', { limit: 25 });
+  });
+
   it('acceptPendingRevision passes sourceId', async () => {
     await tauri.acceptPendingRevision('src-1');
     expect(mockInvoke).toHaveBeenCalledWith('accept_pending_revision', { sourceId: 'src-1' });

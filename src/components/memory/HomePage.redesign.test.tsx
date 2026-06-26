@@ -63,7 +63,7 @@ beforeEach(() => {
   vi.mocked(tauri.listEntities).mockResolvedValue([]);
   vi.mocked(tauri.getMemoryStats).mockResolvedValue({ total: 0, with_embeddings: 0 } as any);
   vi.mocked(tauri.getProfile).mockResolvedValue(null);
-  vi.mocked(tauri.dismissContradiction).mockResolvedValue(undefined);
+  vi.mocked(tauri.dismissContradiction).mockResolvedValue({ source_id: "mem-new", wrote: true });
   vi.mocked(tauri.getPendingContradictions).mockResolvedValue([
     {
       id: "contra-1",

@@ -31,7 +31,7 @@ The rebuilt debug app bundle launches from:
 Current live process evidence:
 
 ```text
-PID 76835
+PID 79910
 ```
 
 The bundle is still named `Origin.app`; product/runtime rename remains a future migration step. Do not treat this as a failed repo rename.
@@ -40,10 +40,10 @@ Current structural inventory from `bash scripts/refactor/inventory.sh`:
 
 | Surface | Count |
 |---|---:|
-| frontend `invoke(...)` calls | 121 |
-| registered Tauri commands | 165 |
+| frontend `invoke(...)` calls | 122 |
+| registered Tauri commands | 166 |
 | Rust `origin_types` references | 0 |
-| runtime identity references | 221 |
+| runtime identity references | 222 |
 | stale taxonomy references | 239 |
 | source files under `app/src` and `src` | 151 |
 
@@ -69,6 +69,7 @@ Already landed in this branch history:
 | stable app path bridge | accepts current `Wenlan.app` paths and legacy `Origin.app` paths |
 | Dock visibility | app activation policy is regular; debug app shows as an app process |
 | migrated avatar path | avatar loader handles migrated paths |
+| revision signal bridge | `StoreMemoryResponse` preserves `triggered_revisions` and `auto_superseded`; revision/contradiction mutation wrappers return typed daemon responses; `listPendingRevisions` wraps `/api/memory/pending-revisions` |
 | failed palette experiment | parked behind a conservative graphite-blue fallback; revisit visual design later |
 
 ## Tool Boundaries
@@ -102,9 +103,9 @@ Current daemon/API parity gaps from read-only subagent exploration:
 | Gap | Priority | Action |
 |---|---|---|
 | setup/config source of truth is split | P0 | make Settings/Wizard use daemon `get_config`, `update_config`, `setup_status`, and model/setup wrappers; reduce local config writes to app-local sensors only |
-| store/revision signals are dropped | P0 | preserve `triggered_revisions` and `auto_superseded` through Rust and TypeScript `StoreMemoryResponse` |
-| revision/contradiction accept/dismiss are untyped | P0 | use `RevisionAcceptResponse`, `RevisionDismissResponse`, and `ContradictionDismissResponse` instead of `serde_json::Value` |
-| pending revisions lack a list wrapper | P0 | add `listPendingRevisions` for `/api/memory/pending-revisions` and wire a central review surface |
+| store/revision signals need UI surfacing | P0 | Rust and TypeScript wrappers now preserve `triggered_revisions` and `auto_superseded`; next wire these into review/notification UI |
+| revision/contradiction accept/dismiss need consumer handling | P0 | wrappers now return typed daemon responses; next consume those responses in review UI/cache invalidation |
+| pending revisions need central UI | P0 | `listPendingRevisions` now wraps `/api/memory/pending-revisions`; next wire a central review surface |
 | memory taxonomy is stale | P1 | remove first-class `goal`, add `lesson`/`gotcha`, and update colors, stability tiers, fixtures, and reclassification options |
 | page links/revisions/refinery are under-wrapped | P1 | add `getPageLinks`, `listOrphanLinks`, `getPageRevisions`, `getMemoryRevisions`, and refinery queue accept/reject wrappers; move `PageDetail` related links to `/api/pages/{id}/links` |
 | source registry still mutates local config | P1 | route add/list/remove through `/api/sources`; keep sync as daemon proxy |

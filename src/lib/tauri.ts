@@ -648,6 +648,30 @@ export interface PendingRevision {
   source_agent: string | null;
 }
 
+export interface PendingRevisionItem {
+  target_source_id: string;
+  revision_source_id: string;
+  revision_content: string;
+  source_agent: string | null;
+  last_modified: number;
+}
+
+export interface RevisionAcceptResponse {
+  target_source_id: string;
+  revision_source_id: string;
+  wrote: boolean;
+}
+
+export interface RevisionDismissResponse {
+  target_source_id: string;
+  wrote: boolean;
+}
+
+export interface ContradictionDismissResponse {
+  source_id: string;
+  wrote: boolean;
+}
+
 export interface MemoryVersionItem {
   source_id: string;
   title: string;
@@ -966,6 +990,8 @@ export interface StoreMemoryResponse {
    * is not_needed.
    */
   hint?: string;
+  triggered_revisions?: string[];
+  auto_superseded?: string[];
 }
 
 export async function storeMemory(req: StoreMemoryRequest): Promise<StoreMemoryResponse> {
@@ -1065,15 +1091,19 @@ export async function getVersionChain(
   return invoke("get_version_chain_cmd", { sourceId });
 }
 
-export async function acceptPendingRevision(sourceId: string): Promise<void> {
+export async function listPendingRevisions(limit?: number): Promise<PendingRevisionItem[]> {
+  return invoke("list_pending_revisions", { limit: limit ?? null });
+}
+
+export async function acceptPendingRevision(sourceId: string): Promise<RevisionAcceptResponse> {
   return invoke("accept_pending_revision", { sourceId });
 }
 
-export async function dismissPendingRevision(sourceId: string): Promise<void> {
+export async function dismissPendingRevision(sourceId: string): Promise<RevisionDismissResponse> {
   return invoke("dismiss_pending_revision", { sourceId });
 }
 
-export async function dismissContradiction(sourceId: string): Promise<void> {
+export async function dismissContradiction(sourceId: string): Promise<ContradictionDismissResponse> {
   return invoke("dismiss_contradiction", { sourceId });
 }
 

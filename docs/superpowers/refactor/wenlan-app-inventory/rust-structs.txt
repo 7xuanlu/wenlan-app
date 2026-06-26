@@ -135,29 +135,35 @@
 /Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:88:    /// enrichment will run.
 /Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:89:    #[serde(default)]
 /Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:90:    pub hint: String,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:91:}
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:500:pub struct RemoteConnectionTest {
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:501:    pub ok: bool,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:502:    pub latency_ms: Option<u64>,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:503:    pub error: Option<String>,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:504:}
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:1220:pub struct BulkDeleteItem {
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:1221:    pub source: String,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:1222:    pub source_id: String,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:1223:}
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:1992:pub struct EntitySuggestion {
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:1993:    pub id: String,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:1994:    pub entity_name: Option<String>,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:1995:    pub source_ids: Vec<String>,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:1996:    pub confidence: f64,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:1997:    pub created_at: String,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:1998:}
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:2218:pub struct TagData {
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:2219:    pub tags: Vec<String>,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:2220:    pub document_tags: HashMap<String, Vec<String>>,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:2221:    pub categories: Vec<String>,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:2222:    pub document_categories: HashMap<String, String>,
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:2223:}
+/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:91:    /// Protected memories now flagged for human revision by the daemon.
+/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:92:    #[serde(default)]
+/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:93:    pub triggered_revisions: Vec<String>,
+/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:94:    /// Protected memories auto-accepted by a full-trust agent write.
+/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:95:    #[serde(default)]
+/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:96:    pub auto_superseded: Vec<String>,
+/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:97:}
+/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:506:pub struct RemoteConnectionTest {
+/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:507:    pub ok: bool,
+/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:508:    pub latency_ms: Option<u64>,
+/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:509:    pub error: Option<String>,
+/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:510:}
+/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:1228:pub struct BulkDeleteItem {
+/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:1229:    pub source: String,
+/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:1230:    pub source_id: String,
+/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:1231:}
+/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:2007:pub struct EntitySuggestion {
+/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:2008:    pub id: String,
+/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:2009:    pub entity_name: Option<String>,
+/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:2010:    pub source_ids: Vec<String>,
+/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:2011:    pub confidence: f64,
+/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:2012:    pub created_at: String,
+/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:2013:}
+/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:2233:pub struct TagData {
+/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:2234:    pub tags: Vec<String>,
+/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:2235:    pub document_tags: HashMap<String, Vec<String>>,
+/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:2236:    pub categories: Vec<String>,
+/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:2237:    pub document_categories: HashMap<String, String>,
+/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/search.rs:2238:}
 /Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/sensor/vision.rs:5:pub struct WindowCapture {
 /Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/sensor/vision.rs:6:    pub image: image::DynamicImage,
 /Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/app/src/sensor/vision.rs:7:    pub app_name: String,

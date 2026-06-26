@@ -11,10 +11,10 @@
 
 | Evidence | Current value | Source |
 |---|---:|---|
-| Frontend `invoke(...)` calls | 121 | `docs/superpowers/refactor/wenlan-app-inventory/frontend-invokes.txt` |
-| Registered Tauri commands | 165 | `app/src/lib.rs` + `search-rs-outline.txt` |
+| Frontend `invoke(...)` calls | 122 | `docs/superpowers/refactor/wenlan-app-inventory/frontend-invokes.txt` |
+| Registered Tauri commands | 166 | `app/src/lib.rs` + `search-rs-outline.txt` |
 | Rust `origin_types` references | 0 | `app/src` residual scan |
-| Runtime identity references | 221 | `Origin`/`origin-server`/`origin-mcp`/`com.origin`/relay residual scan |
+| Runtime identity references | 222 | `Origin`/`origin-server`/`origin-mcp`/`com.origin`/relay residual scan |
 | Stale taxonomy references | 239 | `concept`/`goal`/`domain` residual scan |
 | Wenlan typed request/response declarations in `requests.rs` + `responses.rs` | 99 | `wenlan-types` scan |
 
@@ -39,11 +39,11 @@ These block "caught up enough for full refactor run".
 | `/api/refinery/queue` | `ListRefinementsResponse` | missing wrapper and UI | add central review queue | require route for review queue; hide panel if absent |
 | `/api/refinery/queue/{id}/accept` | `AcceptRefinementResponse` | missing wrapper and UI | add accept action with typed response | optional until queue route exists |
 | `/api/refinery/queue/{id}/reject` | `RejectRefinementResponse` | missing wrapper and UI | add reject action with typed response | optional until queue route exists |
-| `/api/memory/pending-revisions` | daemon route | missing list wrapper/UI | add central pending revision list | require for P0 review surface; hide list if absent |
+| `/api/memory/pending-revisions` | daemon route | typed Tauri/TS wrapper present; central UI missing | add central pending revision list | require for P0 review surface; hide list if absent |
 | `/api/memory/pending-revision/{source_id}` | daemon route | present as per-memory `getPendingRevision` | keep but type through `wenlan-types` if available | optional detail route |
-| `/api/memory/revision/{id}/accept` | `RevisionAcceptResponse` | present command accepts `sourceId`; response is `serde_json::Value` | confirm path parameter semantics, rename argument if revision id, type response | require typed response before review UI |
-| `/api/memory/revision/{id}/dismiss` | `RevisionDismissResponse` | present command accepts `sourceId`; response is `serde_json::Value` | confirm path parameter semantics, rename argument if revision id, type response | require typed response before review UI |
-| `/api/memory/contradiction/{source_id}/dismiss` | `ContradictionDismissResponse` | present command, untyped response | type response and surface in review queue | optional if contradictions route absent |
+| `/api/memory/revision/{id}/accept` | `RevisionAcceptResponse` | present command accepts `sourceId` and returns typed response | consume response in review UI/cache invalidation | require typed response before review UI |
+| `/api/memory/revision/{id}/dismiss` | `RevisionDismissResponse` | present command accepts `sourceId` and returns typed response | consume response in review UI/cache invalidation | require typed response before review UI |
+| `/api/memory/contradiction/{source_id}/dismiss` | `ContradictionDismissResponse` | present command returns typed response | surface in review queue | optional if contradictions route absent |
 | `/api/memory/{source_id}/enrichment-status` | `EnrichmentStatusResponse` | missing direct wrapper; store response has partial enrichment string | add typed direct status wrapper and post-store polling/invalidation | optional per-memory route; show unknown state if absent |
 | `/api/sources` | daemon source routes | present via `wenlan_types::sources` in source modules plus remaining app-local Tauri DTOs | converge any remaining DTO shadows with current daemon/source types, keep source registry daemon-owned | required for source management |
 | `/api/config` | `ConfigResponse`, `UpdateConfigRequest` | switched to `wenlan-types`; app-local builder helper still wraps shared type | remove stale comments/helpers when shared defaults exist | required for settings |
