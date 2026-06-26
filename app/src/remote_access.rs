@@ -21,13 +21,27 @@ const RELAY_URL: &str = "https://origin-relay.originmemory.workers.dev";
 
 /// Get or create a persistent relay user ID.
 /// Stored in ~/.config/wenlan-mcp/relay_id
-fn get_or_create_relay_id() -> String {
+fn get_or_create_relay_id() -> Result<String, String> {
     let path = relay_id_path();
 
-    if let Ok(id) = std::fs::read_to_string(&path) {
-        let id = id.trim().to_string();
-        if !id.is_empty() {
-            return id;
+    match std::fs::read_to_string(&path) {
+        Ok(id) => {
+            let id = id.trim().to_string();
+            if !id.is_empty() {
+                if let Some(parent) = path.parent() {
+                    restrict_private_dir(parent, "relay_id")?;
+                }
+                restrict_private_file(&path, "relay_id")?;
+                return Ok(id);
+            }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => {
+            return Err(format!(
+                "Failed to read relay ID at {}: {}",
+                path.display(),
+                e
+            ));
         }
     }
 
@@ -42,20 +56,23 @@ fn get_or_create_relay_id() -> String {
         .take(12)
         .collect::<String>();
 
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    let _ = std::fs::write(&path, &id);
-    id
+    write_private_file(&path, id.as_bytes(), "relay_id")?;
+    Ok(id)
 }
 
 /// Register the current tunnel URL with the relay for a stable MCP endpoint.
 async fn register_with_relay(tunnel_url: &str) -> Option<String> {
-    let relay_id = get_or_create_relay_id();
+    let relay_id = match get_or_create_relay_id() {
+        Ok(id) => id,
+        Err(e) => {
+            log::warn!("[remote-access] Relay ID unavailable: {}", e);
+            return None;
+        }
+    };
     let body = serde_json::json!({
-        "user_id": relay_id,
+        "user_id": &relay_id,
         "tunnel_url": tunnel_url,
-        "secret": relay_id, // simple shared secret
+        "secret": &relay_id, // simple shared secret
     });
 
     match reqwest::Client::new()
@@ -181,6 +198,118 @@ pub fn parse_tunnel_url(stderr: &str) -> Option<String> {
     TUNNEL_URL_RE.find(stderr).map(|m| m.as_str().to_string())
 }
 
+fn create_private_dir(path: &Path, file_name: &str) -> Result<(), String> {
+    std::fs::create_dir_all(path).map_err(|e| {
+        format!(
+            "Failed to create current {} directory at {}: {}",
+            file_name,
+            path.display(),
+            e
+        )
+    })?;
+    restrict_private_dir(path, file_name)
+}
+
+fn restrict_private_dir(path: &Path, file_name: &str) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).map_err(|e| {
+            format!(
+                "Failed to restrict current {} directory at {}: {}",
+                file_name,
+                path.display(),
+                e
+            )
+        })?;
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (path, file_name);
+    }
+    Ok(())
+}
+
+fn restrict_private_file(path: &Path, file_name: &str) -> Result<(), String> {
+    if !path.exists() {
+        return Ok(());
+    }
+    if !path.is_file() {
+        return Err(format!(
+            "Current {} path is not a file: {}",
+            file_name,
+            path.display()
+        ));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).map_err(|e| {
+            format!(
+                "Failed to restrict current {} file at {}: {}",
+                file_name,
+                path.display(),
+                e
+            )
+        })?;
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = file_name;
+    }
+    Ok(())
+}
+
+fn prepare_private_parent(path: &Path, file_name: &str) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        create_private_dir(parent, file_name)?;
+    }
+    Ok(())
+}
+
+fn write_private_file(path: &Path, contents: &[u8], file_name: &str) -> Result<(), String> {
+    prepare_private_parent(path, file_name)?;
+    #[cfg(unix)]
+    {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)
+            .map_err(|e| {
+                format!(
+                    "Failed to open current {} file at {}: {}",
+                    file_name,
+                    path.display(),
+                    e
+                )
+            })?;
+        file.write_all(contents).map_err(|e| {
+            format!(
+                "Failed to write current {} file at {}: {}",
+                file_name,
+                path.display(),
+                e
+            )
+        })?;
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::write(path, contents).map_err(|e| {
+            format!(
+                "Failed to write current {} file at {}: {}",
+                file_name,
+                path.display(),
+                e
+            )
+        })?;
+    }
+    restrict_private_file(path, file_name)
+}
+
 fn import_nonempty_legacy_file(
     current_dir: &Path,
     legacy_dir: &Path,
@@ -188,6 +317,8 @@ fn import_nonempty_legacy_file(
 ) -> Result<PathBuf, String> {
     let current_path = current_dir.join(file_name);
     if current_path.exists() {
+        restrict_private_dir(current_dir, file_name)?;
+        restrict_private_file(&current_path, file_name)?;
         return Ok(current_path);
     }
 
@@ -196,12 +327,13 @@ fn import_nonempty_legacy_file(
         Ok(contents) => contents,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(current_path),
         Err(e) => {
-            return Err(format!(
-                "Failed to read legacy {} at {}: {}",
+            log::warn!(
+                "[remote-access] Skipping legacy {} import from {}: {}",
                 file_name,
                 legacy_path.display(),
                 e
-            ));
+            );
+            return Ok(current_path);
         }
     };
 
@@ -209,22 +341,7 @@ fn import_nonempty_legacy_file(
         return Ok(current_path);
     }
 
-    std::fs::create_dir_all(current_dir).map_err(|e| {
-        format!(
-            "Failed to create current {} directory at {}: {}",
-            file_name,
-            current_dir.display(),
-            e
-        )
-    })?;
-    std::fs::write(&current_path, contents).map_err(|e| {
-        format!(
-            "Failed to write imported {} to {}: {}",
-            file_name,
-            current_path.display(),
-            e
-        )
-    })?;
+    write_private_file(&current_path, contents.as_bytes(), file_name)?;
 
     Ok(current_path)
 }
@@ -857,6 +974,7 @@ async fn start_tunnel(
         token_path.exists()
     );
     if !token_path.exists() {
+        prepare_private_parent(&token_path, "token")?;
         let shell = app_handle.shell();
         log::warn!("[remote-access] generating token via sidecar...");
         let cmd = shell
@@ -879,6 +997,7 @@ async fn start_tunnel(
                 String::from_utf8_lossy(&output.stderr)
             ));
         }
+        restrict_private_file(&token_path, "token")?;
     }
     let token = read_token()?;
 
@@ -988,6 +1107,7 @@ pub async fn toggle_off(app_handle: &tauri::AppHandle) {
 pub async fn rotate_token(app_handle: &tauri::AppHandle) -> Result<String, String> {
     // 1. Generate new token first (before killing anything)
     let token_path = token_file_path()?;
+    prepare_private_parent(&token_path, "token")?;
     let shell = app_handle.shell();
     let output = shell
         .sidecar(MCP_SIDECAR_NAME)
@@ -1002,6 +1122,7 @@ pub async fn rotate_token(app_handle: &tauri::AppHandle) -> Result<String, Strin
             String::from_utf8_lossy(&output.stderr)
         ));
     }
+    restrict_private_file(&token_path, "token")?;
 
     let token = read_token()?;
 
@@ -1025,6 +1146,12 @@ pub async fn rotate_token(app_handle: &tauri::AppHandle) -> Result<String, Strin
 mod tests {
     use super::*;
     use std::ffi::OsString;
+
+    #[cfg(unix)]
+    fn file_mode(path: &Path) -> u32 {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+    }
 
     struct HomeGuard {
         home: Option<OsString>,
@@ -1148,6 +1275,22 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
+    fn token_path_imports_legacy_token_with_private_permissions() {
+        let tmp = tempfile::tempdir().unwrap();
+        let current = tmp.path().join("wenlan-mcp");
+        let legacy = tmp.path().join("origin-mcp");
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::write(legacy.join("token"), "legacy-token\n").unwrap();
+
+        let path = token_file_path_for_dirs(&current, &legacy).unwrap();
+
+        assert_eq!(path, current.join("token"));
+        assert_eq!(file_mode(&path), 0o600);
+        assert_eq!(file_mode(&current), 0o700);
+    }
+
+    #[test]
     fn token_path_keeps_current_token_when_present() {
         let tmp = tempfile::tempdir().unwrap();
         let current = tmp.path().join("wenlan-mcp");
@@ -1181,6 +1324,20 @@ mod tests {
     }
 
     #[test]
+    fn token_path_skips_invalid_legacy_token() {
+        let tmp = tempfile::tempdir().unwrap();
+        let current = tmp.path().join("wenlan-mcp");
+        let legacy = tmp.path().join("origin-mcp");
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::write(legacy.join("token"), [0xff, 0xfe]).unwrap();
+
+        let path = token_file_path_for_dirs(&current, &legacy).unwrap();
+
+        assert_eq!(path, current.join("token"));
+        assert!(!current.join("token").exists());
+    }
+
+    #[test]
     fn relay_id_path_does_not_import_legacy_relay_id() {
         let tmp = tempfile::tempdir().unwrap();
         let current = tmp.path().join("wenlan-mcp");
@@ -1192,6 +1349,32 @@ mod tests {
 
         assert_eq!(path, current.join("relay_id"));
         assert!(!current.join("relay_id").exists());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    #[serial_test::serial]
+    fn relay_id_generation_writes_private_secret_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _home = HomeGuard::set(tmp.path());
+
+        let id = get_or_create_relay_id().unwrap();
+        let path = relay_id_path();
+
+        assert!(!id.is_empty());
+        assert_eq!(file_mode(&path), 0o600);
+        assert_eq!(file_mode(path.parent().unwrap()), 0o700);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn relay_id_generation_errors_when_relay_id_path_is_directory() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _home = HomeGuard::set(tmp.path());
+        let path = relay_id_path();
+        std::fs::create_dir_all(&path).unwrap();
+
+        assert!(get_or_create_relay_id().is_err());
     }
 
     #[test]
