@@ -98,3 +98,24 @@ Initial high-value queries for Phase A/B:
 - `setup_mcp`
 - `remote_access`
 - `spawn_sidecar`
+
+## Task 4 Execution Note
+
+During Task 4, the required CodeGraph sync command was attempted:
+
+```bash
+CODEGRAPH_TELEMETRY=0 DO_NOT_TRACK=1 npx -y @colbymchenry/codegraph sync .
+```
+
+The sandbox reviewer blocked the command because it was considered an external
+untrusted network action with possible repository code/metadata exfiltration.
+Per the task fallback decision, CodeGraph was not retried and no further
+CodeGraph escalation was requested.
+
+Task 4 continued with the approved fallback ladder:
+
+- ast-grep structural surfaces
+- `env TAURI_CONFIG='{"bundle":{"externalBin":[]}}' RUSTC_WRAPPER= cargo check`
+- `pnpm build`
+- residual `rg`
+- `git diff --check`
