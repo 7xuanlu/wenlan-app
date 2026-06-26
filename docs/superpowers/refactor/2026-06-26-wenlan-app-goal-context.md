@@ -40,10 +40,10 @@ Current structural inventory from `bash scripts/refactor/inventory.sh`:
 
 | Surface | Count |
 |---|---:|
-| frontend `invoke(...)` calls | 123 |
-| registered Tauri commands | 167 |
+| frontend `invoke(...)` calls | 126 |
+| registered Tauri commands | 170 |
 | Rust `origin_types` references | 0 |
-| runtime identity references | 222 |
+| runtime identity references | 221 |
 | stale taxonomy references | 239 |
 | source files under `app/src` and `src` | 151 |
 
@@ -74,6 +74,7 @@ Already landed in this branch history:
 | revision signal bridge | `StoreMemoryResponse` preserves `triggered_revisions` and `auto_superseded`; revision/contradiction mutation wrappers return typed daemon responses; `listPendingRevisions` wraps `/api/memory/pending-revisions` |
 | neutral theme baseline | failed palette experiment replaced with conservative graphite-gray tokens; revisit visual design later |
 | pending revision Home review lane | `listPendingRevisions` feeds Worth-a-glance cards; Accept/Dismiss call typed daemon wrappers and invalidate relevant caches |
+| refinery queue review bridge | `listRefinements`, `acceptRefinement`, and `rejectRefinement` wrap `/api/refinery/queue`; Home Worth-a-glance surfaces refinery proposals with Accept/Dismiss actions |
 | setup status bridge | `getSetupStatus` wraps `/api/setup/status`; wizard gating and completion now use daemon-backed setup state instead of app-local config writes |
 
 ## Tool Boundaries
@@ -111,7 +112,7 @@ Current daemon/API parity gaps from read-only subagent exploration:
 | revision/contradiction accept/dismiss need consumer handling | P0 | wrappers return typed daemon responses; pending-revision Accept/Dismiss now consumes them through Home cache invalidation |
 | pending revisions need central UI | P0 | Home Worth-a-glance now lists pending revisions with Accept/Dismiss; expand later only if volume requires a dedicated review screen |
 | memory taxonomy is stale | P1 | remove first-class `goal`, add `lesson`/`gotcha`, and update colors, stability tiers, fixtures, and reclassification options |
-| page links/revisions/refinery are under-wrapped | P1 | add `getPageLinks`, `listOrphanLinks`, `getPageRevisions`, `getMemoryRevisions`, and refinery queue accept/reject wrappers; move `PageDetail` related links to `/api/pages/{id}/links` |
+| page links/revisions are under-wrapped | P1 | add `getPageLinks`, `listOrphanLinks`, `getPageRevisions`, and `getMemoryRevisions`; move `PageDetail` related links to `/api/pages/{id}/links` |
 | source registry still mutates local config | P1 | route add/list/remove through `/api/sources`; keep sync as daemon proxy |
 | frontend status shape is stale | P1 | add a daemon `getStatus` wrapper and surface reranker disabled/failed/active state in operator status UI |
 

@@ -1939,6 +1939,44 @@ pub async fn dismiss_contradiction(
         .await
 }
 
+// ── Refinery queue ──────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn list_refinements(
+    state: tauri::State<'_, State>,
+    limit: Option<usize>,
+) -> Result<responses::ListRefinementsResponse, String> {
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+    client.list_refinements(limit).await
+}
+
+#[tauri::command]
+pub async fn accept_refinement(
+    state: tauri::State<'_, State>,
+    id: String,
+) -> Result<responses::AcceptRefinementResponse, String> {
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+    client.accept_refinement(&id).await
+}
+
+#[tauri::command]
+pub async fn reject_refinement(
+    state: tauri::State<'_, State>,
+    id: String,
+) -> Result<responses::RejectRefinementResponse, String> {
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+    client.reject_refinement(&id).await
+}
+
 #[tauri::command]
 pub async fn get_pending_revision(
     state: tauri::State<'_, State>,

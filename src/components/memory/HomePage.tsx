@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   acceptPendingRevision,
+  acceptRefinement,
   confirmMemory,
   deleteFileChunks,
   dismissContradiction,
@@ -11,11 +12,13 @@ import {
   listPages,
   listMemoriesRich,
   listPendingRevisions,
+  listRefinements,
   listRecentChanges,
   listRecentPages,
   listRecentMemories,
   listRecentRetrievals,
   listUnconfirmedMemories,
+  rejectRefinement,
 } from "../../lib/tauri";
 import { Greeting } from "./Greeting";
 import { WorthAGlanceScroll, type WorthAGlanceItem } from "./WorthAGlanceScroll";
@@ -51,6 +54,27 @@ function deriveHomePageState(params: {
   if (params.memoryCount > 0) return "gathering";
   if (params.intelligenceReady) return "listening";
   return "seed";
+}
+
+function refinementTitle(action: string): string {
+  switch (action) {
+    case "entity_merge":
+      return "Entity merge";
+    case "relation_conflict":
+      return "Relation conflict";
+    case "detect_contradiction":
+      return "Contradiction check";
+    case "suggest_entity":
+      return "Entity suggestion";
+    case "dedup_merge":
+      return "Duplicate memory";
+    default:
+      return "Refinement proposal";
+  }
+}
+
+function canAcceptRefinementAction(action: string): boolean {
+  return action === "entity_merge" || action === "relation_conflict" || action === "detect_contradiction";
 }
 
 export default function HomePage({
@@ -112,6 +136,12 @@ export default function HomePage({
     refetchInterval: 30_000,
   });
 
+  const { data: refinementQueue = { proposals: [] } } = useQuery({
+    queryKey: ["refineryQueue"],
+    queryFn: () => listRefinements(6),
+    refetchInterval: 30_000,
+  });
+
   const { data: retrievals = [] } = useQuery({
     queryKey: ["recentRetrievals"],
     queryFn: () => listRecentRetrievals(12),
@@ -168,6 +198,25 @@ export default function HomePage({
     [pendingRevisions],
   );
 
+  const refinementItems = useMemo<WorthAGlanceItem[]>(
+    () =>
+      refinementQueue.proposals.map((proposal) => {
+        const timestamp = Date.parse(proposal.created_at);
+        return {
+          kind: "memory",
+          id: proposal.source_ids[0] ?? proposal.id,
+          title: refinementTitle(proposal.action),
+          snippet: `${Math.round(proposal.confidence * 100)}% confidence · ${proposal.source_ids.length} ${proposal.source_ids.length === 1 ? "memory" : "memories"}`,
+          timestamp_ms: Number.isNaN(timestamp) ? Date.now() : timestamp,
+          badge: { kind: "needs_review" },
+          reviewKind: "refinement",
+          reviewId: proposal.id,
+          canConfirm: canAcceptRefinementAction(proposal.action),
+        };
+      }),
+    [refinementQueue.proposals],
+  );
+
   // Worth-a-glance surfaces items that benefit from a quick confirm/edit pass:
   //   (1) daemon pending revisions awaiting accept/dismiss
   //   (2) contradiction-flagged items from the recent activity stream
@@ -176,12 +225,14 @@ export default function HomePage({
   // twice. Contradictions take precedence in ordering.
   const worthAGlanceItems = useMemo(() => {
     const seen = new Set(pendingRevisionItems.map((i) => i.id));
+    const freshRefinements = refinementItems.filter((i) => !seen.has(i.id));
+    for (const item of freshRefinements) seen.add(item.id);
     const contradictions = activityItems.filter((i) => i.badge.kind === "needs_review");
     const freshContradictions = contradictions.filter((i) => !seen.has(i.id));
     for (const item of freshContradictions) seen.add(item.id);
     const extras = unconfirmedItems.filter((i) => !seen.has(i.id));
-    return [...pendingRevisionItems, ...freshContradictions, ...extras].slice(0, 6);
-  }, [activityItems, pendingRevisionItems, unconfirmedItems]);
+    return [...pendingRevisionItems, ...freshRefinements, ...freshContradictions, ...extras].slice(0, 6);
+  }, [activityItems, pendingRevisionItems, refinementItems, unconfirmedItems]);
 
   const memoryCount = stats?.total ?? 0;
   const conceptCount = recentConcepts.length;
@@ -243,8 +294,27 @@ export default function HomePage({
   const isEmpty =
     activityItems.length === 0 &&
     pendingRevisionItems.length === 0 &&
+    refinementItems.length === 0 &&
     retrievals.length === 0 &&
     changes.length === 0;
+
+  const invalidateReviewActivity = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["refineryQueue"] }),
+      queryClient.invalidateQueries({ queryKey: ["recentConceptItems"] }),
+      queryClient.invalidateQueries({ queryKey: ["recentMemoryItems"] }),
+      queryClient.invalidateQueries({ queryKey: ["recentChanges"] }),
+    ]);
+  };
+
+  const invalidateRefineryAcceptEffects = async () => {
+    await Promise.all([
+      invalidateReviewActivity(),
+      queryClient.invalidateQueries({ queryKey: ["pendingRevisions"] }),
+      queryClient.invalidateQueries({ queryKey: ["connections-concepts"] }),
+      queryClient.invalidateQueries({ queryKey: ["connections-entities"] }),
+    ]);
+  };
 
   return (
     <div className="flex flex-col gap-8 pb-16">
@@ -284,6 +354,13 @@ export default function HomePage({
                 return;
               }
 
+              if (item.reviewKind === "refinement") {
+                if (item.canConfirm === false) return;
+                await acceptRefinement(item.reviewId ?? item.id);
+                await invalidateRefineryAcceptEffects();
+                return;
+              }
+
               await Promise.all([
                 dismissContradiction(item.id).catch(() => undefined),
                 confirmMemory(item.id, true).catch(() => undefined),
@@ -296,6 +373,12 @@ export default function HomePage({
               if (item.reviewKind === "pending_revision") {
                 await dismissPendingRevision(item.id);
                 await queryClient.invalidateQueries({ queryKey: ["pendingRevisions"] });
+                return;
+              }
+
+              if (item.reviewKind === "refinement") {
+                await rejectRefinement(item.reviewId ?? item.id);
+                await invalidateReviewActivity();
                 return;
               }
 

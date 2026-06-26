@@ -207,113 +207,126 @@
 1106: export async function dismissContradiction(sourceId: string): Promise<ContradictionDismissResponse> {
 1110: export async function confirmMemory(sourceId: string, confirmed: boolean = true): Promise<void> {
 1114: export async function getPendingRevision(sourceId: string): Promise<PendingRevision | null> {
-1120: export async function getEntitySuggestions(): Promise<EntitySuggestion[]> {
-1124: export async function approveEntitySuggestion(id: string): Promise<{ entity_id: string; entity_name: string; memories_linked: number }> {
-1128: export async function dismissEntitySuggestion(id: string): Promise<void> {
-1134: export async function getPage(id: string): Promise<Page | null> {
-1140: export async function getConcept(id: string): Promise<Page | null> {
-1144: export async function updatePage(id: string, content: string): Promise<void> {
-1149: export async function updateConcept(id: string, content: string): Promise<void> {
-1153: export async function deletePage(id: string): Promise<void> {
-1158: export async function deleteConcept(id: string): Promise<void> {
-1162: export async function archivePage(id: string): Promise<void> {
-1167: export async function archiveConcept(id: string): Promise<void> {
-1171: export async function searchPages(
-1180: export async function searchConcepts(
-1187: export async function listPages(
-1198: export async function listConcepts(
-1209: export interface RetrievalEvent {
+1120: export type ProposalAction =
+1127: export type RefinementPayload =
+1147: export interface RefinementProposalSummary {
+        field: id, action, source_ids, payload, confidence, created_at
+1156: export interface ListRefinementsResponse {
+        field: proposals
+1160: export interface AcceptRefinementResponse {
+        field: id, action_applied
+1165: export interface RejectRefinementResponse {
+        field: id
+1169: export async function listRefinements(limit?: number): Promise<ListRefinementsResponse> {
+1173: export async function acceptRefinement(id: string): Promise<AcceptRefinementResponse> {
+1177: export async function rejectRefinement(id: string): Promise<RejectRefinementResponse> {
+1183: export async function getEntitySuggestions(): Promise<EntitySuggestion[]> {
+1187: export async function approveEntitySuggestion(id: string): Promise<{ entity_id: string; entity_name: string; memories_linked: number }> {
+1191: export async function dismissEntitySuggestion(id: string): Promise<void> {
+1197: export async function getPage(id: string): Promise<Page | null> {
+1203: export async function getConcept(id: string): Promise<Page | null> {
+1207: export async function updatePage(id: string, content: string): Promise<void> {
+1212: export async function updateConcept(id: string, content: string): Promise<void> {
+1216: export async function deletePage(id: string): Promise<void> {
+1221: export async function deleteConcept(id: string): Promise<void> {
+1225: export async function archivePage(id: string): Promise<void> {
+1230: export async function archiveConcept(id: string): Promise<void> {
+1234: export async function searchPages(
+1243: export async function searchConcepts(
+1250: export async function listPages(
+1261: export async function listConcepts(
+1272: export interface RetrievalEvent {
         field: timestamp_ms, agent_name, query, page_titles, page_ids, memory_snippets
-1219: export type PageChangeKind = "created" | "revised" | "merged";
-1222: export type ConceptChangeKind = PageChangeKind;
-1224: export interface PageChange {
+1282: export type PageChangeKind = "created" | "revised" | "merged";
+1285: export type ConceptChangeKind = PageChangeKind;
+1287: export interface PageChange {
         field: page_id, title, change_kind, changed_at_ms
-1232: export type ConceptChange = PageChange;
-1234: export async function listRecentRetrievals(limit?: number): Promise<RetrievalEvent[]> {
-1238: export async function listRecentChanges(limit?: number): Promise<PageChange[]> {
-1242: export type ActivityKind = "concept" | "memory";
-1245: export type ActivityBadge =
-1253: export interface RecentActivityItem {
+1295: export type ConceptChange = PageChange;
+1297: export async function listRecentRetrievals(limit?: number): Promise<RetrievalEvent[]> {
+1301: export async function listRecentChanges(limit?: number): Promise<PageChange[]> {
+1305: export type ActivityKind = "concept" | "memory";
+1308: export type ActivityBadge =
+1316: export interface RecentActivityItem {
         field: kind, id, title, snippet, timestamp_ms, badge
-1262: export async function listRecentMemories(
-1272: export async function listUnconfirmedMemories(
-1278: export async function listRecentPages(
-1289: export async function listRecentConcepts(
-1296: export interface RecentRelation {
+1325: export async function listRecentMemories(
+1335: export async function listUnconfirmedMemories(
+1341: export async function listRecentPages(
+1352: export async function listRecentConcepts(
+1359: export interface RecentRelation {
         field: id, from_entity_id, relation_type, to_entity_id, from_entity_name, to_entity_name, created_at_ms
-1306: export async function listRecentRelations(
-1316: export async function exportPagesToObsidian(
-1323: export async function exportConceptsToObsidian(
-1329: export async function exportPageToObsidian(
-1337: export async function exportConceptToObsidian(
-1346: export async function getKnowledgePath(): Promise<string> {
-1350: export async function countKnowledgeFiles(): Promise<number> {
-1356: export async function getProfile(): Promise<Profile | null> {
-1360: export async function updateProfile(
-1380: export async function listAgents(): Promise<AgentConnection[]> {
-1384: export async function getAgent(name: string): Promise<AgentConnection | null> {
-1388: export async function updateAgent(
-1409: export async function deleteAgent(name: string): Promise<void> {
-1415: export async function pinMemory(sourceId: string): Promise<void> {
-1419: export async function unpinMemory(sourceId: string): Promise<void> {
-1423: export async function listPinnedMemories(): Promise<MemoryItem[]> {
-1430: export interface ImportResult {
+1369: export async function listRecentRelations(
+1379: export async function exportPagesToObsidian(
+1386: export async function exportConceptsToObsidian(
+1392: export async function exportPageToObsidian(
+1400: export async function exportConceptToObsidian(
+1409: export async function getKnowledgePath(): Promise<string> {
+1413: export async function countKnowledgeFiles(): Promise<number> {
+1419: export async function getProfile(): Promise<Profile | null> {
+1423: export async function updateProfile(
+1443: export async function listAgents(): Promise<AgentConnection[]> {
+1447: export async function getAgent(name: string): Promise<AgentConnection | null> {
+1451: export async function updateAgent(
+1472: export async function deleteAgent(name: string): Promise<void> {
+1478: export async function pinMemory(sourceId: string): Promise<void> {
+1482: export async function unpinMemory(sourceId: string): Promise<void> {
+1486: export async function listPinnedMemories(): Promise<MemoryItem[]> {
+1493: export interface ImportResult {
         field: imported, skipped, breakdown, entities_created, observations_added, relations_created, batch_id
-1440: export async function importMemories(
-1454: export interface ImportChatExportResponse {
+1503: export async function importMemories(
+1517: export interface ImportChatExportResponse {
         field: import_id, vendor, conversations_total, conversations_new, conversations_skipped_existing, memories_stored
-1463: export async function importChatExport(
-1469: export async function saveTempFile(bytes: Uint8Array, filename: string): Promise<string> {
-1475: export const IMPORT_STAGE_LABELS: Record<string, string> = {
-1484: export function importStageLabel(stage: string): string {
-1488: export interface PendingImport {
+1526: export async function importChatExport(
+1532: export async function saveTempFile(bytes: Uint8Array, filename: string): Promise<string> {
+1538: export const IMPORT_STAGE_LABELS: Record<string, string> = {
+1547: export function importStageLabel(stage: string): string {
+1551: export interface PendingImport {
         field: id, vendor, stage, source_path, processed_conversations, total_conversations
-1497: export async function listPendingImports(): Promise<PendingImport[]> {
-1503: export async function setAvatar(sourcePath: string): Promise<string> {
-1507: export async function getAvatarDataUrl(): Promise<string | null> {
-1511: export async function removeAvatar(): Promise<void> {
-1517: export interface McpClient {
+1560: export async function listPendingImports(): Promise<PendingImport[]> {
+1566: export async function setAvatar(sourcePath: string): Promise<string> {
+1570: export async function getAvatarDataUrl(): Promise<string | null> {
+1574: export async function removeAvatar(): Promise<void> {
+1580: export interface McpClient {
         field: name, client_type, config_path, detected, already_configured
-1525: export async function shouldShowWizard(): Promise<boolean> {
-1529: export interface SetupStatus {
+1588: export async function shouldShowWizard(): Promise<boolean> {
+1592: export interface SetupStatus {
         field: setup_completed, mode, anthropic_key_configured, local_model_selected, local_model_loaded, local_model_cached
-1538: export async function getSetupStatus(): Promise<SetupStatus> {
-1542: export async function getSetupCompleted(): Promise<boolean> {
-1546: export async function setSetupCompleted(completed: boolean): Promise<void> {
-1550: export async function detectMcpClients(): Promise<McpClient[]> {
-1554: export async function writeMcpConfig(clientType: string): Promise<void> {
-1560: export async function getWenlanMcpEntry(): Promise<{
-1569: export type MilestoneId =
-1577: export interface MilestoneRecord {
+1601: export async function getSetupStatus(): Promise<SetupStatus> {
+1605: export async function getSetupCompleted(): Promise<boolean> {
+1609: export async function setSetupCompleted(completed: boolean): Promise<void> {
+1613: export async function detectMcpClients(): Promise<McpClient[]> {
+1617: export async function writeMcpConfig(clientType: string): Promise<void> {
+1623: export async function getWenlanMcpEntry(): Promise<{
+1632: export type MilestoneId =
+1640: export interface MilestoneRecord {
         field: id, first_triggered_at, acknowledged_at, payload
-1584: export async function listOnboardingMilestones(): Promise<MilestoneRecord[]> {
-1588: export async function acknowledgeOnboardingMilestone(id: MilestoneId): Promise<void> {
-1592: export async function resetOnboardingMilestones(): Promise<void> {
-1598: export interface BriefingResponse {
+1647: export async function listOnboardingMilestones(): Promise<MilestoneRecord[]> {
+1651: export async function acknowledgeOnboardingMilestone(id: MilestoneId): Promise<void> {
+1655: export async function resetOnboardingMilestones(): Promise<void> {
+1661: export interface BriefingResponse {
         field: content, new_today, primary_agent, generated_at, is_stale
-1606: export interface ContradictionItem {
+1669: export interface ContradictionItem {
         field: id, new_content, existing_content, new_source_id, existing_source_id
-1614: export async function getBriefing(): Promise<BriefingResponse> {
-1618: export async function getPendingContradictions(): Promise<ContradictionItem[]> {
-1624: export interface NarrativeResponse {
+1677: export async function getBriefing(): Promise<BriefingResponse> {
+1681: export async function getPendingContradictions(): Promise<ContradictionItem[]> {
+1687: export interface NarrativeResponse {
         field: content, generated_at, is_stale, memory_count
-1631: export async function getProfileNarrative(): Promise<NarrativeResponse> {
-1635: export async function regenerateNarrative(): Promise<NarrativeResponse> {
-1641: export interface AgentActivityItem {
+1694: export async function getProfileNarrative(): Promise<NarrativeResponse> {
+1698: export async function regenerateNarrative(): Promise<NarrativeResponse> {
+1704: export interface AgentActivityItem {
         field: id, timestamp, agent_name, action, memory_ids, query, detail, memory_titles
-1652: export async function listAgentActivity(
-1666: export type RemoteAccessStatus =
-1672: export async function toggleRemoteAccess(
-1678: export async function getRemoteAccessStatus(): Promise<RemoteAccessStatus> {
-1682: export async function rotateRemoteToken(): Promise<string> {
-1687: export interface RemoteConnectionTest {
+1715: export async function listAgentActivity(
+1729: export type RemoteAccessStatus =
+1735: export async function toggleRemoteAccess(
+1741: export async function getRemoteAccessStatus(): Promise<RemoteAccessStatus> {
+1745: export async function rotateRemoteToken(): Promise<string> {
+1750: export interface RemoteConnectionTest {
         field: ok, latency_ms, error
-1695: export async function testRemoteMcpConnection(): Promise<RemoteConnectionTest> {
-1701: export async function getNurtureCards(limit?: number, domain?: string): Promise<MemoryItem[]> {
-1709: export async function setStability(sourceId: string, stability: "new" | "learned" | "confirmed"): Promise<void> {
-1713: export async function correctMemory(sourceId: string, correctionPrompt: string): Promise<string> {
-1719: export async function listDecisions(
-1730: export async function listDecisionDomains(): Promise<string[]> {
-1736: export async function isRunAtLoginEnabled(): Promise<boolean> {
-1740: export async function setRunAtLogin(enabled: boolean): Promise<void> {
-1744: export async function quitOriginFull(): Promise<void> {
+1758: export async function testRemoteMcpConnection(): Promise<RemoteConnectionTest> {
+1764: export async function getNurtureCards(limit?: number, domain?: string): Promise<MemoryItem[]> {
+1772: export async function setStability(sourceId: string, stability: "new" | "learned" | "confirmed"): Promise<void> {
+1776: export async function correctMemory(sourceId: string, correctionPrompt: string): Promise<string> {
+1782: export async function listDecisions(
+1793: export async function listDecisionDomains(): Promise<string[]> {
+1799: export async function isRunAtLoginEnabled(): Promise<boolean> {
+1803: export async function setRunAtLogin(enabled: boolean): Promise<void> {
+1807: export async function quitOriginFull(): Promise<void> {

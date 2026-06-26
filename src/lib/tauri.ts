@@ -1115,6 +1115,69 @@ export async function getPendingRevision(sourceId: string): Promise<PendingRevis
   return invoke("get_pending_revision", { sourceId });
 }
 
+// ===== Refinery Queue =====
+
+export type ProposalAction =
+  | "entity_merge"
+  | "relation_conflict"
+  | "detect_contradiction"
+  | "suggest_entity"
+  | "dedup_merge";
+
+export type RefinementPayload =
+  | {
+      action: "entity_merge";
+      existing_id: string;
+      new_id: string;
+      similarity: number;
+    }
+  | {
+      action: "relation_conflict";
+      existing_id: string;
+      new_id: string;
+      from: string;
+      to: string;
+      old_type: string;
+      new_type: string;
+    }
+  | { action: "detect_contradiction" }
+  | { action: "suggest_entity"; name_hint?: string | null }
+  | { action: "dedup_merge" };
+
+export interface RefinementProposalSummary {
+  id: string;
+  action: ProposalAction;
+  source_ids: string[];
+  payload?: RefinementPayload | null;
+  confidence: number;
+  created_at: string;
+}
+
+export interface ListRefinementsResponse {
+  proposals: RefinementProposalSummary[];
+}
+
+export interface AcceptRefinementResponse {
+  id: string;
+  action_applied: string;
+}
+
+export interface RejectRefinementResponse {
+  id: string;
+}
+
+export async function listRefinements(limit?: number): Promise<ListRefinementsResponse> {
+  return invoke("list_refinements", { limit: limit ?? null });
+}
+
+export async function acceptRefinement(id: string): Promise<AcceptRefinementResponse> {
+  return invoke("accept_refinement", { id });
+}
+
+export async function rejectRefinement(id: string): Promise<RejectRefinementResponse> {
+  return invoke("reject_refinement", { id });
+}
+
 // ===== Entity Suggestions =====
 
 export async function getEntitySuggestions(): Promise<EntitySuggestion[]> {

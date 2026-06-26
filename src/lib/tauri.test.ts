@@ -267,6 +267,48 @@ describe('setup status', () => {
   });
 });
 
+describe('refinery queue', () => {
+  it('lists daemon refinery proposals with a limit', async () => {
+    const response = {
+      proposals: [
+        {
+          id: 'ref-1',
+          action: 'entity_merge',
+          source_ids: ['mem-a', 'mem-b'],
+          payload: {
+            action: 'entity_merge',
+            existing_id: 'ent-a',
+            new_id: 'ent-b',
+            similarity: 0.86,
+          },
+          confidence: 0.86,
+          created_at: '2026-06-26T00:00:00Z',
+        },
+      ],
+    };
+    mockInvoke.mockResolvedValue(response);
+
+    await expect(tauri.listRefinements(6)).resolves.toEqual(response);
+
+    expect(mockInvoke).toHaveBeenCalledWith('list_refinements', { limit: 6 });
+  });
+
+  it('accepts and rejects daemon refinery proposals by id', async () => {
+    mockInvoke
+      .mockResolvedValueOnce({ id: 'ref-1', action_applied: 'entity_merge' })
+      .mockResolvedValueOnce({ id: 'ref-1' });
+
+    await expect(tauri.acceptRefinement('ref-1')).resolves.toEqual({
+      id: 'ref-1',
+      action_applied: 'entity_merge',
+    });
+    await expect(tauri.rejectRefinement('ref-1')).resolves.toEqual({ id: 'ref-1' });
+
+    expect(mockInvoke).toHaveBeenNthCalledWith(1, 'accept_refinement', { id: 'ref-1' });
+    expect(mockInvoke).toHaveBeenNthCalledWith(2, 'reject_refinement', { id: 'ref-1' });
+  });
+});
+
 // --- Additional wrappers for coverage ---
 
 describe('reindex', () => {

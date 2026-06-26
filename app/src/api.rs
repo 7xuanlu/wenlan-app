@@ -314,6 +314,35 @@ impl WenlanClient {
         Ok(resp.response)
     }
 
+    // ── Refinery queue ─────────────────────────────────────────────────────
+
+    pub async fn list_refinements(
+        &self,
+        limit: Option<usize>,
+    ) -> Result<wenlan_types::responses::ListRefinementsResponse, String> {
+        let mut path = "/api/refinery/queue".to_string();
+        if let Some(limit) = limit {
+            path.push_str(&format!("?limit={limit}"));
+        }
+        self.get_json(&path).await
+    }
+
+    pub async fn accept_refinement(
+        &self,
+        id: &str,
+    ) -> Result<wenlan_types::responses::AcceptRefinementResponse, String> {
+        self.post_empty(&format!("/api/refinery/queue/{id}/accept"))
+            .await
+    }
+
+    pub async fn reject_refinement(
+        &self,
+        id: &str,
+    ) -> Result<wenlan_types::responses::RejectRefinementResponse, String> {
+        self.post_empty(&format!("/api/refinery/queue/{id}/reject"))
+            .await
+    }
+
     // ── Config ─────────────────────────────────────────────────────────────
 
     /// GET /api/config — return the daemon's current config.
@@ -435,5 +464,12 @@ mod tests {
         assert_eq!(status.local_model_selected, None);
         assert_eq!(status.local_model_loaded, None);
         assert!(!status.local_model_cached);
+    }
+
+    #[test]
+    fn wenlan_client_exposes_refinery_queue_methods() {
+        let _list = WenlanClient::list_refinements;
+        let _accept = WenlanClient::accept_refinement;
+        let _reject = WenlanClient::reject_refinement;
     }
 }

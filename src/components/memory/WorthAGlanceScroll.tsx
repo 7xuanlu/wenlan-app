@@ -5,7 +5,9 @@ import type { ActivityKind, RecentActivityItem } from "../../lib/tauri";
 import { updateMemory, getMemoryDetail } from "../../lib/tauri";
 
 export type WorthAGlanceItem = RecentActivityItem & {
-  reviewKind?: "pending_revision";
+  reviewKind?: "pending_revision" | "refinement";
+  reviewId?: string;
+  canConfirm?: boolean;
   sourceAgent?: string | null;
 };
 
@@ -145,11 +147,14 @@ function WorthAGlanceCard({
   const [hover, setHover] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const isPendingRevision = item.reviewKind === "pending_revision";
+  const isRefinement = item.reviewKind === "refinement";
+  const isReviewAction = isPendingRevision || isRefinement;
+  const canConfirm = item.canConfirm !== false;
   const title = item.title || item.snippet || "(untitled)";
   const showSnippet = Boolean(item.snippet && item.title);
-  const confirmLabel = isPendingRevision ? "Accept" : "Looks good";
-  const secondaryLabel = isPendingRevision ? "Dismiss" : "Edit";
-  const actionsVisible = hover || isPendingRevision;
+  const confirmLabel = isReviewAction ? "Accept" : "Looks good";
+  const secondaryLabel = isReviewAction ? "Dismiss" : "Edit";
+  const actionsVisible = hover || isReviewAction;
 
   const baseBg = "var(--mem-surface)";
   const hoverBg = "var(--mem-hover)";
@@ -180,7 +185,7 @@ function WorthAGlanceCard({
           setConfirming(true);
           setTimeout(() => onDelete(item), 300);
         }}
-        aria-label={isPendingRevision ? "Dismiss" : "Delete"}
+        aria-label={isReviewAction ? "Dismiss" : "Delete"}
         className="absolute right-2 top-2 text-xs leading-none p-1 rounded transition-colors"
         style={{
           color: "var(--mem-text-tertiary)",
@@ -233,35 +238,37 @@ function WorthAGlanceCard({
           pointerEvents: actionsVisible ? "auto" : "none",
         }}
       >
+        {canConfirm && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setConfirming(true);
+              setTimeout(() => onConfirm(item), 300);
+            }}
+            className="rounded-md px-3 py-1.5 text-xs font-medium transition-colors"
+            style={{
+              color: "var(--mem-accent-warm)",
+              backgroundColor:
+                "color-mix(in srgb, var(--mem-accent-warm) 12%, transparent)",
+            }}
+            onMouseEnter={(e) =>
+              (e.currentTarget.style.backgroundColor =
+                "color-mix(in srgb, var(--mem-accent-warm) 22%, transparent)")
+            }
+            onMouseLeave={(e) =>
+              (e.currentTarget.style.backgroundColor =
+                "color-mix(in srgb, var(--mem-accent-warm) 12%, transparent)")
+            }
+          >
+            {confirmLabel}
+          </button>
+        )}
         <button
           type="button"
           onClick={(e) => {
             e.stopPropagation();
-            setConfirming(true);
-            setTimeout(() => onConfirm(item), 300);
-          }}
-          className="rounded-md px-3 py-1.5 text-xs font-medium transition-colors"
-          style={{
-            color: "var(--mem-accent-warm)",
-            backgroundColor:
-              "color-mix(in srgb, var(--mem-accent-warm) 12%, transparent)",
-          }}
-          onMouseEnter={(e) =>
-            (e.currentTarget.style.backgroundColor =
-              "color-mix(in srgb, var(--mem-accent-warm) 22%, transparent)")
-          }
-          onMouseLeave={(e) =>
-            (e.currentTarget.style.backgroundColor =
-              "color-mix(in srgb, var(--mem-accent-warm) 12%, transparent)")
-          }
-        >
-          {confirmLabel}
-        </button>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            if (isPendingRevision) {
+            if (isReviewAction) {
               setConfirming(true);
               setTimeout(() => onDelete(item), 300);
             } else {

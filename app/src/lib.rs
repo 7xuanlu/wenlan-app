@@ -860,6 +860,10 @@ pub fn run() {
             // Briefing commands
             search::get_briefing,
             search::get_pending_contradictions,
+            // Refinery queue commands
+            search::list_refinements,
+            search::accept_refinement,
+            search::reject_refinement,
             // Narrative commands
             search::get_profile_narrative,
             search::regenerate_narrative,

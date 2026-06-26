@@ -5,16 +5,16 @@
 - **App branch:** `codex/wenlan-app-convergence`
 - **Wenlan backend source:** `/Users/lucian/Repos/wenlan`
 - **Purpose:** prerequisite matrix before the full `origin-app` -> `wenlan-app` refactor run.
-- **Current status:** refreshed on 2026-06-26 after typed-client, sidecar, MCP bridge, Dock/app-activation, avatar path, neutral theme fallback, Home pending-revision review work, and daemon-backed setup status work.
+- **Current status:** refreshed on 2026-06-26 after typed-client, sidecar, MCP bridge, Dock/app-activation, avatar path, neutral theme fallback, Home pending-revision/refinery review work, and daemon-backed setup status work.
 
 ## Evidence Snapshot
 
 | Evidence | Current value | Source |
 |---|---:|---|
-| Frontend `invoke(...)` calls | 123 | `docs/superpowers/refactor/wenlan-app-inventory/frontend-invokes.txt` |
-| Registered Tauri commands | 167 | `app/src/lib.rs` + `search-rs-outline.txt` |
+| Frontend `invoke(...)` calls | 126 | `docs/superpowers/refactor/wenlan-app-inventory/frontend-invokes.txt` |
+| Registered Tauri commands | 170 | `app/src/lib.rs` + `search-rs-outline.txt` |
 | Rust `origin_types` references | 0 | `app/src` residual scan |
-| Runtime identity references | 222 | `Origin`/`origin-server`/`origin-mcp`/`com.origin`/relay residual scan |
+| Runtime identity references | 221 | `Origin`/`origin-server`/`origin-mcp`/`com.origin`/relay residual scan |
 | Stale taxonomy references | 239 | `concept`/`goal`/`domain` residual scan |
 | Wenlan typed request/response declarations in `requests.rs` + `responses.rs` | 99 | `wenlan-types` scan |
 
@@ -36,9 +36,9 @@ These block "caught up enough for full refactor run".
 |---|---|---|---|---|
 | `/api/health` | `wenlan-server/src/router.rs`; `HealthResponse` | present in `WenlanClient.health` | keep typed daemon reachability gate | required; app cannot proceed without daemon |
 | `/api/status` | `StatusResponse`, `RerankerStatus` | typed response used by `get_capture_stats`; user-facing diagnostics still incomplete | add settings/diagnostics capability surface | required for capability gate; tolerate absent fields by feature-gating |
-| `/api/refinery/queue` | `ListRefinementsResponse` | missing wrapper and UI | add central review queue | require route for review queue; hide panel if absent |
-| `/api/refinery/queue/{id}/accept` | `AcceptRefinementResponse` | missing wrapper and UI | add accept action with typed response | optional until queue route exists |
-| `/api/refinery/queue/{id}/reject` | `RejectRefinementResponse` | missing wrapper and UI | add reject action with typed response | optional until queue route exists |
+| `/api/refinery/queue` | `ListRefinementsResponse` | typed Rust/Tauri/TS wrappers present; Home Worth-a-glance surfaces proposals | keep Home review lane; consider a dedicated review screen only if queue volume requires it | require route for review queue; hide panel if absent |
+| `/api/refinery/queue/{id}/accept` | `AcceptRefinementResponse` | typed Rust/Tauri/TS wrappers present; Home Accept calls it and invalidates review/recent caches | reuse typed response for any future dedicated review queue | optional until queue route exists |
+| `/api/refinery/queue/{id}/reject` | `RejectRefinementResponse` | typed Rust/Tauri/TS wrappers present; Home Dismiss calls it and invalidates the review queue | reuse typed response for any future dedicated review queue | optional until queue route exists |
 | `/api/memory/pending-revisions` | daemon route | typed Tauri/TS wrapper present; Home Worth-a-glance surfaces pending revision cards | keep Home review lane; consider a dedicated review screen only if queue volume requires it | require for P0 review surface; hide list if absent |
 | `/api/memory/pending-revision/{source_id}` | daemon route | present as per-memory `getPendingRevision` | keep but type through `wenlan-types` if available | optional detail route |
 | `/api/memory/revision/{id}/accept` | `RevisionAcceptResponse` | present command accepts `sourceId`; Home review lane calls it and invalidates pending revision/recent memory caches | reuse typed response for any future dedicated review queue | require typed response before review UI |
