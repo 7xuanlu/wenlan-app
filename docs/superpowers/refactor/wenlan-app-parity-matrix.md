@@ -5,7 +5,7 @@
 - **App branch:** `codex/wenlan-app-convergence`
 - **Wenlan backend source:** `/Users/lucian/Repos/wenlan`
 - **Purpose:** prerequisite matrix before the full `origin-app` -> `wenlan-app` refactor run.
-- **Current status:** refreshed on 2026-06-26 after typed-client, sidecar, MCP bridge, Dock/app-activation, avatar path, and theme fallback work.
+- **Current status:** refreshed on 2026-06-26 after typed-client, sidecar, MCP bridge, Dock/app-activation, avatar path, neutral theme fallback, and Home pending-revision review work.
 
 ## Evidence Snapshot
 
@@ -39,10 +39,10 @@ These block "caught up enough for full refactor run".
 | `/api/refinery/queue` | `ListRefinementsResponse` | missing wrapper and UI | add central review queue | require route for review queue; hide panel if absent |
 | `/api/refinery/queue/{id}/accept` | `AcceptRefinementResponse` | missing wrapper and UI | add accept action with typed response | optional until queue route exists |
 | `/api/refinery/queue/{id}/reject` | `RejectRefinementResponse` | missing wrapper and UI | add reject action with typed response | optional until queue route exists |
-| `/api/memory/pending-revisions` | daemon route | typed Tauri/TS wrapper present; central UI missing | add central pending revision list | require for P0 review surface; hide list if absent |
+| `/api/memory/pending-revisions` | daemon route | typed Tauri/TS wrapper present; Home Worth-a-glance surfaces pending revision cards | keep Home review lane; consider a dedicated review screen only if queue volume requires it | require for P0 review surface; hide list if absent |
 | `/api/memory/pending-revision/{source_id}` | daemon route | present as per-memory `getPendingRevision` | keep but type through `wenlan-types` if available | optional detail route |
-| `/api/memory/revision/{id}/accept` | `RevisionAcceptResponse` | present command accepts `sourceId` and returns typed response | consume response in review UI/cache invalidation | require typed response before review UI |
-| `/api/memory/revision/{id}/dismiss` | `RevisionDismissResponse` | present command accepts `sourceId` and returns typed response | consume response in review UI/cache invalidation | require typed response before review UI |
+| `/api/memory/revision/{id}/accept` | `RevisionAcceptResponse` | present command accepts `sourceId`; Home review lane calls it and invalidates pending revision/recent memory caches | reuse typed response for any future dedicated review queue | require typed response before review UI |
+| `/api/memory/revision/{id}/dismiss` | `RevisionDismissResponse` | present command accepts `sourceId`; Home review lane calls it and invalidates pending revision cache | reuse typed response for any future dedicated review queue | require typed response before review UI |
 | `/api/memory/contradiction/{source_id}/dismiss` | `ContradictionDismissResponse` | present command returns typed response | surface in review queue | optional if contradictions route absent |
 | `/api/memory/{source_id}/enrichment-status` | `EnrichmentStatusResponse` | missing direct wrapper; store response has partial enrichment string | add typed direct status wrapper and post-store polling/invalidation | optional per-memory route; show unknown state if absent |
 | `/api/sources` | daemon source routes | present via `wenlan_types::sources` in source modules plus remaining app-local Tauri DTOs | converge any remaining DTO shadows with current daemon/source types, keep source registry daemon-owned | required for source management |

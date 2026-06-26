@@ -31,7 +31,7 @@ The rebuilt debug app bundle launches from:
 Current live process evidence:
 
 ```text
-PID 79910
+PID 13170
 ```
 
 The bundle is still named `Origin.app`; product/runtime rename remains a future migration step. Do not treat this as a failed repo rename.
@@ -52,7 +52,7 @@ Current build evidence:
 ```text
 cargo build -> Finished `dev` profile [unoptimized + debuginfo]
 pnpm build -> passed, with existing Vite chunk/dynamic-import warnings
-pnpm vitest run src/themeTokens.test.ts -> 2 passed
+pnpm vitest run src/themeTokens.test.ts src/components/memory/HomePage.redesign.test.ts -> 12 passed, 1 skipped
 ```
 
 Tauri debug bundle generation reaches a built `.app`, then exits at updater signing when `TAURI_SIGNING_PRIVATE_KEY` is unset. That is expected local debug behavior unless signing secrets are present.
@@ -70,7 +70,8 @@ Already landed in this branch history:
 | Dock visibility | app activation policy is regular; debug app shows as an app process |
 | migrated avatar path | avatar loader handles migrated paths |
 | revision signal bridge | `StoreMemoryResponse` preserves `triggered_revisions` and `auto_superseded`; revision/contradiction mutation wrappers return typed daemon responses; `listPendingRevisions` wraps `/api/memory/pending-revisions` |
-| failed palette experiment | parked behind a conservative graphite-blue fallback; revisit visual design later |
+| neutral theme baseline | failed palette experiment replaced with conservative graphite-gray tokens; revisit visual design later |
+| pending revision Home review lane | `listPendingRevisions` feeds Worth-a-glance cards; Accept/Dismiss call typed daemon wrappers and invalidate relevant caches |
 
 ## Tool Boundaries
 
@@ -103,9 +104,9 @@ Current daemon/API parity gaps from read-only subagent exploration:
 | Gap | Priority | Action |
 |---|---|---|
 | setup/config source of truth is split | P0 | make Settings/Wizard use daemon `get_config`, `update_config`, `setup_status`, and model/setup wrappers; reduce local config writes to app-local sensors only |
-| store/revision signals need UI surfacing | P0 | Rust and TypeScript wrappers now preserve `triggered_revisions` and `auto_superseded`; next wire these into review/notification UI |
-| revision/contradiction accept/dismiss need consumer handling | P0 | wrappers now return typed daemon responses; next consume those responses in review UI/cache invalidation |
-| pending revisions need central UI | P0 | `listPendingRevisions` now wraps `/api/memory/pending-revisions`; next wire a central review surface |
+| store/revision signals need UI surfacing | P0 | Rust and TypeScript wrappers now preserve `triggered_revisions` and `auto_superseded`; Home now surfaces pending revisions; post-store notification surfacing still remains |
+| revision/contradiction accept/dismiss need consumer handling | P0 | wrappers return typed daemon responses; pending-revision Accept/Dismiss now consumes them through Home cache invalidation |
+| pending revisions need central UI | P0 | Home Worth-a-glance now lists pending revisions with Accept/Dismiss; expand later only if volume requires a dedicated review screen |
 | memory taxonomy is stale | P1 | remove first-class `goal`, add `lesson`/`gotcha`, and update colors, stability tiers, fixtures, and reclassification options |
 | page links/revisions/refinery are under-wrapped | P1 | add `getPageLinks`, `listOrphanLinks`, `getPageRevisions`, `getMemoryRevisions`, and refinery queue accept/reject wrappers; move `PageDetail` related links to `/api/pages/{id}/links` |
 | source registry still mutates local config | P1 | route add/list/remove through `/api/sources`; keep sync as daemon proxy |

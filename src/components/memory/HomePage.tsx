@@ -2,12 +2,15 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  acceptPendingRevision,
   confirmMemory,
   deleteFileChunks,
   dismissContradiction,
+  dismissPendingRevision,
   getMemoryStats,
   listPages,
   listMemoriesRich,
+  listPendingRevisions,
   listRecentChanges,
   listRecentPages,
   listRecentMemories,
@@ -15,7 +18,7 @@ import {
   listUnconfirmedMemories,
 } from "../../lib/tauri";
 import { Greeting } from "./Greeting";
-import { WorthAGlanceScroll } from "./WorthAGlanceScroll";
+import { WorthAGlanceScroll, type WorthAGlanceItem } from "./WorthAGlanceScroll";
 import { RefiningList } from "./RefiningList";
 import { ConnectionsList } from "./ConnectionsList";
 import { RetrievalsList } from "./RetrievalsList";
@@ -103,6 +106,12 @@ export default function HomePage({
     refetchInterval: 30_000,
   });
 
+  const { data: pendingRevisions = [] } = useQuery({
+    queryKey: ["pendingRevisions"],
+    queryFn: () => listPendingRevisions(6),
+    refetchInterval: 30_000,
+  });
+
   const { data: retrievals = [] } = useQuery({
     queryKey: ["recentRetrievals"],
     queryFn: () => listRecentRetrievals(12),
@@ -144,17 +153,35 @@ export default function HomePage({
     [recentConceptItems, recentMemoryItems],
   );
 
+  const pendingRevisionItems = useMemo<WorthAGlanceItem[]>(
+    () =>
+      pendingRevisions.map((revision) => ({
+        kind: "memory",
+        id: revision.target_source_id,
+        title: "Proposed update",
+        snippet: revision.revision_content,
+        timestamp_ms: revision.last_modified * 1000,
+        badge: { kind: "needs_review" },
+        reviewKind: "pending_revision",
+        sourceAgent: revision.source_agent,
+      })),
+    [pendingRevisions],
+  );
+
   // Worth-a-glance surfaces items that benefit from a quick confirm/edit pass:
-  //   (1) contradiction-flagged items from the recent activity stream
-  //   (2) explicitly unconfirmed memories (confirmed=0), regardless of age
+  //   (1) daemon pending revisions awaiting accept/dismiss
+  //   (2) contradiction-flagged items from the recent activity stream
+  //   (3) explicitly unconfirmed memories (confirmed=0), regardless of age
   // Dedupe by id so a contradiction-flagged unconfirmed memory doesn't appear
   // twice. Contradictions take precedence in ordering.
   const worthAGlanceItems = useMemo(() => {
+    const seen = new Set(pendingRevisionItems.map((i) => i.id));
     const contradictions = activityItems.filter((i) => i.badge.kind === "needs_review");
-    const seen = new Set(contradictions.map((i) => i.id));
+    const freshContradictions = contradictions.filter((i) => !seen.has(i.id));
+    for (const item of freshContradictions) seen.add(item.id);
     const extras = unconfirmedItems.filter((i) => !seen.has(i.id));
-    return [...contradictions, ...extras].slice(0, 6);
-  }, [activityItems, unconfirmedItems]);
+    return [...pendingRevisionItems, ...freshContradictions, ...extras].slice(0, 6);
+  }, [activityItems, pendingRevisionItems, unconfirmedItems]);
 
   const memoryCount = stats?.total ?? 0;
   const conceptCount = recentConcepts.length;
@@ -214,7 +241,10 @@ export default function HomePage({
     firstConceptShownCount <= MAX_MODAL_SHOWS;
 
   const isEmpty =
-    activityItems.length === 0 && retrievals.length === 0 && changes.length === 0;
+    activityItems.length === 0 &&
+    pendingRevisionItems.length === 0 &&
+    retrievals.length === 0 &&
+    changes.length === 0;
 
   return (
     <div className="flex flex-col gap-8 pb-16">
@@ -246,17 +276,30 @@ export default function HomePage({
         <>
           <WorthAGlanceScroll
             items={worthAGlanceItems}
-            onConfirm={async (id) => {
+            onConfirm={async (item) => {
+              if (item.reviewKind === "pending_revision") {
+                await acceptPendingRevision(item.id);
+                await queryClient.invalidateQueries({ queryKey: ["pendingRevisions"] });
+                await queryClient.invalidateQueries({ queryKey: ["recentMemoryItems"] });
+                return;
+              }
+
               await Promise.all([
-                dismissContradiction(id).catch(() => undefined),
-                confirmMemory(id, true).catch(() => undefined),
+                dismissContradiction(item.id).catch(() => undefined),
+                confirmMemory(item.id, true).catch(() => undefined),
               ]);
               await queryClient.invalidateQueries({ queryKey: ["recentConceptItems"] });
               await queryClient.invalidateQueries({ queryKey: ["recentMemoryItems"] });
               await queryClient.invalidateQueries({ queryKey: ["unconfirmedMemories"] });
             }}
-            onDelete={async (id) => {
-              await deleteFileChunks("memory", id);
+            onDelete={async (item) => {
+              if (item.reviewKind === "pending_revision") {
+                await dismissPendingRevision(item.id);
+                await queryClient.invalidateQueries({ queryKey: ["pendingRevisions"] });
+                return;
+              }
+
+              await deleteFileChunks("memory", item.id);
               await queryClient.invalidateQueries({ queryKey: ["recentConceptItems"] });
               await queryClient.invalidateQueries({ queryKey: ["recentMemoryItems"] });
               await queryClient.invalidateQueries({ queryKey: ["unconfirmedMemories"] });

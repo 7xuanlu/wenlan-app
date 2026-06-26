@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import HomePage from "./HomePage";
@@ -30,6 +30,10 @@ vi.mock("../../lib/tauri", async () => {
     getProfile: vi.fn(),
     getPendingContradictions: vi.fn(),
     dismissContradiction: vi.fn(),
+    confirmMemory: vi.fn(),
+    listPendingRevisions: vi.fn(),
+    acceptPendingRevision: vi.fn(),
+    dismissPendingRevision: vi.fn(),
   };
 });
 
@@ -63,7 +67,18 @@ beforeEach(() => {
   vi.mocked(tauri.listEntities).mockResolvedValue([]);
   vi.mocked(tauri.getMemoryStats).mockResolvedValue({ total: 0, with_embeddings: 0 } as any);
   vi.mocked(tauri.getProfile).mockResolvedValue(null);
+  vi.mocked(tauri.confirmMemory).mockResolvedValue(undefined);
   vi.mocked(tauri.dismissContradiction).mockResolvedValue({ source_id: "mem-new", wrote: true });
+  vi.mocked(tauri.listPendingRevisions).mockResolvedValue([]);
+  vi.mocked(tauri.acceptPendingRevision).mockResolvedValue({
+    target_source_id: "mem-target",
+    revision_source_id: "mem-revision",
+    wrote: true,
+  });
+  vi.mocked(tauri.dismissPendingRevision).mockResolvedValue({
+    target_source_id: "mem-target",
+    wrote: true,
+  });
   vi.mocked(tauri.getPendingContradictions).mockResolvedValue([
     {
       id: "contra-1",
@@ -171,6 +186,31 @@ describe("HomePage redesign", () => {
     expect(strip.textContent).toContain("Flagged concept");
     expect(strip.textContent).not.toContain("Fresh concept");
     expect(strip.textContent).not.toContain("Refined memory");
+  });
+
+  it("surfaces pending revisions in worth-a-glance and accepts them", async () => {
+    vi.mocked(tauri.listPendingRevisions).mockResolvedValue([
+      {
+        target_source_id: "mem-target",
+        revision_source_id: "mem-revision",
+        revision_content: "The durable updated wording from the daemon.",
+        source_agent: "claude-code",
+        last_modified: 1_782_365_076,
+      },
+    ]);
+
+    renderHome();
+
+    const strip = await screen.findByTestId("worth-a-glance");
+    expect(strip).toHaveTextContent("Proposed update");
+    expect(strip).toHaveTextContent("The durable updated wording from the daemon.");
+
+    await userEvent.click(screen.getByRole("button", { name: "Accept" }));
+
+    await waitFor(() => {
+      expect(tauri.acceptPendingRevision).toHaveBeenCalledWith("mem-target");
+    });
+    expect(tauri.confirmMemory).not.toHaveBeenCalledWith("mem-target", true);
   });
 
   it("retrieval card with archived concept shows archived badge and does not navigate", async () => {

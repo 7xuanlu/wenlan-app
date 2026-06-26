@@ -30,28 +30,31 @@ function rgb(hex: string): { r: number; g: number; b: number } {
   };
 }
 
-function expectBlueNeutralNavy(hex: string | null): void {
+function expectNeutralGraphite(hex: string | null): void {
   expect(hex).not.toBeNull();
   const color = rgb(hex ?? "");
+  const channels = [color.r, color.g, color.b];
+  const spread = Math.max(...channels) - Math.min(...channels);
 
-  expect(color.g).toBeGreaterThan(color.r);
-  expect(color.b).toBeGreaterThan(color.g);
+  expect(spread).toBeLessThanOrEqual(18);
+  expect(color.r).toBeLessThanOrEqual(color.g);
+  expect(color.r).toBeLessThanOrEqual(color.b);
 }
 
 describe("dark theme brand tokens", () => {
-  it("uses a professional graphite-blue scale instead of violet icon colors", () => {
-    expect(rootToken("--bg-primary")).toBe("#151A20");
-    expect(rootToken("--bg-secondary")).toBe("#1C242D");
-    expect(rootToken("--border")).toBe("#303A46");
+  it("uses a professional graphite-gray scale while brand colors are unsettled", () => {
+    expect(rootToken("--bg-primary")).toBe("#202124");
+    expect(rootToken("--bg-secondary")).toBe("#272A2E");
+    expect(rootToken("--border")).toBe("#3B4047");
 
-    expect(darkToken("--mem-bg")).toBe("#151A20");
-    expect(darkToken("--mem-surface")).toBe("#1C242D");
-    expect(darkToken("--mem-sidebar")).toBe("#10151B");
-    expect(darkToken("--mem-border")).toBe("#303A46");
-    expect(darkToken("--mem-accent-indigo")).toBe("#64B5D9");
+    expect(darkToken("--mem-bg")).toBe("#202124");
+    expect(darkToken("--mem-surface")).toBe("#272A2E");
+    expect(darkToken("--mem-sidebar")).toBe("#181B1F");
+    expect(darkToken("--mem-border")).toBe("#3B4047");
+    expect(darkToken("--mem-accent-indigo")).toBe("#A4ACB6");
   });
 
-  it("keeps dark structural surfaces out of the purple hue family", () => {
+  it("keeps dark structural surfaces neutral instead of purple or blue-led", () => {
     for (const token of [
       rootToken("--bg-primary"),
       rootToken("--bg-secondary"),
@@ -59,7 +62,7 @@ describe("dark theme brand tokens", () => {
       darkToken("--mem-surface"),
       darkToken("--mem-sidebar"),
     ]) {
-      expectBlueNeutralNavy(token);
+      expectNeutralGraphite(token);
     }
   });
 });

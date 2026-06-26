@@ -3,16 +3,16 @@
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 :root {
-  --bg-primary: #151A20;
-  --bg-secondary: #1C242D;
-  --bg-tertiary: #24303B;
-  --text-primary: #eef2f8;
-  --text-secondary: #a7afbf;
-  --accent: #64B5D9;
-  --accent-hover: #5FC5DD;
-  --border: #303A46;
-  --text-tertiary: #6f788b;
-  --separator: rgba(48, 58, 70, 0.65);
+  --bg-primary: #202124;
+  --bg-secondary: #272A2E;
+  --bg-tertiary: #30343A;
+  --text-primary: #F2F4F7;
+  --text-secondary: #B8BEC8;
+  --accent: #A4ACB6;
+  --accent-hover: #BAC2CC;
+  --border: #3B4047;
+  --text-tertiary: #7D8591;
+  --separator: rgba(59, 64, 71, 0.65);
   --overlay-subtle: rgba(255, 255, 255, 0.04);
   --overlay-hover: rgba(255, 255, 255, 0.06);
   --overlay-active: rgba(255, 255, 255, 0.08);
@@ -131,29 +131,29 @@ body {
   --mem-font-mono: 'JetBrains Mono', monospace;
 }
 
-/* Dark (default — brand navy without the app icon's violet cast) */
+/* Dark (default — neutral graphite while the Wenlan brand palette settles) */
 :root,
 html[data-theme="dark"] {
-  --mem-bg: #151A20;
-  --mem-surface: #1C242D;
-  --mem-sidebar: #10151B;
-  --mem-text: #eef2f8;
-  --mem-text-secondary: #a7afbf;
-  --mem-text-tertiary: #6f788b;
-  --mem-accent-warm: #d4884a;
-  --mem-accent-amber: #e0a850;
-  --mem-accent-indigo: #64B5D9;
-  --mem-accent-page: #64B5D9;
-  --mem-accent-sage: #8ab892;
+  --mem-bg: #202124;
+  --mem-surface: #272A2E;
+  --mem-sidebar: #181B1F;
+  --mem-text: #F2F4F7;
+  --mem-text-secondary: #B8BEC8;
+  --mem-text-tertiary: #7D8591;
+  --mem-accent-warm: #C68A55;
+  --mem-accent-amber: #D5A45B;
+  --mem-accent-indigo: #A4ACB6;
+  --mem-accent-page: #A4ACB6;
+  --mem-accent-sage: #8DA28D;
   --mem-accent-glow: #e8c97a;
-  --mem-border: #303A46;
-  --mem-hover: rgba(100, 181, 217, 0.06);
-  --mem-hover-strong: rgba(100, 181, 217, 0.11);
-  --mem-confirm-bg: rgba(212, 136, 74, 0.12);
-  --mem-indigo-bg: rgba(100, 181, 217, 0.12);
-  --mem-distilled-border: rgba(100, 181, 217, 0.4);
-  --mem-distilled-bg: rgba(100, 181, 217, 0.07);
-  --mem-shimmer-color: rgba(95, 197, 221, 0.16);
+  --mem-border: #3B4047;
+  --mem-hover: rgba(164, 172, 182, 0.07);
+  --mem-hover-strong: rgba(164, 172, 182, 0.13);
+  --mem-confirm-bg: rgba(198, 138, 85, 0.13);
+  --mem-indigo-bg: rgba(164, 172, 182, 0.12);
+  --mem-distilled-border: rgba(164, 172, 182, 0.38);
+  --mem-distilled-bg: rgba(164, 172, 182, 0.08);
+  --mem-shimmer-color: rgba(186, 194, 204, 0.14);
   /* Depth on dark: pronounced drop with a soft secondary halo so surfaces
      lift cleanly off the navy canvas without a grey cast. */
   --mem-shadow-toast:
