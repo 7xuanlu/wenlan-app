@@ -2789,7 +2789,7 @@ pub async fn add_source(
             client.add_source("obsidian".to_string(), path).await
         }
         "directory" => add_directory_source(&state, &watcher, path_buf, &path).await,
-        other => return Err(format!("Unknown source_type: {}", other)),
+        other => Err(format!("Unknown source_type: {}", other)),
     }
 }
 
