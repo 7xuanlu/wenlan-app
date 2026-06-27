@@ -2,7 +2,7 @@
 //! Shared Obsidian vault sync logic used by both Tauri commands and REST API.
 //!
 //! In the thin-client architecture the heavy lifting (DB sync state, embedding,
-//! chunking) happens inside the origin-server daemon.  This module delegates
+//! chunking) happens inside the Wenlan daemon.  This module delegates
 //! to `POST /api/sources/{id}/sync` on the daemon.
 
 use crate::error::AppError;

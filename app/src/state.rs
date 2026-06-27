@@ -44,7 +44,7 @@ pub struct IndexStatus {
 }
 
 pub struct AppState {
-    /// HTTP client for the origin-server daemon.
+    /// HTTP client for the Wenlan daemon.
     pub client: WenlanClient,
     pub index_status: IndexStatus,
     pub sources: HashMap<String, Box<dyn DataSource>>,

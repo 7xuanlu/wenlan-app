@@ -10,7 +10,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 use wenlan_types::responses::HealthResponse;
 
-/// HTTP client that proxies requests to the origin-server daemon.
+/// HTTP client that proxies requests to the Wenlan daemon.
 #[derive(Clone)]
 pub struct WenlanClient {
     client: Client,
@@ -47,10 +47,7 @@ impl Default for WenlanClient {
 
 impl WenlanClient {
     pub fn new() -> Self {
-        let port: u16 = std::env::var("ORIGIN_PORT")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(7878);
+        let port = daemon_port();
         Self {
             client: Client::new(),
             base_url: format!("http://127.0.0.1:{}", port),
@@ -547,6 +544,18 @@ impl WenlanClient {
     }
 }
 
+fn daemon_port() -> u16 {
+    std::env::var("WENLAN_PORT")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .or_else(|| {
+            std::env::var("ORIGIN_PORT")
+                .ok()
+                .and_then(|v| v.parse().ok())
+        })
+        .unwrap_or(7878)
+}
+
 // `UpdateConfigRequest` does not derive `Default` in wenlan-types, so
 // build a baseline with every field set to `None` here. When/if wenlan-types
 // adds the derive, these helpers can be deleted in favor of
@@ -611,7 +620,40 @@ impl UpdateConfigBuilder for wenlan_types::requests::UpdateConfigRequest {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, OnceLock};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
+    }
+
+    struct PortEnvGuard {
+        wenlan_port: Option<std::ffi::OsString>,
+        origin_port: Option<std::ffi::OsString>,
+    }
+
+    impl PortEnvGuard {
+        fn capture() -> Self {
+            Self {
+                wenlan_port: std::env::var_os("WENLAN_PORT"),
+                origin_port: std::env::var_os("ORIGIN_PORT"),
+            }
+        }
+    }
+
+    impl Drop for PortEnvGuard {
+        fn drop(&mut self) {
+            match &self.wenlan_port {
+                Some(value) => std::env::set_var("WENLAN_PORT", value),
+                None => std::env::remove_var("WENLAN_PORT"),
+            }
+            match &self.origin_port {
+                Some(value) => std::env::set_var("ORIGIN_PORT", value),
+                None => std::env::remove_var("ORIGIN_PORT"),
+            }
+        }
+    }
 
     async fn serve_json_once(body: &'static str) -> (String, tokio::task::JoinHandle<String>) {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -682,6 +724,36 @@ mod tests {
         assert_eq!(status.local_model_selected, None);
         assert_eq!(status.local_model_loaded, None);
         assert!(!status.local_model_cached);
+    }
+
+    #[test]
+    fn wenlan_client_prefers_wenlan_port_over_legacy_origin_port() {
+        let _guard = env_lock();
+        let _env = PortEnvGuard::capture();
+        std::env::set_var("WENLAN_PORT", "8787");
+        std::env::set_var("ORIGIN_PORT", "9898");
+
+        let client = WenlanClient::new();
+
+        assert_eq!(
+            client.url("/api/health"),
+            "http://127.0.0.1:8787/api/health"
+        );
+    }
+
+    #[test]
+    fn wenlan_client_falls_back_to_legacy_origin_port() {
+        let _guard = env_lock();
+        let _env = PortEnvGuard::capture();
+        std::env::remove_var("WENLAN_PORT");
+        std::env::set_var("ORIGIN_PORT", "9898");
+
+        let client = WenlanClient::new();
+
+        assert_eq!(
+            client.url("/api/health"),
+            "http://127.0.0.1:9898/api/health"
+        );
     }
 
     #[tokio::test]
