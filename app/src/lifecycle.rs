@@ -20,9 +20,10 @@ static RUN_AT_LOGIN_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new
 
 pub const SERVER_PLIST_LABEL: &str = "com.wenlan.server";
 pub const LEGACY_SERVER_PLIST_LABEL: &str = "com.origin.server";
-pub const APP_PLIST_LABEL: &str = "com.origin.desktop";
+pub const APP_PLIST_LABEL: &str = "com.wenlan.desktop";
+pub const LEGACY_APP_PLIST_LABEL: &str = "com.origin.desktop";
 
-const APP_PLIST_TEMPLATE: &str = include_str!("../resources/com.origin.desktop.plist");
+const APP_PLIST_TEMPLATE: &str = include_str!("../resources/com.wenlan.desktop.plist");
 
 /// Trait for shelling out to launchctl. Mock in tests.
 pub trait LaunchctlExec: Send + Sync {
@@ -77,6 +78,12 @@ pub fn app_plist_path() -> Result<PathBuf> {
     Ok(home_dir()?
         .join("Library/LaunchAgents")
         .join(format!("{}.plist", APP_PLIST_LABEL)))
+}
+
+pub fn legacy_app_plist_path() -> Result<PathBuf> {
+    Ok(home_dir()?
+        .join("Library/LaunchAgents")
+        .join(format!("{}.plist", LEGACY_APP_PLIST_LABEL)))
 }
 
 pub fn server_plist_path() -> Result<PathBuf> {
@@ -212,12 +219,100 @@ pub fn uninstall_app_plist(launchctl: &dyn LaunchctlExec) -> Result<()> {
     Ok(())
 }
 
+fn plist_string(content: &str, key: &str) -> Option<String> {
+    let value = plist::Value::from_reader_xml(content.as_bytes()).ok()?;
+    value
+        .as_dictionary()?
+        .get(key)?
+        .as_string()
+        .map(ToOwned::to_owned)
+}
+
+fn plist_first_program(content: &str) -> Option<String> {
+    let value = plist::Value::from_reader_xml(content.as_bytes()).ok()?;
+    let dict = value.as_dictionary()?;
+    if let Some(program) = dict.get("Program").and_then(|program| program.as_string()) {
+        return Some(program.to_owned());
+    }
+    dict.get("ProgramArguments")?
+        .as_array()?
+        .first()?
+        .as_string()
+        .map(ToOwned::to_owned)
+}
+
+fn path_is_legacy_origin_app_exe(path: &str) -> bool {
+    let path = Path::new(path);
+    path == Path::new("/Applications/Origin.app/Contents/MacOS/origin")
+        || path == Path::new("/Applications/Origin.app/Contents/MacOS/origin-app")
+        || dirs::home_dir()
+            .map(|home| {
+                path == home.join("Applications/Origin.app/Contents/MacOS/origin")
+                    || path == home.join("Applications/Origin.app/Contents/MacOS/origin-app")
+            })
+            .unwrap_or(false)
+}
+
+fn path_is_legacy_origin_server_exe(path: &str) -> bool {
+    let path = Path::new(path);
+    path == Path::new("/Applications/Origin.app/Contents/MacOS/origin-server")
+        || dirs::home_dir()
+            .map(|home| path == home.join("Applications/Origin.app/Contents/MacOS/origin-server"))
+            .unwrap_or(false)
+}
+
+fn legacy_app_plist_is_owned(content: &str) -> bool {
+    plist_string(content, "Label").as_deref() == Some(LEGACY_APP_PLIST_LABEL)
+        && plist_first_program(content)
+            .as_deref()
+            .is_some_and(path_is_legacy_origin_app_exe)
+}
+
+fn legacy_server_plist_is_owned(content: &str) -> bool {
+    plist_string(content, "Label").as_deref() == Some(LEGACY_SERVER_PLIST_LABEL)
+        && plist_first_program(content)
+            .as_deref()
+            .is_some_and(path_is_legacy_origin_server_exe)
+}
+
+pub fn cleanup_legacy_app_plist(launchctl: &dyn LaunchctlExec) -> Result<()> {
+    let plist = legacy_app_plist_path()?;
+    if !plist.exists() {
+        return Ok(());
+    }
+    let content = std::fs::read_to_string(&plist)?;
+    if !legacy_app_plist_is_owned(&content) {
+        return Ok(());
+    }
+    let plist_arg = plist.to_string_lossy().to_string();
+    let out = launchctl.run(&["unload", &plist_arg])?;
+    if !out.status.success() {
+        anyhow::bail!(
+            "launchctl unload failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+    std::fs::remove_file(&plist)?;
+    Ok(())
+}
+
 pub fn cleanup_legacy_server_plist(launchctl: &dyn LaunchctlExec) -> Result<()> {
     let plist = legacy_server_plist_path()?;
     if !plist.exists() {
         return Ok(());
     }
-    let _ = launchctl.run(&["unload", &plist.to_string_lossy()]);
+    let content = std::fs::read_to_string(&plist)?;
+    if !legacy_server_plist_is_owned(&content) {
+        return Ok(());
+    }
+    let plist_arg = plist.to_string_lossy().to_string();
+    let out = launchctl.run(&["unload", &plist_arg])?;
+    if !out.status.success() {
+        anyhow::bail!(
+            "launchctl unload failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
     std::fs::remove_file(&plist)?;
     Ok(())
 }
@@ -260,7 +355,7 @@ pub fn uninstall_server_plist_via_subprocess() -> Result<()> {
     run_service_cli("uninstall")
 }
 
-/// Returns true iff BOTH plists are loaded in launchctl.
+/// Returns true iff BOTH current Wenlan plists are loaded in launchctl.
 ///
 /// `launchctl list` output is `PID\tStatus\tLabel`. We must compare the third
 /// whitespace-separated field with `==`; a substring match would treat
@@ -271,12 +366,9 @@ pub fn is_run_at_login_enabled(launchctl: &dyn LaunchctlExec) -> bool {
         Err(_) => return false,
     };
     let stdout = String::from_utf8_lossy(&out.stdout);
-    let server = stdout.lines().any(|line| {
-        matches!(
-            line.split_whitespace().nth(2),
-            Some(SERVER_PLIST_LABEL) | Some(LEGACY_SERVER_PLIST_LABEL)
-        )
-    });
+    let server = stdout
+        .lines()
+        .any(|line| line.split_whitespace().nth(2) == Some(SERVER_PLIST_LABEL));
     let app = stdout
         .lines()
         .any(|line| line.split_whitespace().nth(2) == Some(APP_PLIST_LABEL));
@@ -287,6 +379,13 @@ pub fn is_run_at_login_enabled(launchctl: &dyn LaunchctlExec) -> bool {
 /// and re-installs when the embedded path doesn't match the current binary.
 /// Returns Ok(()) if the install completed or was unnecessary.
 pub fn first_run_install_if_needed(launchctl: &dyn LaunchctlExec) -> Result<()> {
+    if let Err(e) = cleanup_legacy_app_plist(launchctl) {
+        log::warn!("[first-run] legacy app plist cleanup failed: {e}");
+    }
+    if let Err(e) = cleanup_legacy_server_plist(launchctl) {
+        log::warn!("[first-run] legacy server plist cleanup failed: {e}");
+    }
+
     if user_opted_out() {
         return Ok(());
     }
@@ -325,10 +424,6 @@ pub fn first_run_install_if_needed(launchctl: &dyn LaunchctlExec) -> Result<()> 
         })
         .unwrap_or(true);
 
-    if let Err(e) = cleanup_legacy_server_plist(launchctl) {
-        log::warn!("[first-run] legacy server plist cleanup failed: {e}");
-    }
-
     if !app_plist_stale && !server_plist_stale {
         return Ok(());
     }
@@ -360,9 +455,11 @@ pub async fn set_run_at_login(enabled: bool, launchctl: &dyn LaunchctlExec) -> R
     } else {
         set_user_opted_out(true)?;
         uninstall_app_plist(launchctl)?;
-        let legacy_cleanup_result = cleanup_legacy_server_plist(launchctl);
+        let legacy_app_cleanup_result = cleanup_legacy_app_plist(launchctl);
+        let legacy_server_cleanup_result = cleanup_legacy_server_plist(launchctl);
         let uninstall_result = uninstall_server_plist_via_subprocess();
-        legacy_cleanup_result?;
+        legacy_app_cleanup_result?;
+        legacy_server_cleanup_result?;
         uninstall_result?;
     }
     Ok(())
@@ -385,6 +482,9 @@ pub async fn quit_origin(app_handle: &AppHandle) -> Result<()> {
     }
     if let Err(e) = uninstall_server_plist_via_subprocess() {
         log::warn!("[quit] uninstall_server_plist failed: {e}");
+    }
+    if let Err(e) = cleanup_legacy_app_plist(&launchctl) {
+        log::warn!("[quit] cleanup_legacy_app_plist failed: {e}");
     }
     if let Err(e) = cleanup_legacy_server_plist(&launchctl) {
         log::warn!("[quit] cleanup_legacy_server_plist failed: {e}");
@@ -483,6 +583,52 @@ mod tests {
                 stderr: vec![],
             })
         }
+    }
+
+    fn launch_agent_program_arguments_plist(label: &str, program: &str) -> String {
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{label}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{program}</string>
+    </array>
+</dict>
+</plist>
+"#
+        )
+    }
+
+    fn owned_legacy_app_plist() -> String {
+        launch_agent_program_arguments_plist(
+            LEGACY_APP_PLIST_LABEL,
+            "/Applications/Origin.app/Contents/MacOS/origin",
+        )
+    }
+
+    fn foreign_legacy_app_plist() -> String {
+        launch_agent_program_arguments_plist(
+            LEGACY_APP_PLIST_LABEL,
+            "/Applications/Other.app/Contents/MacOS/origin",
+        )
+    }
+
+    fn owned_legacy_server_plist() -> String {
+        launch_agent_program_arguments_plist(
+            LEGACY_SERVER_PLIST_LABEL,
+            "/Applications/Origin.app/Contents/MacOS/origin-server",
+        )
+    }
+
+    fn foreign_legacy_server_plist() -> String {
+        launch_agent_program_arguments_plist(
+            LEGACY_SERVER_PLIST_LABEL,
+            "/usr/local/bin/origin-server",
+        )
     }
 
     // Tests that mutate `HOME` env var must run serially — std::env::set_var is
@@ -615,6 +761,78 @@ mod tests {
 
     #[test]
     #[serial_test::serial]
+    fn app_plist_path_uses_wenlan_label() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::set_var("HOME", tmp.path());
+
+        assert_eq!(
+            app_plist_path().unwrap(),
+            tmp.path()
+                .join("Library/LaunchAgents/com.wenlan.desktop.plist")
+        );
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn legacy_app_plist_path_uses_origin_label() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::set_var("HOME", tmp.path());
+
+        assert_eq!(
+            legacy_app_plist_path().unwrap(),
+            tmp.path()
+                .join("Library/LaunchAgents/com.origin.desktop.plist")
+        );
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn legacy_app_plist_ownership_accepts_owned_origin_app_path() {
+        let _env = EnvGuard::capture();
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::set_var("HOME", tmp.path());
+        let user_app_path = tmp
+            .path()
+            .join("Applications/Origin.app/Contents/MacOS/origin-app");
+        let user_app_plist = launch_agent_program_arguments_plist(
+            LEGACY_APP_PLIST_LABEL,
+            &user_app_path.to_string_lossy(),
+        );
+
+        assert!(legacy_app_plist_is_owned(&owned_legacy_app_plist()));
+        assert!(legacy_app_plist_is_owned(&user_app_plist));
+    }
+
+    #[test]
+    fn legacy_app_plist_ownership_rejects_foreign_path() {
+        assert!(!legacy_app_plist_is_owned(&foreign_legacy_app_plist()));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn legacy_server_plist_ownership_accepts_owned_origin_server_path() {
+        let _env = EnvGuard::capture();
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::set_var("HOME", tmp.path());
+        let user_server_path = tmp
+            .path()
+            .join("Applications/Origin.app/Contents/MacOS/origin-server");
+        let user_server_plist = launch_agent_program_arguments_plist(
+            LEGACY_SERVER_PLIST_LABEL,
+            &user_server_path.to_string_lossy(),
+        );
+
+        assert!(legacy_server_plist_is_owned(&owned_legacy_server_plist()));
+        assert!(legacy_server_plist_is_owned(&user_server_plist));
+    }
+
+    #[test]
+    fn legacy_server_plist_ownership_rejects_foreign_path() {
+        assert!(!legacy_server_plist_is_owned(&foreign_legacy_server_plist()));
+    }
+
+    #[test]
+    #[serial_test::serial]
     fn install_app_plist_rolls_back_file_when_launchctl_load_fails() {
         // H5: when `launchctl load` reports non-zero status, the plist file
         // must be removed so stale-plist detection on next startup does not
@@ -635,7 +853,7 @@ mod tests {
 
         let plist = tmp
             .path()
-            .join("Library/LaunchAgents/com.origin.desktop.plist");
+            .join("Library/LaunchAgents/com.wenlan.desktop.plist");
         assert!(
             !plist.exists(),
             "broken plist must be rolled back after load failure"
@@ -652,10 +870,11 @@ mod tests {
 
         let plist = tmp
             .path()
-            .join("Library/LaunchAgents/com.origin.desktop.plist");
+            .join("Library/LaunchAgents/com.wenlan.desktop.plist");
         assert!(plist.exists(), "plist file written");
         let content = std::fs::read_to_string(&plist).unwrap();
         assert!(content.contains("<key>Label</key>"));
+        assert!(content.contains("<string>com.wenlan.desktop</string>"));
         assert!(
             !content.contains("__ORIGIN_APP_PATH__"),
             "placeholder substituted"
@@ -672,7 +891,7 @@ mod tests {
         std::env::set_var("HOME", tmp.path());
         let plist_dir = tmp.path().join("Library/LaunchAgents");
         std::fs::create_dir_all(&plist_dir).unwrap();
-        let plist = plist_dir.join("com.origin.desktop.plist");
+        let plist = plist_dir.join("com.wenlan.desktop.plist");
         std::fs::write(&plist, "<plist/>").unwrap();
 
         let mock = MockLaunchctl::default();
@@ -700,8 +919,8 @@ mod tests {
             }
         }
         let label_line = format!(
-            "123\t0\t{}\n456\t0\t{}\n",
-            SERVER_PLIST_LABEL, APP_PLIST_LABEL
+            "123\t0\t{}\n456\t0\tcom.wenlan.desktop\n",
+            SERVER_PLIST_LABEL
         );
         let listed = MockListed(label_line);
         assert!(is_run_at_login_enabled(&listed));
@@ -786,7 +1005,7 @@ mod tests {
         std::env::set_var("HOME", tmp.path());
         let plist = legacy_server_plist_path().unwrap();
         std::fs::create_dir_all(plist.parent().unwrap()).unwrap();
-        std::fs::write(&plist, "<plist/>").unwrap();
+        std::fs::write(&plist, owned_legacy_server_plist()).unwrap();
 
         let mock = MockLaunchctl::default();
         cleanup_legacy_server_plist(&mock).unwrap();
@@ -799,6 +1018,124 @@ mod tests {
                 .any(|c| c[0] == "unload" && c[1] == plist.to_string_lossy()),
             "legacy server plist unloaded before removal"
         );
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn cleanup_legacy_app_plist_unloads_and_removes_owned_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::set_var("HOME", tmp.path());
+        let plist = legacy_app_plist_path().unwrap();
+        std::fs::create_dir_all(plist.parent().unwrap()).unwrap();
+        std::fs::write(&plist, owned_legacy_app_plist()).unwrap();
+
+        let mock = MockLaunchctl::default();
+        cleanup_legacy_app_plist(&mock).unwrap();
+
+        assert!(!plist.exists(), "legacy app plist removed");
+        let calls = mock.calls.lock().unwrap();
+        assert!(
+            calls
+                .iter()
+                .any(|c| c[0] == "unload" && c[1] == plist.to_string_lossy()),
+            "legacy app plist unloaded before removal"
+        );
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn cleanup_legacy_app_plist_preserves_foreign_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::set_var("HOME", tmp.path());
+        let plist = legacy_app_plist_path().unwrap();
+        std::fs::create_dir_all(plist.parent().unwrap()).unwrap();
+        std::fs::write(&plist, foreign_legacy_app_plist()).unwrap();
+
+        let mock = MockLaunchctl::default();
+        cleanup_legacy_app_plist(&mock).unwrap();
+
+        assert!(plist.exists(), "foreign legacy app plist preserved");
+        assert!(
+            mock.calls.lock().unwrap().is_empty(),
+            "foreign legacy app plist must not be unloaded"
+        );
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn cleanup_legacy_server_plist_preserves_foreign_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::set_var("HOME", tmp.path());
+        let plist = legacy_server_plist_path().unwrap();
+        std::fs::create_dir_all(plist.parent().unwrap()).unwrap();
+        std::fs::write(&plist, foreign_legacy_server_plist()).unwrap();
+
+        let mock = MockLaunchctl::default();
+        cleanup_legacy_server_plist(&mock).unwrap();
+
+        assert!(plist.exists(), "foreign legacy server plist preserved");
+        assert!(
+            mock.calls.lock().unwrap().is_empty(),
+            "foreign legacy server plist must not be unloaded"
+        );
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn first_run_install_cleans_legacy_plists_even_when_user_opted_out() {
+        let _env = EnvGuard::capture();
+        let tmp = tempfile::tempdir().unwrap();
+        let data = tempfile::tempdir().unwrap();
+        std::env::set_var("HOME", tmp.path());
+        std::env::set_var("WENLAN_DATA_DIR", data.path());
+        std::env::remove_var("ORIGIN_DATA_DIR");
+
+        let legacy_app = legacy_app_plist_path().unwrap();
+        let legacy_server = legacy_server_plist_path().unwrap();
+        std::fs::create_dir_all(legacy_app.parent().unwrap()).unwrap();
+        std::fs::write(&legacy_app, owned_legacy_app_plist()).unwrap();
+        std::fs::write(&legacy_server, owned_legacy_server_plist()).unwrap();
+        set_user_opted_out(true).unwrap();
+
+        let mock = MockLaunchctl::default();
+        first_run_install_if_needed(&mock).unwrap();
+
+        assert!(!legacy_app.exists(), "owned legacy app plist removed");
+        assert!(!legacy_server.exists(), "owned legacy server plist removed");
+        assert!(
+            !tmp.path()
+                .join("Library/LaunchAgents/com.wenlan.desktop.plist")
+                .exists(),
+            "opted-out users should not get a new current app plist"
+        );
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn set_run_at_login_false_cleans_legacy_app_and_server_plists() {
+        let _env = EnvGuard::capture();
+        let tmp = tempfile::tempdir().unwrap();
+        let data = tempfile::tempdir().unwrap();
+        std::env::set_var("HOME", tmp.path());
+        std::env::set_var("WENLAN_DATA_DIR", data.path());
+        std::env::remove_var("ORIGIN_DATA_DIR");
+
+        let current_app = tmp
+            .path()
+            .join("Library/LaunchAgents/com.wenlan.desktop.plist");
+        let legacy_app = legacy_app_plist_path().unwrap();
+        let legacy_server = legacy_server_plist_path().unwrap();
+        std::fs::create_dir_all(current_app.parent().unwrap()).unwrap();
+        std::fs::write(&current_app, "<plist/>").unwrap();
+        std::fs::write(&legacy_app, owned_legacy_app_plist()).unwrap();
+        std::fs::write(&legacy_server, owned_legacy_server_plist()).unwrap();
+
+        let mock = MockLaunchctl::default();
+        set_run_at_login(false, &mock).await.unwrap();
+
+        assert!(!current_app.exists(), "current Wenlan app plist removed");
+        assert!(!legacy_app.exists(), "owned legacy app plist removed");
+        assert!(!legacy_server.exists(), "owned legacy server plist removed");
     }
 
     #[test]
