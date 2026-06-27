@@ -148,7 +148,7 @@ impl Default for RemoteAccessState {
 const RATE_LIMIT_COOLDOWN: Duration = Duration::from_secs(15 * 60);
 
 /// Kill any orphaned wenlan-mcp processes on the remote access port range.
-/// These accumulate when the Origin app restarts without cleanly shutting down
+/// These accumulate when the Wenlan app restarts without cleanly shutting down
 /// its child processes (the in-memory handles are lost on restart).
 pub fn cleanup_orphaned_mcp() {
     let my_pid = std::process::id();

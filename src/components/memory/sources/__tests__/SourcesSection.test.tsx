@@ -16,7 +16,7 @@ function wrapper({ children }: { children: React.ReactNode }) {
 describe("SourcesSection", () => {
   beforeEach(() => {
     vi.mocked(tauri.getKnowledgePath).mockResolvedValue(
-      "/Users/test/Origin/knowledge",
+      "/Users/test/Wenlan/knowledge",
     );
     vi.mocked(tauri.countKnowledgeFiles).mockResolvedValue(12);
   });
@@ -92,7 +92,7 @@ describe("SourcesSection", () => {
     render(<SourcesSection />, { wrapper });
 
     await waitFor(() => {
-      expect(screen.getByText(/Origin\/knowledge/)).toBeInTheDocument();
+      expect(screen.getByText(/Wenlan\/knowledge/)).toBeInTheDocument();
     });
     expect(screen.getByText(/12 concept files/)).toBeInTheDocument();
   });

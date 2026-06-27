@@ -74,21 +74,29 @@ fn set_main_window_dock_visibility<R: tauri::Runtime>(app: &tauri::AppHandle<R>,
 #[cfg(not(target_os = "macos"))]
 fn set_main_window_dock_visibility<R: tauri::Runtime>(_app: &tauri::AppHandle<R>, _visible: bool) {}
 
+fn app_log_dir() -> std::path::PathBuf {
+    dirs::home_dir()
+        .map(|h| h.join("Library/Logs/com.wenlan.desktop"))
+        .unwrap_or_else(std::env::temp_dir)
+}
+
+fn app_log_file_name() -> &'static str {
+    "wenlan.log"
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Log sinks: stderr (for terminal launches, `pnpm tauri dev`) AND a
-    // daily-rotating file at ~/Library/Logs/com.origin.desktop/origin.log.
+    // daily-rotating file at ~/Library/Logs/com.wenlan.desktop/wenlan.log.
     // GUI launches send stderr to /dev/null, so without the file sink any
     // setup() error — e.g. a sidecar spawn ENOENT — is silent. That is
     // exactly how the origin-server spawn regression hid for ~15 minutes
     // of live debugging before the culprit was found. Keep both sinks.
     use tracing_subscriber::prelude::*;
 
-    let log_dir = dirs::home_dir()
-        .map(|h| h.join("Library/Logs/com.origin.desktop"))
-        .unwrap_or_else(std::env::temp_dir);
+    let log_dir = app_log_dir();
     let _ = std::fs::create_dir_all(&log_dir);
-    let file_appender = tracing_appender::rolling::daily(&log_dir, "origin.log");
+    let file_appender = tracing_appender::rolling::daily(&log_dir, app_log_file_name());
     let (file_writer, guard) = tracing_appender::non_blocking(file_appender);
     // The guard flushes the background worker on drop. The app lives for
     // the full process, so leaking it is correct — we never want the
@@ -98,7 +106,7 @@ pub fn run() {
     let env_filter = || {
         tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
             tracing_subscriber::EnvFilter::new(
-                "warn,origin_lib::trigger=info,origin_lib::router=info,origin_lib::sensor=info",
+                "warn,wenlan_lib::trigger=info,wenlan_lib::router=info,wenlan_lib::sensor=info",
             )
         })
     };
@@ -121,8 +129,8 @@ pub fn run() {
         .init();
 
     tracing::info!(
-        log_file = ?log_dir.join("origin.log"),
-        "origin app starting; logs tee'd to file"
+        log_file = ?log_dir.join(app_log_file_name()),
+        "wenlan app starting; logs tee'd to file"
     );
 
     let app_state = AppState::new();
@@ -140,7 +148,7 @@ pub fn run() {
 
     #[cfg(debug_assertions)]
     let builder = builder.plugin(tauri_plugin_mcp::init_with_config(
-        tauri_plugin_mcp::PluginConfig::new("origin".to_string())
+        tauri_plugin_mcp::PluginConfig::new("wenlan".to_string())
             .start_socket_server(true)
             .socket_path("/tmp/tauri-mcp.sock".into()),
     ));
@@ -503,11 +511,11 @@ pub fn run() {
                 use tauri::tray::TrayIconEvent;
                 use tauri::Manager;
 
-                let show_item = MenuItemBuilder::with_id("show", "Show Origin").build(app)?;
+                let show_item = MenuItemBuilder::with_id("show", "Show Wenlan").build(app)?;
                 let status_item = MenuItemBuilder::with_id("status", "Status: Starting…")
                     .enabled(false)
                     .build(app)?;
-                let quit_item = MenuItemBuilder::with_id("quit", "Quit Origin").build(app)?;
+                let quit_item = MenuItemBuilder::with_id("quit", "Quit Wenlan").build(app)?;
                 let tray_menu = MenuBuilder::new(app)
                     .item(&show_item)
                     .separator()
@@ -996,5 +1004,11 @@ mod tests {
 
         assert_eq!(&dock_icon[..8], b"\x89PNG\r\n\x1a\n");
         assert!(dock_icon.len() > tray_icon.len() * 10);
+    }
+
+    #[test]
+    fn app_log_identity_uses_wenlan() {
+        assert!(app_log_dir().ends_with("Library/Logs/com.wenlan.desktop"));
+        assert_eq!(app_log_file_name(), "wenlan.log");
     }
 }

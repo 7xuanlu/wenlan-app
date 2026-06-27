@@ -88,7 +88,7 @@ export function WorthAGlanceScroll({ items, onConfirm, onDelete, onEdit, onNavig
         }}
         className="mb-3"
       >
-        unconfirmed memories and items Origin flagged for a second look
+        unconfirmed memories and items Wenlan flagged for a second look
       </p>
       <div
         className="flex gap-2 overflow-x-auto pb-2"

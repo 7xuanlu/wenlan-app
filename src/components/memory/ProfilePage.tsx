@@ -370,7 +370,7 @@ export default function ProfilePage({ onBack, onSelectMemory }: ProfilePageProps
       {/* ── Narrative portrait ──────────────────────────────────────── */}
       <section>
         <div className="flex items-center justify-between mb-2">
-          <h2 style={SECTION_TITLE_STYLE}>How Origin sees you</h2>
+          <h2 style={SECTION_TITLE_STYLE}>How Wenlan sees you</h2>
           <button
             onClick={() => regenMutation.mutate()}
             disabled={regenMutation.isPending}
@@ -443,7 +443,7 @@ export default function ProfilePage({ onBack, onSelectMemory }: ProfilePageProps
       {/* ── Identity memories ──────────────────────────────────────── */}
       {identities.length > 0 && (
         <section>
-          <h2 style={SECTION_TITLE_STYLE}>What Origin knows</h2>
+          <h2 style={SECTION_TITLE_STYLE}>What Wenlan knows</h2>
           <p style={SECTION_SUB_STYLE} className="mb-3">
             identity facts that shape every conversation
           </p>

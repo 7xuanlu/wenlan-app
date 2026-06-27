@@ -43,7 +43,7 @@ fn has_configured_entry(json_str: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// Detect installed MCP-compatible tools and whether Origin is already configured.
+/// Detect installed MCP-compatible tools and whether Wenlan is already configured.
 pub fn detect_mcp_clients() -> Vec<McpClient> {
     // Claude Desktop skipped — uses remote MCP, not local stdio.
     // Will need a separate setup flow once remote MCP support is added.
@@ -98,7 +98,7 @@ fn find_wenlan_mcp_binary() -> Option<PathBuf> {
     candidates.into_iter().flatten().find(|p| p.exists())
 }
 
-/// The MCP config entry Origin writes into client config files for Wenlan.
+/// The MCP config entry Wenlan writes into client config files.
 /// Default: npx (production path, requires wenlan-mcp published to npm).
 /// Dev fallback: uses local binary if found on disk.
 pub fn wenlan_mcp_entry() -> serde_json::Value {

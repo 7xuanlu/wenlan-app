@@ -125,11 +125,10 @@ enum StableLaunchAgentTarget {
 }
 
 fn classify_stable_launch_agent_target(exe: &Path) -> StableLaunchAgentTarget {
-    // Accept both legacy "origin" and renamed "origin-app" binary names.
-    // Tauri crate package was renamed origin -> origin-app in Phase 3 PR1, but
-    // existing user installs may still have the old binary path on disk.
+    // Accept the current `wenlan-app` binary plus legacy `origin` /
+    // `origin-app` binary names from old installs.
     let name = exe.file_name().and_then(|s| s.to_str());
-    if name != Some("origin-app") && name != Some("origin") {
+    if name != Some("wenlan-app") && name != Some("origin-app") && name != Some("origin") {
         return StableLaunchAgentTarget::Rejected;
     }
 
@@ -502,13 +501,13 @@ pub async fn set_run_at_login(enabled: bool, launchctl: &dyn LaunchctlExec) -> R
 }
 
 pub async fn quit_origin(app_handle: &AppHandle) -> Result<()> {
-    // Debounce: tray menu Quit Origin item stays clickable during the 500ms
+    // Debounce: tray menu Quit Wenlan item stays clickable during the 500ms
     // shutdown sleep; double-click would otherwise spawn 2× POSTs (H1).
     if QUITTING.swap(true, Ordering::AcqRel) {
         return Ok(());
     }
 
-    // Spec lifecycle invariant #4: "Quit Origin = full off; both plists
+    // Spec lifecycle invariant #4: "Quit Wenlan = full off; both plists
     // unloaded, both processes exit, no auto-restart on reboot." (H2)
     // Order matters: uninstall plists FIRST so launchd won't respawn after
     // the daemon dies, then shut the daemon down cleanly.
@@ -754,6 +753,17 @@ mod tests {
         assert_eq!(
             classify_stable_launch_agent_target(std::path::Path::new(
                 "/Applications/Wenlan.app/Contents/MacOS/origin-app"
+            )),
+            StableLaunchAgentTarget::Current
+        );
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn stable_launch_agent_target_accepts_system_wenlan_app_executable() {
+        assert_eq!(
+            classify_stable_launch_agent_target(std::path::Path::new(
+                "/Applications/Wenlan.app/Contents/MacOS/wenlan-app"
             )),
             StableLaunchAgentTarget::Current
         );
@@ -1033,7 +1043,7 @@ mod tests {
     #[test]
     #[serial_test::serial]
     fn quit_origin_debounces_concurrent_calls() {
-        // H1: tray menu Quit Origin item stays clickable during the 500ms
+        // H1: tray menu Quit Wenlan item stays clickable during the 500ms
         // shutdown sleep — second click must not re-enter the shutdown flow.
         reset_quitting_flag_for_test();
         // First call wins — flag flips to true.
@@ -1050,7 +1060,7 @@ mod tests {
     #[test]
     #[serial_test::serial]
     fn uninstall_app_plist_is_idempotent_when_file_absent() {
-        // H2: Quit Origin calls uninstall_app_plist; the sequence must be
+        // H2: Quit Wenlan calls uninstall_app_plist; the sequence must be
         // idempotent because the plist may already have been removed by an
         // earlier toggle.
         let tmp = tempfile::tempdir().unwrap();

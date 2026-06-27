@@ -149,7 +149,7 @@ describe("MilestoneToaster", () => {
     render(<MilestoneToaster />, { wrapper });
     await waitFor(() =>
       expect(
-        screen.getByText(/origin just recalled for you/i),
+        screen.getByText(/wenlan just recalled for you/i),
       ).toBeInTheDocument(),
     );
     expect(screen.getByText(/called by claude/i)).toBeInTheDocument();

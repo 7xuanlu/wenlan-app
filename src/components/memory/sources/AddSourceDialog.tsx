@@ -92,7 +92,7 @@ export default function AddSourceDialog({ onClose, onSuccess }: Props) {
           Add a markdown folder
         </h3>
         <p className="text-xs text-[var(--mem-text-secondary)] mb-4">
-          Origin reads .md files from the folder you choose. Obsidian vaults,
+          Wenlan reads .md files from the folder you choose. Obsidian vaults,
           plain markdown directories, or any folder of notes.
         </p>
 

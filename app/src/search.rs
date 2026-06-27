@@ -405,7 +405,7 @@ pub async fn write_mcp_config(client_type: String) -> Result<(), String> {
     crate::mcp_config::write_wenlan_entry(&config_path, is_claude_code).map_err(|e| e.to_string())
 }
 
-/// Returns the current `wenlan` MCP server entry (command + args) that Origin
+/// Returns the current `wenlan` MCP server entry (command + args) that Wenlan
 /// uses when writing client configs. Prefers a local binary in dev, falls back
 /// to `npx -y wenlan-mcp` otherwise. The frontend uses this to build a
 /// copy-pasteable manual-setup JSON snippet with real values instead of

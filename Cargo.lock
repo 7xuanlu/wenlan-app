@@ -4084,59 +4084,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "origin-app"
-version = "0.3.1"
-dependencies = [
- "anyhow",
- "async-trait",
- "base64 0.22.1",
- "chrono",
- "cocoa",
- "dirs",
- "env_logger",
- "futures",
- "image 0.25.10",
- "image-compare",
- "log",
- "notify",
- "notify-debouncer-full",
- "objc",
- "pdf-extract",
- "plist",
- "raw-window-handle",
- "regex",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "serde_yaml",
- "serial_test",
- "sha2",
- "sysinfo 0.33.1",
- "tauri",
- "tauri-build",
- "tauri-plugin-clipboard-x",
- "tauri-plugin-dialog",
- "tauri-plugin-fs",
- "tauri-plugin-global-shortcut",
- "tauri-plugin-mcp",
- "tauri-plugin-notification",
- "tauri-plugin-shell",
- "tauri-plugin-single-instance",
- "tauri-plugin-updater",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "toml 0.8.2",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
- "uuid",
- "wenlan-types",
- "xcap 0.8.3",
- "zip 2.4.2",
-]
-
-[[package]]
 name = "os_pipe"
 version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7374,6 +7321,59 @@ name = "weezl"
 version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a28ac98ddc8b9274cb41bb4d9d4d5c425b6020c50c46f25559911905610b4a88"
+
+[[package]]
+name = "wenlan-app"
+version = "0.3.1"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "base64 0.22.1",
+ "chrono",
+ "cocoa",
+ "dirs",
+ "env_logger",
+ "futures",
+ "image 0.25.10",
+ "image-compare",
+ "log",
+ "notify",
+ "notify-debouncer-full",
+ "objc",
+ "pdf-extract",
+ "plist",
+ "raw-window-handle",
+ "regex",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "serial_test",
+ "sha2",
+ "sysinfo 0.33.1",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-clipboard-x",
+ "tauri-plugin-dialog",
+ "tauri-plugin-fs",
+ "tauri-plugin-global-shortcut",
+ "tauri-plugin-mcp",
+ "tauri-plugin-notification",
+ "tauri-plugin-shell",
+ "tauri-plugin-single-instance",
+ "tauri-plugin-updater",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "toml 0.8.2",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "uuid",
+ "wenlan-types",
+ "xcap 0.8.3",
+ "zip 2.4.2",
+]
 
 [[package]]
 name = "wenlan-types"

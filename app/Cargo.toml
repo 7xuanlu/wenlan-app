@@ -1,12 +1,12 @@
 [package]
-name = "origin-app"
+name = "wenlan-app"
 version = "0.3.1" # x-release-please-version
 edition = "2021"
 license = "AGPL-3.0-only"
-default-run = "origin-app"
+default-run = "wenlan-app"
 
 [lib]
-name = "origin_lib"
+name = "wenlan_lib"
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [features]
@@ -46,7 +46,7 @@ base64 = "0.22"
 notify = { version = "7", features = ["macos_kqueue"] }
 notify-debouncer-full = "0.4"
 
-# HTTP client for origin-server daemon
+# HTTP client for wenlan-server daemon
 reqwest = { version = "0.12", features = ["json"] }
 
 # Error handling

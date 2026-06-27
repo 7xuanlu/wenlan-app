@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! HTTP client for the Origin daemon (origin-server).
+//! HTTP client for the Wenlan daemon (wenlan-server).
 //!
 //! Thin wrapper around `reqwest::Client` that maps each daemon endpoint
 //! to a typed method. The Tauri app uses this instead of direct DB access.

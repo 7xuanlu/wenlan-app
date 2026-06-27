@@ -1,8 +1,8 @@
-# origin-app
+# wenlan-app
 
-Desktop client for [Origin](https://github.com/7xuanlu/origin). Where Personal AI Memory Compounds.
+Desktop client for [Wenlan](https://github.com/7xuanlu/wenlan). Where Personal AI Memory Compounds.
 
-Tauri 2 + React 19. Talks to the origin daemon over HTTP at `localhost:7878`.
+Tauri 2 + React 19. Talks to the Wenlan daemon over HTTP at `localhost:7878`.
 
 ## Build
 
