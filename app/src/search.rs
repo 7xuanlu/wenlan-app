@@ -2352,30 +2352,40 @@ pub struct TagData {
     pub document_categories: HashMap<String, String>,
 }
 
+#[derive(Debug, Serialize)]
+struct SetDocumentTagsRequest {
+    source: String,
+    tags: Vec<String>,
+}
+
 #[tauri::command]
 pub async fn list_all_tags(state: tauri::State<'_, State>) -> Result<TagData, String> {
     let client = {
         let s = state.read().await;
         s.client.clone()
     };
-    let tags = client.list_tags().await?;
-    Ok(TagData {
-        tags,
-        document_tags: HashMap::new(),
+    let inventory = client.list_tag_inventory().await?;
+    Ok(tag_data_from_inventory(inventory))
+}
+
+fn tag_data_from_inventory(inventory: crate::api::TagInventoryResponse) -> TagData {
+    TagData {
+        tags: inventory.tags,
+        document_tags: inventory.document_tags,
         categories: vec![],
         document_categories: HashMap::new(),
-    })
+    }
 }
 
 #[tauri::command]
 pub async fn set_document_tags(
     state: tauri::State<'_, State>,
-    _source: String,
+    source: String,
     source_id: String,
     tags: Vec<String>,
 ) -> Result<Vec<String>, String> {
     let client = state.read().await.client.clone();
-    let req = requests::SetDocumentTagsRequest { tags };
+    let req = SetDocumentTagsRequest { source, tags };
     let resp: responses::TagsResponse = client
         .put_json(&format!("/api/documents/{}/tags", source_id), &req)
         .await?;
@@ -3253,6 +3263,43 @@ mod status_response_tests {
                 model_id: "bge-reranker".to_string()
             }
         );
+    }
+}
+
+#[cfg(test)]
+mod tag_data_tests {
+    use super::*;
+
+    #[test]
+    fn set_document_tags_request_serializes_source_and_tags() {
+        let request = SetDocumentTagsRequest {
+            source: "manual".to_string(),
+            tags: vec!["rust".to_string()],
+        };
+
+        let value = serde_json::to_value(&request).unwrap();
+
+        assert_eq!(value["source"], "manual");
+        assert_eq!(value["tags"], serde_json::json!(["rust"]));
+    }
+
+    #[test]
+    fn tag_data_from_inventory_preserves_document_tags() {
+        let mut document_tags = HashMap::new();
+        document_tags.insert("memory::mem1".to_string(), vec!["rust".to_string()]);
+
+        let tag_data = tag_data_from_inventory(crate::api::TagInventoryResponse {
+            tags: vec!["rust".to_string()],
+            document_tags,
+        });
+
+        assert_eq!(tag_data.tags, vec!["rust"]);
+        assert_eq!(
+            tag_data.document_tags.get("memory::mem1"),
+            Some(&vec!["rust".to_string()])
+        );
+        assert!(tag_data.categories.is_empty());
+        assert!(tag_data.document_categories.is_empty());
     }
 }
 

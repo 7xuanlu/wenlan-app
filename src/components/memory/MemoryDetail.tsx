@@ -899,7 +899,7 @@ export default function MemoryDetail({
                   currentTags={currentTags}
                   allTags={allTags}
                   onClose={() => setEditingTags(false)}
-                  onTagsChanged={() => queryClient.invalidateQueries({ queryKey: ["spaces"] })}
+                  onTagsChanged={() => queryClient.invalidateQueries({ queryKey: ["tags"] })}
                 />
               )}
             </div>

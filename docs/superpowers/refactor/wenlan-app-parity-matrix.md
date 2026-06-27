@@ -68,7 +68,7 @@ These are required for feature parity but can follow the P0 review/status/setup 
 | `/api/pages/{id}/export` | export response | present as `exportPageToObsidian` | keep; rename "concept" UI/file wording where user-facing | optional |
 | `/api/on-device-model` | config route | present wrapper | keep; type through `wenlan-types` | optional settings section |
 | `/api/llm/test` | config route | present wrapper | keep; type through `wenlan-types` | optional settings section |
-| `/api/tags` | `TagsResponse` | `list_all_tags` now reads the daemon global tag list; document tag maps remain empty because the daemon has no list-all-document-tags envelope yet | add a daemon document-tag map route before reviving tag filters that depend on `document_tags` | global tags available; per-document tag map still deferred |
+| `/api/tags` | `TagsResponse` | `list_all_tags` reads the daemon global tag list and preserves additive `document_tags` maps when available; older daemons default to an empty map | merge daemon `document_tags` response support before relying on per-document tag filters in release notes | global tags available; per-document tag map gated by daemon version |
 
 ## Taxonomy Matrix
 
