@@ -28,6 +28,7 @@ import SpaceIcon from "./SpaceIcon";
 import { isProcessing, subscribe, getSnapshot } from "../lib/processingStore";
 import { subscribe as heartbeatSubscribe, getLastCapture } from "../lib/captureHeartbeat";
 import { getCollapsedSections, toggleSection, expandSection } from "../lib/collapsedSections";
+import { readPreference, writePreference } from "../lib/preferenceStorage";
 import ViewToggle from "./ViewToggle";
 import ProfilePage from "./memory/ProfilePage";
 import SettingsPage from "./memory/SettingsPage";
@@ -249,19 +250,20 @@ interface MemoryViewProps {
   onImport?: () => void;
 }
 
-const SIDEBAR_KEY = "origin-sidebar-collapsed";
+const SIDEBAR_KEY = "wenlan-sidebar-collapsed";
+const LEGACY_SIDEBAR_KEY = "origin-sidebar-collapsed";
 
 export default function MemoryView({ onBack, onSelectFile, onSelectRecap, onSelectMemory, onImport }: MemoryViewProps) {
   const queryClient = useQueryClient();
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
-    try { return localStorage.getItem(SIDEBAR_KEY) === "true"; } catch { return false; }
+    return readPreference(SIDEBAR_KEY, LEGACY_SIDEBAR_KEY) === "true";
   });
   const [_selectedDomain, setSelectedDomain] = useState<string | null>(null);
   const toggleSidebar = () => {
     setSidebarCollapsed((v) => {
       const next = !v;
-      try { localStorage.setItem(SIDEBAR_KEY, String(next)); } catch {}
+      writePreference(SIDEBAR_KEY, String(next));
       return next;
     });
   };

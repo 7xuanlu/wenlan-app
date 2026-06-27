@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useSyncExternalStore } from "react";
 import { emit, listen } from "@tauri-apps/api/event";
+import { readPreference, writePreference } from "./preferenceStorage";
 
 export type Theme = "system" | "light" | "dark";
 
-const STORAGE_KEY = "origin-theme";
+const STORAGE_KEY = "wenlan-theme";
+const LEGACY_STORAGE_KEY = "origin-theme";
 const listeners = new Set<() => void>();
-let current: Theme = (localStorage.getItem(STORAGE_KEY) as Theme) ?? "system";
+let current: Theme = (readPreference(STORAGE_KEY, LEGACY_STORAGE_KEY) as Theme) ?? "system";
 
 function notify() {
   for (const fn of listeners) fn();
@@ -32,7 +34,7 @@ export function getTheme(): Theme {
 
 export function setTheme(theme: Theme) {
   current = theme;
-  localStorage.setItem(STORAGE_KEY, theme);
+  writePreference(STORAGE_KEY, theme);
   applyTheme(theme);
   notify();
   // Broadcast to all Tauri windows so quick capture, toast, etc. stay in sync
@@ -44,7 +46,7 @@ listen<string>("theme-changed", (event) => {
   const incoming = event.payload as Theme;
   if (incoming && incoming !== current) {
     current = incoming;
-    localStorage.setItem(STORAGE_KEY, incoming);
+    writePreference(STORAGE_KEY, incoming);
     applyTheme(incoming);
     notify();
   }

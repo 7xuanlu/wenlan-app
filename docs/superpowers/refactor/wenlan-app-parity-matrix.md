@@ -91,6 +91,7 @@ These are required for feature parity but can follow the P0 review/status/setup 
 | MCP sidecar | `origin-mcp` | use `wenlan-mcp`; bridge old config key/package | setup wizard tests |
 | Remote relay | `origin-relay.originmemory.workers.dev` | explicit endpoint and stable URL strategy | remote access tests |
 | Data/config paths | `WENLAN_DATA_DIR` preferred; `ORIGIN_DATA_DIR` legacy fallback | do not open fresh Wenlan path if legacy data exists | migration smoke |
+| UI preference keys | `wenlan-*` / `wenlan:*` primary; Origin-prefixed localStorage keys import-only legacy fallback | preserve user UI state while new writes use Wenlan keys | preference helper + consumer tests |
 | Daemon port env | `WENLAN_PORT` preferred; `ORIGIN_PORT` legacy fallback | keep legacy fallback through bridge release; default to `7878` | `api::tests::wenlan_client_*_port` |
 
 ## Go/No-Go Before Full Refactor Run

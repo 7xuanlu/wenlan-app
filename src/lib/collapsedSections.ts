@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-const STORAGE_KEY = "origin:collapsed-sections";
+import { readPreference, writePreference } from "./preferenceStorage";
+
+const STORAGE_KEY = "wenlan:collapsed-sections";
+const LEGACY_STORAGE_KEY = "origin:collapsed-sections";
 const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 interface StoredEntry {
@@ -9,7 +12,7 @@ interface StoredEntry {
 
 function load(): Map<string, number> {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = readPreference(STORAGE_KEY, LEGACY_STORAGE_KEY);
     if (!raw) return new Map();
     const entries: StoredEntry[] = JSON.parse(raw);
     const now = Date.now();
@@ -30,7 +33,7 @@ function save(map: Map<string, number>): void {
   for (const [id, collapsedAt] of map) {
     entries.push({ id, collapsedAt });
   }
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+  writePreference(STORAGE_KEY, JSON.stringify(entries));
 }
 
 /** Return the set of currently collapsed section IDs. */
