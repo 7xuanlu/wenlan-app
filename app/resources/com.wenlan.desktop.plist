@@ -36,9 +36,9 @@
     </dict>
 
     <key>StandardOutPath</key>
-    <string>__LOG_PATH__/origin-app.stdout.log</string>
+    <string>__LOG_PATH__/wenlan-app.stdout.log</string>
 
     <key>StandardErrorPath</key>
-    <string>__LOG_PATH__/origin-app.stderr.log</string>
+    <string>__LOG_PATH__/wenlan-app.stderr.log</string>
 </dict>
 </plist>

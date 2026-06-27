@@ -36,6 +36,7 @@ pub fn legacy_app_data_dir() -> PathBuf {
 fn path_has_app_state(path: &std::path::Path) -> bool {
     path.join("config.json").exists()
         || path.join("avatars").exists()
+        || path.join("activities.json").exists()
         || path.join("auto_start_disabled.flag").exists()
 }
 
@@ -147,6 +148,23 @@ mod tests {
         std::fs::create_dir_all(&current).unwrap();
         std::fs::create_dir_all(&legacy).unwrap();
         std::fs::write(legacy.join("config.json"), "{}").unwrap();
+        assert_eq!(app_data_dir(), legacy);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn app_data_dir_uses_legacy_default_when_current_empty_and_legacy_has_activities() {
+        let _guard = env_lock();
+        let _env = EnvGuard::capture();
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::set_var("HOME", tmp.path());
+        std::env::remove_var("WENLAN_DATA_DIR");
+        std::env::remove_var("ORIGIN_DATA_DIR");
+        let current = dirs::data_local_dir().unwrap().join("wenlan");
+        let legacy = dirs::data_local_dir().unwrap().join("origin");
+        std::fs::create_dir_all(&current).unwrap();
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::write(legacy.join("activities.json"), "[]").unwrap();
         assert_eq!(app_data_dir(), legacy);
     }
 

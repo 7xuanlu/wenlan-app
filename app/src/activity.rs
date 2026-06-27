@@ -53,10 +53,7 @@ impl Activity {
 }
 
 fn activities_path() -> PathBuf {
-    dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("origin")
-        .join("activities.json")
+    crate::identity_paths::app_data_dir().join("activities.json")
 }
 
 pub fn load_activities() -> Vec<Activity> {
@@ -75,4 +72,64 @@ pub fn save_activities(activities: &[Activity]) -> Result<(), AppError> {
     let json = serde_json::to_string_pretty(activities)?;
     std::fs::write(&path, json)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Mutex, OnceLock};
+
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
+    }
+
+    struct EnvGuard {
+        home: Option<std::ffi::OsString>,
+        wenlan: Option<std::ffi::OsString>,
+        origin: Option<std::ffi::OsString>,
+    }
+
+    impl EnvGuard {
+        fn capture() -> Self {
+            Self {
+                home: std::env::var_os("HOME"),
+                wenlan: std::env::var_os("WENLAN_DATA_DIR"),
+                origin: std::env::var_os("ORIGIN_DATA_DIR"),
+            }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.home {
+                Some(value) => std::env::set_var("HOME", value),
+                None => std::env::remove_var("HOME"),
+            }
+            match &self.wenlan {
+                Some(value) => std::env::set_var("WENLAN_DATA_DIR", value),
+                None => std::env::remove_var("WENLAN_DATA_DIR"),
+            }
+            match &self.origin {
+                Some(value) => std::env::set_var("ORIGIN_DATA_DIR", value),
+                None => std::env::remove_var("ORIGIN_DATA_DIR"),
+            }
+        }
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn activities_path_prefers_wenlan_data_dir() {
+        let _guard = env_lock();
+        let _env = EnvGuard::capture();
+        let current = tempfile::tempdir().unwrap();
+        let legacy = tempfile::tempdir().unwrap();
+        std::env::set_var("WENLAN_DATA_DIR", current.path());
+        std::env::set_var("ORIGIN_DATA_DIR", legacy.path());
+
+        save_activities(&[Activity::new_with_range(1, 2)]).unwrap();
+
+        assert!(current.path().join("activities.json").exists());
+        assert!(!legacy.path().join("activities.json").exists());
+    }
 }
