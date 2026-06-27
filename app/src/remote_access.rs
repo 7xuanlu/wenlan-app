@@ -2,6 +2,7 @@
 use regex::Regex;
 use serde::Serialize;
 use std::net::TcpListener;
+use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 use tauri::Manager;
 use tauri_plugin_shell::ShellExt;
@@ -13,21 +14,34 @@ const MCP_SIDECAR_NAME: &str = "wenlan-mcp";
 pub const PORT_RANGE_START: u16 = 18080;
 
 /// Relay URL for stable MCP endpoint.
+// Intentionally still the legacy Origin relay. Do not rename this constant
+// until a Wenlan relay endpoint exists and existing relay IDs have a migration
+// strategy.
 const RELAY_URL: &str = "https://origin-relay.originmemory.workers.dev";
 
 /// Get or create a persistent relay user ID.
-/// Stored in ~/.config/origin-mcp/relay_id
-fn get_or_create_relay_id() -> String {
-    let path = dirs::home_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join(".config")
-        .join("origin-mcp")
-        .join("relay_id");
+/// Stored in ~/.config/wenlan-mcp/relay_id
+fn get_or_create_relay_id() -> Result<String, String> {
+    let path = relay_id_path();
 
-    if let Ok(id) = std::fs::read_to_string(&path) {
-        let id = id.trim().to_string();
-        if !id.is_empty() {
-            return id;
+    match std::fs::read_to_string(&path) {
+        Ok(id) => {
+            let id = id.trim().to_string();
+            if !id.is_empty() {
+                if let Some(parent) = path.parent() {
+                    restrict_private_dir(parent, "relay_id")?;
+                }
+                restrict_private_file(&path, "relay_id")?;
+                return Ok(id);
+            }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => {
+            return Err(format!(
+                "Failed to read relay ID at {}: {}",
+                path.display(),
+                e
+            ));
         }
     }
 
@@ -42,20 +56,23 @@ fn get_or_create_relay_id() -> String {
         .take(12)
         .collect::<String>();
 
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    let _ = std::fs::write(&path, &id);
-    id
+    write_private_file(&path, id.as_bytes(), "relay_id")?;
+    Ok(id)
 }
 
 /// Register the current tunnel URL with the relay for a stable MCP endpoint.
 async fn register_with_relay(tunnel_url: &str) -> Option<String> {
-    let relay_id = get_or_create_relay_id();
+    let relay_id = match get_or_create_relay_id() {
+        Ok(id) => id,
+        Err(e) => {
+            log::warn!("[remote-access] Relay ID unavailable: {}", e);
+            return None;
+        }
+    };
     let body = serde_json::json!({
-        "user_id": relay_id,
+        "user_id": &relay_id,
         "tunnel_url": tunnel_url,
-        "secret": relay_id, // simple shared secret
+        "secret": &relay_id, // simple shared secret
     });
 
     match reqwest::Client::new()
@@ -130,7 +147,7 @@ impl Default for RemoteAccessState {
 /// Cooldown after a Cloudflare 429 before we'll try creating another quick tunnel.
 const RATE_LIMIT_COOLDOWN: Duration = Duration::from_secs(15 * 60);
 
-/// Kill any orphaned origin-mcp processes on the remote access port range.
+/// Kill any orphaned wenlan-mcp processes on the remote access port range.
 /// These accumulate when the Origin app restarts without cleanly shutting down
 /// its child processes (the in-memory handles are lost on restart).
 pub fn cleanup_orphaned_mcp() {
@@ -153,7 +170,7 @@ pub fn cleanup_orphaned_mcp() {
                         pid,
                         port
                     );
-                    // SIGTERM first, SIGKILL fallback — origin-mcp may ignore SIGTERM
+                    // SIGTERM first, SIGKILL fallback — wenlan-mcp may ignore SIGTERM
                     let _ = std::process::Command::new("kill")
                         .arg(pid.to_string())
                         .output();
@@ -181,15 +198,174 @@ pub fn parse_tunnel_url(stderr: &str) -> Option<String> {
     TUNNEL_URL_RE.find(stderr).map(|m| m.as_str().to_string())
 }
 
-/// Token file path for origin-mcp authentication.
-/// origin-mcp stores tokens at ~/.config/origin-mcp/token (XDG convention),
+fn create_private_dir(path: &Path, file_name: &str) -> Result<(), String> {
+    std::fs::create_dir_all(path).map_err(|e| {
+        format!(
+            "Failed to create current {} directory at {}: {}",
+            file_name,
+            path.display(),
+            e
+        )
+    })?;
+    restrict_private_dir(path, file_name)
+}
+
+fn restrict_private_dir(path: &Path, file_name: &str) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).map_err(|e| {
+            format!(
+                "Failed to restrict current {} directory at {}: {}",
+                file_name,
+                path.display(),
+                e
+            )
+        })?;
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (path, file_name);
+    }
+    Ok(())
+}
+
+fn restrict_private_file(path: &Path, file_name: &str) -> Result<(), String> {
+    if !path.exists() {
+        return Ok(());
+    }
+    if !path.is_file() {
+        return Err(format!(
+            "Current {} path is not a file: {}",
+            file_name,
+            path.display()
+        ));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).map_err(|e| {
+            format!(
+                "Failed to restrict current {} file at {}: {}",
+                file_name,
+                path.display(),
+                e
+            )
+        })?;
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = file_name;
+    }
+    Ok(())
+}
+
+fn prepare_private_parent(path: &Path, file_name: &str) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        create_private_dir(parent, file_name)?;
+    }
+    Ok(())
+}
+
+fn write_private_file(path: &Path, contents: &[u8], file_name: &str) -> Result<(), String> {
+    prepare_private_parent(path, file_name)?;
+    #[cfg(unix)]
+    {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)
+            .map_err(|e| {
+                format!(
+                    "Failed to open current {} file at {}: {}",
+                    file_name,
+                    path.display(),
+                    e
+                )
+            })?;
+        file.write_all(contents).map_err(|e| {
+            format!(
+                "Failed to write current {} file at {}: {}",
+                file_name,
+                path.display(),
+                e
+            )
+        })?;
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::write(path, contents).map_err(|e| {
+            format!(
+                "Failed to write current {} file at {}: {}",
+                file_name,
+                path.display(),
+                e
+            )
+        })?;
+    }
+    restrict_private_file(path, file_name)
+}
+
+fn import_nonempty_legacy_file(
+    current_dir: &Path,
+    legacy_dir: &Path,
+    file_name: &str,
+) -> Result<PathBuf, String> {
+    let current_path = current_dir.join(file_name);
+    if current_path.exists() {
+        restrict_private_dir(current_dir, file_name)?;
+        restrict_private_file(&current_path, file_name)?;
+        return Ok(current_path);
+    }
+
+    let legacy_path = legacy_dir.join(file_name);
+    let contents = match std::fs::read_to_string(&legacy_path) {
+        Ok(contents) => contents,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(current_path),
+        Err(e) => {
+            log::warn!(
+                "[remote-access] Skipping legacy {} import from {}: {}",
+                file_name,
+                legacy_path.display(),
+                e
+            );
+            return Ok(current_path);
+        }
+    };
+
+    if contents.trim().is_empty() {
+        return Ok(current_path);
+    }
+
+    write_private_file(&current_path, contents.as_bytes(), file_name)?;
+
+    Ok(current_path)
+}
+
+fn token_file_path_for_dirs(current_dir: &Path, legacy_dir: &Path) -> Result<PathBuf, String> {
+    import_nonempty_legacy_file(current_dir, legacy_dir, "token")
+}
+
+fn relay_id_path_for_dirs(current_dir: &Path) -> PathBuf {
+    current_dir.join("relay_id")
+}
+
+/// Token file path for wenlan-mcp authentication.
+/// wenlan-mcp stores tokens at ~/.config/wenlan-mcp/token (XDG convention),
 /// NOT ~/Library/Application Support/ (macOS convention from dirs::config_dir).
-fn token_file_path() -> std::path::PathBuf {
-    dirs::home_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join(".config")
-        .join("origin-mcp")
-        .join("token")
+fn token_file_path() -> Result<PathBuf, String> {
+    token_file_path_for_dirs(
+        &crate::identity_paths::mcp_config_dir(),
+        &crate::identity_paths::legacy_mcp_config_dir(),
+    )
+}
+
+fn relay_id_path() -> PathBuf {
+    relay_id_path_for_dirs(&crate::identity_paths::mcp_config_dir())
 }
 
 fn token_generate_args(path: &std::path::Path) -> Vec<String> {
@@ -203,7 +379,7 @@ fn token_generate_args(path: &std::path::Path) -> Vec<String> {
 
 /// Read the bearer token from disk.
 pub fn read_token() -> Result<String, String> {
-    let path = token_file_path();
+    let path = token_file_path()?;
     std::fs::read_to_string(&path)
         .map(|s| s.trim().to_string())
         .map_err(|e| format!("Failed to read token at {}: {}", path.display(), e))
@@ -791,13 +967,14 @@ async fn start_tunnel(
         .ok_or_else(|| "All remote access ports (18080-18083) are in use.".to_string())?;
 
     // 2. Ensure token exists
-    let token_path = token_file_path();
+    let token_path = token_file_path()?;
     log::warn!(
         "[remote-access] token_path={}, exists={}",
         token_path.display(),
         token_path.exists()
     );
     if !token_path.exists() {
+        prepare_private_parent(&token_path, "token")?;
         let shell = app_handle.shell();
         log::warn!("[remote-access] generating token via sidecar...");
         let cmd = shell
@@ -820,6 +997,7 @@ async fn start_tunnel(
                 String::from_utf8_lossy(&output.stderr)
             ));
         }
+        restrict_private_file(&token_path, "token")?;
     }
     let token = read_token()?;
 
@@ -928,7 +1106,8 @@ pub async fn toggle_off(app_handle: &tauri::AppHandle) {
 /// (tunnel stays alive). The new instance reads the updated token from disk.
 pub async fn rotate_token(app_handle: &tauri::AppHandle) -> Result<String, String> {
     // 1. Generate new token first (before killing anything)
-    let token_path = token_file_path();
+    let token_path = token_file_path()?;
+    prepare_private_parent(&token_path, "token")?;
     let shell = app_handle.shell();
     let output = shell
         .sidecar(MCP_SIDECAR_NAME)
@@ -943,6 +1122,7 @@ pub async fn rotate_token(app_handle: &tauri::AppHandle) -> Result<String, Strin
             String::from_utf8_lossy(&output.stderr)
         ));
     }
+    restrict_private_file(&token_path, "token")?;
 
     let token = read_token()?;
 
@@ -965,6 +1145,34 @@ pub async fn rotate_token(app_handle: &tauri::AppHandle) -> Result<String, Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ffi::OsString;
+
+    #[cfg(unix)]
+    fn file_mode(path: &Path) -> u32 {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+    }
+
+    struct HomeGuard {
+        home: Option<OsString>,
+    }
+
+    impl HomeGuard {
+        fn set(path: &Path) -> Self {
+            let home = std::env::var_os("HOME");
+            std::env::set_var("HOME", path);
+            Self { home }
+        }
+    }
+
+    impl Drop for HomeGuard {
+        fn drop(&mut self) {
+            match &self.home {
+                Some(value) => std::env::set_var("HOME", value),
+                None => std::env::remove_var("HOME"),
+            }
+        }
+    }
 
     #[test]
     fn test_status_default_is_off() {
@@ -1050,12 +1258,132 @@ mod tests {
     }
 
     #[test]
-    #[serial_test::serial]
-    fn test_token_generate_args_include_legacy_output_path() {
+    fn token_path_imports_nonempty_legacy_token_when_current_missing() {
         let tmp = tempfile::tempdir().unwrap();
-        std::env::set_var("HOME", tmp.path());
-        let path = token_file_path();
-        let expected_path = tmp.path().join(".config/origin-mcp/token");
+        let current = tmp.path().join("wenlan-mcp");
+        let legacy = tmp.path().join("origin-mcp");
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::write(legacy.join("token"), "legacy-token\n").unwrap();
+
+        let path = token_file_path_for_dirs(&current, &legacy).unwrap();
+
+        assert_eq!(path, current.join("token"));
+        assert_eq!(
+            std::fs::read_to_string(current.join("token")).unwrap(),
+            "legacy-token\n"
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn token_path_imports_legacy_token_with_private_permissions() {
+        let tmp = tempfile::tempdir().unwrap();
+        let current = tmp.path().join("wenlan-mcp");
+        let legacy = tmp.path().join("origin-mcp");
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::write(legacy.join("token"), "legacy-token\n").unwrap();
+
+        let path = token_file_path_for_dirs(&current, &legacy).unwrap();
+
+        assert_eq!(path, current.join("token"));
+        assert_eq!(file_mode(&path), 0o600);
+        assert_eq!(file_mode(&current), 0o700);
+    }
+
+    #[test]
+    fn token_path_keeps_current_token_when_present() {
+        let tmp = tempfile::tempdir().unwrap();
+        let current = tmp.path().join("wenlan-mcp");
+        let legacy = tmp.path().join("origin-mcp");
+        std::fs::create_dir_all(&current).unwrap();
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::write(current.join("token"), "current-token\n").unwrap();
+        std::fs::write(legacy.join("token"), "legacy-token\n").unwrap();
+
+        let path = token_file_path_for_dirs(&current, &legacy).unwrap();
+
+        assert_eq!(path, current.join("token"));
+        assert_eq!(
+            std::fs::read_to_string(current.join("token")).unwrap(),
+            "current-token\n"
+        );
+    }
+
+    #[test]
+    fn token_path_does_not_import_empty_legacy_token() {
+        let tmp = tempfile::tempdir().unwrap();
+        let current = tmp.path().join("wenlan-mcp");
+        let legacy = tmp.path().join("origin-mcp");
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::write(legacy.join("token"), " \n").unwrap();
+
+        let path = token_file_path_for_dirs(&current, &legacy).unwrap();
+
+        assert_eq!(path, current.join("token"));
+        assert!(!current.join("token").exists());
+    }
+
+    #[test]
+    fn token_path_skips_invalid_legacy_token() {
+        let tmp = tempfile::tempdir().unwrap();
+        let current = tmp.path().join("wenlan-mcp");
+        let legacy = tmp.path().join("origin-mcp");
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::write(legacy.join("token"), [0xff, 0xfe]).unwrap();
+
+        let path = token_file_path_for_dirs(&current, &legacy).unwrap();
+
+        assert_eq!(path, current.join("token"));
+        assert!(!current.join("token").exists());
+    }
+
+    #[test]
+    fn relay_id_path_does_not_import_legacy_relay_id() {
+        let tmp = tempfile::tempdir().unwrap();
+        let current = tmp.path().join("wenlan-mcp");
+        let legacy = tmp.path().join("origin-mcp");
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::write(legacy.join("relay_id"), "stale-relay-id").unwrap();
+
+        let path = relay_id_path_for_dirs(&current);
+
+        assert_eq!(path, current.join("relay_id"));
+        assert!(!current.join("relay_id").exists());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    #[serial_test::serial]
+    fn relay_id_generation_writes_private_secret_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _home = HomeGuard::set(tmp.path());
+
+        let id = get_or_create_relay_id().unwrap();
+        let path = relay_id_path();
+
+        assert!(!id.is_empty());
+        assert_eq!(file_mode(&path), 0o600);
+        assert_eq!(file_mode(path.parent().unwrap()), 0o700);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn relay_id_generation_errors_when_relay_id_path_is_directory() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _home = HomeGuard::set(tmp.path());
+        let path = relay_id_path();
+        std::fs::create_dir_all(&path).unwrap();
+
+        assert!(get_or_create_relay_id().is_err());
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_token_generate_args_include_wenlan_output_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _home = HomeGuard::set(tmp.path());
+        let path = token_file_path().unwrap();
+        let expected_path = tmp.path().join(".config/wenlan-mcp/token");
 
         assert_eq!(
             token_generate_args(&path),

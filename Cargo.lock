@@ -4102,6 +4102,7 @@ dependencies = [
  "notify-debouncer-full",
  "objc",
  "pdf-extract",
+ "plist",
  "raw-window-handle",
  "regex",
  "reqwest 0.12.28",

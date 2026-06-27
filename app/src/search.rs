@@ -22,14 +22,6 @@ use wenlan_types::*;
 type State = Arc<RwLock<AppState>>;
 type WatcherState = Arc<tokio::sync::Mutex<Option<crate::indexer::FileWatcher>>>;
 
-fn app_env_var_compat(wenlan_key: &str) -> Option<std::ffi::OsString> {
-    if let Some(value) = std::env::var_os(wenlan_key) {
-        return Some(value);
-    }
-    let legacy = wenlan_key.replacen("WENLAN_", "ORIGIN_", 1);
-    std::env::var_os(legacy)
-}
-
 // ── Request types (kept for Tauri IPC deserialization) ─────────────────
 
 #[derive(Debug, Deserialize)]
@@ -1786,14 +1778,7 @@ pub async fn delete_agent(state: tauri::State<'_, State>, name: String) -> Resul
 // ── Avatar commands ───────────────────────────────────────────────────
 
 fn avatar_storage_dir() -> PathBuf {
-    let root = app_env_var_compat("WENLAN_DATA_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            dirs::data_local_dir()
-                .unwrap_or_else(|| PathBuf::from("."))
-                .join("wenlan")
-        });
-    root.join("avatars")
+    crate::identity_paths::app_data_dir().join("avatars")
 }
 
 #[tauri::command]
@@ -3198,6 +3183,23 @@ mod avatar_path_tests {
 
     #[test]
     #[serial_test::serial]
+    fn avatar_storage_dir_prefers_wenlan_data_dir_when_both_are_set() {
+        let previous_wenlan = std::env::var_os("WENLAN_DATA_DIR");
+        let previous_origin = std::env::var_os("ORIGIN_DATA_DIR");
+        let current = tempfile::tempdir().unwrap();
+        let legacy = tempfile::tempdir().unwrap();
+
+        std::env::set_var("WENLAN_DATA_DIR", current.path());
+        std::env::set_var("ORIGIN_DATA_DIR", legacy.path());
+
+        assert_eq!(avatar_storage_dir(), current.path().join("avatars"));
+
+        restore_env("WENLAN_DATA_DIR", previous_wenlan);
+        restore_env("ORIGIN_DATA_DIR", previous_origin);
+    }
+
+    #[test]
+    #[serial_test::serial]
     fn avatar_storage_dir_falls_back_to_legacy_origin_data_dir() {
         let previous_wenlan = std::env::var_os("WENLAN_DATA_DIR");
         let previous_origin = std::env::var_os("ORIGIN_DATA_DIR");
@@ -3208,6 +3210,30 @@ mod avatar_path_tests {
 
         assert_eq!(avatar_storage_dir(), tmp.path().join("avatars"));
 
+        restore_env("WENLAN_DATA_DIR", previous_wenlan);
+        restore_env("ORIGIN_DATA_DIR", previous_origin);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn avatar_storage_dir_uses_legacy_default_when_current_empty_and_legacy_has_avatars() {
+        let previous_home = std::env::var_os("HOME");
+        let previous_wenlan = std::env::var_os("WENLAN_DATA_DIR");
+        let previous_origin = std::env::var_os("ORIGIN_DATA_DIR");
+        let tmp = tempfile::tempdir().unwrap();
+
+        std::env::set_var("HOME", tmp.path());
+        std::env::remove_var("WENLAN_DATA_DIR");
+        std::env::remove_var("ORIGIN_DATA_DIR");
+
+        let current = dirs::data_local_dir().unwrap().join("wenlan");
+        let legacy = dirs::data_local_dir().unwrap().join("origin");
+        std::fs::create_dir_all(&current).unwrap();
+        std::fs::create_dir_all(legacy.join("avatars")).unwrap();
+
+        assert_eq!(avatar_storage_dir(), legacy.join("avatars"));
+
+        restore_env("HOME", previous_home);
         restore_env("WENLAN_DATA_DIR", previous_wenlan);
         restore_env("ORIGIN_DATA_DIR", previous_origin);
     }
