@@ -50,7 +50,10 @@ function renderWithQuery(ui: React.ReactElement) {
 }
 
 describe("MemoryStream", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+  });
 
   it("renders memories in grid view by default", () => {
     localStorage.setItem("origin-memory-view-mode", "grid");
@@ -61,6 +64,16 @@ describe("MemoryStream", () => {
     renderWithQuery(<MemoryStream memories={memories} selectedDomain={null} />);
     expect(screen.getByText("First")).toBeInTheDocument();
     expect(screen.getByText("Second")).toBeInTheDocument();
+  });
+
+  it("imports the legacy Origin view-mode preference into the Wenlan key", () => {
+    localStorage.setItem("origin-memory-view-mode", "list");
+    const memories = [makeMemory({ source_id: "a", title: "First" })];
+
+    renderWithQuery(<MemoryStream memories={memories} selectedDomain={null} />);
+
+    expect(localStorage.getItem("wenlan-memory-view-mode")).toBe("list");
+    expect(localStorage.getItem("origin-memory-view-mode")).toBe("list");
   });
 
   it("filters by stability when stabilityFilter is set", () => {

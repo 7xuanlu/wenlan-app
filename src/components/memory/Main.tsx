@@ -30,6 +30,7 @@ import SettingsSidebar, { type SettingsSection } from "./settings/SettingsSideba
 import SpaceDetail from "./SpaceDetail";
 import DecisionLog from "./DecisionLog";
 import MemoryCard from "./MemoryCard";
+import { readPreference, writePreference } from "../../lib/preferenceStorage";
 
 interface MainProps {
   initialMemoryId?: string | null;
@@ -39,7 +40,8 @@ interface MainProps {
 
 type View = { kind: "home" } | { kind: "stream" } | { kind: "activity" } | { kind: "recaps" } | { kind: "entity"; entityId: string } | { kind: "profile" } | { kind: "memory"; sourceId: string } | { kind: "settings"; section?: SettingsSection } | { kind: "import" } | { kind: "connect-agent" } | { kind: "space"; spaceName: string } | { kind: "graph" } | { kind: "page"; pageId: string } | { kind: "decisions" };
 
-const SIDEBAR_KEY = "origin-sidebar-collapsed";
+const SIDEBAR_KEY = "wenlan-sidebar-collapsed";
+const LEGACY_SIDEBAR_KEY = "origin-sidebar-collapsed";
 
 export default function Main({ initialMemoryId, initialView, onBackFromDetail }: MainProps) {
   const queryClient = useQueryClient();
@@ -80,7 +82,7 @@ export default function Main({ initialMemoryId, initialView, onBackFromDetail }:
   const [sortMode, setSortMode] = useState<SortMode>("recent");
   const [stabilityFilter, setStabilityFilter] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
-    try { return localStorage.getItem(SIDEBAR_KEY) === "true"; } catch { return false; }
+    return readPreference(SIDEBAR_KEY, LEGACY_SIDEBAR_KEY) === "true";
   });
   const { query, setQuery, results } = useSearch("memory");
 
@@ -105,7 +107,7 @@ export default function Main({ initialMemoryId, initialView, onBackFromDetail }:
   const toggleSidebar = () => {
     setSidebarCollapsed((v) => {
       const next = !v;
-      try { localStorage.setItem(SIDEBAR_KEY, String(next)); } catch {}
+      writePreference(SIDEBAR_KEY, String(next));
       return next;
     });
   };

@@ -5,14 +5,16 @@ import Masonry from "react-masonry-css";
 import MemoryCard from "./MemoryCard";
 import type { MemoryItem } from "../../lib/tauri";
 import { setStability, deleteFileChunks, getVersionChain } from "../../lib/tauri";
+import { readPreference, writePreference } from "../../lib/preferenceStorage";
 
 export type SortMode = "curated" | "recent" | "oldest";
 export type ViewMode = "grid" | "list";
 
-const VIEW_MODE_KEY = "origin-memory-view-mode";
+const VIEW_MODE_KEY = "wenlan-memory-view-mode";
+const LEGACY_VIEW_MODE_KEY = "origin-memory-view-mode";
 
 function getStoredViewMode(): ViewMode {
-  return (localStorage.getItem(VIEW_MODE_KEY) as ViewMode) || "grid";
+  return (readPreference(VIEW_MODE_KEY, LEGACY_VIEW_MODE_KEY) as ViewMode) || "grid";
 }
 
 interface MemoryStreamProps {
@@ -75,7 +77,7 @@ export default function MemoryStream({
   const toggleViewMode = () => {
     const next = viewMode === "grid" ? "list" : "grid";
     setViewMode(next);
-    localStorage.setItem(VIEW_MODE_KEY, next);
+    writePreference(VIEW_MODE_KEY, next);
   };
 
   const regularMemories = useMemo(() => {
