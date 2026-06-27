@@ -457,12 +457,8 @@ pub async fn rebuild_activities(state: tauri::State<'_, State>) -> Result<usize,
 pub async fn get_capture_stats(
     state: tauri::State<'_, State>,
 ) -> Result<HashMap<String, u64>, String> {
-    // Proxy to daemon status endpoint which has count information
     let s = state.read().await;
-    let status: responses::StatusResponse = s.client.get_json("/api/status").await?;
-    let mut counts = HashMap::new();
-    counts.insert("total".to_string(), status.files_indexed);
-    Ok(counts)
+    s.client.get_capture_stats().await
 }
 
 // ── Trigger/sensor commands ───────────────────────────────────────────
