@@ -89,4 +89,20 @@ describe("sources, page export, and knowledge wrappers", () => {
     await countKnowledgeFiles();
     expect(invoke).toHaveBeenCalledWith("count_knowledge_files");
   });
+
+  it("quitWenlanFull calls the Wenlan lifecycle command", async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const { quitWenlanFull } = await import("../tauri");
+    (invoke as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+    await quitWenlanFull();
+    expect(invoke).toHaveBeenCalledWith("quit_wenlan_full");
+  });
+
+  it("quitOriginFull remains a legacy alias", async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const { quitOriginFull } = await import("../tauri");
+    (invoke as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+    await quitOriginFull();
+    expect(invoke).toHaveBeenCalledWith("quit_origin_full");
+  });
 });

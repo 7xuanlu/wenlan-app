@@ -1918,6 +1918,11 @@ export async function setRunAtLogin(enabled: boolean): Promise<void> {
   return invoke("set_run_at_login", { enabled });
 }
 
+export async function quitWenlanFull(): Promise<void> {
+  return invoke("quit_wenlan_full");
+}
+
+/** @deprecated Use quitWenlanFull. Kept as a legacy Origin bridge alias. */
 export async function quitOriginFull(): Promise<void> {
   return invoke("quit_origin_full");
 }
