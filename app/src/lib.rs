@@ -87,7 +87,7 @@ fn app_log_file_name() -> &'static str {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Log sinks: stderr (for terminal launches, `pnpm tauri dev`) AND a
-    // daily-rotating file at ~/Library/Logs/com.wenlan.desktop/wenlan.log.
+    // file at ~/Library/Logs/com.wenlan.desktop/wenlan.log.
     // GUI launches send stderr to /dev/null, so without the file sink any
     // setup() error — e.g. a sidecar spawn ENOENT — is silent. That is
     // exactly how the origin-server spawn regression hid for ~15 minutes
@@ -96,7 +96,7 @@ pub fn run() {
 
     let log_dir = app_log_dir();
     let _ = std::fs::create_dir_all(&log_dir);
-    let file_appender = tracing_appender::rolling::daily(&log_dir, app_log_file_name());
+    let file_appender = tracing_appender::rolling::never(&log_dir, app_log_file_name());
     let (file_writer, guard) = tracing_appender::non_blocking(file_appender);
     // The guard flushes the background worker on drop. The app lives for
     // the full process, so leaking it is correct — we never want the

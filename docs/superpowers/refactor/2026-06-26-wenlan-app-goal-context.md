@@ -2,8 +2,8 @@
 
 - **Date:** 2026-06-26
 - **App repo:** `/Users/lucian/Repos/wenlan-app`
-- **Active worktree:** `/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence`
-- **Branch:** `codex/wenlan-app-convergence`
+- **Active worktree:** `/Users/lucian/Repos/wenlan-app`
+- **Branch:** `codex/wenlan-app-runtime-validation`
 - **Remote:** `https://github.com/7xuanlu/wenlan-app.git`
 - **Backend source of truth:** `/Users/lucian/Repos/wenlan`
 
@@ -15,26 +15,69 @@ Drive the old `origin-app` codebase to `wenlan-app` end to end. This is not a sh
 
 The active app worktree is the renamed `wenlan-app` worktree, not the backend monorepo worktree.
 
-Current runtime baseline:
+Current runtime baseline after checkpoint PRs #3, #4, and #5:
 
 ```text
 GET /api/health -> {"status":"ok","db_initialized":true,"version":"0.9.1"}
-GET /api/status -> {"is_running":true,"files_indexed":8925,"files_total":0,"sources_connected":[],"reranker":{"state":"disabled"},"reranker_light":{"state":"disabled"},"reranker_mode":"off"}
+GET /api/status -> {"is_running":true,"files_indexed":8931,"files_total":0,"sources_connected":[],"reranker":{"state":"disabled"},"reranker_light":{"state":"disabled"},"reranker_mode":"off"}
 ```
 
-The rebuilt debug app bundle launches from:
+Merged checkpoint commits on `origin/main`:
 
 ```text
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-convergence/target/debug/bundle/macos/Origin.app
+1d9537d Merge pull request #3 from 7xuanlu/codex/wenlan-app-next-refactor
+944980d fix: bridge app runtime identity to wenlan (#4)
+ac263d6 fix: rename app product identity to wenlan (#5)
 ```
 
-Current live process evidence:
+Runtime validation on 2026-06-27T04:44Z:
 
 ```text
-PID 45700
+pnpm tauri dev
+Vite ready at http://localhost:1420/
+Running /Users/lucian/Repos/wenlan-app/target/debug/wenlan-app
+
+PID 98404: node /Users/lucian/Repos/wenlan-app/node_modules/.bin/../vite/bin/vite.js
+PID 98649: /Users/lucian/Repos/wenlan-app/target/debug/wenlan-app
 ```
 
-The bundle is still named `Origin.app`; product/runtime rename remains a future migration step. Do not treat this as a failed repo rename.
+Window/process identity evidence:
+
+```text
+System Events process names containing "Wenlan" -> wenlan-app
+System Events process names containing "Origin" -> <empty>
+System Events window title for process "wenlan-app" -> Wenlan
+Dock accessibility item -> {name: wenlan-app, description: application dock item, role: AXDockItem, subrole: AXApplicationDockItem}
+```
+
+Runtime screenshot:
+
+```text
+/private/tmp/wenlan-app-runtime-identity.png
+```
+
+The screenshot shows:
+
+- macOS menu bar product name `Wenlan`.
+- visible app window with Home selected.
+- daemon-backed data loaded (`10 concepts`, `6165 memories`, Worth-a-glance cards, recent AI access rows).
+- no blank first paint or framework overlay.
+
+Runtime log evidence:
+
+```text
+/Users/lucian/Library/Logs/com.wenlan.desktop/wenlan.log
+```
+
+The exact `wenlan.log` file exists after launch. Non-fatal runtime warnings observed:
+
+```text
+tauri::protocol::asset: File does not exist at path: /Users/lucian/Library/Application Support/origin/avatars/57515813-4419-4116-bea6-21bc66e1a511.jpg
+tauri_plugin_updater::updater: update endpoint did not respond with a successful status code
+wenlan_lib::updater: update check failed: Could not fetch a valid release JSON from the remote
+```
+
+These warnings did not block page render or daemon-backed data loading.
 
 Current structural inventory from `bash scripts/refactor/inventory.sh`:
 
@@ -50,14 +93,16 @@ Current structural inventory from `bash scripts/refactor/inventory.sh`:
 Current build evidence:
 
 ```text
-cargo build -> Finished `dev` profile [unoptimized + debuginfo]
-cargo test -p origin-app --lib -> 111 passed
+curl -fsS http://127.0.0.1:7878/api/health -> {"status":"ok","db_initialized":true,"version":"0.9.1"}
+cargo test -p wenlan-app --lib identity_paths -- --nocapture -> 9 passed
+cargo test -p wenlan-app --lib remote_access::tests::token_path_imports_nonempty_legacy_token_when_current_missing -- --nocapture -> 1 passed
+cargo test -p wenlan-app --lib lifecycle::tests::cleanup_legacy_app_plist_preserves_foreign_file -- --nocapture -> 1 passed
 pnpm build -> passed, with existing Vite chunk/dynamic-import warnings
-pnpm test -> 329 passed, 1 skipped
-GET /api/setup/status -> {"setup_completed":true,"mode":"basic-memory","anthropic_key_configured":false,"local_model_selected":null,"local_model_loaded":null,"local_model_cached":false}
+cargo build -> Finished `dev` profile [unoptimized + debuginfo]
+cargo test -p wenlan-app --lib -> 165 passed
+pnpm test -> 364 passed, 1 skipped
+git diff --check -> passed
 ```
-
-Tauri debug bundle generation reaches a built `.app`, then exits at updater signing when `TAURI_SIGNING_PRIVATE_KEY` is unset. That is expected local debug behavior unless signing secrets are present.
 
 ## Completed Migration Base
 
