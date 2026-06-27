@@ -945,6 +945,7 @@ pub fn run() {
             // Lifecycle commands
             search::is_run_at_login_enabled,
             search::set_run_at_login,
+            search::quit_wenlan_full,
             search::quit_origin_full,
         ])
         .build(tauri::generate_context!())

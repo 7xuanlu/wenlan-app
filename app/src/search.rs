@@ -3207,10 +3207,26 @@ pub async fn set_run_at_login(enabled: bool) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn quit_origin_full(app_handle: tauri::AppHandle) -> Result<(), String> {
+pub async fn quit_wenlan_full(app_handle: tauri::AppHandle) -> Result<(), String> {
     crate::lifecycle::quit_origin(&app_handle)
         .await
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn quit_origin_full(app_handle: tauri::AppHandle) -> Result<(), String> {
+    quit_wenlan_full(app_handle).await
+}
+
+#[cfg(test)]
+mod lifecycle_command_tests {
+    use super::*;
+
+    #[test]
+    fn exposes_wenlan_and_legacy_quit_commands() {
+        let _quit_wenlan = quit_wenlan_full;
+        let _quit_origin = quit_origin_full;
+    }
 }
 
 #[cfg(test)]
