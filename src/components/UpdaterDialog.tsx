@@ -112,7 +112,7 @@ export default function UpdaterDialog() {
           letterSpacing: "-0.005em",
         }}
       >
-        Origin v{version} is ready.
+        Wenlan v{version} is ready.
       </div>
 
       <div

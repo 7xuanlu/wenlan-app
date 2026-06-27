@@ -55,7 +55,7 @@ export function ImportFlow() {
           } else if (prevPendingRef.current) {
             // Was pending, now done
             setPending(null);
-            maybeNotify("Origin", "Import refinement complete");
+            maybeNotify("Wenlan", "Import refinement complete");
           } else {
             setPending(null);
           }
@@ -77,7 +77,7 @@ export function ImportFlow() {
       const msg = result.conversations_new > 0
         ? `Imported ${result.conversations_new} conversations (${result.memories_stored} memories) from ${result.vendor}`
         : `All ${result.conversations_total} conversations already imported`;
-      maybeNotify("Origin", msg);
+      maybeNotify("Wenlan", msg);
     } catch (e: any) {
       setLocalAction({ kind: "error", message: String(e) });
     }

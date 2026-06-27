@@ -10,7 +10,7 @@ interface Props {
 function copyFor(state: HomePageState, memoryCount: number, daysInListening: number): string | null {
   if (state === "alive") return null;
   if (state === "seed") {
-    return "Origin is loading its on-device intelligence. Once it's ready, memories from your agents will start arriving here and compile into concepts.";
+    return "Wenlan is loading its on-device intelligence. Once it's ready, memories from your agents will start arriving here and compile into concepts.";
   }
   if (state === "listening") {
     if (daysInListening > 3) {

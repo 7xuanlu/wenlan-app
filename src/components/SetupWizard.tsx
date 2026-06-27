@@ -82,7 +82,7 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
             letterSpacing: "-0.02em",
           }}
         >
-          Welcome to Origin
+          Welcome to Wenlan
         </h1>
         <p
           style={{
@@ -92,7 +92,7 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
             lineHeight: "1.5",
           }}
         >
-          Origin. Where understanding compounds.
+          Wenlan. Where understanding compounds.
         </p>
       </div>
 
@@ -197,7 +197,7 @@ function IntelligenceChoiceStep({
             color: "var(--mem-text)",
           }}
         >
-          Choose how Origin thinks
+          Choose how Wenlan thinks
         </h1>
         <p
           style={{
@@ -230,7 +230,7 @@ function IntelligenceChoiceStep({
               lineHeight: 1.6,
             }}
           >
-            Local models keep inference on your Mac. If you skip this now, Origin can still store memories and you can download a model later from Settings.
+            Local models keep inference on your Mac. If you skip this now, Wenlan can still store memories and you can download a model later from Settings.
           </div>
         </div>
       ) : (
@@ -247,7 +247,7 @@ function IntelligenceChoiceStep({
               lineHeight: 1.6,
             }}
           >
-            An API key unlocks stronger cloud synthesis. Origin still keeps your stored memories local; this only changes which model handles reasoning tasks.
+            An API key unlocks stronger cloud synthesis. Wenlan still keeps your stored memories local; this only changes which model handles reasoning tasks.
           </div>
         </div>
       )}
@@ -510,7 +510,7 @@ function ConnectStep({
                 }}
               >
                 {client.detected
-                  ? "Origin can add its MCP server for this tool now."
+                  ? "Wenlan can add its MCP server for this tool now."
                   : "Safe one-click setup is supported once this tool is installed on your Mac."}
               </p>
 
@@ -573,7 +573,7 @@ function ConnectStep({
             lineHeight: "1.5",
           }}
         >
-          Pick which tools should share memory with Origin. We only offer one-click setup for tools whose MCP config we can write safely today.
+          Pick which tools should share memory with Wenlan. We only offer one-click setup for tools whose MCP config we can write safely today.
         </p>
       </div>
 
@@ -900,7 +900,7 @@ function VerifyStep({
             lineHeight: "1.5",
           }}
         >
-          Make sure you fully restart your AI tool after setting up Origin.
+          Make sure you fully restart your AI tool after setting up Wenlan.
         </p>
       )}
 
@@ -934,8 +934,8 @@ function VerifyStep({
               margin: 0,
             }}
           >
-            <li>Ensure Origin is running and the MCP server is active</li>
-            <li>Check that your AI tool has the Origin MCP config</li>
+            <li>Ensure Wenlan is running and the MCP server is active</li>
+            <li>Check that your AI tool has the Wenlan MCP config</li>
             <li>Fully restart (not just reload) your AI tool</li>
           </ul>
         </div>
@@ -1042,7 +1042,7 @@ function DoneStep({
             color: "var(--mem-text)",
           }}
         >
-          Origin is ready.
+          Wenlan is ready.
         </h1>
         <p
           style={{
@@ -1052,7 +1052,7 @@ function DoneStep({
             lineHeight: 1.6,
           }}
         >
-          Use your AI tools normally. Memories will appear in Origin as agents
+          Use your AI tools normally. Memories will appear in Wenlan as agents
           save what they learn. You can always return to Settings to connect
           more tools.
         </p>
@@ -1064,7 +1064,7 @@ function DoneStep({
             lineHeight: 1.6,
           }}
         >
-          Origin notices patterns, distills them into pages, and links what
+          Wenlan notices patterns, distills them into pages, and links what
           you know across tools.
         </p>
         <button
@@ -1077,7 +1077,7 @@ function DoneStep({
             fontSize: "14px",
           }}
         >
-          Open Origin
+          Open Wenlan
         </button>
       </div>
     );
@@ -1143,7 +1143,7 @@ function DoneStep({
             margin: 0,
           }}
         >
-          Keep using your AI tools normally. Origin watches and learns.
+          Keep using your AI tools normally. Wenlan watches and learns.
         </p>
         <p
           style={{
@@ -1154,12 +1154,12 @@ function DoneStep({
             margin: 0,
           }}
         >
-          Origin notices patterns, distills them into pages, and links what
+          Wenlan notices patterns, distills them into pages, and links what
           you know across tools.
         </p>
       </div>
 
-      {/* Import stats card — surfaces the essential value Origin extracted:
+      {/* Import stats card — surfaces the essential value Wenlan extracted:
           memories in, topics (entities) pulled out, and a forward line about
           pages that will distill as the refinery runs. We rename
           "entities" → "topics" at the UI layer because that's the word end
@@ -1250,7 +1250,7 @@ function DoneStep({
               margin: 0,
             }}
           >
-            Pages will distill from these as Origin connects the dots.
+            Pages will distill from these as Wenlan connects the dots.
           </p>
         </div>
       )}

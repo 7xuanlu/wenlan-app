@@ -24,6 +24,7 @@ fn default_skip_apps() -> Vec<String> {
         "loginwindow".into(),
         "Spotlight".into(),
         "Origin".into(),
+        "Wenlan".into(),
         "1Password".into(),
         "Keychain Access".into(),
         "LastPass".into(),
@@ -37,7 +38,7 @@ fn default_skip_title_patterns() -> Vec<String> {
     vec![]
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     /// Legacy field — kept for backward compat with old config files.
     /// Use `sources` instead. Migrated to Source structs by `migrate()`.
@@ -75,6 +76,29 @@ pub struct Config {
     pub external_llm_model: Option<String>,
 }
 
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            watch_paths: Vec::new(),
+            sources: Vec::new(),
+            knowledge_path: None,
+            clipboard_enabled: false,
+            skip_apps: default_skip_apps(),
+            skip_title_patterns: default_skip_title_patterns(),
+            private_browsing_detection: default_true(),
+            setup_completed: false,
+            anthropic_api_key: None,
+            routine_model: None,
+            synthesis_model: None,
+            remote_access_enabled: false,
+            screen_capture_enabled: false,
+            on_device_model: None,
+            external_llm_endpoint: None,
+            external_llm_model: None,
+        }
+    }
+}
+
 /// Generate a source ID slug from a directory path (last component, lowercased, sanitized).
 fn slug_from_path(path: &std::path::Path) -> String {
     path.file_name()
@@ -87,6 +111,12 @@ impl Config {
     /// Migrate legacy `watch_paths` entries into `sources` vec.
     /// Idempotent — only converts paths not already represented in `sources`.
     pub fn migrate(&mut self) {
+        if self.skip_apps.iter().any(|app| app == "Origin")
+            && !self.skip_apps.iter().any(|app| app == "Wenlan")
+        {
+            self.skip_apps.push("Wenlan".into());
+        }
+
         if self.watch_paths.is_empty() {
             return;
         }
@@ -114,13 +144,18 @@ impl Config {
         self.watch_paths.clear();
     }
 
-    /// Returns the configured knowledge path, or `~/Origin/knowledge/` as default.
+    /// Returns the configured knowledge path, or the product default.
+    /// Existing `~/Origin/knowledge` directories remain readable during rename.
     pub fn knowledge_path_or_default(&self) -> PathBuf {
-        self.knowledge_path.clone().unwrap_or_else(|| {
-            dirs::home_dir()
-                .unwrap_or_else(|| PathBuf::from("."))
-                .join("Origin/knowledge")
-        })
+        if let Some(path) = self.knowledge_path.clone() {
+            return path;
+        }
+        let current = default_knowledge_path();
+        let legacy = legacy_knowledge_path();
+        if !current.exists() && legacy.exists() {
+            return legacy;
+        }
+        current
     }
 
     /// Returns paths for all active Directory-type sources (for indexer compat).
@@ -136,6 +171,18 @@ impl Config {
 
 fn config_path() -> PathBuf {
     crate::identity_paths::app_data_dir().join("config.json")
+}
+
+fn home_dir() -> PathBuf {
+    dirs::home_dir().unwrap_or_else(|| PathBuf::from("."))
+}
+
+fn default_knowledge_path() -> PathBuf {
+    home_dir().join("Wenlan/knowledge")
+}
+
+fn legacy_knowledge_path() -> PathBuf {
+    home_dir().join("Origin/knowledge")
 }
 
 pub fn load_config() -> Config {
@@ -172,6 +219,7 @@ mod tests {
     use super::*;
 
     struct EnvGuard {
+        home: Option<std::ffi::OsString>,
         wenlan: Option<std::ffi::OsString>,
         origin: Option<std::ffi::OsString>,
     }
@@ -179,6 +227,7 @@ mod tests {
     impl EnvGuard {
         fn capture() -> Self {
             Self {
+                home: std::env::var_os("HOME"),
                 wenlan: std::env::var_os("WENLAN_DATA_DIR"),
                 origin: std::env::var_os("ORIGIN_DATA_DIR"),
             }
@@ -187,6 +236,10 @@ mod tests {
 
     impl Drop for EnvGuard {
         fn drop(&mut self) {
+            match &self.home {
+                Some(value) => std::env::set_var("HOME", value),
+                None => std::env::remove_var("HOME"),
+            }
             match &self.wenlan {
                 Some(value) => std::env::set_var("WENLAN_DATA_DIR", value),
                 None => std::env::remove_var("WENLAN_DATA_DIR"),
@@ -229,6 +282,32 @@ mod tests {
         let config = Config::default();
         assert!(config.watch_paths.is_empty());
         assert!(!config.clipboard_enabled);
+    }
+
+    #[test]
+    fn default_skip_apps_excludes_current_and_legacy_app_names() {
+        let config = Config::default();
+        assert!(config.skip_apps.contains(&"Origin".to_string()));
+        assert!(config.skip_apps.contains(&"Wenlan".to_string()));
+    }
+
+    #[test]
+    fn migrate_appends_wenlan_to_legacy_origin_skip_apps() {
+        let mut config = Config {
+            skip_apps: vec!["Origin".into(), "1Password".into()],
+            ..Config::default()
+        };
+
+        config.migrate();
+
+        assert_eq!(
+            config.skip_apps,
+            vec![
+                "Origin".to_string(),
+                "1Password".to_string(),
+                "Wenlan".to_string()
+            ]
+        );
     }
 
     #[test]
@@ -400,10 +479,26 @@ mod tests {
     }
 
     #[test]
-    fn config_knowledge_path_default() {
+    #[serial_test::serial]
+    fn config_knowledge_path_default_uses_wenlan_when_no_legacy_exists() {
+        let _env = EnvGuard::capture();
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::set_var("HOME", tmp.path());
         let config: Config = serde_json::from_str("{}").unwrap();
-        let default_path = dirs::home_dir().unwrap().join("Origin/knowledge");
+        let default_path = tmp.path().join("Wenlan/knowledge");
         assert_eq!(config.knowledge_path_or_default(), default_path);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn config_knowledge_path_default_uses_legacy_when_only_legacy_exists() {
+        let _env = EnvGuard::capture();
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::set_var("HOME", tmp.path());
+        let legacy = tmp.path().join("Origin/knowledge");
+        std::fs::create_dir_all(&legacy).unwrap();
+        let config: Config = serde_json::from_str("{}").unwrap();
+        assert_eq!(config.knowledge_path_or_default(), legacy);
     }
 
     #[test]

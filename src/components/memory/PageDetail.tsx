@@ -197,7 +197,7 @@ export default function PageDetail({ pageId, onBack, onMemoryClick, onPageClick 
   const handleExportToVault = useCallback(
     async (vaultPath: string) => {
       setExportMenuOpen(false);
-      await exportPageToObsidian(pageId, `${vaultPath}/Origin/concepts`);
+      await exportPageToObsidian(pageId, `${vaultPath}/Wenlan/concepts`);
       setExported(true);
       setTimeout(() => setExported(false), 2000);
     },

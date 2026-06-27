@@ -1,8 +1,8 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicegui/nicegui/tauri/tauri-v2-schema.json",
-  "productName": "Origin",
+  "productName": "Wenlan",
   "version": "0.3.1",
-  "identifier": "com.origin.desktop",
+  "identifier": "com.wenlan.desktop",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Origin",
+        "title": "Wenlan",
         "width": 1100,
         "height": 720,
         "resizable": true,
@@ -74,7 +74,7 @@
     "updater": {
       "active": true,
       "endpoints": [
-        "https://github.com/7xuanlu/origin/releases/latest/download/latest.json"
+        "https://github.com/7xuanlu/wenlan-app/releases/latest/download/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQ0N0IzOEQ4REQyRDRDNkEKUldScVRDM2QyRGg3UkZlaUdFUHorb0RDcElzTmd6bHpOYjQzcW9LK29USzRNaE9WaFQ1WUQwV0kK"
     }

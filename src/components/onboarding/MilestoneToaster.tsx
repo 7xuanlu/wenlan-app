@@ -27,7 +27,7 @@ const EYEBROW: Record<MilestoneId, string> = {
 const TITLE: Record<MilestoneId, string> = {
   "intelligence-ready": "On-device intelligence is ready.",
   "first-memory": "First memory saved.",
-  "first-recall": "Origin just recalled for you.",
+  "first-recall": "Wenlan just recalled for you.",
   "first-concept": "", // celebrated via FirstConceptModal instead
   "graph-alive": "", // no toast
   "second-agent": "A second AI is writing too.",
@@ -37,7 +37,7 @@ const TWENTY_FOUR_HOURS_S = 24 * 60 * 60;
 
 /** Accent color per milestone — keeps indigo for most events (cool, quiet
  *  "it worked") and warm amber for intelligence-ready to mark the moment
- *  Origin's mind comes online. */
+ *  Wenlan's mind comes online. */
 function accentFor(id: MilestoneId): string {
   switch (id) {
     case "intelligence-ready":

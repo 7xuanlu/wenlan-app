@@ -175,7 +175,7 @@ export function ConnectionsList({ onSelectPage, onSelectEntity }: Props) {
 
   return (
     <section data-testid="connections">
-      <h2 style={SECTION_TITLE_STYLE}>What Origin learned</h2>
+      <h2 style={SECTION_TITLE_STYLE}>What Wenlan learned</h2>
       <p style={SECTION_SUB_STYLE} className="mb-3">
         patterns and themes the refinery surfaced this week
       </p>

@@ -202,12 +202,12 @@ pub async fn run_context_consumer(
         let (source, source_id, title, content, url, metadata) = extract_ingest_fields(&bundle);
 
         // Snapshot working-memory metadata from the bundle before it's moved.
-        // For QuickThought (raw_text Some), synthesize an "Origin / Quick Thought"
+        // For QuickThought (raw_text Some), synthesize a "Wenlan / Quick Thought"
         // entry; otherwise use the focused (or first) window.
         let wm_entry_data: Option<(String, String, String)> =
             if let Some(ref text) = bundle.raw_text {
                 Some((
-                    "Origin".to_string(),
+                    "Wenlan".to_string(),
                     "Quick Thought".to_string(),
                     text.chars().take(MAX_SNIPPET_CHARS).collect(),
                 ))

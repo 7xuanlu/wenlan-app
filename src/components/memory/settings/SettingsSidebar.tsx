@@ -2,7 +2,7 @@
 //
 // Settings sidebar. Replaces the default Spaces/Profile sidebar when the
 // Settings page is active. Matches the main Sidebar chrome exactly — same
-// width, same bg, same border, same Origin heading at the top — so the
+// width, same bg, same border, same Wenlan heading at the top — so the
 // transition feels like "the sidebar switched modes" rather than "a
 // different layout loaded".
 
@@ -129,7 +129,7 @@ export default function SettingsSidebar({
           pointerEvents: collapsed ? "none" : "auto",
         }}
       >
-        {/* Origin heading — clickable to return home. Matches main Sidebar. */}
+        {/* Wenlan heading — clickable to return home. Matches main Sidebar. */}
         <div className="px-4 pt-3 pb-3">
           <h1
             onClick={onNavigateHome}
@@ -141,7 +141,7 @@ export default function SettingsSidebar({
               color: "var(--mem-text)",
             }}
           >
-            Origin
+            Wenlan
           </h1>
         </div>
 

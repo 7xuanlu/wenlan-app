@@ -271,7 +271,7 @@ export default function SettingsPage({
         />
         <div className="bg-[var(--mem-surface)] rounded-xl overflow-hidden border border-[var(--mem-border)]">
           <SettingRow
-            title="Run Origin in background at login"
+            title="Run Wenlan in background at login"
             description="Keeps the daemon and tray icon running even when the app window is closed. Quit from the tray menu to stop everything."
             enabled={runAtLoginQuery.data ?? false}
             onToggle={() => runAtLoginMutation.mutate(!(runAtLoginQuery.data ?? false))}
@@ -498,7 +498,7 @@ export default function SettingsPage({
           label="Connected Agents"
         />
         {/* Trust level explainer — makes it clear what the badges mean and how
-            Origin gates context for each tier. */}
+            Wenlan gates context for each tier. */}
         <div
           className="rounded-xl mb-3 px-4 py-3"
           style={{
@@ -561,7 +561,7 @@ export default function SettingsPage({
                 No agents connected yet.
               </p>
               <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-tertiary)", opacity: 0.7, lineHeight: "1.5" }}>
-                Add Origin to your AI tool's MCP configuration, then restart the tool. Agents appear here once they write their first memory.
+                Add Wenlan to your AI tool's MCP configuration, then restart the tool. Agents appear here once they write their first memory.
               </p>
               {onSetupAgent && (
                 <button

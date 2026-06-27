@@ -70,7 +70,7 @@ describe("PageDetail export", () => {
       },
     ]);
     vi.mocked(tauri.exportPageToObsidian).mockResolvedValue(
-      "/Users/test/vault/Origin/concepts/Test Concept.md",
+      "/Users/test/vault/Wenlan/concepts/Test Concept.md",
     );
 
     render(
@@ -91,7 +91,7 @@ describe("PageDetail export", () => {
     await waitFor(() => {
       expect(tauri.exportPageToObsidian).toHaveBeenCalledWith(
         "c1",
-        "/Users/test/vault/Origin/concepts",
+        "/Users/test/vault/Wenlan/concepts",
       );
     });
   });
@@ -161,7 +161,7 @@ describe("PageDetail export", () => {
       },
     ]);
     vi.mocked(tauri.exportPageToObsidian).mockResolvedValue(
-      "/Users/test/vault-two/Origin/concepts/Test Concept.md",
+      "/Users/test/vault-two/Wenlan/concepts/Test Concept.md",
     );
 
     render(
@@ -190,7 +190,7 @@ describe("PageDetail export", () => {
     await waitFor(() => {
       expect(tauri.exportPageToObsidian).toHaveBeenCalledWith(
         "c1",
-        "/Users/test/vault-two/Origin/concepts",
+        "/Users/test/vault-two/Wenlan/concepts",
       );
     });
   });

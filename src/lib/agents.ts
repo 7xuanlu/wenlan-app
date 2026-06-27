@@ -85,7 +85,7 @@ export const TRUST_LEVELS: Record<TrustLevel, TrustLevelDescriptor> = {
     summary:
       "Sees everything: identity, preferences, goals, decisions, concepts, and search results.",
     detail:
-      "This is the default for agents you've explicitly registered — if you walked through setup for it, Origin treats it as trusted and gives it access to every tier of context.",
+      "This is the default for agents you've explicitly registered — if you walked through setup for it, Wenlan treats it as trusted and gives it access to every tier of context.",
     accent: "var(--mem-accent-indigo)",
   },
   review: {

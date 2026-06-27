@@ -55,7 +55,7 @@ export default function SearchInput({
         className="shrink-0 hover:opacity-80 transition-opacity duration-150"
         style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
       >
-        <img src={originIcon} alt="Origin" className="w-5 h-5 rounded" />
+        <img src={originIcon} alt="Wenlan" className="w-5 h-5 rounded" />
       </button>
     </div>
   );

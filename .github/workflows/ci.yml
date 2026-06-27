@@ -65,7 +65,7 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Run Rust tests
-        run: cargo test -p origin-app --lib
+        run: cargo test -p wenlan-app --lib
 
       - name: TypeScript check
         run: pnpm exec tsc -b

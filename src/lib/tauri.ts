@@ -620,7 +620,7 @@ export const MEMORY_FACETS: MemoryFacet[] = [
   { type: 'goal', label: 'Goal', color: 'emerald', description: 'Active goals, injected at session start' },
 ];
 
-// Canonical memory-type colors aligned with Origin's --mem-accent-* palette:
+// Canonical memory-type colors aligned with Wenlan's --mem-accent-* palette:
 //   identity  -> indigo  (--mem-accent-indigo: depth, foundational)
 //   preference -> orange (--mem-accent-warm: personal, warm)
 //   decision  -> amber   (--mem-accent-amber: weight, decisive)

@@ -217,8 +217,8 @@ Example output:
 [preference] - Prefers concise responses without trailing summaries
 [decision] - Chose Rust + Tauri for the desktop app over Electron
 [preference] - Never use emojis unless explicitly asked
-[goal] - Launch Origin memory app by end of Q1
-[fact] - Building a local-first AI memory layer called Origin
+[goal] - Launch Wenlan memory app by end of Q1
+[fact] - Building a local-first AI memory layer called Wenlan
 
 Rules:
 - NO section headers, category labels, or grouping text
@@ -232,7 +232,7 @@ const SOURCE_LABELS: Record<Source, string> = {
   other: "Other",
 };
 
-// Aligned with Origin's --mem-accent-* palette (see FACET_COLORS in tauri.ts)
+// Aligned with Wenlan's --mem-accent-* palette (see FACET_COLORS in tauri.ts)
 const TYPE_BADGE_STYLES: Record<string, { bg: string; text: string }> = {
   identity: { bg: "color-mix(in srgb, var(--mem-accent-indigo) 15%, transparent)", text: "var(--mem-accent-indigo)" },
   preference: { bg: "color-mix(in srgb, var(--mem-accent-warm) 15%, transparent)", text: "var(--mem-accent-warm)" },
@@ -394,7 +394,7 @@ export function ImportView({ onBack, onComplete, wizardMode, onPhaseChange, onSk
             >
               {source !== "other"
                 ? `Copy this prompt, paste into ${SOURCE_LABELS[source]}, then paste the output below.\n\n${EXPORT_PROMPT}`
-                : "Paste any list of facts or memories, one per line.\n\nEach line becomes a separate memory in Origin.\nEmpty lines and separators (---, ===) are skipped.\n\nOptionally prefix lines with a type tag:\n[identity] - Lives in San Francisco\n[preference] - Prefers concise responses\n[fact] - Building Origin, a local-first AI memory app\n[goal] - Launch by end of Q1\n\nLines without a tag are stored as facts."}
+                : "Paste any list of facts or memories, one per line.\n\nEach line becomes a separate memory in Wenlan.\nEmpty lines and separators (---, ===) are skipped.\n\nOptionally prefix lines with a type tag:\n[identity] - Lives in San Francisco\n[preference] - Prefers concise responses\n[fact] - Building Wenlan, a local-first AI memory app\n[goal] - Launch by end of Q1\n\nLines without a tag are stored as facts."}
             </pre>
           </div>
 

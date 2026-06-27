@@ -88,7 +88,7 @@ describe("SetupWizard", () => {
 
   it("renders Welcome step by default", () => {
     renderWizard();
-    expect(screen.getByText("Welcome to Origin")).toBeInTheDocument();
+    expect(screen.getByText("Welcome to Wenlan")).toBeInTheDocument();
     expect(screen.getByText(/Where understanding compounds/i)).toBeInTheDocument();
     expect(screen.getByText("Everything stays on your device")).toBeInTheDocument();
   });
@@ -96,7 +96,7 @@ describe("SetupWizard", () => {
   it('advances from Welcome to intelligence choice on "Get started" click', () => {
     renderWizard();
     fireEvent.click(screen.getByText("Get started"));
-    expect(screen.getByText("Choose how Origin thinks")).toBeInTheDocument();
+    expect(screen.getByText("Choose how Wenlan thinks")).toBeInTheDocument();
   });
 
   it("lets users save an API key from the intelligence step", async () => {
@@ -255,7 +255,7 @@ describe("SetupWizard", () => {
     fireEvent.click(screen.getByText("Skip"));
 
     await waitFor(() => {
-      expect(screen.getByText("Origin is ready.")).toBeInTheDocument();
+      expect(screen.getByText("Wenlan is ready.")).toBeInTheDocument();
     });
 
     expect(screen.queryByText("Back")).not.toBeInTheDocument();

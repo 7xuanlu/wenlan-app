@@ -608,7 +608,7 @@ export default function SpaceDetail({
       {SHOW_NURTURE && nurtureCards.length > 0 && (
         <section className="flex flex-col gap-2 pt-4">
           <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "13px", color: "var(--mem-text-tertiary)", margin: 0 }}>
-            Origin learned something new
+            Wenlan learned something new
           </p>
           {nurtureCards.map((card) => (
             <NurtureCard

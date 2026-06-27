@@ -280,7 +280,7 @@ export default function SourcesSection() {
             <p className="text-xs text-[var(--mem-text-secondary)] mb-4">
               {confirmRemove.file_count.toLocaleString()} files ·{" "}
               {confirmRemove.memory_count.toLocaleString()} ingested memories will
-              remain in your Origin library but stop updating.
+              remain in your Wenlan library but stop updating.
             </p>
             <div className="flex justify-end gap-2">
               <button
@@ -305,7 +305,7 @@ export default function SourcesSection() {
 }
 
 // ── Error callout ─────────────────────────────────────────────────────
-// Shown below a source row when last_sync_errors > 0. Uses Origin's warm
+// Shown below a source row when last_sync_errors > 0. Uses Wenlan's warm
 // accent as the left-border signal + a subtle tinted background, with a
 // friendly headline, detail message, and two actions (retry + reveal).
 
@@ -330,8 +330,8 @@ function SourceErrorCallout({
       ? "1 file couldn't be read"
       : `${errorCount.toLocaleString()} files couldn't be read`;
   const detail = isGoogleDrive
-    ? "These files are stored online in Google Drive. Right-click the folder in Finder and choose “Available offline” so Origin can index them."
-    : "Origin couldn't open these files. Check that the folder is accessible and not locked by another application, then retry.";
+    ? "These files are stored online in Google Drive. Right-click the folder in Finder and choose “Available offline” so Wenlan can index them."
+    : "Wenlan couldn't open these files. Check that the folder is accessible and not locked by another application, then retry.";
 
   return (
     <div
