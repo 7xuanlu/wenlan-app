@@ -32,6 +32,13 @@ struct CaptureStatsResponse {
     total_chunks: u64,
 }
 
+#[derive(Debug, Clone, serde::Deserialize, PartialEq, Eq)]
+pub(crate) struct TagInventoryResponse {
+    pub(crate) tags: Vec<String>,
+    #[serde(default)]
+    pub(crate) document_tags: HashMap<String, Vec<String>>,
+}
+
 impl Default for WenlanClient {
     fn default() -> Self {
         Self::new()
@@ -210,8 +217,11 @@ impl WenlanClient {
     }
 
     pub async fn list_tags(&self) -> Result<Vec<String>, String> {
-        let resp: wenlan_types::responses::TagsResponse = self.get_json("/api/tags").await?;
-        Ok(resp.tags)
+        Ok(self.list_tag_inventory().await?.tags)
+    }
+
+    pub(crate) async fn list_tag_inventory(&self) -> Result<TagInventoryResponse, String> {
+        self.get_json("/api/tags").await
     }
 
     // ── Chat export import ─────────────────────────────────────────
@@ -699,6 +709,31 @@ mod tests {
         let tags = client.list_tags().await.unwrap();
 
         assert_eq!(tags, vec!["ai".to_string(), "rust".to_string()]);
+        assert_eq!(request.await.unwrap(), "GET /api/tags HTTP/1.1");
+    }
+
+    #[tokio::test]
+    async fn list_tag_inventory_preserves_document_tag_map() {
+        let (base_url, request) = serve_json_once(
+            r#"{"tags":["ai","rust"],"document_tags":{"memory::mem1":["ai"],"page::page1":["rust"]}}"#,
+        )
+        .await;
+        let client = WenlanClient {
+            client: reqwest::Client::new(),
+            base_url,
+        };
+
+        let inventory = client.list_tag_inventory().await.unwrap();
+
+        assert_eq!(inventory.tags, vec!["ai".to_string(), "rust".to_string()]);
+        assert_eq!(
+            inventory.document_tags.get("memory::mem1"),
+            Some(&vec!["ai".to_string()])
+        );
+        assert_eq!(
+            inventory.document_tags.get("page::page1"),
+            Some(&vec!["rust".to_string()])
+        );
         assert_eq!(request.await.unwrap(), "GET /api/tags HTTP/1.1");
     }
 

@@ -41,6 +41,8 @@ describe("MemoryDetail enrichment status", () => {
       categories: [],
       document_categories: {},
     });
+    vi.mocked(tauri.setDocumentTags).mockResolvedValue([]);
+    vi.mocked(tauri.suggestTags).mockResolvedValue([]);
     vi.mocked(tauri.search).mockResolvedValue([]);
     vi.mocked(tauri.getEnrichmentStatus).mockRejectedValue(new Error("old daemon"));
     vi.mocked(tauri.getVersionChain).mockResolvedValue([]);
@@ -180,6 +182,34 @@ describe("MemoryDetail enrichment status", () => {
     await waitFor(() => {
       expect(tauri.acceptPendingRevision).toHaveBeenCalledWith("mem-1");
       expect(tauri.getMemoryRevisions).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("invalidates tag inventory after editing tags", async () => {
+    const user = userEvent.setup();
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    vi.mocked(tauri.setDocumentTags).mockResolvedValue(["reviewed"]);
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryDetail
+          sourceId="mem-1"
+          onBack={vi.fn()}
+          onNavigateEntity={vi.fn()}
+          onNavigateMemory={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("A memory")).toBeInTheDocument();
+
+    await user.click(screen.getByTitle("Edit tags"));
+    await user.type(screen.getByPlaceholderText("Add a tag..."), "reviewed{enter}");
+
+    await waitFor(() => {
+      expect(tauri.setDocumentTags).toHaveBeenCalledWith("memory", "mem-1", ["reviewed"]);
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["tags"] });
     });
   });
 
