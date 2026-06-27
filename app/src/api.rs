@@ -7,6 +7,7 @@
 use reqwest::Client;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use std::collections::HashMap;
 use wenlan_types::responses::HealthResponse;
 
 /// HTTP client that proxies requests to the origin-server daemon.
@@ -24,6 +25,11 @@ pub struct SetupStatusResponse {
     pub local_model_selected: Option<String>,
     pub local_model_loaded: Option<String>,
     pub local_model_cached: bool,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, PartialEq, Eq)]
+struct CaptureStatsResponse {
+    total_chunks: u64,
 }
 
 impl Default for WenlanClient {
@@ -188,6 +194,15 @@ impl WenlanClient {
 
     pub async fn health(&self) -> Result<HealthResponse, String> {
         self.get_json("/api/health").await
+    }
+
+    // ── Capture stats ────────────────────────────────────────────────
+
+    pub async fn get_capture_stats(&self) -> Result<HashMap<String, u64>, String> {
+        let stats: CaptureStatsResponse = self.get_json("/api/capture-stats").await?;
+        let mut counts = HashMap::new();
+        counts.insert("total".to_string(), stats.total_chunks);
+        Ok(counts)
     }
 
     // ── Chat export import ─────────────────────────────────────────
@@ -577,6 +592,26 @@ impl UpdateConfigBuilder for wenlan_types::requests::UpdateConfigRequest {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    async fn serve_json_once(body: &'static str) -> (String, tokio::task::JoinHandle<String>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let handle = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut buf = [0_u8; 2048];
+            let n = stream.read(&mut buf).await.unwrap();
+            let request = String::from_utf8_lossy(&buf[..n]).to_string();
+            let response = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            stream.write_all(response.as_bytes()).await.unwrap();
+            request.lines().next().unwrap_or_default().to_string()
+        });
+        (format!("http://{}", addr), handle)
+    }
 
     #[test]
     fn update_config_builder_can_set_setup_completed() {
@@ -628,6 +663,20 @@ mod tests {
         assert_eq!(status.local_model_selected, None);
         assert_eq!(status.local_model_loaded, None);
         assert!(!status.local_model_cached);
+    }
+
+    #[tokio::test]
+    async fn capture_stats_uses_daemon_capture_stats_endpoint() {
+        let (base_url, request) = serve_json_once(r#"{"total_chunks":42}"#).await;
+        let client = WenlanClient {
+            client: reqwest::Client::new(),
+            base_url,
+        };
+
+        let stats = client.get_capture_stats().await.unwrap();
+
+        assert_eq!(stats.get("total"), Some(&42));
+        assert_eq!(request.await.unwrap(), "GET /api/capture-stats HTTP/1.1");
     }
 
     #[test]
