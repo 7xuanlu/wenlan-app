@@ -39,6 +39,28 @@ pub(crate) struct TagInventoryResponse {
     pub(crate) document_tags: HashMap<String, Vec<String>>,
 }
 
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, PartialEq)]
+pub struct OnDeviceModelEntry {
+    pub id: String,
+    pub display_name: String,
+    pub param_count: String,
+    pub ram_required_gb: f64,
+    pub file_size_gb: f64,
+    pub cached: bool,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, PartialEq)]
+pub struct OnDeviceModelResponse {
+    pub loaded: Option<String>,
+    pub selected: Option<String>,
+    pub models: Vec<OnDeviceModelEntry>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+struct OnDeviceModelRequest {
+    model_id: String,
+}
+
 impl Default for WenlanClient {
     fn default() -> Self {
         Self::new()
@@ -434,6 +456,18 @@ impl WenlanClient {
             prompt: None,
         };
         self.post_json("/api/llm/test", &req).await
+    }
+
+    pub async fn get_on_device_model(&self) -> Result<OnDeviceModelResponse, String> {
+        self.get_json("/api/on-device-model").await
+    }
+
+    pub async fn download_on_device_model(&self, model_id: String) -> Result<(), String> {
+        let req = OnDeviceModelRequest { model_id };
+        let _resp: wenlan_types::responses::SuccessResponse = self
+            .post_json("/api/on-device-model/download", &req)
+            .await?;
+        Ok(())
     }
 
     // ── Refinery queue ─────────────────────────────────────────────────────
@@ -873,6 +907,19 @@ mod tests {
 
     #[test]
     fn test_llm_response_type_is_checked() {}
+
+    #[allow(dead_code)]
+    async fn on_device_model_uses_typed_response(client: WenlanClient) {
+        let _: Result<OnDeviceModelResponse, String> = client.get_on_device_model().await;
+    }
+
+    #[allow(dead_code)]
+    async fn download_on_device_model_uses_typed_request(client: WenlanClient) {
+        let _: Result<(), String> = client.download_on_device_model(String::new()).await;
+    }
+
+    #[test]
+    fn on_device_model_response_type_is_checked() {}
 
     #[test]
     fn wenlan_client_exposes_source_registry_methods() {
