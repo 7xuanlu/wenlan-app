@@ -19,7 +19,7 @@ rm -f ~/Library/LaunchAgents/com.wenlan.{server,desktop}.plist
 rm -f ~/Library/Application\ Support/wenlan/auto_start_disabled.flag
 
 # Build:
-cd /Users/lucian/Repos/wenlan-app
+cd /path/to/current/wenlan-app-checkout
 CXXFLAGS="-std=c++17" pnpm release
 
 # Install:
