@@ -2150,24 +2150,48 @@ pub async fn get_entity_suggestions_cmd(
 pub async fn approve_entity_suggestion_cmd(
     state: tauri::State<'_, State>,
     id: String,
-) -> Result<serde_json::Value, String> {
-    let s = state.read().await;
-    s.client
-        .post_empty(&format!("/api/memory/entity-suggestions/{}/approve", id))
-        .await
+) -> Result<responses::AcceptRefinementResponse, String> {
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+    client.accept_refinement(&id).await
 }
 
 #[tauri::command]
 pub async fn dismiss_entity_suggestion_cmd(
     state: tauri::State<'_, State>,
     id: String,
-) -> Result<(), String> {
-    let s = state.read().await;
-    let _resp: serde_json::Value = s
-        .client
-        .post_empty(&format!("/api/memory/entity-suggestions/{}/dismiss", id))
-        .await?;
-    Ok(())
+) -> Result<responses::RejectRefinementResponse, String> {
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+    client.reject_refinement(&id).await
+}
+
+#[cfg(test)]
+mod entity_suggestion_command_type_tests {
+    use super::*;
+
+    #[allow(dead_code)]
+    async fn approve_entity_suggestion_uses_refinery_accept_response(
+        state: tauri::State<'_, State>,
+    ) {
+        let _: Result<responses::AcceptRefinementResponse, String> =
+            approve_entity_suggestion_cmd(state, String::new()).await;
+    }
+
+    #[allow(dead_code)]
+    async fn dismiss_entity_suggestion_uses_refinery_reject_response(
+        state: tauri::State<'_, State>,
+    ) {
+        let _: Result<responses::RejectRefinementResponse, String> =
+            dismiss_entity_suggestion_cmd(state, String::new()).await;
+    }
+
+    #[test]
+    fn entity_suggestion_command_response_types_are_checked() {}
 }
 
 // ── Spaces ────────────────────────────────────────────────────────────

@@ -1,32 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import {
-  getEntitySuggestions,
-  approveEntitySuggestion,
-  dismissEntitySuggestion,
-} from "../../lib/tauri";
+import { getEntitySuggestions, dismissEntitySuggestion } from "../../lib/tauri";
 
-interface EntitySuggestionsProps {
-  onEntityCreated?: (entityId: string) => void;
-}
-
-export default function EntitySuggestions({ onEntityCreated }: EntitySuggestionsProps) {
+export default function EntitySuggestions() {
   const queryClient = useQueryClient();
 
   const { data: suggestions = [] } = useQuery({
     queryKey: ["entity-suggestions"],
     queryFn: getEntitySuggestions,
     refetchInterval: 30000,
-  });
-
-  const approveMutation = useMutation({
-    mutationFn: (id: string) => approveEntitySuggestion(id),
-    onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["entity-suggestions"] });
-      queryClient.invalidateQueries({ queryKey: ["entities"] });
-      queryClient.invalidateQueries({ queryKey: ["memories"] });
-      onEntityCreated?.(result.entity_id);
-    },
   });
 
   const dismissMutation = useMutation({
@@ -82,14 +64,6 @@ export default function EntitySuggestions({ onEntityCreated }: EntitySuggestions
           >
             {s.source_ids.length}
           </span>
-          <button
-            onClick={() => approveMutation.mutate(s.id)}
-            disabled={approveMutation.isPending}
-            className="px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors duration-150 hover:bg-emerald-500/20"
-            style={{ color: "var(--mem-accent-sage)" }}
-          >
-            Create
-          </button>
           <button
             onClick={() => dismissMutation.mutate(s.id)}
             disabled={dismissMutation.isPending}

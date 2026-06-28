@@ -255,8 +255,8 @@ src/lib/tauri.ts
 1307: export async function acceptRefinement(id: string): Promise<AcceptRefinementResponse> {
 1311: export async function rejectRefinement(id: string): Promise<RejectRefinementResponse> {
 1317: export async function getEntitySuggestions(): Promise<EntitySuggestion[]> {
-1321: export async function approveEntitySuggestion(id: string): Promise<{ entity_id: string; entity_name: string; memories_linked: number }> {
-1325: export async function dismissEntitySuggestion(id: string): Promise<void> {
+1321: export async function approveEntitySuggestion(id: string): Promise<AcceptRefinementResponse> {
+1325: export async function dismissEntitySuggestion(id: string): Promise<RejectRefinementResponse> {
 1331: export async function getPage(id: string): Promise<Page | null> {
 1337: export async function getConcept(id: string): Promise<Page | null> {
 1341: export async function updatePage(id: string, content: string): Promise<void> {

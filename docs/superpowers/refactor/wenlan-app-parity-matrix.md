@@ -2,20 +2,21 @@
 
 - **Date:** 2026-06-28
 - **App checkout:** `/Users/lucian/Repos/wenlan-app`
-- **App branch:** `codex/wenlan-app-runtime-doc-refresh`
+- **App branch:** `codex/wenlan-app-entity-suggestion-refinery`
 - **Wenlan backend source:** `/Users/lucian/Repos/wenlan`
 - **Purpose:** prerequisite matrix before the full `origin-app` -> `wenlan-app` refactor run.
-- **Current status:** refreshed on 2026-06-27 after typed-client, sidecar, MCP bridge, Dock/app-activation, avatar path, neutral theme fallback, Home pending-revision/refinery review work, daemon-backed setup status work, post-merge API parity wrappers, `/api/capture-stats`, daemon-backed global tag inventory, and daemon-backed status/reranker diagnostics.
+- **Current status:** refreshed on 2026-06-28 after typed-client, sidecar, MCP bridge, Dock/app-activation, avatar path, neutral theme fallback, Home pending-revision/refinery review work, daemon-backed setup status work, post-merge API parity wrappers, `/api/capture-stats`, daemon-backed global tag inventory, daemon-backed status/reranker diagnostics, and entity-suggestion action compatibility with the refinery queue.
 
 ## Evidence Snapshot
 
 | Evidence | Current value | Source |
 |---|---:|---|
-| Frontend `invoke(...)` calls | 156 | `docs/superpowers/refactor/wenlan-app-inventory/frontend-invokes.txt` |
+| Frontend `invoke(...)` calls | 153 | `docs/superpowers/refactor/wenlan-app-inventory/frontend-invokes.txt` |
 | Registered Tauri commands | 176 | `app/src/lib.rs` + `search-rs-outline.txt` |
 | Rust `origin_types` references | 0 | `app/src` residual scan |
 | Runtime identity references | 148 | `Origin`/`origin-server`/`origin-mcp`/`com.origin`/relay residual scan |
 | Stale taxonomy references | 183 | `concept`/`goal`/`domain` residual scan |
+| Source files under `app/src` and `src` | 162 | `docs/superpowers/refactor/wenlan-app-inventory/summary.md` |
 | Wenlan typed request/response declarations in `requests.rs` + `responses.rs` | 99 | `wenlan-types` scan |
 
 ## Compatibility Gates
@@ -69,6 +70,7 @@ These are required for feature parity but can follow the P0 review/status/setup 
 | `/api/on-device-model` | server-owned model DTOs | Rust/Tauri/TS wrappers use local typed mirrors; `serde_json::Value` removed from the app route | move `OnDeviceModel*` DTOs into `wenlan-types` upstream, then replace local mirrors | optional settings section |
 | `/api/llm/test` | `TestLlmRequest` / `TestLlmResponse` | typed Rust/Tauri/TS wrapper present as `testExternalLlm`; preserves daemon response envelope | keep response envelope; settings UI may display `response` if surfaced later | optional settings section |
 | `/api/tags` | `TagsResponse` | `list_all_tags` reads the daemon global tag list and preserves additive `document_tags` maps when available; older daemons default to an empty map | merge daemon `document_tags` response support before relying on per-document tag filters in release notes | global tags available; per-document tag map gated by daemon version |
+| `/api/memory/entity-suggestions` | daemon list route backed by refinement queue IDs; `suggest_entity` has no accept path in current daemon | Sidebar suggestions now expose Dismiss only; TS compatibility wrappers route through typed refinery accept/reject commands; legacy Rust commands return typed refinery envelopes instead of `serde_json::Value` | keep Create hidden until the daemon implements an accept path for `suggest_entity`; use Home-style `canAcceptRefinementAction` gating for any new review surface | list route available; dismiss uses `/api/refinery/queue/{id}/reject`; accept remains unsupported for `suggest_entity` |
 
 ## Taxonomy Matrix
 
