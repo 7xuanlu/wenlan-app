@@ -101,23 +101,26 @@ pub async fn run_router(
                 drop(s);
 
                 // Capture + OCR all windows (no filtering, no frame compare)
-                let (skip_apps, skip_patterns, private_detect) = {
-                    let cfg = crate::config::load_config();
-                    if !cfg.screen_capture_enabled {
-                        log::debug!("[router] hotkey: screen capture disabled, skipping");
+                let client = {
+                    let s = state.read().await;
+                    s.client.clone()
+                };
+                let cfg = match client.get_config().await {
+                    Ok(config) => config,
+                    Err(e) => {
+                        log::warn!("[router] hotkey: daemon config unavailable: {}", e);
                         continue;
                     }
-                    (
-                        cfg.skip_apps,
-                        cfg.skip_title_patterns,
-                        cfg.private_browsing_detection,
-                    )
                 };
+                if !cfg.screen_capture_enabled {
+                    log::debug!("[router] hotkey: screen capture disabled, skipping");
+                    continue;
+                }
 
                 let captures = match sensor::vision::capture_windows(
-                    &skip_apps,
-                    &skip_patterns,
-                    private_detect,
+                    &cfg.skip_apps,
+                    &cfg.skip_title_patterns,
+                    cfg.private_browsing_detection,
                 ) {
                     Ok(c) if !c.is_empty() => c,
                     Ok(_) => {

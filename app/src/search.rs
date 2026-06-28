@@ -3,7 +3,9 @@
 //! to the Wenlan daemon at http://127.0.0.1:7878.
 //!
 //! UI-only commands (window positioning, permissions, shortcuts) remain local.
-//! Config-only commands (skip lists, setup wizard, etc.) remain local.
+//! Daemon-owned config commands proxy through `state.client`; app-only sensor
+//! state mirrors successful daemon config writes where the running process
+//! needs an immediate in-memory value.
 //! All data/DB commands proxy through `state.client`.
 
 use crate::activity;
@@ -242,12 +244,20 @@ pub fn request_screen_permission() -> bool {
     }
 }
 
-// ── Config-only commands (kept as-is) ─────────────────────────────────
+// ── Config and settings commands ──────────────────────────────────────
 
 #[tauri::command]
 pub async fn get_clipboard_enabled(state: tauri::State<'_, State>) -> Result<bool, String> {
-    let state = state.read().await;
-    Ok(state.clipboard_enabled)
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+    let enabled = client.get_clipboard_enabled().await?;
+    {
+        let mut app_state = state.write().await;
+        app_state.clipboard_enabled = enabled;
+    }
+    Ok(enabled)
 }
 
 #[tauri::command]
@@ -255,14 +265,23 @@ pub async fn set_clipboard_enabled(
     state: tauri::State<'_, State>,
     enabled: bool,
 ) -> Result<(), String> {
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+    let resp = set_clipboard_enabled_config_response(&client, enabled).await?;
     {
         let mut app_state = state.write().await;
-        app_state.clipboard_enabled = enabled;
+        app_state.clipboard_enabled = resp.clipboard_enabled;
     }
-    save_current_config(&state)
-        .await
-        .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+async fn set_clipboard_enabled_config_response(
+    client: &crate::api::WenlanClient,
+    enabled: bool,
+) -> Result<responses::ConfigResponse, String> {
+    client.set_clipboard_enabled(enabled).await
 }
 
 #[tauri::command]
@@ -348,6 +367,26 @@ mod setup_key_response_tests {
     }
 }
 
+#[cfg(test)]
+mod capture_config_response_tests {
+    use super::*;
+
+    #[allow(dead_code)]
+    async fn clipboard_toggle_uses_daemon_config_response(client: crate::api::WenlanClient) {
+        let _: Result<responses::ConfigResponse, String> =
+            set_clipboard_enabled_config_response(&client, true).await;
+    }
+
+    #[allow(dead_code)]
+    async fn screen_capture_toggle_uses_daemon_config_response(client: crate::api::WenlanClient) {
+        let _: Result<responses::ConfigResponse, String> =
+            set_screen_capture_enabled_config_response(&client, false).await;
+    }
+
+    #[test]
+    fn capture_config_response_types_are_checked() {}
+}
+
 // Phase 5-D Phase 4: route config reads/writes through the daemon so the
 // daemon's in-memory cache stays consistent with on-disk config.json.
 // Direct `crate::config::load_config()` calls here would let app and daemon
@@ -356,8 +395,11 @@ mod setup_key_response_tests {
 
 #[tauri::command]
 pub async fn get_skip_apps(state: tauri::State<'_, State>) -> Result<Vec<String>, String> {
-    let s = state.read().await;
-    s.client.get_skip_apps().await
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+    client.get_skip_apps().await
 }
 
 #[tauri::command]
@@ -365,16 +407,22 @@ pub async fn set_skip_apps(
     state: tauri::State<'_, State>,
     apps: Vec<String>,
 ) -> Result<(), String> {
-    let s = state.read().await;
-    s.client.set_skip_apps(apps).await
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+    client.set_skip_apps(apps).await
 }
 
 #[tauri::command]
 pub async fn get_skip_title_patterns(
     state: tauri::State<'_, State>,
 ) -> Result<Vec<String>, String> {
-    let s = state.read().await;
-    s.client.get_skip_title_patterns().await
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+    client.get_skip_title_patterns().await
 }
 
 #[tauri::command]
@@ -382,21 +430,37 @@ pub async fn set_skip_title_patterns(
     state: tauri::State<'_, State>,
     patterns: Vec<String>,
 ) -> Result<(), String> {
-    let s = state.read().await;
-    s.client.set_skip_title_patterns(patterns).await
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+    client.set_skip_title_patterns(patterns).await
 }
 
 #[tauri::command]
-pub async fn get_private_browsing_detection() -> Result<bool, String> {
-    let cfg = crate::config::load_config();
-    Ok(cfg.private_browsing_detection)
+pub async fn get_private_browsing_detection(
+    state: tauri::State<'_, State>,
+) -> Result<bool, String> {
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+    client.get_private_browsing_detection().await
 }
 
 #[tauri::command]
-pub async fn set_private_browsing_detection(enabled: bool) -> Result<(), String> {
-    let mut cfg = crate::config::load_config();
-    cfg.private_browsing_detection = enabled;
-    crate::config::save_config(&cfg).map_err(|e| e.to_string())
+pub async fn set_private_browsing_detection(
+    state: tauri::State<'_, State>,
+    enabled: bool,
+) -> Result<(), String> {
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+    client
+        .set_private_browsing_detection(enabled)
+        .await
+        .map(|_| ())
 }
 
 #[tauri::command]
@@ -465,7 +529,16 @@ pub async fn get_wenlan_mcp_entry() -> Result<crate::mcp_config::WenlanMcpEntry,
 
 #[tauri::command]
 pub async fn get_screen_capture_enabled(state: tauri::State<'_, State>) -> Result<bool, String> {
-    Ok(state.read().await.screen_capture_enabled)
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+    let enabled = client.get_screen_capture_enabled().await?;
+    {
+        let mut app_state = state.write().await;
+        app_state.screen_capture_enabled = enabled;
+    }
+    Ok(enabled)
 }
 
 #[tauri::command]
@@ -473,14 +546,23 @@ pub async fn set_screen_capture_enabled(
     state: tauri::State<'_, State>,
     enabled: bool,
 ) -> Result<(), String> {
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+    let resp = set_screen_capture_enabled_config_response(&client, enabled).await?;
     {
         let mut app_state = state.write().await;
-        app_state.screen_capture_enabled = enabled;
+        app_state.screen_capture_enabled = resp.screen_capture_enabled;
     }
-    let mut config = crate::config::load_config();
-    config.screen_capture_enabled = enabled;
-    crate::config::save_config(&config).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+async fn set_screen_capture_enabled_config_response(
+    client: &crate::api::WenlanClient,
+    enabled: bool,
+) -> Result<responses::ConfigResponse, String> {
+    client.set_screen_capture_enabled(enabled).await
 }
 
 // ── Activity commands (file-based, local) ─────────────────────────────
@@ -522,18 +604,21 @@ pub async fn trigger_manual_capture(state: tauri::State<'_, State>) -> Result<()
     Ok(())
 }
 
-// ── Remote access commands (kept as-is) ───────────────────────────────
+// ── Remote access commands ────────────────────────────────────────────
 
 #[tauri::command]
 pub async fn toggle_remote_access(
-    _state: tauri::State<'_, State>,
+    state: tauri::State<'_, State>,
     app_handle: tauri::AppHandle,
     enabled: bool,
 ) -> Result<crate::remote_access::RemoteAccessStatus, String> {
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+
     if enabled {
-        let mut existing = config::load_config();
-        existing.remote_access_enabled = true;
-        config::save_config(&existing).map_err(|e| e.to_string())?;
+        client.set_remote_access_enabled(true).await?;
 
         let handle = app_handle.clone();
         tauri::async_runtime::spawn(async move {
@@ -542,9 +627,7 @@ pub async fn toggle_remote_access(
 
         Ok(crate::remote_access::RemoteAccessStatus::Starting)
     } else {
-        let mut existing = config::load_config();
-        existing.remote_access_enabled = false;
-        config::save_config(&existing).map_err(|e| e.to_string())?;
+        client.set_remote_access_enabled(false).await?;
 
         crate::remote_access::toggle_off(&app_handle).await;
         Ok(crate::remote_access::RemoteAccessStatus::Off)
@@ -769,10 +852,6 @@ pub async fn add_watch_path(
         }
     }
 
-    save_current_config(&state)
-        .await
-        .map_err(|e| e.to_string())?;
-
     // Trigger initial index
     let state_inner = state.inner().clone();
     tauri::async_runtime::spawn(async move {
@@ -820,10 +899,6 @@ pub async fn remove_watch_path(
         }
     }
 
-    save_current_config(&state)
-        .await
-        .map_err(|e| e.to_string())?;
-
     Ok(())
 }
 
@@ -851,9 +926,6 @@ pub async fn connect_source(
             .ok_or_else(|| format!("Unknown source: {}", source_name))?;
         source.connect().await.map_err(|e| e.to_string())?;
     }
-    save_current_config(&state)
-        .await
-        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -870,9 +942,6 @@ pub async fn disconnect_source(
             .ok_or_else(|| format!("Unknown source: {}", source_name))?;
         source.disconnect().await.map_err(|e| e.to_string())?;
     }
-    save_current_config(&state)
-        .await
-        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -894,27 +963,6 @@ pub async fn sync_source(
 pub async fn list_sources(state: tauri::State<'_, State>) -> Result<Vec<SourceStatus>, String> {
     let state = state.read().await;
     Ok(state.list_sources().await)
-}
-
-// ── Config persistence helper ─────────────────────────────────────────
-
-async fn save_current_config(
-    state: &tauri::State<'_, State>,
-) -> Result<(), crate::error::AppError> {
-    let app_state = state.read().await;
-    let existing = config::load_config();
-    let cfg = config::Config {
-        clipboard_enabled: app_state.clipboard_enabled,
-        skip_apps: existing.skip_apps,
-        skip_title_patterns: existing.skip_title_patterns,
-        private_browsing_detection: existing.private_browsing_detection,
-        setup_completed: existing.setup_completed,
-        anthropic_api_key: existing.anthropic_api_key,
-        remote_access_enabled: existing.remote_access_enabled,
-        screen_capture_enabled: app_state.screen_capture_enabled,
-        ..existing
-    };
-    config::save_config(&cfg)
 }
 
 // ═══════════════════════════════════════════════════════════════════════

@@ -512,7 +512,8 @@ impl WenlanClient {
         &self,
         req: wenlan_types::requests::UpdateConfigRequest,
     ) -> Result<wenlan_types::responses::ConfigResponse, String> {
-        self.put_json("/api/config", &req).await
+        let body = sparse_update_config(req)?;
+        self.put_json("/api/config", &body).await
     }
 
     /// GET /api/setup/status — return daemon-owned setup/model/key state.
@@ -557,6 +558,50 @@ impl WenlanClient {
         self.update_config(empty_update().with_external_llm(endpoint, model))
             .await
             .map(|_| ())
+    }
+
+    pub async fn get_clipboard_enabled(&self) -> Result<bool, String> {
+        Ok(self.get_config().await?.clipboard_enabled)
+    }
+
+    pub async fn set_clipboard_enabled(
+        &self,
+        enabled: bool,
+    ) -> Result<wenlan_types::responses::ConfigResponse, String> {
+        self.update_config(empty_update().with_clipboard_enabled(enabled))
+            .await
+    }
+
+    pub async fn get_screen_capture_enabled(&self) -> Result<bool, String> {
+        Ok(self.get_config().await?.screen_capture_enabled)
+    }
+
+    pub async fn set_screen_capture_enabled(
+        &self,
+        enabled: bool,
+    ) -> Result<wenlan_types::responses::ConfigResponse, String> {
+        self.update_config(empty_update().with_screen_capture_enabled(enabled))
+            .await
+    }
+
+    pub async fn get_private_browsing_detection(&self) -> Result<bool, String> {
+        Ok(self.get_config().await?.private_browsing_detection)
+    }
+
+    pub async fn set_private_browsing_detection(
+        &self,
+        enabled: bool,
+    ) -> Result<wenlan_types::responses::ConfigResponse, String> {
+        self.update_config(empty_update().with_private_browsing_detection(enabled))
+            .await
+    }
+
+    pub async fn set_remote_access_enabled(
+        &self,
+        enabled: bool,
+    ) -> Result<wenlan_types::responses::ConfigResponse, String> {
+        self.update_config(empty_update().with_remote_access_enabled(enabled))
+            .await
     }
 
     pub async fn get_skip_apps(&self) -> Result<Vec<String>, String> {
@@ -612,9 +657,24 @@ fn empty_update() -> wenlan_types::requests::UpdateConfigRequest {
     }
 }
 
+fn sparse_update_config(
+    req: wenlan_types::requests::UpdateConfigRequest,
+) -> Result<serde_json::Value, String> {
+    let mut value =
+        serde_json::to_value(req).map_err(|e| format!("Serialize config update: {}", e))?;
+    if let serde_json::Value::Object(ref mut map) = value {
+        map.retain(|_, value| !value.is_null());
+    }
+    Ok(value)
+}
+
 trait UpdateConfigBuilder {
     fn with_skip_apps(self, v: Vec<String>) -> Self;
     fn with_skip_title_patterns(self, v: Vec<String>) -> Self;
+    fn with_clipboard_enabled(self, v: bool) -> Self;
+    fn with_screen_capture_enabled(self, v: bool) -> Self;
+    fn with_private_browsing_detection(self, v: bool) -> Self;
+    fn with_remote_access_enabled(self, v: bool) -> Self;
     fn with_setup_completed(self, v: bool) -> Self;
     fn with_model_choice(
         self,
@@ -631,6 +691,22 @@ impl UpdateConfigBuilder for wenlan_types::requests::UpdateConfigRequest {
     }
     fn with_skip_title_patterns(mut self, v: Vec<String>) -> Self {
         self.skip_title_patterns = Some(v);
+        self
+    }
+    fn with_clipboard_enabled(mut self, v: bool) -> Self {
+        self.clipboard_enabled = Some(v);
+        self
+    }
+    fn with_screen_capture_enabled(mut self, v: bool) -> Self {
+        self.screen_capture_enabled = Some(v);
+        self
+    }
+    fn with_private_browsing_detection(mut self, v: bool) -> Self {
+        self.private_browsing_detection = Some(v);
+        self
+    }
+    fn with_remote_access_enabled(mut self, v: bool) -> Self {
+        self.remote_access_enabled = Some(v);
         self
     }
     fn with_setup_completed(mut self, v: bool) -> Self {
@@ -705,7 +781,7 @@ mod tests {
                 body
             );
             stream.write_all(response.as_bytes()).await.unwrap();
-            request.lines().next().unwrap_or_default().to_string()
+            request
         });
         (format!("http://{}", addr), handle)
     }
@@ -717,6 +793,125 @@ mod tests {
         assert_eq!(req.setup_completed, Some(true));
         assert_eq!(req.skip_apps, None);
         assert_eq!(req.skip_title_patterns, None);
+    }
+
+    #[test]
+    fn update_config_builder_patches_capture_toggles_without_touching_other_config() {
+        let clipboard_req = empty_update().with_clipboard_enabled(true);
+        assert_eq!(clipboard_req.clipboard_enabled, Some(true));
+        assert_eq!(clipboard_req.screen_capture_enabled, None);
+        assert_eq!(clipboard_req.setup_completed, None);
+        assert_eq!(clipboard_req.routine_model, None);
+
+        let screen_req = empty_update().with_screen_capture_enabled(false);
+        assert_eq!(screen_req.screen_capture_enabled, Some(false));
+        assert_eq!(screen_req.clipboard_enabled, None);
+        assert_eq!(screen_req.setup_completed, None);
+        assert_eq!(screen_req.external_llm_endpoint, None);
+    }
+
+    #[test]
+    fn update_config_builder_patches_privacy_fields_without_touching_other_config() {
+        let private_req = empty_update().with_private_browsing_detection(false);
+        assert_eq!(private_req.private_browsing_detection, Some(false));
+        assert_eq!(private_req.clipboard_enabled, None);
+        assert_eq!(private_req.screen_capture_enabled, None);
+
+        let remote_req = empty_update().with_remote_access_enabled(true);
+        assert_eq!(remote_req.remote_access_enabled, Some(true));
+        assert_eq!(remote_req.private_browsing_detection, None);
+        assert_eq!(remote_req.skip_apps, None);
+    }
+
+    fn request_body(request: &str) -> serde_json::Value {
+        let (_, body) = request.split_once("\r\n\r\n").unwrap();
+        serde_json::from_str(body).unwrap()
+    }
+
+    #[tokio::test]
+    async fn capture_toggles_use_daemon_config_endpoint() {
+        let config_body = r#"{"skip_apps":[],"skip_title_patterns":[],"private_browsing_detection":true,"setup_completed":true,"clipboard_enabled":true,"screen_capture_enabled":false,"remote_access_enabled":false}"#;
+        let (base_url, request) = serve_json_once(config_body).await;
+        let client = WenlanClient {
+            client: reqwest::Client::new(),
+            base_url,
+        };
+
+        let config = client.set_clipboard_enabled(true).await.unwrap();
+
+        assert!(config.clipboard_enabled);
+        let request = request.await.unwrap();
+        assert_eq!(
+            request.lines().next().unwrap_or_default(),
+            "PUT /api/config HTTP/1.1"
+        );
+        assert_eq!(
+            request_body(&request),
+            serde_json::json!({"clipboard_enabled": true})
+        );
+
+        let config_body = r#"{"skip_apps":[],"skip_title_patterns":[],"private_browsing_detection":true,"setup_completed":true,"clipboard_enabled":true,"screen_capture_enabled":true,"remote_access_enabled":false}"#;
+        let (base_url, request) = serve_json_once(config_body).await;
+        let client = WenlanClient {
+            client: reqwest::Client::new(),
+            base_url,
+        };
+
+        let config = client.set_screen_capture_enabled(true).await.unwrap();
+
+        assert!(config.screen_capture_enabled);
+        let request = request.await.unwrap();
+        assert_eq!(
+            request.lines().next().unwrap_or_default(),
+            "PUT /api/config HTTP/1.1"
+        );
+        assert_eq!(
+            request_body(&request),
+            serde_json::json!({"screen_capture_enabled": true})
+        );
+    }
+
+    #[tokio::test]
+    async fn privacy_config_fields_use_daemon_patch_endpoint() {
+        let config_body = r#"{"skip_apps":[],"skip_title_patterns":[],"private_browsing_detection":false,"setup_completed":true,"clipboard_enabled":true,"screen_capture_enabled":false,"remote_access_enabled":false}"#;
+        let (base_url, request) = serve_json_once(config_body).await;
+        let client = WenlanClient {
+            client: reqwest::Client::new(),
+            base_url,
+        };
+
+        let config = client.set_private_browsing_detection(false).await.unwrap();
+
+        assert!(!config.private_browsing_detection);
+        let request = request.await.unwrap();
+        assert_eq!(
+            request.lines().next().unwrap_or_default(),
+            "PUT /api/config HTTP/1.1"
+        );
+        assert_eq!(
+            request_body(&request),
+            serde_json::json!({"private_browsing_detection": false})
+        );
+
+        let config_body = r#"{"skip_apps":[],"skip_title_patterns":[],"private_browsing_detection":true,"setup_completed":true,"clipboard_enabled":true,"screen_capture_enabled":false,"remote_access_enabled":true}"#;
+        let (base_url, request) = serve_json_once(config_body).await;
+        let client = WenlanClient {
+            client: reqwest::Client::new(),
+            base_url,
+        };
+
+        let config = client.set_remote_access_enabled(true).await.unwrap();
+
+        assert!(config.remote_access_enabled);
+        let request = request.await.unwrap();
+        assert_eq!(
+            request.lines().next().unwrap_or_default(),
+            "PUT /api/config HTTP/1.1"
+        );
+        assert_eq!(
+            request_body(&request),
+            serde_json::json!({"remote_access_enabled": true})
+        );
     }
 
     #[test]
@@ -803,7 +998,11 @@ mod tests {
         let stats = client.get_capture_stats().await.unwrap();
 
         assert_eq!(stats.get("total"), Some(&42));
-        assert_eq!(request.await.unwrap(), "GET /api/capture-stats HTTP/1.1");
+        let request = request.await.unwrap();
+        assert_eq!(
+            request.lines().next().unwrap_or_default(),
+            "GET /api/capture-stats HTTP/1.1"
+        );
     }
 
     #[tokio::test]
@@ -817,7 +1016,11 @@ mod tests {
         let tags = client.list_tags().await.unwrap();
 
         assert_eq!(tags, vec!["ai".to_string(), "rust".to_string()]);
-        assert_eq!(request.await.unwrap(), "GET /api/tags HTTP/1.1");
+        let request = request.await.unwrap();
+        assert_eq!(
+            request.lines().next().unwrap_or_default(),
+            "GET /api/tags HTTP/1.1"
+        );
     }
 
     #[tokio::test]
@@ -842,7 +1045,11 @@ mod tests {
             inventory.document_tags.get("page::page1"),
             Some(&vec!["rust".to_string()])
         );
-        assert_eq!(request.await.unwrap(), "GET /api/tags HTTP/1.1");
+        let request = request.await.unwrap();
+        assert_eq!(
+            request.lines().next().unwrap_or_default(),
+            "GET /api/tags HTTP/1.1"
+        );
     }
 
     #[tokio::test]
@@ -860,7 +1067,11 @@ mod tests {
 
         assert_eq!(status.files_indexed, 42);
         assert_eq!(status.reranker_mode, "lite");
-        assert_eq!(request.await.unwrap(), "GET /api/status HTTP/1.1");
+        let request = request.await.unwrap();
+        assert_eq!(
+            request.lines().next().unwrap_or_default(),
+            "GET /api/status HTTP/1.1"
+        );
     }
 
     #[test]

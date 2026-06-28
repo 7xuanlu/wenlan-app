@@ -102,6 +102,13 @@ pub fn current_server_plist_exists() -> bool {
     server_plist_path().map(|p| p.exists()).unwrap_or(false)
 }
 
+pub fn current_server_plist_matches_selected_data_dir() -> bool {
+    server_plist_path()
+        .ok()
+        .and_then(|path| std::fs::read_to_string(path).ok())
+        .is_some_and(|content| server_plist_has_selected_data_dir(&content))
+}
+
 pub fn legacy_server_plist_exists() -> bool {
     legacy_server_plist_path()
         .map(|p| p.exists())
@@ -342,7 +349,11 @@ fn service_cli_path() -> Result<PathBuf> {
 
 fn run_service_cli(subcommand: &str) -> Result<()> {
     let bin = service_cli_path()?;
-    let out = Command::new(&bin).arg(subcommand).output()?;
+    let (data_dir_env, data_dir) = crate::identity_paths::sidecar_data_dir_env();
+    let out = Command::new(&bin)
+        .env(data_dir_env, &data_dir)
+        .arg(subcommand)
+        .output()?;
     if !out.status.success() {
         anyhow::bail!(
             "wenlan {} failed: {}",
@@ -353,10 +364,90 @@ fn run_service_cli(subcommand: &str) -> Result<()> {
     Ok(())
 }
 
+fn plist_environment_string(content: &str, key: &str) -> Option<String> {
+    let value = plist::Value::from_reader_xml(content.as_bytes()).ok()?;
+    let env = value
+        .as_dictionary()?
+        .get("EnvironmentVariables")?
+        .as_dictionary()?;
+    env.get(key)?.as_string().map(ToOwned::to_owned)
+}
+
+fn server_plist_has_selected_data_dir(content: &str) -> bool {
+    let (key, data_dir) = crate::identity_paths::sidecar_data_dir_env();
+    plist_environment_string(content, key).as_deref() == Some(data_dir.to_string_lossy().as_ref())
+}
+
+fn patch_plist_environment_variable(path: &Path, key: &str, value: &Path) -> Result<()> {
+    let mut plist =
+        plist::Value::from_file(path).with_context(|| format!("read plist {}", path.display()))?;
+    let root = plist
+        .as_dictionary_mut()
+        .context("server plist root is not a dictionary")?;
+    if !root.contains_key("EnvironmentVariables") {
+        root.insert(
+            "EnvironmentVariables".to_string(),
+            plist::Value::Dictionary(plist::Dictionary::new()),
+        );
+    }
+    let env = root
+        .get_mut("EnvironmentVariables")
+        .context("server plist EnvironmentVariables missing after insert")?;
+    let env = env
+        .as_dictionary_mut()
+        .context("server plist EnvironmentVariables is not a dictionary")?;
+    env.insert(
+        key.to_string(),
+        plist::Value::String(value.to_string_lossy().to_string()),
+    );
+    plist
+        .to_file_xml(path)
+        .with_context(|| format!("write plist {}", path.display()))?;
+    Ok(())
+}
+
+fn ensure_server_plist_data_dir_env(launchctl: &dyn LaunchctlExec) -> Result<()> {
+    let plist = server_plist_path()?;
+    if !plist.exists() {
+        return Ok(());
+    }
+
+    let (key, data_dir) = crate::identity_paths::sidecar_data_dir_env();
+    let original_content = std::fs::read_to_string(&plist)?;
+    if server_plist_has_selected_data_dir(&original_content) {
+        return Ok(());
+    }
+
+    patch_plist_environment_variable(&plist, key, &data_dir)?;
+    unload_plist_best_effort(launchctl, &plist, SERVER_PLIST_LABEL);
+    let load_result = launchctl.run(&["load", &plist.to_string_lossy()]);
+    let result = match load_result {
+        Ok(out) if out.status.success() => Ok(()),
+        Ok(out) => Err(anyhow::anyhow!(
+            "launchctl load failed after data-dir patch: {}",
+            String::from_utf8_lossy(&out.stderr)
+        )),
+        Err(e) => Err(e).context("launchctl load after data-dir patch"),
+    };
+    if result.is_err() {
+        if let Err(e) = std::fs::write(&plist, original_content) {
+            log::warn!(
+                "[lifecycle] failed to roll back server plist after data-dir patch failure: {e}"
+            );
+        }
+    }
+    result
+}
+
+pub fn prepare_server_plist_for_startup(launchctl: &dyn LaunchctlExec) -> Result<()> {
+    ensure_server_plist_data_dir_env(launchctl)
+}
+
 /// Run `wenlan install`. Resolves the CLI binary alongside our exe; the CLI
 /// owns service-manager integration and expects `wenlan-server` next to it.
-pub fn install_server_plist_via_subprocess() -> Result<()> {
-    run_service_cli("install")
+pub fn install_server_plist_via_subprocess(launchctl: &dyn LaunchctlExec) -> Result<()> {
+    run_service_cli("install")?;
+    ensure_server_plist_data_dir_env(launchctl)
 }
 
 pub fn uninstall_server_plist_via_subprocess() -> Result<()> {
@@ -430,7 +521,7 @@ pub fn first_run_install_if_needed(launchctl: &dyn LaunchctlExec) -> Result<()> 
                 .parent()
                 .map(|p| p.join("wenlan-server").to_string_lossy().to_string())
                 .unwrap_or_default();
-            !content.contains(&expected_server)
+            !content.contains(&expected_server) || !server_plist_has_selected_data_dir(&content)
         })
         .unwrap_or(true);
 
@@ -446,7 +537,7 @@ pub fn first_run_install_if_needed(launchctl: &dyn LaunchctlExec) -> Result<()> 
 
     let mut server_replacement_ready = !server_plist_stale;
     if server_plist_stale {
-        match install_server_plist_via_subprocess() {
+        match install_server_plist_via_subprocess(launchctl) {
             Ok(()) => server_replacement_ready = true,
             Err(e) => log::warn!("[first-run] wenlan install failed: {e}"),
         }
@@ -485,7 +576,7 @@ pub async fn set_run_at_login(enabled: bool, launchctl: &dyn LaunchctlExec) -> R
             );
         }
         set_user_opted_out(false)?;
-        install_server_plist_via_subprocess()?;
+        install_server_plist_via_subprocess(launchctl)?;
         install_app_plist(launchctl)?;
     } else {
         set_user_opted_out(true)?;
@@ -1322,13 +1413,244 @@ mod tests {
     #[test]
     #[serial_test::serial]
     fn current_server_plist_counts_as_wenlan_service() {
+        let _env = EnvGuard::capture();
         let tmp = tempfile::tempdir().unwrap();
+        let data = tempfile::tempdir().unwrap();
         std::env::set_var("HOME", tmp.path());
+        std::env::set_var("WENLAN_DATA_DIR", data.path());
+        std::env::remove_var("ORIGIN_DATA_DIR");
         let plist = server_plist_path().unwrap();
         std::fs::create_dir_all(plist.parent().unwrap()).unwrap();
-        std::fs::write(&plist, "<plist/>").unwrap();
+        std::fs::write(
+            &plist,
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.wenlan.server</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>WENLAN_DATA_DIR</key>
+        <string>{}</string>
+    </dict>
+</dict>
+</plist>
+"#,
+                data.path().display()
+            ),
+        )
+        .unwrap();
 
         assert!(current_server_plist_exists());
+        assert!(current_server_plist_matches_selected_data_dir());
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn current_server_plist_with_stale_data_dir_does_not_count_as_wenlan_service() {
+        let _env = EnvGuard::capture();
+        let tmp = tempfile::tempdir().unwrap();
+        let selected_data = tempfile::tempdir().unwrap();
+        let stale_data = tempfile::tempdir().unwrap();
+        std::env::set_var("HOME", tmp.path());
+        std::env::set_var("WENLAN_DATA_DIR", selected_data.path());
+        std::env::remove_var("ORIGIN_DATA_DIR");
+        let plist = server_plist_path().unwrap();
+        std::fs::create_dir_all(plist.parent().unwrap()).unwrap();
+        std::fs::write(
+            &plist,
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.wenlan.server</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>WENLAN_DATA_DIR</key>
+        <string>{}</string>
+    </dict>
+</dict>
+</plist>
+"#,
+                stale_data.path().display()
+            ),
+        )
+        .unwrap();
+
+        assert!(
+            current_server_plist_exists(),
+            "the stale launchd plist file still exists"
+        );
+        assert!(
+            !current_server_plist_matches_selected_data_dir(),
+            "a stale launchd data root must not suppress the selected-data-dir sidecar fallback"
+        );
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn server_plist_data_dir_env_is_patched_and_reloaded() {
+        let _env = EnvGuard::capture();
+        let tmp = tempfile::tempdir().unwrap();
+        let data = tempfile::tempdir().unwrap();
+        std::env::set_var("HOME", tmp.path());
+        std::env::set_var("WENLAN_DATA_DIR", data.path());
+        std::env::remove_var("ORIGIN_DATA_DIR");
+
+        let plist = server_plist_path().unwrap();
+        std::fs::create_dir_all(plist.parent().unwrap()).unwrap();
+        std::fs::write(
+            &plist,
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.wenlan.server</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>RUST_LOG</key>
+        <string>info</string>
+    </dict>
+</dict>
+</plist>
+"#,
+        )
+        .unwrap();
+
+        let mock = MockLaunchctl::default();
+        ensure_server_plist_data_dir_env(&mock).unwrap();
+
+        let content = std::fs::read_to_string(&plist).unwrap();
+        assert_eq!(
+            plist_environment_string(&content, "WENLAN_DATA_DIR").as_deref(),
+            Some(data.path().to_string_lossy().as_ref())
+        );
+        assert_eq!(
+            plist_environment_string(&content, "RUST_LOG").as_deref(),
+            Some("info")
+        );
+        assert!(server_plist_has_selected_data_dir(&content));
+
+        let calls = mock.calls.lock().unwrap();
+        assert!(
+            calls.iter().any(|c| c[0] == "unload"),
+            "server plist should be unloaded before reloading patched env"
+        );
+        assert!(
+            calls.iter().any(|c| c[0] == "load"),
+            "server plist should be loaded after patching env"
+        );
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn startup_server_plist_preflight_repairs_stale_data_dir_before_selection() {
+        let _env = EnvGuard::capture();
+        let tmp = tempfile::tempdir().unwrap();
+        let selected_data = tempfile::tempdir().unwrap();
+        let stale_data = tempfile::tempdir().unwrap();
+        std::env::set_var("HOME", tmp.path());
+        std::env::set_var("WENLAN_DATA_DIR", selected_data.path());
+        std::env::remove_var("ORIGIN_DATA_DIR");
+
+        let plist = server_plist_path().unwrap();
+        std::fs::create_dir_all(plist.parent().unwrap()).unwrap();
+        std::fs::write(
+            &plist,
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.wenlan.server</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>WENLAN_DATA_DIR</key>
+        <string>{}</string>
+    </dict>
+</dict>
+</plist>
+"#,
+                stale_data.path().display()
+            ),
+        )
+        .unwrap();
+        assert!(!current_server_plist_matches_selected_data_dir());
+
+        let mock = MockLaunchctl::default();
+        prepare_server_plist_for_startup(&mock).unwrap();
+
+        assert!(
+            current_server_plist_matches_selected_data_dir(),
+            "startup preflight must repair stale launchd data root before daemon selection"
+        );
+        let calls = mock.calls.lock().unwrap();
+        assert!(
+            calls.iter().any(|c| c[0] == "unload"),
+            "stale running daemon should be unloaded before health/config hydration"
+        );
+        assert!(
+            calls.iter().any(|c| c[0] == "load"),
+            "patched daemon should be reloaded before health/config hydration"
+        );
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn startup_server_plist_preflight_rolls_back_file_when_reload_fails() {
+        let _env = EnvGuard::capture();
+        let tmp = tempfile::tempdir().unwrap();
+        let selected_data = tempfile::tempdir().unwrap();
+        let stale_data = tempfile::tempdir().unwrap();
+        std::env::set_var("HOME", tmp.path());
+        std::env::set_var("WENLAN_DATA_DIR", selected_data.path());
+        std::env::remove_var("ORIGIN_DATA_DIR");
+
+        let plist = server_plist_path().unwrap();
+        std::fs::create_dir_all(plist.parent().unwrap()).unwrap();
+        let original = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.wenlan.server</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>WENLAN_DATA_DIR</key>
+        <string>{}</string>
+    </dict>
+</dict>
+</plist>
+"#,
+            stale_data.path().display()
+        );
+        std::fs::write(&plist, &original).unwrap();
+
+        let mock = MockLaunchctl {
+            load_status: Mutex::new(256),
+            ..Default::default()
+        };
+        let err = prepare_server_plist_for_startup(&mock)
+            .expect_err("reload failure must make startup preflight fail");
+        assert!(
+            err.to_string().contains("launchctl load failed"),
+            "unexpected error: {err}"
+        );
+
+        let content = std::fs::read_to_string(&plist).unwrap();
+        assert_eq!(
+            plist_environment_string(&content, "WENLAN_DATA_DIR").as_deref(),
+            Some(stale_data.path().to_string_lossy().as_ref()),
+            "failed reload must roll back the file so later selection cannot trust patched-only state"
+        );
+        assert!(!current_server_plist_matches_selected_data_dir());
     }
 
     #[test]
