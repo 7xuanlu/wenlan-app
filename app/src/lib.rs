@@ -254,8 +254,9 @@ pub fn run() {
                             }
                         }
                     }
-                    // Size the window but keep it hidden until the frontend signals
-                    // ready, preventing a white flash on startup.
+                    // Size the window and keep app-ready as a focus/activation
+                    // refinement. The main window is visible from config so launch
+                    // cannot depend on a frontend event to appear.
                     let _ = win.set_size(tauri::Size::Logical(tauri::LogicalSize::new(1100.0, 720.0)));
                     let _ = win.center();
                     {
