@@ -435,6 +435,28 @@ describe('clipboard and capture toggles', () => {
     expect(mockInvoke).toHaveBeenCalledWith('set_clipboard_enabled', { enabled: true });
   });
 
+  it('getScreenCaptureEnabled calls invoke', async () => {
+    mockInvoke.mockResolvedValue(false);
+    await tauri.getScreenCaptureEnabled();
+    expect(mockInvoke).toHaveBeenCalledWith('get_screen_capture_enabled');
+  });
+
+  it('setScreenCaptureEnabled passes enabled', async () => {
+    await tauri.setScreenCaptureEnabled(true);
+    expect(mockInvoke).toHaveBeenCalledWith('set_screen_capture_enabled', { enabled: true });
+  });
+
+  it('checkScreenPermission calls invoke', async () => {
+    mockInvoke.mockResolvedValue(true);
+    await tauri.checkScreenPermission();
+    expect(mockInvoke).toHaveBeenCalledWith('check_screen_permission');
+  });
+
+  it('requestScreenPermission calls invoke', async () => {
+    mockInvoke.mockResolvedValue(true);
+    await expect(tauri.requestScreenPermission()).resolves.toBe(true);
+    expect(mockInvoke).toHaveBeenCalledWith('request_screen_permission');
+  });
 });
 
 describe('activities', () => {

@@ -4,6 +4,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   getClipboardEnabled,
   setClipboardEnabled,
+  getScreenCaptureEnabled,
+  setScreenCaptureEnabled,
+  checkScreenPermission,
+  requestScreenPermission,
   getCaptureStats,
   listAgents,
   updateAgent,
@@ -168,26 +172,17 @@ export default function SettingsPage({
   // ── Screen capture ─────────────────────────────────────────────────
   const { data: screenCaptureEnabled = false } = useQuery({
     queryKey: ["screenCaptureEnabled"],
-    queryFn: async () => {
-      const { invoke } = await import("@tauri-apps/api/core");
-      return invoke("get_screen_capture_enabled") as Promise<boolean>;
-    },
+    queryFn: getScreenCaptureEnabled,
   });
 
   const screenCaptureMutation = useMutation({
-    mutationFn: async (enabled: boolean) => {
-      const { invoke } = await import("@tauri-apps/api/core");
-      return invoke("set_screen_capture_enabled", { enabled });
-    },
+    mutationFn: setScreenCaptureEnabled,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["screenCaptureEnabled"] }),
   });
 
   const { data: screenPermission = false, refetch: refetchPermission } = useQuery({
     queryKey: ["screenPermission"],
-    queryFn: async () => {
-      const { invoke } = await import("@tauri-apps/api/core");
-      return invoke("check_screen_permission") as Promise<boolean>;
-    },
+    queryFn: checkScreenPermission,
     refetchInterval: 5000, // re-check after user grants in System Settings
   });
 
@@ -385,8 +380,7 @@ export default function SettingsPage({
                     if (next && !screenPermission) {
                       // Request permission first, then enable
                       (async () => {
-                        const { invoke } = await import("@tauri-apps/api/core");
-                        await invoke("request_screen_permission");
+                        await requestScreenPermission();
                         setTimeout(() => refetchPermission(), 1000);
                       })();
                     }
@@ -407,8 +401,7 @@ export default function SettingsPage({
               {!screenPermission && (
                 <button
                   onClick={async () => {
-                    const { invoke } = await import("@tauri-apps/api/core");
-                    await invoke("request_screen_permission");
+                    await requestScreenPermission();
                     setTimeout(() => refetchPermission(), 1000);
                   }}
                   className="px-2 py-0.5 rounded text-[10px] font-medium transition-colors"

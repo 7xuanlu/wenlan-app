@@ -269,6 +269,22 @@ export async function setClipboardEnabled(enabled: boolean): Promise<void> {
   return invoke("set_clipboard_enabled", { enabled });
 }
 
+export async function getScreenCaptureEnabled(): Promise<boolean> {
+  return invoke("get_screen_capture_enabled");
+}
+
+export async function setScreenCaptureEnabled(enabled: boolean): Promise<void> {
+  return invoke("set_screen_capture_enabled", { enabled });
+}
+
+export async function checkScreenPermission(): Promise<boolean> {
+  return invoke("check_screen_permission");
+}
+
+export async function requestScreenPermission(): Promise<boolean> {
+  return invoke("request_screen_permission");
+}
+
 export async function getApiKey(): Promise<string | null> {
   return invoke("get_api_key");
 }
