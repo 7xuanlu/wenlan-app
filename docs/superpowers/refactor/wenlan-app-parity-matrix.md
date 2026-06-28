@@ -5,7 +5,7 @@
 - **App branch:** `codex/wenlan-app-settings-daemon-config`
 - **Wenlan backend source:** `/Users/lucian/Repos/wenlan`
 - **Purpose:** prerequisite matrix before the full `origin-app` -> `wenlan-app` refactor run.
-- **Current status:** refreshed on 2026-06-28 after typed-client, sidecar, MCP bridge, Dock/app-activation, avatar path, neutral theme fallback, Home pending-revision/refinery review work, daemon-backed setup status work, post-merge API parity wrappers, `/api/capture-stats`, daemon-backed global tag inventory, daemon-backed status/reranker diagnostics, entity-suggestion action compatibility with the refinery queue, typed space/page/search/setup response envelopes, typed MCP setup entry surface, `wenlan-types` 0.9.2, `/api/search` supplemental page consumption/navigation, shared page-list/search response typing, daemon-config-backed settings toggles, and daemon data-root alignment for sidecar plus launchd.
+- **Current status:** refreshed on 2026-06-28 after typed-client, sidecar, MCP bridge, Dock/app-activation, avatar path, neutral theme fallback, Home pending-revision/refinery review work, daemon-backed setup status work, post-merge API parity wrappers, `/api/capture-stats`, daemon-backed global tag inventory, daemon-backed status/reranker diagnostics, entity-suggestion action compatibility with the refinery queue, typed space/page/search/setup response envelopes, typed MCP setup entry surface, `wenlan-types` 0.9.2, `/api/search` supplemental page consumption/navigation, shared page-list/search response typing, daemon-config-backed settings toggles, daemon data-root alignment for sidecar plus launchd, and Intelligence setup copy moved from Concept to Page language.
 
 ## Evidence Snapshot
 
@@ -15,8 +15,8 @@
 | Registered Tauri commands | 176 | `app/src/lib.rs` + `search-rs-outline.txt` |
 | Rust `origin_types` references | 0 | `app/src` residual scan |
 | Runtime identity references | 148 | `Origin`/`origin-server`/`origin-mcp`/`com.origin`/relay residual scan |
-| Stale taxonomy references | 183 | `concept`/`goal`/`domain` residual scan |
-| Source files under `app/src` and `src` | 162 | `docs/superpowers/refactor/wenlan-app-inventory/summary.md` |
+| Stale taxonomy references | 182 | `concept`/`goal`/`domain` residual scan |
+| Source files under `app/src` and `src` | 164 | `docs/superpowers/refactor/wenlan-app-inventory/summary.md` |
 | Wenlan typed request/response declarations in `requests.rs` + `responses.rs` | 115 | `wenlan-types` 0.9.2 scan |
 
 ## Compatibility Gates
