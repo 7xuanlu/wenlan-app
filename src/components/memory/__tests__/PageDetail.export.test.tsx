@@ -70,9 +70,9 @@ describe("PageDetail export", () => {
         memory_count: 20,
       },
     ]);
-    vi.mocked(tauri.exportPageToObsidian).mockResolvedValue(
-      "/Users/test/vault/Wenlan/pages/Test Page.md",
-    );
+    vi.mocked(tauri.exportPageToObsidian).mockResolvedValue({
+      path: "/Users/test/vault/Wenlan/pages/Test Page.md",
+    });
 
     render(
       <PageDetail
@@ -161,9 +161,9 @@ describe("PageDetail export", () => {
         memory_count: 10,
       },
     ]);
-    vi.mocked(tauri.exportPageToObsidian).mockResolvedValue(
-      "/Users/test/vault-two/Wenlan/pages/Test Page.md",
-    );
+    vi.mocked(tauri.exportPageToObsidian).mockResolvedValue({
+      path: "/Users/test/vault-two/Wenlan/pages/Test Page.md",
+    });
 
     render(
       <PageDetail

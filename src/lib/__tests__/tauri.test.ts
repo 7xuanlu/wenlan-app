@@ -64,8 +64,11 @@ describe("sources, page export, and knowledge wrappers", () => {
   it("exportPageToObsidian passes pageId and vaultPath", async () => {
     const { invoke } = await import("@tauri-apps/api/core");
     const { exportPageToObsidian } = await import("../tauri");
-    (invoke as ReturnType<typeof vi.fn>).mockResolvedValue("/path/to/file.md");
-    await exportPageToObsidian("c123", "/vault");
+    (invoke as ReturnType<typeof vi.fn>).mockResolvedValue({
+      path: "/path/to/file.md",
+    });
+    const result = await exportPageToObsidian("c123", "/vault");
+    expect(result).toEqual({ path: "/path/to/file.md" });
     expect(invoke).toHaveBeenCalledWith("export_page_to_obsidian", {
       pageId: "c123",
       vaultPath: "/vault",

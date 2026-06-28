@@ -2737,12 +2737,25 @@ pub async fn export_page_to_obsidian(
     state: tauri::State<'_, State>,
     page_id: String,
     vault_path: String,
-) -> Result<String, String> {
+) -> Result<responses::ExportPageResponse, String> {
     let client = state.read().await.client.clone();
     let path = format!("/api/pages/{}/export", page_id);
     let req = requests::ExportPageRequest { vault_path };
-    let resp: responses::ExportPageResponse = client.post_json(&path, &req).await?;
-    Ok(resp.path)
+    client.post_json(&path, &req).await
+}
+
+#[cfg(test)]
+mod export_command_type_tests {
+    use super::*;
+
+    #[allow(dead_code)]
+    async fn export_page_to_obsidian_uses_daemon_export_response(state: tauri::State<'_, State>) {
+        let _: Result<responses::ExportPageResponse, String> =
+            export_page_to_obsidian(state, String::new(), String::new()).await;
+    }
+
+    #[test]
+    fn export_page_to_obsidian_response_type_is_checked() {}
 }
 
 #[tauri::command]
