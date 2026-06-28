@@ -1318,12 +1318,12 @@ export async function getEntitySuggestions(): Promise<EntitySuggestion[]> {
   return invoke("get_entity_suggestions_cmd");
 }
 
-export async function approveEntitySuggestion(id: string): Promise<{ entity_id: string; entity_name: string; memories_linked: number }> {
-  return invoke("approve_entity_suggestion_cmd", { id });
+export async function approveEntitySuggestion(id: string): Promise<AcceptRefinementResponse> {
+  return acceptRefinement(id);
 }
 
-export async function dismissEntitySuggestion(id: string): Promise<void> {
-  return invoke("dismiss_entity_suggestion_cmd", { id });
+export async function dismissEntitySuggestion(id: string): Promise<RejectRefinementResponse> {
+  return rejectRefinement(id);
 }
 
 // ===== Pages =====

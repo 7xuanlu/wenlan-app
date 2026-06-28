@@ -60,7 +60,7 @@ export default function Sidebar({
         <div className="flex flex-col gap-6 px-4 pt-2 pb-2">
           <IdentityCard onOpenDetail={onEntityClick} />
 
-          <EntitySuggestions onEntityCreated={onEntityClick} />
+          <EntitySuggestions />
         </div>
 
         <div className="flex-1 overflow-y-auto min-h-0 px-4 pb-4" style={{ overflowX: "hidden" }}>

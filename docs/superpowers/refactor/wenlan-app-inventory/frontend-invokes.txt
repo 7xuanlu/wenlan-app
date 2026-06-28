@@ -114,8 +114,6 @@ src/lib/tauri.ts:1304:  return invoke("list_refinements", { limit: limit ?? null
 src/lib/tauri.ts:1308:  return invoke("accept_refinement", { id });
 src/lib/tauri.ts:1312:  return invoke("reject_refinement", { id });
 src/lib/tauri.ts:1318:  return invoke("get_entity_suggestions_cmd");
-src/lib/tauri.ts:1322:  return invoke("approve_entity_suggestion_cmd", { id });
-src/lib/tauri.ts:1326:  return invoke("dismiss_entity_suggestion_cmd", { id });
 src/lib/tauri.ts:1342:  return invoke("update_page", { id, content });
 src/lib/tauri.ts:1351:  return invoke("delete_page", { id });
 src/lib/tauri.ts:1360:  return invoke("archive_page", { id });
