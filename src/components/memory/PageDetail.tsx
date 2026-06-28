@@ -5,6 +5,7 @@ import {
   getPage,
   getPageLinks,
   getPageRevisions,
+  listOrphanLinks,
   updatePage,
   deletePage,
   clipboardWrite,
@@ -118,6 +119,13 @@ export default function PageDetail({ pageId, onBack, onMemoryClick, onPageClick 
     queryFn: () => getPageRevisions(pageId),
     enabled: !!pageId,
     staleTime: 30_000,
+    retry: false,
+  });
+
+  const { data: orphanLinks } = useQuery({
+    queryKey: ["orphan-page-links", 2],
+    queryFn: () => listOrphanLinks(2),
+    staleTime: 60_000,
     retry: false,
   });
 
@@ -302,6 +310,7 @@ export default function PageDetail({ pageId, onBack, onMemoryClick, onPageClick 
   const inboundLinks = pageLinks?.inbound ?? [];
   const hasPageLinks = !!pageLinks && (outboundLinks.length > 0 || inboundLinks.length > 0);
   const pageRevisionEntries = pageRevisions?.entries ?? [];
+  const orphanLinkLabels = orphanLinks?.orphan_labels ?? [];
 
   return (
     <div className="flex flex-col gap-6">
@@ -624,6 +633,54 @@ export default function PageDetail({ pageId, onBack, onMemoryClick, onPageClick 
                 </button>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* Global page-link diagnostics — repeated unresolved wikilinks */}
+      {!editing && orphanLinkLabels.length > 0 && (
+        <div aria-label="Orphan page links">
+          <h3
+            className="mb-2"
+            style={{
+              fontFamily: "var(--mem-font-mono)",
+              fontSize: "11px",
+              fontWeight: 600,
+              letterSpacing: "0.05em",
+              textTransform: "uppercase",
+              color: "var(--mem-text-tertiary)",
+            }}
+          >
+            Unlinked Mentions
+          </h3>
+          <div className="flex flex-col gap-1.5">
+            {orphanLinkLabels.map((link) => (
+              <div
+                key={link.label}
+                className="rounded-lg px-4 py-3"
+                style={{ backgroundColor: "var(--mem-surface)", border: "1px solid var(--mem-border)" }}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ color: "var(--mem-accent-amber)" }} className="shrink-0">
+                      <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" />
+                      <path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" />
+                    </svg>
+                    <span
+                      style={{ fontFamily: "var(--mem-font-body)", fontSize: "13px", fontWeight: 500, color: "var(--mem-text)" }}
+                    >
+                      {link.label}
+                    </span>
+                  </div>
+                  <span
+                    className="shrink-0"
+                    style={{ fontFamily: "var(--mem-font-mono)", fontSize: "10px", color: "var(--mem-text-tertiary)" }}
+                  >
+                    {link.count} {link.count === 1 ? "mention" : "mentions"}
+                  </span>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}

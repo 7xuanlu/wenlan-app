@@ -10,6 +10,7 @@ const tauriMocks = vi.hoisted(() => ({
   getPageSources: vi.fn(),
   listRegisteredSources: vi.fn(),
   getPageLinks: vi.fn(),
+  listOrphanLinks: vi.fn(),
   getPageRevisions: vi.fn(),
   listPages: vi.fn(),
   updatePage: vi.fn(),
@@ -62,6 +63,7 @@ describe("PageDetail page links", () => {
     tauriMocks.getPageSources.mockResolvedValue([]);
     tauriMocks.listRegisteredSources.mockResolvedValue([]);
     tauriMocks.getPageLinks.mockResolvedValue({ outbound: [], inbound: [] });
+    tauriMocks.listOrphanLinks.mockResolvedValue({ min_count: 2, orphan_labels: [] });
     tauriMocks.getPageRevisions.mockResolvedValue({
       page_id: "page-1",
       current_version: 1,
@@ -184,6 +186,28 @@ describe("PageDetail page links", () => {
     });
     expect(tauriMocks.listPages).not.toHaveBeenCalled();
     expect(screen.queryByLabelText("Page links")).toBeNull();
+  });
+
+  it("renders daemon orphan link diagnostics", async () => {
+    tauriMocks.listOrphanLinks.mockResolvedValue({
+      min_count: 2,
+      orphan_labels: [
+        { label: "Missing Link", count: 4 },
+        { label: "Roadmap Draft", count: 2 },
+      ],
+    });
+
+    renderWithQuery(<PageDetail {...defaultProps} />);
+
+    const section = await screen.findByLabelText("Orphan page links");
+    await waitFor(() => {
+      expect(tauriMocks.listOrphanLinks).toHaveBeenCalledWith(2);
+    });
+    expect(within(section).getByText("Unlinked Mentions")).toBeInTheDocument();
+    expect(within(section).getByText("Missing Link")).toBeInTheDocument();
+    expect(within(section).getByText("4 mentions")).toBeInTheDocument();
+    expect(within(section).getByText("Roadmap Draft")).toBeInTheDocument();
+    expect(within(section).getByText("2 mentions")).toBeInTheDocument();
   });
 
   it("renders daemon page revision history", async () => {
