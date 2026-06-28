@@ -59,6 +59,7 @@ vi.mock("../../lib/tauri", () => ({
     { id: "obsidian-vault", source_type: "obsidian", path: "/Users/test/vault", status: "Active", last_sync: null, file_count: 10, memory_count: 20 },
   ]),
   getPageLinks: vi.fn().mockResolvedValue({ outbound: [], inbound: [] }),
+  listOrphanLinks: vi.fn().mockResolvedValue({ min_count: 2, orphan_labels: [] }),
   listPages: vi.fn().mockResolvedValue([]),
   updatePage: vi.fn().mockResolvedValue(undefined),
   deletePage: vi.fn().mockResolvedValue(undefined),

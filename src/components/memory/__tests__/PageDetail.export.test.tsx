@@ -34,6 +34,7 @@ describe("PageDetail export", () => {
     vi.clearAllMocks();
     vi.mocked(tauri.getPage).mockResolvedValue(MOCK_PAGE);
     vi.mocked(tauri.getPageLinks).mockResolvedValue({ outbound: [], inbound: [] });
+    vi.mocked(tauri.listOrphanLinks).mockResolvedValue({ min_count: 2, orphan_labels: [] });
     vi.mocked(tauri.listPages).mockResolvedValue([MOCK_PAGE]);
   });
 
