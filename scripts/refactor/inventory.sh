@@ -18,9 +18,13 @@ count_inventory_calls() {
   { rg "^.+:[0-9]+:.*\\binvoke(<[^>]+>)?\\(" "$file" || true; } | wc -l | tr -d ' '
 }
 
-"${SG[@]}" outline "$ROOT/src/lib/tauri.ts" > "$OUT/tauri-ts-outline.txt"
-"${SG[@]}" outline "$ROOT/app/src/api.rs" > "$OUT/api-rs-outline.txt"
-"${SG[@]}" outline "$ROOT/app/src/search.rs" > "$OUT/search-rs-outline.txt"
+relativize_paths() {
+  ROOT_ABS="$ROOT" perl -pe 's!\Q$ENV{ROOT_ABS}/!!g'
+}
+
+"${SG[@]}" outline "$ROOT/src/lib/tauri.ts" | relativize_paths > "$OUT/tauri-ts-outline.txt"
+"${SG[@]}" outline "$ROOT/app/src/api.rs" | relativize_paths > "$OUT/api-rs-outline.txt"
+"${SG[@]}" outline "$ROOT/app/src/search.rs" | relativize_paths > "$OUT/search-rs-outline.txt"
 {
   for lang in ts tsx; do
     "${SG[@]}" run -p 'invoke($CMD)' -l "$lang" "$ROOT/src" || true
@@ -28,14 +32,12 @@ count_inventory_calls() {
     "${SG[@]}" run -p 'invoke<$TYPE>($CMD)' -l "$lang" "$ROOT/src" || true
     "${SG[@]}" run -p 'invoke<$TYPE>($CMD, $$$ARGS)' -l "$lang" "$ROOT/src" || true
   done
-} | LC_ALL=C sort -u -t: -k1,1 -k2,2n > "$OUT/frontend-invokes.txt"
+} | relativize_paths | LC_ALL=C sort -u -t: -k1,1 -k2,2n > "$OUT/frontend-invokes.txt"
 "${SG[@]}" run -p 'pub struct $NAME { $$$FIELDS }' -l rs "$ROOT/app/src" \
-  | LC_ALL=C sort -t: -k1,1 -k2,2n > "$OUT/rust-structs.txt"
+  | relativize_paths | LC_ALL=C sort -t: -k1,1 -k2,2n > "$OUT/rust-structs.txt"
 
 {
   echo "# Wenlan App Structural Inventory"
-  echo
-  echo "- branch: $(git branch --show-current)"
   echo
   echo "## Counts"
   printf -- "- frontend invoke calls: "
