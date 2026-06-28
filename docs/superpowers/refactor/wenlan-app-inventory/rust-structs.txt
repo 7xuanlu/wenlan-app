@@ -86,6 +86,10 @@ app/src/mcp_config.rs:10:    pub config_path: String,
 app/src/mcp_config.rs:11:    pub detected: bool,
 app/src/mcp_config.rs:12:    pub already_configured: bool,
 app/src/mcp_config.rs:13:}
+app/src/mcp_config.rs:16:pub struct WenlanMcpEntry {
+app/src/mcp_config.rs:17:    pub command: String,
+app/src/mcp_config.rs:18:    pub args: Vec<String>,
+app/src/mcp_config.rs:19:}
 app/src/remote_access.rs:125:pub struct RemoteAccessState {
 app/src/remote_access.rs:126:    pub status: RemoteAccessStatus,
 app/src/remote_access.rs:127:    pub mcp_child: Option<tauri_plugin_shell::process::CommandChild>,

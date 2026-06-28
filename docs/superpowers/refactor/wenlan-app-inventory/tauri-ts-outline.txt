@@ -333,39 +333,41 @@ src/lib/tauri.ts
 1753: export async function setSetupCompleted(completed: boolean): Promise<void> {
 1757: export async function detectMcpClients(): Promise<McpClient[]> {
 1761: export async function writeMcpConfig(clientType: string): Promise<void> {
-1767: export async function getWenlanMcpEntry(): Promise<{
-1776: export type MilestoneId =
-1784: export interface MilestoneRecord {
+1765: export interface WenlanMcpEntry {
+        field: command, args
+1772: export async function getWenlanMcpEntry(): Promise<WenlanMcpEntry> {
+1778: export type MilestoneId =
+1786: export interface MilestoneRecord {
         field: id, first_triggered_at, acknowledged_at, payload
-1791: export async function listOnboardingMilestones(): Promise<MilestoneRecord[]> {
-1795: export async function acknowledgeOnboardingMilestone(id: MilestoneId): Promise<void> {
-1799: export async function resetOnboardingMilestones(): Promise<void> {
-1805: export interface BriefingResponse {
+1793: export async function listOnboardingMilestones(): Promise<MilestoneRecord[]> {
+1797: export async function acknowledgeOnboardingMilestone(id: MilestoneId): Promise<void> {
+1801: export async function resetOnboardingMilestones(): Promise<void> {
+1807: export interface BriefingResponse {
         field: content, new_today, primary_agent, generated_at, is_stale
-1813: export interface ContradictionItem {
+1815: export interface ContradictionItem {
         field: id, new_content, existing_content, new_source_id, existing_source_id
-1821: export async function getBriefing(): Promise<BriefingResponse> {
-1825: export async function getPendingContradictions(): Promise<ContradictionItem[]> {
-1831: export interface NarrativeResponse {
+1823: export async function getBriefing(): Promise<BriefingResponse> {
+1827: export async function getPendingContradictions(): Promise<ContradictionItem[]> {
+1833: export interface NarrativeResponse {
         field: content, generated_at, is_stale, memory_count
-1838: export async function getProfileNarrative(): Promise<NarrativeResponse> {
-1842: export async function regenerateNarrative(): Promise<NarrativeResponse> {
-1848: export interface AgentActivityItem {
+1840: export async function getProfileNarrative(): Promise<NarrativeResponse> {
+1844: export async function regenerateNarrative(): Promise<NarrativeResponse> {
+1850: export interface AgentActivityItem {
         field: id, timestamp, agent_name, action, memory_ids, query, detail, memory_titles
-1859: export async function listAgentActivity(
-1873: export type RemoteAccessStatus =
-1879: export async function toggleRemoteAccess(
-1885: export async function getRemoteAccessStatus(): Promise<RemoteAccessStatus> {
-1889: export async function rotateRemoteToken(): Promise<string> {
-1894: export interface RemoteConnectionTest {
+1861: export async function listAgentActivity(
+1875: export type RemoteAccessStatus =
+1881: export async function toggleRemoteAccess(
+1887: export async function getRemoteAccessStatus(): Promise<RemoteAccessStatus> {
+1891: export async function rotateRemoteToken(): Promise<string> {
+1896: export interface RemoteConnectionTest {
         field: ok, latency_ms, error
-1902: export async function testRemoteMcpConnection(): Promise<RemoteConnectionTest> {
-1908: export async function getNurtureCards(limit?: number, domain?: string): Promise<MemoryItem[]> {
-1916: export async function setStability(sourceId: string, stability: "new" | "learned" | "confirmed"): Promise<void> {
-1920: export async function correctMemory(sourceId: string, correctionPrompt: string): Promise<string> {
-1926: export async function listDecisions(
-1937: export async function listDecisionDomains(): Promise<string[]> {
-1943: export async function isRunAtLoginEnabled(): Promise<boolean> {
-1947: export async function setRunAtLogin(enabled: boolean): Promise<void> {
-1951: export async function quitWenlanFull(): Promise<void> {
-1956: export async function quitOriginFull(): Promise<void> {
+1904: export async function testRemoteMcpConnection(): Promise<RemoteConnectionTest> {
+1910: export async function getNurtureCards(limit?: number, domain?: string): Promise<MemoryItem[]> {
+1918: export async function setStability(sourceId: string, stability: "new" | "learned" | "confirmed"): Promise<void> {
+1922: export async function correctMemory(sourceId: string, correctionPrompt: string): Promise<string> {
+1928: export async function listDecisions(
+1939: export async function listDecisionDomains(): Promise<string[]> {
+1945: export async function isRunAtLoginEnabled(): Promise<boolean> {
+1949: export async function setRunAtLogin(enabled: boolean): Promise<void> {
+1953: export async function quitWenlanFull(): Promise<void> {
+1958: export async function quitOriginFull(): Promise<void> {

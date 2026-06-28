@@ -36,7 +36,7 @@ app/src/search.rs
  435: pub async fn should_show_wizard(state: tauri::State<'_, State>) -> Result<bool, String>
  444: pub async fn detect_mcp_clients_cmd() -> Result<Vec<crate::mcp_config::McpClient>, String>
  449: pub async fn write_mcp_config(client_type: String) -> Result<(), String>
- 462: pub async fn get_wenlan_mcp_entry() -> Result<serde_json::Value, String>
+ 462: pub async fn get_wenlan_mcp_entry() -> Result<crate::mcp_config::WenlanMcpEntry, String>
  467: pub async fn get_screen_capture_enabled(state: tauri::State<'_, State>) -> Result<bool, String>
  472: pub async fn set_screen_capture_enabled(
  489: pub async fn list_activities(

@@ -12,6 +12,12 @@ pub struct McpClient {
     pub already_configured: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WenlanMcpEntry {
+    pub command: String,
+    pub args: Vec<String>,
+}
+
 /// Returns the expected config file path for each MCP client on macOS.
 pub fn client_config_path(client_type: &str) -> Option<PathBuf> {
     let home = dirs::home_dir()?;
@@ -101,19 +107,19 @@ fn find_wenlan_mcp_binary() -> Option<PathBuf> {
 /// The MCP config entry Wenlan writes into client config files.
 /// Default: npx (production path, requires wenlan-mcp published to npm).
 /// Dev fallback: uses local binary if found on disk.
-pub fn wenlan_mcp_entry() -> serde_json::Value {
+pub fn wenlan_mcp_entry() -> WenlanMcpEntry {
     // Dev fallback: use local binary if available
     if let Some(binary_path) = find_wenlan_mcp_binary() {
-        return serde_json::json!({
-            "command": binary_path.to_string_lossy(),
-            "args": []
-        });
+        return WenlanMcpEntry {
+            command: binary_path.to_string_lossy().to_string(),
+            args: Vec::new(),
+        };
     }
     // Production default
-    serde_json::json!({
-        "command": "npx",
-        "args": ["-y", "wenlan-mcp"]
-    })
+    WenlanMcpEntry {
+        command: "npx".to_string(),
+        args: vec!["-y".to_string(), "wenlan-mcp".to_string()],
+    }
 }
 
 /// Write the Wenlan MCP server entry into a client's config file.
@@ -146,7 +152,8 @@ pub fn write_wenlan_entry(
     if root.get("mcpServers").is_none() {
         root["mcpServers"] = serde_json::json!({});
     }
-    root["mcpServers"][MCP_SERVER_KEY] = wenlan_mcp_entry();
+    root["mcpServers"][MCP_SERVER_KEY] =
+        serde_json::to_value(wenlan_mcp_entry()).map_err(|e| AppError::Generic(e.to_string()))?;
 
     // Write back with pretty formatting
     if let Some(parent) = config_path.parent() {
@@ -222,12 +229,29 @@ mod tests {
     }
 
     #[test]
+    fn test_wenlan_mcp_entry_is_typed_command_args() {
+        let entry = wenlan_mcp_entry();
+
+        assert!(!entry.command.is_empty());
+        if entry.command == "npx" {
+            assert_eq!(entry.args, vec!["-y".to_string(), "wenlan-mcp".to_string()]);
+        } else {
+            assert!(entry.command.ends_with("wenlan-mcp"));
+            assert!(entry.args.is_empty());
+        }
+    }
+
+    #[test]
     fn test_write_wenlan_entry_creates_new_file() {
         let tmp = tempfile::tempdir().unwrap();
         let config_path = tmp.path().join("config.json");
         write_wenlan_entry(&config_path, false).unwrap();
         let contents = std::fs::read_to_string(&config_path).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&contents).unwrap();
+        assert_eq!(
+            parsed["mcpServers"]["wenlan"],
+            serde_json::to_value(wenlan_mcp_entry()).unwrap()
+        );
         // Command is either a local binary path or npx (depending on host)
         let cmd = parsed["mcpServers"]["wenlan"]["command"].as_str().unwrap();
         assert!(

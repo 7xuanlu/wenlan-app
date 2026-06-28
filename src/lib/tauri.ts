@@ -1762,12 +1762,14 @@ export async function writeMcpConfig(clientType: string): Promise<void> {
   return invoke("write_mcp_config", { clientType });
 }
 
-/** Returns the `wenlan` MCP server entry (command + args) with real values —
- *  either a resolved local binary path (dev) or `npx -y wenlan-mcp` (prod). */
-export async function getWenlanMcpEntry(): Promise<{
+export interface WenlanMcpEntry {
   command: string;
   args: string[];
-}> {
+}
+
+/** Returns the `wenlan` MCP server entry (command + args) with real values —
+ *  either a resolved local binary path (dev) or `npx -y wenlan-mcp` (prod). */
+export async function getWenlanMcpEntry(): Promise<WenlanMcpEntry> {
   return invoke("get_wenlan_mcp_entry");
 }
 

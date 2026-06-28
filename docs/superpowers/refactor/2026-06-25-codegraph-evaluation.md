@@ -157,3 +157,17 @@ therefore used the deterministic fallback surface:
 Task 5 follow-up added `scripts/prepare-sidecars.sh` so raw Tauri builds can
 prepare generated, ignored `app/binaries/*-$TRIPLE` sidecars before running
 `cargo build`.
+
+## MCP Entry Typing Checkpoint Note
+
+During the MCP entry typing checkpoint, `codegraph sync .` exited successfully
+and reported "Already up to date", but `codegraph query wenlan_mcp_entry --json`
+still returned the pre-edit Rust signatures:
+
+- `wenlan_mcp_entry() -> serde_json::Value`
+- `get_wenlan_mcp_entry() -> Result<serde_json::Value, String>`
+
+The actual source, ast-grep, Rust compiler, and tests all saw the updated typed
+surface (`WenlanMcpEntry`). Treat this as another example of CodeGraph being an
+orientation tool, not a proof gate. For type/signature proof, prefer ast-grep
+for syntax and `cargo test`/`cargo clippy` for compiler authority.

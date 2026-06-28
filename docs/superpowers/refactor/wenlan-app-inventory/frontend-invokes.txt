@@ -175,27 +175,27 @@ src/lib/tauri.ts:1750:  return invoke("get_setup_completed");
 src/lib/tauri.ts:1754:  return invoke("set_setup_completed", { completed });
 src/lib/tauri.ts:1758:  return invoke("detect_mcp_clients_cmd");
 src/lib/tauri.ts:1762:  return invoke("write_mcp_config", { clientType });
-src/lib/tauri.ts:1771:  return invoke("get_wenlan_mcp_entry");
-src/lib/tauri.ts:1792:  return invoke("list_onboarding_milestones");
-src/lib/tauri.ts:1796:  return invoke("acknowledge_onboarding_milestone", { id });
-src/lib/tauri.ts:1800:  return invoke("reset_onboarding_milestones");
-src/lib/tauri.ts:1822:  return invoke("get_briefing");
-src/lib/tauri.ts:1826:  return invoke("get_pending_contradictions");
-src/lib/tauri.ts:1839:  return invoke("get_profile_narrative");
-src/lib/tauri.ts:1843:  return invoke("regenerate_narrative");
-src/lib/tauri.ts:1864:  return invoke("list_agent_activity", {
-src/lib/tauri.ts:1865:    limit: limit ?? 50,
-src/lib/tauri.ts:1866:    agentName: agentName ?? null,
-src/lib/tauri.ts:1867:    since: since ?? null,
-src/lib/tauri.ts:1868:  });
-src/lib/tauri.ts:1882:  return invoke<RemoteAccessStatus>("toggle_remote_access", { enabled });
-src/lib/tauri.ts:1886:  return invoke<RemoteAccessStatus>("get_remote_access_status");
-src/lib/tauri.ts:1890:  return invoke<string>("rotate_remote_token");
-src/lib/tauri.ts:1903:  return invoke<RemoteConnectionTest>("test_remote_mcp_connection");
-src/lib/tauri.ts:1917:  return invoke("set_stability_cmd", { sourceId, stability });
-src/lib/tauri.ts:1921:  return invoke("correct_memory_cmd", { sourceId, correctionPrompt });
-src/lib/tauri.ts:1938:  return invoke("list_decision_domains_cmd", {});
-src/lib/tauri.ts:1944:  return invoke("is_run_at_login_enabled");
-src/lib/tauri.ts:1948:  return invoke("set_run_at_login", { enabled });
-src/lib/tauri.ts:1952:  return invoke("quit_wenlan_full");
-src/lib/tauri.ts:1957:  return invoke("quit_origin_full");
+src/lib/tauri.ts:1773:  return invoke("get_wenlan_mcp_entry");
+src/lib/tauri.ts:1794:  return invoke("list_onboarding_milestones");
+src/lib/tauri.ts:1798:  return invoke("acknowledge_onboarding_milestone", { id });
+src/lib/tauri.ts:1802:  return invoke("reset_onboarding_milestones");
+src/lib/tauri.ts:1824:  return invoke("get_briefing");
+src/lib/tauri.ts:1828:  return invoke("get_pending_contradictions");
+src/lib/tauri.ts:1841:  return invoke("get_profile_narrative");
+src/lib/tauri.ts:1845:  return invoke("regenerate_narrative");
+src/lib/tauri.ts:1866:  return invoke("list_agent_activity", {
+src/lib/tauri.ts:1867:    limit: limit ?? 50,
+src/lib/tauri.ts:1868:    agentName: agentName ?? null,
+src/lib/tauri.ts:1869:    since: since ?? null,
+src/lib/tauri.ts:1870:  });
+src/lib/tauri.ts:1884:  return invoke<RemoteAccessStatus>("toggle_remote_access", { enabled });
+src/lib/tauri.ts:1888:  return invoke<RemoteAccessStatus>("get_remote_access_status");
+src/lib/tauri.ts:1892:  return invoke<string>("rotate_remote_token");
+src/lib/tauri.ts:1905:  return invoke<RemoteConnectionTest>("test_remote_mcp_connection");
+src/lib/tauri.ts:1919:  return invoke("set_stability_cmd", { sourceId, stability });
+src/lib/tauri.ts:1923:  return invoke("correct_memory_cmd", { sourceId, correctionPrompt });
+src/lib/tauri.ts:1940:  return invoke("list_decision_domains_cmd", {});
+src/lib/tauri.ts:1946:  return invoke("is_run_at_login_enabled");
+src/lib/tauri.ts:1950:  return invoke("set_run_at_login", { enabled });
+src/lib/tauri.ts:1954:  return invoke("quit_wenlan_full");
+src/lib/tauri.ts:1959:  return invoke("quit_origin_full");
