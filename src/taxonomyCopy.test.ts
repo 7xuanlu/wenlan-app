@@ -51,6 +51,7 @@ describe("taxonomy and product copy", () => {
       "src/components/onboarding/FirstPageModal.tsx",
       "src/components/onboarding/GhostPagesRow.tsx",
       "src/components/ChatImport/ImportProgress.tsx",
+      "src/components/intelligence/IntelligenceSetup.tsx",
       "src/components/memory/Greeting.tsx",
       "src/components/memory/ActivityFeed.tsx",
       "src/components/memory/PageDetail.tsx",

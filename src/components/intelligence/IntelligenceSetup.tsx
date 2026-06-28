@@ -157,10 +157,10 @@ export function ApiKeyCard({
             }}
           >
             <div style={{ fontWeight: 500, color: "var(--mem-text)", marginBottom: 2, fontSize: "12px" }}>
-              Concept synthesis requires a cloud model
+              Page synthesis requires a cloud model
             </div>
             <div>Your memories are safe — search, recall, and entity linking work on-device.</div>
-            <div style={{ marginTop: 6 }}>Add an Anthropic API key above to enable concept distillation.</div>
+            <div style={{ marginTop: 6 }}>Add an Anthropic API key above to enable page distillation.</div>
           </div>
         )}
 
@@ -212,7 +212,7 @@ export function ModelChoiceSection() {
       <div className="flex items-center justify-between">
         <div>
           <div style={{ fontSize: "13px", fontWeight: 500, color: "var(--mem-text)", fontFamily: "var(--mem-font-body)" }}>Synthesis model</div>
-          <div style={{ fontSize: "11px", color: "var(--mem-text-tertiary)", fontFamily: "var(--mem-font-body)" }}>Distillation, concepts, contradictions</div>
+          <div style={{ fontSize: "11px", color: "var(--mem-text-tertiary)", fontFamily: "var(--mem-font-body)" }}>Distillation, pages, contradictions</div>
         </div>
         <select
           value={synthesisModel ?? "claude-sonnet-4-6"}
