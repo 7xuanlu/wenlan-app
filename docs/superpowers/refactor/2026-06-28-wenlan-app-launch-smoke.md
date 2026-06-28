@@ -178,7 +178,7 @@ cargo test --manifest-path app/Cargo.toml --lib
 pnpm test
 ```
 
-Known residual risk: `package.json` still has a `dev:daemon` script with an older `../..` backend default. This checkpoint fixes the sidecar prep path used by app build/launch packaging; `dev:daemon` should be folded into the same resolver in a separate dev-script cleanup.
+Resolved follow-up: `package.json` `dev:daemon` now uses `scripts/resolve-backend-dir.sh`, with coverage in `scripts/prepare-sidecars.test.ts`, so dev daemon startup and sidecar prep share the same backend checkout resolver.
 
 ## Next Gate
 

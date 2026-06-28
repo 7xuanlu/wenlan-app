@@ -1,4 +1,4 @@
-/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-runtime-doc-refresh/src/lib/tauri.ts
+src/lib/tauri.ts
    4: export async function setTrafficLightsVisible(visible: boolean): Promise<void> {
    8: export interface SearchResult {
         field: id, content, source, source_id, title, url, chunk_index, last_modified, score, chunk_type, language, semantic_unit, memory_type, domain, space, source_agent, confidence, confirmed, entity_id, entity_name, quality, is_archived, is_recap, structured_fields, retrieval_cue
@@ -51,311 +51,321 @@
  260: export async function ingestClipboard(content: string): Promise<number> {
  264: export async function getClipboardEnabled(): Promise<boolean> {
  268: export async function setClipboardEnabled(enabled: boolean): Promise<void> {
- 272: export async function getApiKey(): Promise<string | null> {
- 276: export async function setApiKey(key: string): Promise<void> {
- 280: export async function getModelChoice(): Promise<[string | null, string | null]> {
- 285: export async function setModelChoice(
- 292: export interface SystemInfo {
+ 272: export async function getScreenCaptureEnabled(): Promise<boolean> {
+ 276: export async function setScreenCaptureEnabled(enabled: boolean): Promise<void> {
+ 280: export async function checkScreenPermission(): Promise<boolean> {
+ 284: export async function requestScreenPermission(): Promise<boolean> {
+ 288: export async function getApiKey(): Promise<string | null> {
+ 292: export async function setApiKey(key: string): Promise<void> {
+ 296: export async function getModelChoice(): Promise<[string | null, string | null]> {
+ 301: export async function setModelChoice(
+ 308: export interface SystemInfo {
         field: total_ram_gb, available_ram_gb, has_metal, has_cuda, os, arch, recommended_builtin
- 302: export async function getSystemInfo(): Promise<SystemInfo> {
- 306: export async function getExternalLlm(): Promise<[string | null, string | null]> {
- 311: export async function setExternalLlm(
- 318: export async function testExternalLlm(
- 325: export interface OnDeviceModelEntry {
+ 318: export async function getSystemInfo(): Promise<SystemInfo> {
+ 322: export async function getExternalLlm(): Promise<[string | null, string | null]> {
+ 327: export async function setExternalLlm(
+ 334: export interface TestLlmResponse {
+        field: response
+ 338: export async function testExternalLlm(
+ 345: export interface OnDeviceModelEntry {
         field: id, display_name, param_count, ram_required_gb, file_size_gb, cached
- 334: export interface OnDeviceModelResponse {
+ 354: export interface OnDeviceModelResponse {
         field: loaded, selected, models
- 343: export async function getOnDeviceModel(): Promise<OnDeviceModelResponse> {
- 348: export async function downloadOnDeviceModel(modelId: string): Promise<void> {
- 352: export interface ActivitySummary {
+ 363: export async function getOnDeviceModel(): Promise<OnDeviceModelResponse> {
+ 368: export async function downloadOnDeviceModel(modelId: string): Promise<void> {
+ 372: export interface ActivitySummary {
         field: id, started_at, ended_at, is_live, app_names
- 360: export async function listActivities(): Promise<ActivitySummary[]> {
- 364: export async function rebuildActivities(): Promise<number> {
- 368: export interface WorkingMemoryEntry {
+ 380: export async function listActivities(): Promise<ActivitySummary[]> {
+ 384: export async function rebuildActivities(): Promise<number> {
+ 388: export interface WorkingMemoryEntry {
         field: timestamp, source, app_name, window_title, text_snippet, source_id
- 377: export async function getWorkingMemory(): Promise<WorkingMemoryEntry[]> {
- 381: export type CaptureStats = Record<string, number>;
- 383: export async function getCaptureStats(): Promise<CaptureStats> {
- 389: export interface TagData {
+ 397: export async function getWorkingMemory(): Promise<WorkingMemoryEntry[]> {
+ 401: export type CaptureStats = Record<string, number>;
+ 403: export async function getCaptureStats(): Promise<CaptureStats> {
+ 409: export interface TagData {
         field: tags, document_tags, categories, document_categories
- 398: export interface Space {
+ 418: export interface Space {
         field: id, name, description, suggested, starred, sort_order, memory_count, entity_count, created_at, updated_at
- 412: export interface SpaceRule {
+ 432: export interface SpaceRule {
         field: kind, pattern
- 417: export interface LegacySpace {
+ 437: export interface LegacySpace {
         field: id, name, icon, color, rules, pinned, auto_detected, created_at
- 428: export interface ActivityStream {
+ 448: export interface ActivityStream {
         field: id, space_id, name, started_at, ended_at, app_sequence
- 437: export interface SpaceData {
+ 457: export interface SpaceData {
         field: spaces, activity_streams, document_spaces, document_tags, tags
- 445: export async function listAllTags(): Promise<TagData> {
- 449: export async function setDocumentTags(
- 457: export async function deleteTag(name: string): Promise<void> {
- 461: export async function suggestTags(
- 469: export async function listSpaces(): Promise<Space[]> {
- 473: export async function getSpace(name: string): Promise<Space | null> {
- 477: export async function createSpace(
- 484: export async function updateSpace(
- 492: export async function deleteSpace(name: string, memoryAction?: string): Promise<void> {
- 496: export async function confirmSpace(name: string): Promise<void> {
- 500: export async function reorderSpace(name: string, newOrder: number): Promise<void> {
- 504: export async function toggleSpaceStarred(name: string): Promise<boolean> {
- 508: export async function setDocumentSpace(
- 516: export async function addLegacySpace(
- 524: export async function removeLegacySpace(spaceId: string): Promise<void> {
- 528: export async function renameLegacySpace(
- 535: export async function pinLegacySpace(spaceId: string): Promise<void> {
- 541: export interface SessionSnapshot {
+ 465: export async function listAllTags(): Promise<TagData> {
+ 469: export async function setDocumentTags(
+ 477: export async function deleteTag(name: string): Promise<void> {
+ 481: export async function suggestTags(
+ 489: export async function listSpaces(): Promise<Space[]> {
+ 493: export async function getSpace(name: string): Promise<Space | null> {
+ 497: export async function createSpace(
+ 504: export async function updateSpace(
+ 512: export async function deleteSpace(name: string, memoryAction?: string): Promise<void> {
+ 516: export async function confirmSpace(name: string): Promise<void> {
+ 520: export async function reorderSpace(name: string, newOrder: number): Promise<void> {
+ 524: export async function toggleSpaceStarred(name: string): Promise<boolean> {
+ 528: export async function setDocumentSpace(
+ 536: export async function addLegacySpace(
+ 544: export async function removeLegacySpace(spaceId: string): Promise<void> {
+ 548: export async function renameLegacySpace(
+ 555: export async function pinLegacySpace(spaceId: string): Promise<void> {
+ 561: export interface SessionSnapshot {
         field: id, activity_id, started_at, ended_at, primary_apps, summary, tags, capture_count
- 552: export async function getSessionSnapshots(limit?: number): Promise<SessionSnapshot[]> {
- 556: export interface SnapshotCapture {
+ 572: export async function getSessionSnapshots(limit?: number): Promise<SessionSnapshot[]> {
+ 576: export interface SnapshotCapture {
         field: source_id, app_name, window_title, timestamp, source
- 564: export async function getSnapshotCaptures(snapshotId: string): Promise<SnapshotCapture[]> {
- 568: export interface SnapshotCaptureWithContent {
+ 584: export async function getSnapshotCaptures(snapshotId: string): Promise<SnapshotCapture[]> {
+ 588: export interface SnapshotCaptureWithContent {
         field: source_id, app_name, window_title, timestamp, source, content, summary
- 578: export async function getSnapshotCapturesWithContent(snapshotId: string): Promise<SnapshotCaptureWithContent[]> {
- 582: export async function deleteSnapshot(snapshotId: string): Promise<void> {
- 588: export async function getSkipApps(): Promise<string[]> {
- 592: export async function setSkipApps(apps: string[]): Promise<void> {
- 596: export async function getSkipTitlePatterns(): Promise<string[]> {
- 600: export async function setSkipTitlePatterns(patterns: string[]): Promise<void> {
- 604: export async function getPrivateBrowsingDetection(): Promise<boolean> {
- 608: export async function setPrivateBrowsingDetection(enabled: boolean): Promise<void> {
- 614: export type MemoryType = 'identity' | 'preference' | 'decision' | 'lesson' | 'gotcha' | 'fact';
- 616: export interface MemoryFacet {
+ 598: export async function getSnapshotCapturesWithContent(snapshotId: string): Promise<SnapshotCaptureWithContent[]> {
+ 602: export async function deleteSnapshot(snapshotId: string): Promise<void> {
+ 608: export async function getSkipApps(): Promise<string[]> {
+ 612: export async function setSkipApps(apps: string[]): Promise<void> {
+ 616: export async function getSkipTitlePatterns(): Promise<string[]> {
+ 620: export async function setSkipTitlePatterns(patterns: string[]): Promise<void> {
+ 624: export async function getPrivateBrowsingDetection(): Promise<boolean> {
+ 628: export async function setPrivateBrowsingDetection(enabled: boolean): Promise<void> {
+ 634: export type MemoryType = 'identity' | 'preference' | 'decision' | 'lesson' | 'gotcha' | 'fact';
+ 636: export interface MemoryFacet {
         field: type, label, color, description
- 623: export const MEMORY_FACETS: MemoryFacet[] = [
- 640: export const FACET_COLORS: Record<string, string> = {
- 650: export type StabilityTier = "protected" | "standard" | "ephemeral";
- 652: export const STABILITY_TIERS: Record<string, StabilityTier> = {
- 662: export interface PendingRevision {
+ 643: export const MEMORY_FACETS: MemoryFacet[] = [
+ 660: export const FACET_COLORS: Record<string, string> = {
+ 670: export type StabilityTier = "protected" | "standard" | "ephemeral";
+ 672: export const STABILITY_TIERS: Record<string, StabilityTier> = {
+ 682: export interface PendingRevision {
         field: source_id, content, source_agent
- 668: export interface PendingRevisionItem {
+ 688: export interface PendingRevisionItem {
         field: target_source_id, revision_source_id, revision_content, source_agent, last_modified
- 676: export interface RevisionAcceptResponse {
+ 696: export interface RevisionAcceptResponse {
         field: target_source_id, revision_source_id, wrote
- 682: export interface RevisionDismissResponse {
+ 702: export interface RevisionDismissResponse {
         field: target_source_id, wrote
- 687: export interface ContradictionDismissResponse {
+ 707: export interface ContradictionDismissResponse {
         field: source_id, wrote
- 692: export interface MemoryVersionItem {
+ 712: export interface MemoryVersionItem {
         field: source_id, title, content, memory_type, confirmed, supersedes, last_modified
- 702: export interface MemoryRevisionEntry {
+ 722: export interface MemoryRevisionEntry {
         field: source_id, depth, title, content_preview, last_modified, source_agent, supersede_mode, delta_summary
- 713: export interface ListMemoryRevisionsResponse {
+ 733: export interface ListMemoryRevisionsResponse {
         field: current_source_id, chain_depth, entries
- 719: export interface PageChangelogEntry {
+ 739: export interface PageChangelogEntry {
         field: version, at, edited_by, delta_summary, incoming_source_ids
- 727: export interface ListPageRevisionsResponse {
+ 747: export interface ListPageRevisionsResponse {
         field: page_id, current_version, user_edited, stale_reason, entries
- 737: export interface Entity {
+ 757: export interface Entity {
         field: id, name, entity_type, domain, space, source_agent, confidence, confirmed, created_at, updated_at
- 750: export interface Observation {
+ 770: export interface Observation {
         field: id, entity_id, content, source_agent, confidence, confirmed, created_at
- 760: export interface RelationWithEntity {
+ 780: export interface RelationWithEntity {
         field: id, relation_type, direction, entity_id, entity_name, entity_type, source_agent, created_at
- 771: export interface EntityDetail {
+ 791: export interface EntityDetail {
         field: entity, observations, relations
- 777: export interface EntitySearchResult {
+ 797: export interface EntitySearchResult {
         field: entity, distance
- 782: export interface MemoryItem {
+ 802: export interface MemoryItem {
         field: source_id, title, content, summary, source_text, memory_type, domain, space, source_agent, confidence, confirmed, stability, pinned, supersedes, last_modified, chunk_count, entity_id, quality, is_recap, enrichment_status, supersede_mode, structured_fields, retrieval_cue, access_count, version, changelog
- 817: export interface DomainInfo {
+ 837: export interface DomainInfo {
         field: name, count
- 822: export interface TypeBreakdown {
+ 842: export interface TypeBreakdown {
         field: memory_type, count
- 827: export interface MemoryStats {
+ 847: export interface MemoryStats {
         field: total, new_today, confirmed, domains, by_type, entity_linked, enrichment_pending
- 837: export interface EntitySuggestion {
+ 857: export interface EntitySuggestion {
         field: id, entity_name, source_ids, confidence, created_at
- 847: export interface Page {
+ 867: export interface Page {
         field: id, title, summary, content, entity_id, domain, space, source_memory_ids, version, status, created_at, last_compiled, last_modified, sources_updated_count, stale_reason, user_edited
- 868: export type Concept = Page;
- 870: export interface PageSource {
+ 888: export type Concept = Page;
+ 890: export interface PageSource {
         field: page_id, memory_source_id, linked_at, link_reason
- 878: export type ConceptSource = PageSource;
- 880: export interface PageSourceWithMemory {
+ 898: export type ConceptSource = PageSource;
+ 900: export interface PageSourceWithMemory {
         field: source, memory
- 886: export type ConceptSourceWithMemory = PageSourceWithMemory;
- 888: export interface PageLinkOutbound {
+ 906: export type ConceptSourceWithMemory = PageSourceWithMemory;
+ 908: export interface PageLinkOutbound {
         field: label, target_page_id
- 893: export interface PageLinkInbound {
+ 913: export interface PageLinkInbound {
         field: source_page_id, label
- 898: export interface PageLinksResponse {
+ 918: export interface PageLinksResponse {
         field: outbound, inbound
- 903: export interface OrphanLink {
+ 923: export interface OrphanLink {
         field: label, count
- 908: export interface OrphanLinksResponse {
+ 928: export interface OrphanLinksResponse {
         field: min_count, orphan_labels
- 913: export async function getPageSources(
- 924: export async function getConceptSources(
- 930: export async function getPageLinks(pageId: string): Promise<PageLinksResponse> {
- 934: export async function listOrphanLinks(minCount?: number): Promise<OrphanLinksResponse> {
- 940: export interface Profile {
+ 933: export async function getPageSources(
+ 944: export async function getConceptSources(
+ 950: export async function getPageLinks(pageId: string): Promise<PageLinksResponse> {
+ 954: export async function listOrphanLinks(minCount?: number): Promise<OrphanLinksResponse> {
+ 960: export interface Profile {
         field: id, name, display_name, email, bio, avatar_path, created_at, updated_at
- 951: export interface AgentConnection {
+ 971: export interface AgentConnection {
         field: id, name, display_name, agent_type, description, enabled, trust_level, last_seen_at, memory_count, created_at, updated_at
- 969: export async function createEntity(
- 981: export async function listEntities(
- 992: export async function searchEntities(
-1006: export async function getEntityDetail(entityId: string): Promise<EntityDetail> {
-1011: export async function updateObservation(observationId: string, content: string): Promise<void> {
-1015: export async function deleteObservation(observationId: string): Promise<void> {
-1019: export async function addObservation(
-1033: export async function deleteEntity(entityId: string): Promise<void> {
-1037: export async function confirmEntity(entityId: string, confirmed: boolean): Promise<void> {
-1041: export async function confirmObservation(observationId: string, confirmed: boolean): Promise<void> {
-1047: export interface StoreMemoryRequest {
+ 989: export async function createEntity(
+1001: export async function listEntities(
+1012: export async function searchEntities(
+1026: export async function getEntityDetail(entityId: string): Promise<EntityDetail> {
+1031: export async function updateObservation(observationId: string, content: string): Promise<void> {
+1035: export async function deleteObservation(observationId: string): Promise<void> {
+1039: export async function addObservation(
+1053: export async function deleteEntity(entityId: string): Promise<void> {
+1057: export async function confirmEntity(entityId: string, confirmed: boolean): Promise<void> {
+1061: export async function confirmObservation(observationId: string, confirmed: boolean): Promise<void> {
+1067: export interface StoreMemoryRequest {
         field: content, memory_type, domain, source_agent, title, tags, confidence, supersedes, structured_fields, retrieval_cue
-1060: export interface StoreMemoryResponse {
+1080: export interface StoreMemoryResponse {
         field: source_id, warnings, enrichment, hint, triggered_revisions, auto_superseded
-1080: export async function storeMemory(req: StoreMemoryRequest): Promise<StoreMemoryResponse> {
-1086: export async function listMemoriesRich(
-1101: export async function getMemoryDetail(sourceId: string): Promise<MemoryItem | null> {
-1106: export interface EnrichmentStepStatus {
+1100: export async function storeMemory(req: StoreMemoryRequest): Promise<StoreMemoryResponse> {
+1106: export async function listMemoriesRich(
+1121: export async function getMemoryDetail(sourceId: string): Promise<MemoryItem | null> {
+1126: export interface EnrichmentStepStatus {
         field: step, status, error, attempts
-1113: export interface EnrichmentStatusResponse {
+1133: export interface EnrichmentStatusResponse {
         field: source_id, summary, steps
-1119: export async function getEnrichmentStatus(
-1126: export async function listMemoriesByIds(ids: string[]): Promise<MemoryItem[]> {
-1132: export async function getMemoryStats(): Promise<MemoryStats> {
-1136: export interface TopMemory {
+1139: export async function getEnrichmentStatus(
+1146: export async function listMemoriesByIds(ids: string[]): Promise<MemoryItem[]> {
+1152: export async function getMemoryStats(): Promise<MemoryStats> {
+1156: export interface TopMemory {
         field: source_id, content, memory_type, domain, times_retrieved
-1144: export interface HomeStats {
+1164: export interface HomeStats {
         field: total, new_today, confirmed, total_ingested, active_insights, distilled_today, distilled_all, sources_archived, times_served_today, words_saved_today, times_served_week, words_saved_week, times_served_all, words_saved_all, corrections_active, top_memories
-1163: export async function getHomeStats(): Promise<HomeStats> {
-1167: export async function updateMemory(
-1183: export async function reclassifyMemory(
-1190: export async function getVersionChain(
-1196: export async function getMemoryRevisions(
-1202: export async function getPageRevisions(
-1208: export async function listPendingRevisions(limit?: number): Promise<PendingRevisionItem[]> {
-1212: export async function acceptPendingRevision(sourceId: string): Promise<RevisionAcceptResponse> {
-1216: export async function dismissPendingRevision(sourceId: string): Promise<RevisionDismissResponse> {
-1220: export async function dismissContradiction(sourceId: string): Promise<ContradictionDismissResponse> {
-1224: export async function confirmMemory(sourceId: string, confirmed: boolean = true): Promise<void> {
-1228: export async function getPendingRevision(sourceId: string): Promise<PendingRevision | null> {
-1234: export type ProposalAction =
-1241: export type RefinementPayload =
-1261: export interface RefinementProposalSummary {
+1183: export async function getHomeStats(): Promise<HomeStats> {
+1187: export async function updateMemory(
+1203: export async function reclassifyMemory(
+1210: export async function getVersionChain(
+1216: export async function getMemoryRevisions(
+1222: export async function getPageRevisions(
+1228: export async function listPendingRevisions(limit?: number): Promise<PendingRevisionItem[]> {
+1232: export async function acceptPendingRevision(sourceId: string): Promise<RevisionAcceptResponse> {
+1236: export async function dismissPendingRevision(sourceId: string): Promise<RevisionDismissResponse> {
+1240: export async function dismissContradiction(sourceId: string): Promise<ContradictionDismissResponse> {
+1244: export async function confirmMemory(sourceId: string, confirmed: boolean = true): Promise<void> {
+1248: export async function getPendingRevision(sourceId: string): Promise<PendingRevision | null> {
+1254: export type ProposalAction =
+1261: export type RefinementPayload =
+1281: export interface RefinementProposalSummary {
         field: id, action, source_ids, payload, confidence, created_at
-1270: export interface ListRefinementsResponse {
+1290: export interface ListRefinementsResponse {
         field: proposals
-1274: export interface AcceptRefinementResponse {
+1294: export interface AcceptRefinementResponse {
         field: id, action_applied
-1279: export interface RejectRefinementResponse {
+1299: export interface RejectRefinementResponse {
         field: id
-1283: export async function listRefinements(limit?: number): Promise<ListRefinementsResponse> {
-1287: export async function acceptRefinement(id: string): Promise<AcceptRefinementResponse> {
-1291: export async function rejectRefinement(id: string): Promise<RejectRefinementResponse> {
-1297: export async function getEntitySuggestions(): Promise<EntitySuggestion[]> {
-1301: export async function approveEntitySuggestion(id: string): Promise<{ entity_id: string; entity_name: string; memories_linked: number }> {
-1305: export async function dismissEntitySuggestion(id: string): Promise<void> {
-1311: export async function getPage(id: string): Promise<Page | null> {
-1317: export async function getConcept(id: string): Promise<Page | null> {
-1321: export async function updatePage(id: string, content: string): Promise<void> {
-1326: export async function updateConcept(id: string, content: string): Promise<void> {
-1330: export async function deletePage(id: string): Promise<void> {
-1335: export async function deleteConcept(id: string): Promise<void> {
-1339: export async function archivePage(id: string): Promise<void> {
-1344: export async function archiveConcept(id: string): Promise<void> {
-1348: export async function searchPages(
-1357: export async function searchConcepts(
-1364: export async function listPages(
-1375: export async function listConcepts(
-1386: export interface RetrievalEvent {
+1303: export async function listRefinements(limit?: number): Promise<ListRefinementsResponse> {
+1307: export async function acceptRefinement(id: string): Promise<AcceptRefinementResponse> {
+1311: export async function rejectRefinement(id: string): Promise<RejectRefinementResponse> {
+1317: export async function getEntitySuggestions(): Promise<EntitySuggestion[]> {
+1321: export async function approveEntitySuggestion(id: string): Promise<{ entity_id: string; entity_name: string; memories_linked: number }> {
+1325: export async function dismissEntitySuggestion(id: string): Promise<void> {
+1331: export async function getPage(id: string): Promise<Page | null> {
+1337: export async function getConcept(id: string): Promise<Page | null> {
+1341: export async function updatePage(id: string, content: string): Promise<void> {
+1346: export async function updateConcept(id: string, content: string): Promise<void> {
+1350: export async function deletePage(id: string): Promise<void> {
+1355: export async function deleteConcept(id: string): Promise<void> {
+1359: export async function archivePage(id: string): Promise<void> {
+1364: export async function archiveConcept(id: string): Promise<void> {
+1368: export async function searchPages(
+1377: export async function searchConcepts(
+1384: export async function listPages(
+1395: export async function listConcepts(
+1406: export interface RetrievalEvent {
         field: timestamp_ms, agent_name, query, page_titles, page_ids, memory_snippets
-1396: export type PageChangeKind = "created" | "revised" | "merged";
-1399: export type ConceptChangeKind = PageChangeKind;
-1401: export interface PageChange {
+1416: export type PageChangeKind = "created" | "revised" | "merged";
+1419: export type ConceptChangeKind = PageChangeKind;
+1421: export interface PageChange {
         field: page_id, title, change_kind, changed_at_ms
-1409: export type ConceptChange = PageChange;
-1411: export async function listRecentRetrievals(limit?: number): Promise<RetrievalEvent[]> {
-1415: export async function listRecentChanges(limit?: number): Promise<PageChange[]> {
-1419: export type ActivityKind = "concept" | "memory";
-1422: export type ActivityBadge =
-1430: export interface RecentActivityItem {
+1429: export type ConceptChange = PageChange;
+1431: export async function listRecentRetrievals(limit?: number): Promise<RetrievalEvent[]> {
+1435: export async function listRecentChanges(limit?: number): Promise<PageChange[]> {
+1439: export type ActivityKind = "concept" | "memory";
+1442: export type ActivityBadge =
+1450: export interface RecentActivityItem {
         field: kind, id, title, snippet, timestamp_ms, badge
-1439: export async function listRecentMemories(
-1449: export async function listUnconfirmedMemories(
-1455: export async function listRecentPages(
-1466: export async function listRecentConcepts(
-1473: export interface RecentRelation {
+1459: export async function listRecentMemories(
+1469: export async function listUnconfirmedMemories(
+1475: export async function listRecentPages(
+1486: export async function listRecentConcepts(
+1493: export interface RecentRelation {
         field: id, from_entity_id, relation_type, to_entity_id, from_entity_name, to_entity_name, created_at_ms
-1483: export async function listRecentRelations(
-1493: export async function exportPagesToObsidian(
-1500: export async function exportConceptsToObsidian(
-1506: export async function exportPageToObsidian(
-1514: export async function exportConceptToObsidian(
-1523: export async function getKnowledgePath(): Promise<string> {
-1527: export async function countKnowledgeFiles(): Promise<number> {
-1533: export async function getProfile(): Promise<Profile | null> {
-1537: export async function updateProfile(
-1557: export async function listAgents(): Promise<AgentConnection[]> {
-1561: export async function getAgent(name: string): Promise<AgentConnection | null> {
-1565: export async function updateAgent(
-1586: export async function deleteAgent(name: string): Promise<void> {
-1592: export async function pinMemory(sourceId: string): Promise<void> {
-1596: export async function unpinMemory(sourceId: string): Promise<void> {
-1600: export async function listPinnedMemories(): Promise<MemoryItem[]> {
-1607: export interface ImportResult {
+1503: export async function listRecentRelations(
+1513: export interface ExportStats {
+        field: exported, skipped, failed
+1519: export interface ExportPageResponse {
+        field: path
+1523: export async function exportPagesToObsidian(
+1530: export async function exportConceptsToObsidian(
+1536: export async function exportPageToObsidian(
+1544: export async function exportConceptToObsidian(
+1553: export async function getKnowledgePath(): Promise<string> {
+1557: export async function countKnowledgeFiles(): Promise<number> {
+1563: export async function getProfile(): Promise<Profile | null> {
+1567: export async function updateProfile(
+1587: export async function listAgents(): Promise<AgentConnection[]> {
+1591: export async function getAgent(name: string): Promise<AgentConnection | null> {
+1595: export async function updateAgent(
+1616: export async function deleteAgent(name: string): Promise<void> {
+1622: export async function pinMemory(sourceId: string): Promise<void> {
+1626: export async function unpinMemory(sourceId: string): Promise<void> {
+1630: export async function listPinnedMemories(): Promise<MemoryItem[]> {
+1637: export interface ImportResult {
         field: imported, skipped, breakdown, entities_created, observations_added, relations_created, batch_id
-1617: export async function importMemories(
-1631: export interface ImportChatExportResponse {
+1647: export async function importMemories(
+1661: export interface ImportChatExportResponse {
         field: import_id, vendor, conversations_total, conversations_new, conversations_skipped_existing, memories_stored
-1640: export async function importChatExport(
-1646: export async function saveTempFile(bytes: Uint8Array, filename: string): Promise<string> {
-1652: export const IMPORT_STAGE_LABELS: Record<string, string> = {
-1661: export function importStageLabel(stage: string): string {
-1665: export interface PendingImport {
+1670: export async function importChatExport(
+1676: export async function saveTempFile(bytes: Uint8Array, filename: string): Promise<string> {
+1682: export const IMPORT_STAGE_LABELS: Record<string, string> = {
+1691: export function importStageLabel(stage: string): string {
+1695: export interface PendingImport {
         field: id, vendor, stage, source_path, processed_conversations, total_conversations
-1674: export async function listPendingImports(): Promise<PendingImport[]> {
-1680: export async function setAvatar(sourcePath: string): Promise<string> {
-1684: export async function getAvatarDataUrl(): Promise<string | null> {
-1688: export async function removeAvatar(): Promise<void> {
-1694: export interface McpClient {
+1704: export async function listPendingImports(): Promise<PendingImport[]> {
+1710: export async function setAvatar(sourcePath: string): Promise<string> {
+1714: export async function getAvatarDataUrl(): Promise<string | null> {
+1718: export async function removeAvatar(): Promise<void> {
+1724: export interface McpClient {
         field: name, client_type, config_path, detected, already_configured
-1702: export async function shouldShowWizard(): Promise<boolean> {
-1706: export interface SetupStatus {
+1732: export async function shouldShowWizard(): Promise<boolean> {
+1736: export interface SetupStatus {
         field: setup_completed, mode, anthropic_key_configured, local_model_selected, local_model_loaded, local_model_cached
-1715: export async function getSetupStatus(): Promise<SetupStatus> {
-1719: export async function getSetupCompleted(): Promise<boolean> {
-1723: export async function setSetupCompleted(completed: boolean): Promise<void> {
-1727: export async function detectMcpClients(): Promise<McpClient[]> {
-1731: export async function writeMcpConfig(clientType: string): Promise<void> {
-1737: export async function getWenlanMcpEntry(): Promise<{
-1746: export type MilestoneId =
-1754: export interface MilestoneRecord {
+1745: export async function getSetupStatus(): Promise<SetupStatus> {
+1749: export async function getSetupCompleted(): Promise<boolean> {
+1753: export async function setSetupCompleted(completed: boolean): Promise<void> {
+1757: export async function detectMcpClients(): Promise<McpClient[]> {
+1761: export async function writeMcpConfig(clientType: string): Promise<void> {
+1767: export async function getWenlanMcpEntry(): Promise<{
+1776: export type MilestoneId =
+1784: export interface MilestoneRecord {
         field: id, first_triggered_at, acknowledged_at, payload
-1761: export async function listOnboardingMilestones(): Promise<MilestoneRecord[]> {
-1765: export async function acknowledgeOnboardingMilestone(id: MilestoneId): Promise<void> {
-1769: export async function resetOnboardingMilestones(): Promise<void> {
-1775: export interface BriefingResponse {
+1791: export async function listOnboardingMilestones(): Promise<MilestoneRecord[]> {
+1795: export async function acknowledgeOnboardingMilestone(id: MilestoneId): Promise<void> {
+1799: export async function resetOnboardingMilestones(): Promise<void> {
+1805: export interface BriefingResponse {
         field: content, new_today, primary_agent, generated_at, is_stale
-1783: export interface ContradictionItem {
+1813: export interface ContradictionItem {
         field: id, new_content, existing_content, new_source_id, existing_source_id
-1791: export async function getBriefing(): Promise<BriefingResponse> {
-1795: export async function getPendingContradictions(): Promise<ContradictionItem[]> {
-1801: export interface NarrativeResponse {
+1821: export async function getBriefing(): Promise<BriefingResponse> {
+1825: export async function getPendingContradictions(): Promise<ContradictionItem[]> {
+1831: export interface NarrativeResponse {
         field: content, generated_at, is_stale, memory_count
-1808: export async function getProfileNarrative(): Promise<NarrativeResponse> {
-1812: export async function regenerateNarrative(): Promise<NarrativeResponse> {
-1818: export interface AgentActivityItem {
+1838: export async function getProfileNarrative(): Promise<NarrativeResponse> {
+1842: export async function regenerateNarrative(): Promise<NarrativeResponse> {
+1848: export interface AgentActivityItem {
         field: id, timestamp, agent_name, action, memory_ids, query, detail, memory_titles
-1829: export async function listAgentActivity(
-1843: export type RemoteAccessStatus =
-1849: export async function toggleRemoteAccess(
-1855: export async function getRemoteAccessStatus(): Promise<RemoteAccessStatus> {
-1859: export async function rotateRemoteToken(): Promise<string> {
-1864: export interface RemoteConnectionTest {
+1859: export async function listAgentActivity(
+1873: export type RemoteAccessStatus =
+1879: export async function toggleRemoteAccess(
+1885: export async function getRemoteAccessStatus(): Promise<RemoteAccessStatus> {
+1889: export async function rotateRemoteToken(): Promise<string> {
+1894: export interface RemoteConnectionTest {
         field: ok, latency_ms, error
-1872: export async function testRemoteMcpConnection(): Promise<RemoteConnectionTest> {
-1878: export async function getNurtureCards(limit?: number, domain?: string): Promise<MemoryItem[]> {
-1886: export async function setStability(sourceId: string, stability: "new" | "learned" | "confirmed"): Promise<void> {
-1890: export async function correctMemory(sourceId: string, correctionPrompt: string): Promise<string> {
-1896: export async function listDecisions(
-1907: export async function listDecisionDomains(): Promise<string[]> {
-1913: export async function isRunAtLoginEnabled(): Promise<boolean> {
-1917: export async function setRunAtLogin(enabled: boolean): Promise<void> {
-1921: export async function quitWenlanFull(): Promise<void> {
-1926: export async function quitOriginFull(): Promise<void> {
+1902: export async function testRemoteMcpConnection(): Promise<RemoteConnectionTest> {
+1908: export async function getNurtureCards(limit?: number, domain?: string): Promise<MemoryItem[]> {
+1916: export async function setStability(sourceId: string, stability: "new" | "learned" | "confirmed"): Promise<void> {
+1920: export async function correctMemory(sourceId: string, correctionPrompt: string): Promise<string> {
+1926: export async function listDecisions(
+1937: export async function listDecisionDomains(): Promise<string[]> {
+1943: export async function isRunAtLoginEnabled(): Promise<boolean> {
+1947: export async function setRunAtLogin(enabled: boolean): Promise<void> {
+1951: export async function quitWenlanFull(): Promise<void> {
+1956: export async function quitOriginFull(): Promise<void> {
