@@ -459,7 +459,7 @@ pub async fn write_mcp_config(client_type: String) -> Result<(), String> {
 /// copy-pasteable manual-setup JSON snippet with real values instead of
 /// `/path/to/wenlan-mcp` placeholder text.
 #[tauri::command]
-pub async fn get_wenlan_mcp_entry() -> Result<serde_json::Value, String> {
+pub async fn get_wenlan_mcp_entry() -> Result<crate::mcp_config::WenlanMcpEntry, String> {
     Ok(crate::mcp_config::wenlan_mcp_entry())
 }
 

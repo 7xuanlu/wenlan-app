@@ -2,10 +2,10 @@
 
 - **Date:** 2026-06-28
 - **App checkout:** `/Users/lucian/Repos/wenlan-app`
-- **App branch:** `codex/wenlan-app-space-response-typing`
+- **App branch:** `codex/wenlan-app-mcp-entry-typing`
 - **Wenlan backend source:** `/Users/lucian/Repos/wenlan`
 - **Purpose:** prerequisite matrix before the full `origin-app` -> `wenlan-app` refactor run.
-- **Current status:** refreshed on 2026-06-28 after typed-client, sidecar, MCP bridge, Dock/app-activation, avatar path, neutral theme fallback, Home pending-revision/refinery review work, daemon-backed setup status work, post-merge API parity wrappers, `/api/capture-stats`, daemon-backed global tag inventory, daemon-backed status/reranker diagnostics, entity-suggestion action compatibility with the refinery queue, and typed space CRUD/star response envelopes.
+- **Current status:** refreshed on 2026-06-28 after typed-client, sidecar, MCP bridge, Dock/app-activation, avatar path, neutral theme fallback, Home pending-revision/refinery review work, daemon-backed setup status work, post-merge API parity wrappers, `/api/capture-stats`, daemon-backed global tag inventory, daemon-backed status/reranker diagnostics, entity-suggestion action compatibility with the refinery queue, typed space/page/search/setup response envelopes, and typed MCP setup entry surface.
 
 ## Evidence Snapshot
 
@@ -52,7 +52,7 @@ These block "caught up enough for full refactor run".
 | `DELETE /api/agents/{name}` | `{ deleted: name }` | typed local Rust deleted-name envelope; public Tauri/TS surface remains void | move to shared response type after daemon publishes a named-delete envelope | required for Settings agent management |
 | `/api/config` | `ConfigResponse`, `UpdateConfigRequest` | switched to `wenlan-types`; wizard completion now updates `setup_completed` through daemon config; app-local builder helper still wraps shared type | converge remaining Settings/local toggles to daemon config or mark them app-local sensors; remove stale comments/helpers when shared defaults exist | required for settings |
 | `/api/setup/status` + `/api/setup/anthropic-key` | daemon setup routes; key set/clear return `SuccessResponse` | explicit setup-status DTO, Tauri command, TS wrapper, wizard gating, and typed key set/clear response helpers are present | keep setup daemon-owned; broaden settings diagnostics around mode/model/key state | required for setup correctness |
-| MCP config bridge | `app/src/mcp_config.rs`, setup wizard | writes `wenlan`; detects and preserves legacy `origin` entries | keep bridge behavior through at least one compatibility release | bridge release required |
+| MCP config bridge | `app/src/mcp_config.rs`, setup wizard | writes a typed `WenlanMcpEntry` for `wenlan`; detects and preserves legacy `origin` entries | keep bridge behavior through at least one compatibility release | bridge release required |
 | Remote access bridge | `app/src/remote_access.rs` | token path is `~/.config/wenlan-mcp/token` with legacy `origin-mcp` import fallback; relay URL intentionally remains legacy Origin until endpoint strategy exists | define relay endpoint strategy before URL rename; do not import legacy relay ids blindly | bridge release required |
 | Sidecar build contract | `app/tauri.conf.json`, `package.json`, `scripts/prepare-sidecars.sh` | uses `wenlan`, `wenlan-server`, `wenlan-mcp`, and `cloudflared`; `cargo build` passes after repeatable sidecar prep | keep repeatable sidecar prep; no hand-copying ad hoc binaries | required before build verification |
 

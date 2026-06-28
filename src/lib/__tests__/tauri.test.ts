@@ -160,4 +160,19 @@ describe("sources, page export, and knowledge wrappers", () => {
     await quitOriginFull();
     expect(invoke).toHaveBeenCalledWith("quit_origin_full");
   });
+
+  it("getWenlanMcpEntry calls the typed MCP entry command", async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const { getWenlanMcpEntry } = await import("../tauri");
+    (invoke as ReturnType<typeof vi.fn>).mockResolvedValue({
+      command: "npx",
+      args: ["-y", "wenlan-mcp"],
+    });
+
+    const result = await getWenlanMcpEntry();
+
+    expect(result.command).toBe("npx");
+    expect(result.args).toEqual(["-y", "wenlan-mcp"]);
+    expect(invoke).toHaveBeenCalledWith("get_wenlan_mcp_entry");
+  });
 });
