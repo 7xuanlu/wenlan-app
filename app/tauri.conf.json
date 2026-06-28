@@ -26,7 +26,7 @@
         },
         "alwaysOnTop": false,
         "center": true,
-        "visible": false
+        "visible": true
       }
     ],
     "macOSPrivateApi": true,

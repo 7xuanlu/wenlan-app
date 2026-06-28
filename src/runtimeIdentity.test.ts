@@ -58,6 +58,17 @@ describe("runtime product identity", () => {
     expect(capability.description).toBe("Default capability for Wenlan");
   });
 
+  it("declares the main window visible at launch", () => {
+    const tauri = JSON.parse(
+      readFileSync(resolve(root, "app/tauri.conf.json"), "utf8"),
+    );
+    const lib = readFileSync(resolve(root, "app/src/lib.rs"), "utf8");
+
+    expect(tauri.app.windows[0].visible).toBe(true);
+    expect(lib).toContain('handle.listen("app-ready"');
+    expect(lib).not.toContain("startup_reveal_fallback_delay");
+  });
+
   it("keeps product-owned visible copy on Wenlan", () => {
     const productOwnedFiles = [
       "src/components/memory/SettingsPage.tsx",

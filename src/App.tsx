@@ -52,8 +52,8 @@ export default function App() {
   const [prevPage, setPrevPage] = useState<Page>("spotlight");
   const clipboardEnabledRef = useRef(true);
 
-  // Signal backend that the webview has loaded, so it can show the window
-  // without a white flash.
+  // Signal backend that the webview has loaded, so it can focus the already
+  // visible main window after the frontend is ready.
   useEffect(() => {
     emit("app-ready");
   }, []);
