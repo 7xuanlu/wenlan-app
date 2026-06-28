@@ -177,19 +177,19 @@ app/src/search.rs:1275:pub struct BulkDeleteItem {
 app/src/search.rs:1276:    pub source: String,
 app/src/search.rs:1277:    pub source_id: String,
 app/src/search.rs:1278:}
-app/src/search.rs:2122:pub struct EntitySuggestion {
-app/src/search.rs:2123:    pub id: String,
-app/src/search.rs:2124:    pub entity_name: Option<String>,
-app/src/search.rs:2125:    pub source_ids: Vec<String>,
-app/src/search.rs:2126:    pub confidence: f64,
-app/src/search.rs:2127:    pub created_at: String,
-app/src/search.rs:2128:}
-app/src/search.rs:2437:pub struct TagData {
-app/src/search.rs:2438:    pub tags: Vec<String>,
-app/src/search.rs:2439:    pub document_tags: HashMap<String, Vec<String>>,
-app/src/search.rs:2440:    pub categories: Vec<String>,
-app/src/search.rs:2441:    pub document_categories: HashMap<String, String>,
-app/src/search.rs:2442:}
+app/src/search.rs:2131:pub struct EntitySuggestion {
+app/src/search.rs:2132:    pub id: String,
+app/src/search.rs:2133:    pub entity_name: Option<String>,
+app/src/search.rs:2134:    pub source_ids: Vec<String>,
+app/src/search.rs:2135:    pub confidence: f64,
+app/src/search.rs:2136:    pub created_at: String,
+app/src/search.rs:2137:}
+app/src/search.rs:2446:pub struct TagData {
+app/src/search.rs:2447:    pub tags: Vec<String>,
+app/src/search.rs:2448:    pub document_tags: HashMap<String, Vec<String>>,
+app/src/search.rs:2449:    pub categories: Vec<String>,
+app/src/search.rs:2450:    pub document_categories: HashMap<String, String>,
+app/src/search.rs:2451:}
 app/src/sensor/vision.rs:5:pub struct WindowCapture {
 app/src/sensor/vision.rs:6:    pub image: image::DynamicImage,
 app/src/sensor/vision.rs:7:    pub app_name: String,
