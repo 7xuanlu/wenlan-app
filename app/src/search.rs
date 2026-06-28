@@ -1774,13 +1774,22 @@ pub async fn update_agent(
     Ok(())
 }
 
+#[derive(Debug, Deserialize)]
+struct DeleteAgentResponse {
+    deleted: String,
+}
+
+async fn delete_agent_response(
+    client: &crate::api::WenlanClient,
+    name: &str,
+) -> Result<DeleteAgentResponse, String> {
+    client.delete_path(&format!("/api/agents/{}", name)).await
+}
+
 #[tauri::command]
 pub async fn delete_agent(state: tauri::State<'_, State>, name: String) -> Result<(), String> {
     let s = state.read().await;
-    let _resp: serde_json::Value = s
-        .client
-        .delete_path(&format!("/api/agents/{}", name))
-        .await?;
+    let DeleteAgentResponse { deleted: _deleted } = delete_agent_response(&s.client, &name).await?;
     Ok(())
 }
 
@@ -2634,15 +2643,72 @@ pub async fn correct_memory_cmd(
 ) -> Result<String, String> {
     let s = state.read().await;
     let req = requests::CorrectMemoryRequest { correction_prompt };
-    let resp: serde_json::Value = s
-        .client
-        .post_json(&format!("/api/memory/{}/correct", source_id), &req)
-        .await?;
-    Ok(resp
-        .get("corrected")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string())
+    let CorrectMemoryResponse {
+        corrected,
+        source_id: _source_id,
+    } = correct_memory_response(&s.client, &source_id, &req).await?;
+    Ok(corrected)
+}
+
+#[derive(Debug, Deserialize)]
+struct CorrectMemoryResponse {
+    corrected: String,
+    source_id: String,
+}
+
+async fn correct_memory_response(
+    client: &crate::api::WenlanClient,
+    source_id: &str,
+    req: &requests::CorrectMemoryRequest,
+) -> Result<CorrectMemoryResponse, String> {
+    client
+        .post_json(&format!("/api/memory/{}/correct", source_id), req)
+        .await
+}
+
+#[cfg(test)]
+mod remaining_json_command_type_tests {
+    use super::*;
+
+    #[allow(dead_code)]
+    async fn delete_agent_response_uses_typed_deleted_envelope(client: crate::api::WenlanClient) {
+        let _: Result<DeleteAgentResponse, String> = delete_agent_response(&client, "agent").await;
+    }
+
+    #[allow(dead_code)]
+    async fn correct_memory_response_uses_typed_correction_envelope(
+        client: crate::api::WenlanClient,
+    ) {
+        let req = requests::CorrectMemoryRequest {
+            correction_prompt: "fix it".to_string(),
+        };
+        let _: Result<CorrectMemoryResponse, String> =
+            correct_memory_response(&client, "mem", &req).await;
+    }
+
+    #[allow(dead_code)]
+    async fn public_commands_keep_existing_surfaces(state: tauri::State<'_, State>) {
+        let _: Result<(), String> = delete_agent(state.clone(), String::new()).await;
+        let _: Result<String, String> =
+            correct_memory_cmd(state, String::new(), String::new()).await;
+    }
+
+    #[test]
+    fn remaining_response_envelopes_deserialize_daemon_payloads() {
+        let deleted: DeleteAgentResponse = serde_json::from_value(serde_json::json!({
+            "deleted": "agent-name"
+        }))
+        .unwrap();
+        assert_eq!(deleted.deleted, "agent-name");
+
+        let corrected: CorrectMemoryResponse = serde_json::from_value(serde_json::json!({
+            "corrected": "updated memory text",
+            "source_id": "mem_123"
+        }))
+        .unwrap();
+        assert_eq!(corrected.corrected, "updated memory text");
+        assert_eq!(corrected.source_id, "mem_123");
+    }
 }
 
 // ── Pages ──────────────────────────────────────────────────────────
