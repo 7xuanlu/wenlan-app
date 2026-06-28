@@ -3106,15 +3106,12 @@ mod external_llm_command_type_tests {
 #[tauri::command]
 pub async fn get_on_device_model(
     state: tauri::State<'_, State>,
-) -> Result<serde_json::Value, String> {
+) -> Result<crate::api::OnDeviceModelResponse, String> {
     let client = {
         let s = state.read().await;
         s.client.clone()
     };
-    client
-        .get_json::<serde_json::Value>("/api/on-device-model")
-        .await
-        .map_err(|e| e.to_string())
+    client.get_on_device_model().await
 }
 
 /// Proxy for `POST /api/on-device-model/download` — triggers download + hot-load.
@@ -3128,12 +3125,20 @@ pub async fn download_on_device_model(
         let s = state.read().await;
         s.client.clone()
     };
-    let body = serde_json::json!({ "model_id": model_id });
-    client
-        .post_json::<_, serde_json::Value>("/api/on-device-model/download", &body)
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(())
+    client.download_on_device_model(model_id).await
+}
+
+#[cfg(test)]
+mod on_device_model_command_type_tests {
+    use super::*;
+
+    #[allow(dead_code)]
+    async fn get_on_device_model_uses_typed_response(state: tauri::State<'_, State>) {
+        let _: Result<crate::api::OnDeviceModelResponse, String> = get_on_device_model(state).await;
+    }
+
+    #[test]
+    fn on_device_model_command_response_type_is_checked() {}
 }
 
 // ── Home delta feed ─────────────────────────────────────────────────────

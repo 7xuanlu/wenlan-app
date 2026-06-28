@@ -91,6 +91,42 @@ describe("sources, page export, and knowledge wrappers", () => {
     });
   });
 
+  it("getOnDeviceModel calls get_on_device_model and returns model state", async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const { getOnDeviceModel } = await import("../tauri");
+    (invoke as ReturnType<typeof vi.fn>).mockResolvedValue({
+      loaded: null,
+      selected: "qwen3-4b-instruct-2507",
+      models: [
+        {
+          id: "qwen3-4b-instruct-2507",
+          display_name: "Qwen3 4B",
+          param_count: "4B",
+          ram_required_gb: 8,
+          file_size_gb: 2.7,
+          cached: false,
+        },
+      ],
+    });
+
+    const result = await getOnDeviceModel();
+
+    expect(result.models[0].id).toBe("qwen3-4b-instruct-2507");
+    expect(invoke).toHaveBeenCalledWith("get_on_device_model");
+  });
+
+  it("downloadOnDeviceModel passes modelId", async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const { downloadOnDeviceModel } = await import("../tauri");
+    (invoke as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+
+    await downloadOnDeviceModel("qwen3-4b-instruct-2507");
+
+    expect(invoke).toHaveBeenCalledWith("download_on_device_model", {
+      modelId: "qwen3-4b-instruct-2507",
+    });
+  });
+
   it("getKnowledgePath calls get_knowledge_path", async () => {
     const { invoke } = await import("@tauri-apps/api/core");
     const { getKnowledgePath } = await import("../tauri");
