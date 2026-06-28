@@ -82,7 +82,7 @@ These are required for feature parity but can follow the P0 review/status/setup 
 | Surface | Current app state | Required action | Gate |
 |---|---|---|---|
 | `goal` memory type | removed from advertised TypeScript facet union; `lesson`/`gotcha` added; legacy `goal` remains only for old rows/maps | keep compatibility path only; do not reintroduce first-class Goal UI | `taxonomyCopy`, StructuredEditor, ProfilePage tests |
-| `concept` copy | user-facing copy migrated to Page/wiki language in product-owned surfaces; deprecated aliases remain for API compatibility | keep `Concept = Page`, `listConcepts`, `getConceptSources`, `ActivityKind = "concept"` compatibility wrappers | `taxonomyCopy` + page/onboarding/import tests |
+| `concept` copy | user-facing copy migrated to Page/wiki language in product-owned surfaces; remaining graph legend labels `concept` entity type as Theme while preserving wire keys | keep `Concept = Page`, `listConcepts`, `getConceptSources`, `ActivityKind = "concept"` compatibility wrappers | `taxonomyCopy` + page/onboarding/import tests |
 | `domain` copy | product-owned visible labels use Space; daemon wire keys still use `domain`/`space` compatibility mapping | keep daemon back-compat field names and request keys | `taxonomyCopy`, domain wire tests |
 | `Origin` app copy | product-owned visible copy and runtime names are Wenlan; legacy Origin references remain for bridge paths, tests, fixtures, and compatibility docs | keep legacy references explicit as bridge artifacts; do not globally replace | runtime identity and taxonomy copy tests |
 
