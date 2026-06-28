@@ -2698,18 +2698,72 @@ pub async fn update_page(
 #[tauri::command]
 pub async fn archive_page(state: tauri::State<'_, State>, id: String) -> Result<(), String> {
     let s = state.read().await;
-    let _resp: serde_json::Value = s
-        .client
-        .post_empty(&format!("/api/pages/{}/archive", id))
-        .await?;
+    let PageStatusResponse { status: _status } = archive_page_response(&s.client, &id).await?;
     Ok(())
 }
 
 #[tauri::command]
 pub async fn delete_page(state: tauri::State<'_, State>, id: String) -> Result<(), String> {
     let s = state.read().await;
-    let _resp: serde_json::Value = s.client.delete_path(&format!("/api/pages/{}", id)).await?;
+    let PageStatusResponse { status: _status } = delete_page_response(&s.client, &id).await?;
     Ok(())
+}
+
+#[derive(Debug, Deserialize)]
+struct PageStatusResponse {
+    status: String,
+}
+
+async fn archive_page_response(
+    client: &crate::api::WenlanClient,
+    id: &str,
+) -> Result<PageStatusResponse, String> {
+    client
+        .post_empty(&format!("/api/pages/{}/archive", id))
+        .await
+}
+
+async fn delete_page_response(
+    client: &crate::api::WenlanClient,
+    id: &str,
+) -> Result<PageStatusResponse, String> {
+    client.delete_path(&format!("/api/pages/{}", id)).await
+}
+
+#[cfg(test)]
+mod page_status_command_type_tests {
+    use super::*;
+
+    #[allow(dead_code)]
+    async fn archive_page_response_uses_typed_status_envelope(client: crate::api::WenlanClient) {
+        let _: Result<PageStatusResponse, String> = archive_page_response(&client, "page").await;
+    }
+
+    #[allow(dead_code)]
+    async fn delete_page_response_uses_typed_status_envelope(client: crate::api::WenlanClient) {
+        let _: Result<PageStatusResponse, String> = delete_page_response(&client, "page").await;
+    }
+
+    #[allow(dead_code)]
+    async fn page_commands_keep_void_tauri_surface(state: tauri::State<'_, State>) {
+        let _: Result<(), String> = archive_page(state.clone(), String::new()).await;
+        let _: Result<(), String> = delete_page(state, String::new()).await;
+    }
+
+    #[test]
+    fn page_status_response_deserializes_daemon_payloads() {
+        let archived: PageStatusResponse = serde_json::from_value(serde_json::json!({
+            "status": "archived"
+        }))
+        .unwrap();
+        assert_eq!(archived.status, "archived");
+
+        let deleted: PageStatusResponse = serde_json::from_value(serde_json::json!({
+            "status": "deleted"
+        }))
+        .unwrap();
+        assert_eq!(deleted.status, "deleted");
+    }
 }
 
 /// Wire wrapper matching the daemon's `{ "pages": [...] }` response shape.
