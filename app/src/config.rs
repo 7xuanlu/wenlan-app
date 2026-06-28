@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! App-local config file I/O. Reads/writes the shared
-//! `~/Library/Application Support/origin/config.json` that the daemon also
-//! writes. The app reads it directly for sensor gating (skip_apps, etc.) and
-//! for settings that must be available before the daemon is reachable.
+//! App-local config file I/O. Reads the shared Wenlan config path, with legacy
+//! Origin path fallback, during app startup so local sensors have bootstrap
+//! state before the UI talks to the daemon. Settings writes that affect daemon
+//! config should go through the daemon HTTP client, then mirror successful
+//! values into app-local runtime state when the process needs them immediately.
+//! Remaining local compatibility writes preserve daemon-only JSON fields.
 //!
 //! Copied from origin-core::config; uses AppError instead of OriginError.
 use crate::error::AppError;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::path::PathBuf;
 use wenlan_types::sources::{Source, SourceType, SyncStatus};
 
@@ -200,7 +203,8 @@ pub fn save_config(config: &Config) -> Result<(), AppError> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let json = serde_json::to_string_pretty(config)?;
+    let value = merge_with_existing_json(&path, serde_json::to_value(config)?);
+    let json = serde_json::to_string_pretty(&value)?;
     std::fs::write(&path, &json)?;
 
     // Restrict file permissions when API key is present (user-only read/write)
@@ -212,6 +216,27 @@ pub fn save_config(config: &Config) -> Result<(), AppError> {
     }
 
     Ok(())
+}
+
+fn merge_with_existing_json(path: &std::path::Path, next: Value) -> Value {
+    let Value::Object(next) = next else {
+        return next;
+    };
+
+    let mut merged = std::fs::read_to_string(path)
+        .ok()
+        .and_then(|contents| serde_json::from_str::<Value>(&contents).ok())
+        .and_then(|value| match value {
+            Value::Object(map) => Some(map),
+            _ => None,
+        })
+        .unwrap_or_default();
+
+    for (key, value) in next {
+        merged.insert(key, value);
+    }
+
+    Value::Object(merged)
 }
 
 #[cfg(test)]
@@ -371,6 +396,32 @@ mod tests {
         assert_eq!(loaded.sources.len(), 1);
         assert_eq!(loaded.sources[0].path, PathBuf::from("/test/path"));
         assert!(loaded.watch_paths.is_empty());
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn save_config_preserves_daemon_only_fields() {
+        let _env = EnvGuard::capture();
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::remove_var("WENLAN_DATA_DIR");
+        std::env::set_var("ORIGIN_DATA_DIR", tmp.path());
+        let path = config_path();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            r#"{"clipboard_enabled":false,"reranker_mode":"hybrid","future_flag":{"enabled":true}}"#,
+        )
+        .unwrap();
+
+        let mut config = load_config();
+        config.private_browsing_detection = false;
+        save_config(&config).unwrap();
+
+        let saved: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(saved["private_browsing_detection"], false);
+        assert_eq!(saved["reranker_mode"], "hybrid");
+        assert_eq!(saved["future_flag"], serde_json::json!({ "enabled": true }));
     }
 
     // --- setup_completed ---

@@ -33,6 +33,10 @@ pub fn legacy_app_data_dir() -> PathBuf {
         .join("origin")
 }
 
+pub fn sidecar_data_dir_env() -> (&'static str, PathBuf) {
+    ("WENLAN_DATA_DIR", app_data_dir())
+}
+
 fn path_has_app_state(path: &std::path::Path) -> bool {
     path.join("config.json").exists()
         || path.join("avatars").exists()
@@ -117,6 +121,20 @@ mod tests {
         std::env::remove_var("WENLAN_DATA_DIR");
         std::env::set_var("ORIGIN_DATA_DIR", "/tmp/origin-app-test");
         assert_eq!(app_data_dir(), PathBuf::from("/tmp/origin-app-test"));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn sidecar_env_exports_selected_app_data_dir_as_wenlan_data_dir() {
+        let _guard = env_lock();
+        let _env = EnvGuard::capture();
+        std::env::remove_var("WENLAN_DATA_DIR");
+        std::env::set_var("ORIGIN_DATA_DIR", "/tmp/origin-app-test");
+
+        let (key, value) = sidecar_data_dir_env();
+
+        assert_eq!(key, "WENLAN_DATA_DIR");
+        assert_eq!(value, PathBuf::from("/tmp/origin-app-test"));
     }
 
     #[test]

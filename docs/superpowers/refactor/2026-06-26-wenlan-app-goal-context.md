@@ -121,6 +121,7 @@ Already landed in this branch history:
 | pending revision Home review lane | `listPendingRevisions` feeds Worth-a-glance cards; Accept/Dismiss call typed daemon wrappers and invalidate relevant caches |
 | refinery queue review bridge | `listRefinements`, `acceptRefinement`, and `rejectRefinement` wrap `/api/refinery/queue`; Home Worth-a-glance surfaces refinery proposals with Accept/Dismiss actions |
 | setup status bridge | `getSetupStatus` wraps `/api/setup/status`; wizard gating and completion now use daemon-backed setup state instead of app-local config writes |
+| config settings bridge | clipboard, screen-capture, private-browsing, and remote-access settings patch `/api/config` through `WenlanClient`; capture toggles mirror the returned daemon value into app-local sensor state; sidecar launch and launchd server plist both export the app-selected data root as `WENLAN_DATA_DIR` |
 
 ## Tool Boundaries
 
@@ -152,7 +153,7 @@ Current daemon/API parity gaps from read-only subagent exploration:
 
 | Gap | Priority | Action |
 |---|---|---|
-| setup/config source of truth is split | P0 | setup status and wizard completion now use daemon `setup_status`/`update_config`; remaining work is converging Settings/local toggles to daemon config or explicitly app-local sensors |
+| setup/config source of truth is split | P0 | setup status, wizard completion, model/external-LLM settings, skip lists, privacy toggles, capture toggles, and remote-access persistence now use daemon `setup_status`/`update_config`; startup runtime gates hydrate from daemon config after health; sidecar launch and patched launchd server plist export the app-selected data root as `WENLAN_DATA_DIR`; remaining direct config file use is local directory-source compatibility, and app-local saves preserve daemon-only JSON keys |
 | store/revision signals need UI surfacing | P0 | Rust and TypeScript wrappers now preserve `triggered_revisions` and `auto_superseded`; Home now surfaces pending revisions; post-store notification surfacing still remains |
 | revision/contradiction accept/dismiss need consumer handling | P0 | wrappers return typed daemon responses; pending-revision Accept/Dismiss now consumes them through Home cache invalidation |
 | pending revisions need central UI | P0 | Home Worth-a-glance now lists pending revisions with Accept/Dismiss; expand later only if volume requires a dedicated review screen |

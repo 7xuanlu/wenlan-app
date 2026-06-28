@@ -197,6 +197,22 @@ pub fn run() {
                 }
             }
 
+            // Repair a stale server plist before daemon selection. The full
+            // first-run install can stay async, but an already-running daemon
+            // with the wrong data root must not win the port before repair.
+            let daemon_startup_preflight_ok = {
+                use tauri::Emitter;
+                let launchctl = crate::lifecycle::SystemLaunchctl;
+                match crate::lifecycle::prepare_server_plist_for_startup(&launchctl) {
+                    Ok(()) => true,
+                    Err(e) => {
+                        log::warn!("[startup] server plist data-dir preflight failed: {e}");
+                        let _ = handle.emit("origin-fallback-mode", ());
+                        false
+                    }
+                }
+            };
+
             // First-run silent install — H6: run on a blocking task so we
             // don't block setup() (which delays Tauri start by hundreds of ms).
             {
@@ -607,62 +623,80 @@ pub fn run() {
             // If a daemon is already running on the port, the sidecar exits cleanly.
             // The shell plugin kills the child when the Tauri app exits.
             //
-            // Skip the sidecar only when the current Wenlan launchd service is
-            // installed. A legacy Origin server plist is migration state, but
-            // it must not suppress the new sidecar fallback. Stable first-run
-            // install, Run at Login disable, and Quit handle legacy cleanup.
-            let launchd_managed = crate::lifecycle::current_server_plist_exists();
-            if launchd_managed {
-                log::info!(
-                    "[init] launchd-managed daemon detected, skipping sidecar spawn"
+            // Skip the sidecar only when the current Wenlan launchd service
+            // already targets this app-selected data root. A stale launchd
+            // plist can exist during migration and first-run repair, but it
+            // must not suppress the selected-data-dir sidecar fallback.
+            if !daemon_startup_preflight_ok {
+                log::warn!(
+                    "[init] skipping daemon sidecar because server plist preflight failed"
                 );
             } else {
-                use tauri_plugin_shell::ShellExt;
-                match app.shell().sidecar("wenlan-server") {
-                    Ok(sidecar) => match sidecar.spawn() {
-                        Ok((mut rx, _child)) => {
-                            log::info!(
-                                "[init] Spawned wenlan-server daemon (pid {})",
-                                _child.pid()
-                            );
-                            tauri::async_runtime::spawn(async move {
-                                use tauri_plugin_shell::process::CommandEvent;
-                                while let Some(event) = rx.recv().await {
-                                    match event {
-                                        CommandEvent::Stdout(line) => {
-                                            log::info!(
-                                                "[daemon] {}",
-                                                String::from_utf8_lossy(&line)
-                                            );
+                let launchd_managed =
+                    crate::lifecycle::current_server_plist_matches_selected_data_dir();
+                if launchd_managed {
+                    log::info!(
+                        "[init] launchd-managed daemon detected, skipping sidecar spawn"
+                    );
+                } else {
+                    use tauri_plugin_shell::ShellExt;
+                    let (data_dir_env, data_dir) = crate::identity_paths::sidecar_data_dir_env();
+                    match app.shell().sidecar("wenlan-server") {
+                        Ok(sidecar) => {
+                            match sidecar.env(data_dir_env, data_dir.as_os_str()).spawn() {
+                                Ok((mut rx, _child)) => {
+                                    log::info!(
+                                        "[init] Spawned wenlan-server daemon (pid {}, {}={})",
+                                        _child.pid(),
+                                        data_dir_env,
+                                        data_dir.display()
+                                    );
+                                    tauri::async_runtime::spawn(async move {
+                                        use tauri_plugin_shell::process::CommandEvent;
+                                        while let Some(event) = rx.recv().await {
+                                            match event {
+                                                CommandEvent::Stdout(line) => {
+                                                    log::info!(
+                                                        "[daemon] {}",
+                                                        String::from_utf8_lossy(&line)
+                                                    );
+                                                }
+                                                CommandEvent::Stderr(line) => {
+                                                    log::warn!(
+                                                        "[daemon] {}",
+                                                        String::from_utf8_lossy(&line)
+                                                    );
+                                                }
+                                                CommandEvent::Terminated(status) => {
+                                                    log::warn!("[daemon] exited: {:?}", status);
+                                                    break;
+                                                }
+                                                _ => {}
+                                            }
                                         }
-                                        CommandEvent::Stderr(line) => {
-                                            log::warn!(
-                                                "[daemon] {}",
-                                                String::from_utf8_lossy(&line)
-                                            );
-                                        }
-                                        CommandEvent::Terminated(status) => {
-                                            log::warn!("[daemon] exited: {:?}", status);
-                                            break;
-                                        }
-                                        _ => {}
-                                    }
+                                    });
                                 }
-                            });
+                                Err(e) => {
+                                    log::error!("[init] Failed to spawn wenlan-server sidecar: {}. Run: xattr -cr /Applications/Origin.app or /Applications/Wenlan.app", e);
+                                }
+                            }
                         }
                         Err(e) => {
-                            log::error!("[init] Failed to spawn wenlan-server sidecar: {}. Run: xattr -cr /Applications/Origin.app or /Applications/Wenlan.app", e);
+                            log::error!("[init] Failed to create wenlan-server sidecar command: {}", e);
                         }
-                    },
-                    Err(e) => {
-                        log::error!("[init] Failed to create wenlan-server sidecar command: {}", e);
                     }
                 }
             }
 
             // Wait for daemon health, then initialize local state + file watcher
-            let init_state = state_clone.clone();
-            tauri::async_runtime::spawn(async move {
+            if !daemon_startup_preflight_ok {
+                log::warn!(
+                    "[init] skipping daemon health/config hydration because server plist preflight failed"
+                );
+            } else {
+                let init_state = state_clone.clone();
+                let remote_handle = handle.clone();
+                tauri::async_runtime::spawn(async move {
                 // Health check the daemon with exponential backoff
                 let client = {
                     let s = init_state.read().await;
@@ -691,10 +725,21 @@ pub fn run() {
                     }
                 }
 
+                let daemon_config = match client.get_config().await {
+                    Ok(config) => Some(config),
+                    Err(e) => {
+                        log::warn!(
+                            "[init] Daemon config unavailable after health check, falling back to app-local bootstrap config: {}",
+                            e
+                        );
+                        None
+                    }
+                };
+
                 // Initialize local state (activities, config, file sources)
                 let paths = {
                     let mut state = init_state.write().await;
-                    match state.initialize_local().await {
+                    match state.initialize_local(daemon_config.as_ref()).await {
                         Ok(paths) => paths,
                         Err(e) => {
                             log::error!("Failed to initialize local state: {}", e);
@@ -729,18 +774,18 @@ pub fn run() {
                 if let Err(e) = indexer::sync_source("local_files", &init_state).await {
                     log::error!("Startup sync failed: {}", e);
                 }
-            });
 
-            // Auto-start remote access tunnel if previously enabled
-            {
-                let config = config::load_config();
-                if config.remote_access_enabled {
-                    let handle = app.handle().clone();
+                let remote_access_enabled = daemon_config
+                    .as_ref()
+                    .map(|config| config.remote_access_enabled)
+                    .unwrap_or_else(|| config::load_config().remote_access_enabled);
+                if remote_access_enabled {
                     tauri::async_runtime::spawn(async move {
                         log::info!("[remote-access] Auto-starting tunnel (config enabled)");
-                        crate::remote_access::toggle_on(handle, false).await;
+                        crate::remote_access::toggle_on(remote_handle, false).await;
                     });
                 }
+                });
             }
 
             // Check for updates on startup; prompt user if one is available

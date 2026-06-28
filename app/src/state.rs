@@ -17,6 +17,7 @@ use wenlan_types::working_memory::WorkingMemory;
 
 use crate::activity::{Activity, ActivitySummary, ACTIVITY_GAP_SECS};
 use crate::sources::{DataSource, SourceStatus};
+use wenlan_types::responses::ConfigResponse;
 
 /// Retention period for completed activities (90 days).
 const ACTIVITY_RETENTION_SECS: i64 = 90 * 86400;
@@ -114,6 +115,11 @@ impl AppState {
         }
     }
 
+    pub fn apply_daemon_runtime_config(&mut self, config: &ConfigResponse) {
+        self.clipboard_enabled = config.clipboard_enabled;
+        self.screen_capture_enabled = config.screen_capture_enabled;
+    }
+
     pub(crate) fn save_all_activities(&self) {
         let cutoff = chrono::Utc::now().timestamp() - ACTIVITY_RETENTION_SECS;
         let mut all: Vec<Activity> = self
@@ -161,7 +167,10 @@ impl AppState {
 
     /// Initialize after daemon is confirmed healthy.
     /// Loads local file-based state only — no DB or LLM.
-    pub async fn initialize_local(&mut self) -> Result<Vec<PathBuf>, crate::error::AppError> {
+    pub async fn initialize_local(
+        &mut self,
+        daemon_config: Option<&ConfigResponse>,
+    ) -> Result<Vec<PathBuf>, crate::error::AppError> {
         use crate::sources::local_files::LocalFilesSource;
 
         // Register local files source
@@ -179,6 +188,9 @@ impl AppState {
         let config = crate::config::load_config();
         self.clipboard_enabled = config.clipboard_enabled;
         self.screen_capture_enabled = config.screen_capture_enabled;
+        if let Some(config) = daemon_config {
+            self.apply_daemon_runtime_config(config);
+        }
 
         let mut restored_paths = Vec::new();
         for path in config.directory_source_paths() {
@@ -208,5 +220,41 @@ impl AppState {
         }
         statuses.sort_by(|a, b| a.name.cmp(&b.name));
         statuses
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn config_response(clipboard_enabled: bool, screen_capture_enabled: bool) -> ConfigResponse {
+        ConfigResponse {
+            skip_apps: Vec::new(),
+            skip_title_patterns: Vec::new(),
+            private_browsing_detection: true,
+            setup_completed: true,
+            clipboard_enabled,
+            screen_capture_enabled,
+            remote_access_enabled: false,
+            routine_model: None,
+            synthesis_model: None,
+            external_llm_endpoint: None,
+            external_llm_model: None,
+        }
+    }
+
+    #[test]
+    fn daemon_runtime_config_overrides_local_bootstrap_toggles() {
+        let mut state = AppState {
+            clipboard_enabled: true,
+            screen_capture_enabled: false,
+            ..AppState::default()
+        };
+        let daemon = config_response(false, true);
+
+        state.apply_daemon_runtime_config(&daemon);
+
+        assert!(!state.clipboard_enabled);
+        assert!(state.screen_capture_enabled);
     }
 }
