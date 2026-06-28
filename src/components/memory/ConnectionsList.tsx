@@ -66,7 +66,7 @@ function buildInsights(
   const fourteenDaysMs = 14 * 86_400_000;
 
   // Category 1: Gathered momentum
-  // Concepts created in the last 14 days with >= 4 source memories.
+  // Pages created in the last 14 days with >= 4 source memories.
   const momentumInsights: Insight[] = concepts
     .filter((c) => {
       const createdMs = Date.parse(c.created_at);
@@ -89,7 +89,7 @@ function buildInsights(
     }));
 
   // Category 2: Stabilizing
-  // Concepts where version >= 3. Show top 2 by version descending, then last_modified.
+  // Pages where version >= 3. Show top 2 by version descending, then last_modified.
   const stabilizingInsights: Insight[] = concepts
     .filter((c) => c.version >= 3)
     .sort((a, b) => {
@@ -108,7 +108,7 @@ function buildInsights(
     }));
 
   // Category 3: Recurring theme
-  // Entities that appear as entity_id in >= 2 active concepts.
+  // Entities that appear as entity_id in >= 2 active pages.
   const entityConceptMap = new Map<string, Concept[]>();
   for (const c of concepts) {
     if (c.entity_id) {
@@ -132,7 +132,7 @@ function buildInsights(
         key: `recurring-${entityId}`,
         category: "recurring" as InsightCategory,
         nounPhrase: entityName,
-        suffix: ` across ${linkedConcepts.length} concepts`,
+        suffix: ` across ${linkedConcepts.length} pages`,
         sortMs: Date.parse(firstConcept.last_modified),
         entityId,
         conceptId: firstConcept.id,

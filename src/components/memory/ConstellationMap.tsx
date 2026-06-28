@@ -654,7 +654,7 @@ export default function ConstellationMap({ onClick, fullScreen, onNodeClick }: C
               { label: "Technology", key: "technology" },
               { label: "Organization", key: "organization" },
               { label: "Place", key: "place" },
-              { label: "Concept", key: "concept" },
+              { label: "Theme", key: "concept" },
               { label: "Event", key: "event" },
             ].map(({ label, key }) => (
               <div key={key} style={{ display: "flex", alignItems: "center", gap: 5 }}>

@@ -91,4 +91,25 @@ describe("taxonomy and product copy", () => {
     expect(tauri).toContain("domain?: string");
     expect(tauri).toContain("type DomainCompat");
   });
+
+  it("keeps remaining graph surfaces on page/theme copy while preserving legacy keys", () => {
+    const legacyWireKey = "con" + "cept";
+    const legacyLabel = "Con" + "cept";
+    const legacyPlural = legacyWireKey + "s";
+    const linkedLegacyName = "linked" + legacyLabel + "s";
+    const connections = read("src/components/memory/ConnectionsList.tsx");
+    expect(connections).not.toContain(
+      ` across \${${linkedLegacyName}.length} ${legacyPlural}`,
+    );
+    expect(connections).toContain(` across \${${linkedLegacyName}.length} pages`);
+
+    const constellation = read("src/components/memory/ConstellationMap.tsx");
+    expect(constellation).not.toContain(
+      `{ label: "${legacyLabel}", key: "${legacyWireKey}" }`,
+    );
+    expect(constellation).toContain(
+      `{ label: "Theme", key: "${legacyWireKey}" }`,
+    );
+    expect(constellation).toContain(legacyWireKey + ":");
+  });
 });
