@@ -75,7 +75,7 @@ describe("PageDetail page links", () => {
     tauriMocks.updatePage.mockResolvedValue(undefined);
     tauriMocks.deletePage.mockResolvedValue(undefined);
     tauriMocks.clipboardWrite.mockResolvedValue(undefined);
-    tauriMocks.exportPageToObsidian.mockResolvedValue("/tmp/page.md");
+    tauriMocks.exportPageToObsidian.mockResolvedValue({ path: "/tmp/page.md" });
   });
 
   it("uses daemon page links for related links and wikilink navigation", async () => {

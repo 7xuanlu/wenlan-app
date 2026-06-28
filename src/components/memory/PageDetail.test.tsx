@@ -54,7 +54,7 @@ vi.mock("../../lib/tauri", () => ({
   ]),
   clipboardWrite: vi.fn().mockResolvedValue(undefined),
   exportPagesToObsidian: vi.fn().mockResolvedValue({ exported: 1, skipped: 0, failed: 0 }),
-  exportPageToObsidian: vi.fn().mockResolvedValue("/path/to/file.md"),
+  exportPageToObsidian: vi.fn().mockResolvedValue({ path: "/path/to/file.md" }),
   listRegisteredSources: vi.fn().mockResolvedValue([
     { id: "obsidian-vault", source_type: "obsidian", path: "/Users/test/vault", status: "Active", last_sync: null, file_count: 10, memory_count: 20 },
   ]),

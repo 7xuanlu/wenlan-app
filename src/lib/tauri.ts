@@ -1490,23 +1490,33 @@ export async function listRecentRelations(
   });
 }
 
+export interface ExportStats {
+  exported: number;
+  skipped: number;
+  failed: number;
+}
+
+export interface ExportPageResponse {
+  path: string;
+}
+
 export async function exportPagesToObsidian(
   vaultPath: string,
-): Promise<{ exported: number; skipped: number; failed: number }> {
+): Promise<ExportStats> {
   return invoke("export_pages_to_obsidian", { vaultPath });
 }
 
 /** @deprecated Use {@link exportPagesToObsidian} instead. */
 export async function exportConceptsToObsidian(
   vaultPath: string,
-): Promise<{ exported: number; skipped: number; failed: number }> {
+): Promise<ExportStats> {
   return exportPagesToObsidian(vaultPath);
 }
 
 export async function exportPageToObsidian(
   pageId: string,
   vaultPath: string,
-): Promise<string> {
+): Promise<ExportPageResponse> {
   return invoke("export_page_to_obsidian", { pageId, vaultPath });
 }
 
@@ -1514,7 +1524,7 @@ export async function exportPageToObsidian(
 export async function exportConceptToObsidian(
   conceptId: string,
   vaultPath: string,
-): Promise<string> {
+): Promise<ExportPageResponse> {
   return exportPageToObsidian(conceptId, vaultPath);
 }
 

@@ -64,8 +64,8 @@ These are required for feature parity but can follow the P0 review/status/setup 
 | `/api/pages/{id}/links` | `PageLinksResponse` | typed Rust/Tauri/TS wrappers present; PageDetail uses daemon outbound/inbound links and no longer infers links via `listPages` | keep non-blocking link UI; unresolved outbound labels stay inert | hide links section if route absent or errors |
 | `/api/pages/orphan-links` | `OrphanLinksResponse` | typed Rust/Tauri/TS wrappers present; Page Detail shows repeated unresolved labels as a non-blocking diagnostics section | keep hidden on empty/error so older daemons do not block page render; expand to a dedicated review view only if volume requires it | optional diagnostics until route exists |
 | `/api/pages/{id}/sources` | `PageSourceWithMemory` | present via `getPageSources` | keep and type through `wenlan-types` | optional |
-| `/api/pages/export` | export response | present as `exportPagesToObsidian` | keep; rename "concept" UI/file wording where user-facing | optional |
-| `/api/pages/{id}/export` | export response | present as `exportPageToObsidian` | keep; rename "concept" UI/file wording where user-facing | optional |
+| `/api/pages/export` | `ExportStats` | typed Rust/Tauri/TS wrapper present as `exportPagesToObsidian` | keep; rename "concept" UI/file wording where user-facing | optional |
+| `/api/pages/{id}/export` | `ExportPageResponse` | typed Rust/Tauri/TS wrapper present as `exportPageToObsidian`; preserves daemon response envelope | keep; rename "concept" UI/file wording where user-facing | optional |
 | `/api/on-device-model` | config route | present wrapper | keep; type through `wenlan-types` | optional settings section |
 | `/api/llm/test` | config route | present wrapper | keep; type through `wenlan-types` | optional settings section |
 | `/api/tags` | `TagsResponse` | `list_all_tags` reads the daemon global tag list and preserves additive `document_tags` maps when available; older daemons default to an empty map | merge daemon `document_tags` response support before relying on per-document tag filters in release notes | global tags available; per-document tag map gated by daemon version |
