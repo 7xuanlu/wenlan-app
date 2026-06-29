@@ -6,7 +6,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 BACKEND_DIR="$(bash "$SCRIPT_DIR/resolve-backend-dir.sh" "$REPO_ROOT")"
 
-PROFILE="debug"
+PROFILE=""
 FORCE_BUILD=false
 PRINT_PATHS=false
 while [[ $# -gt 0 ]]; do
@@ -29,10 +29,22 @@ while [[ $# -gt 0 ]]; do
 done
 
 HOST_TRIPLE="$(rustc -vV | awk '/^host:/ { print $2 }')"
-TRIPLE="${TARGET_TRIPLE:-$HOST_TRIPLE}"
+REQUESTED_TRIPLE="${TARGET_TRIPLE:-${TAURI_ENV_TARGET_TRIPLE:-}}"
+TRIPLE="${REQUESTED_TRIPLE:-$HOST_TRIPLE}"
+USE_TARGET_DIR=false
+if [[ -n "${TARGET_TRIPLE:-}" || ( -n "${TAURI_ENV_TARGET_TRIPLE:-}" && "${TAURI_ENV_TARGET_TRIPLE:-}" != "$HOST_TRIPLE" ) ]]; then
+  USE_TARGET_DIR=true
+fi
+if [[ -z "$PROFILE" ]]; then
+  if [[ "${TAURI_ENV_DEBUG:-}" == "false" ]]; then
+    PROFILE="release"
+  else
+    PROFILE="debug"
+  fi
+fi
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$BACKEND_DIR/target}"
 BIN_DIR="$REPO_ROOT/app/binaries"
-if [[ -n "${TARGET_TRIPLE:-}" ]]; then
+if [[ "$USE_TARGET_DIR" == "true" ]]; then
   SOURCE_DIR="$CARGO_TARGET_DIR/$TRIPLE/$PROFILE"
 else
   SOURCE_DIR="$CARGO_TARGET_DIR/$PROFILE"
@@ -79,9 +91,9 @@ if [[ "$PRINT_PATHS" == "true" ]]; then
 fi
 
 if [[ "$FORCE_BUILD" == "true" || ! -x "$SERVER_SRC" || ! -x "$MCP_SRC" || ! -x "$CLI_SRC" ]]; then
-  if [[ -n "${TARGET_TRIPLE:-}" && "$PROFILE" == "release" ]]; then
+  if [[ "$USE_TARGET_DIR" == "true" && "$PROFILE" == "release" ]]; then
     cargo build --manifest-path "$BACKEND_DIR/Cargo.toml" --target "$TRIPLE" --release -p wenlan-server -p wenlan-mcp -p wenlan
-  elif [[ -n "${TARGET_TRIPLE:-}" ]]; then
+  elif [[ "$USE_TARGET_DIR" == "true" ]]; then
     cargo build --manifest-path "$BACKEND_DIR/Cargo.toml" --target "$TRIPLE" -p wenlan-server -p wenlan-mcp -p wenlan
   elif [[ "$PROFILE" == "release" ]]; then
     cargo build --manifest-path "$BACKEND_DIR/Cargo.toml" --release -p wenlan-server -p wenlan-mcp -p wenlan
@@ -101,7 +113,9 @@ install -m 755 "$CLI_SRC" "$CLI_DEST"
 if [[ -n "$CLOUDFLARED_SRC" ]]; then
   install -m 755 "$CLOUDFLARED_SRC" "$CLOUDFLARED_DEST"
 else
-  echo "warning: cloudflared not found in PATH; raw Tauri builds may still fail on binaries/cloudflared-$TRIPLE" >&2
+  echo "error: cloudflared not found in PATH; install cloudflared or set CLOUDFLARED_BIN" >&2
+  echo "       Required by Tauri externalBin: binaries/cloudflared-$TRIPLE" >&2
+  exit 1
 fi
 
 echo "Prepared sidecars in $BIN_DIR for $TRIPLE"
