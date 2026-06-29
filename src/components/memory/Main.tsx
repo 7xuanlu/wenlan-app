@@ -22,6 +22,7 @@ import MemoryStatusBar from "./MemoryStatusBar";
 import MemorySearchResult from "./MemorySearchResult";
 import MemoryDetail from "./MemoryDetail";
 import PageDetail from "./PageDetail";
+import DistillReviewPanel from "./DistillReviewPanel";
 import SettingsPage from "./SettingsPage";
 import { ImportView } from "./ImportView";
 import { SetupWizard } from "../SetupWizard";
@@ -41,7 +42,7 @@ interface MainProps {
   onBackFromDetail?: () => void;
 }
 
-type View = { kind: "home" } | { kind: "stream" } | { kind: "activity" } | { kind: "recaps" } | { kind: "entity"; entityId: string } | { kind: "profile" } | { kind: "memory"; sourceId: string } | { kind: "settings"; section?: SettingsSection } | { kind: "import" } | { kind: "connect-agent" } | { kind: "space"; spaceName: string } | { kind: "graph" } | { kind: "page"; pageId: string } | { kind: "decisions" };
+type View = { kind: "home" } | { kind: "stream" } | { kind: "activity" } | { kind: "recaps" } | { kind: "entity"; entityId: string } | { kind: "profile" } | { kind: "memory"; sourceId: string } | { kind: "settings"; section?: SettingsSection } | { kind: "import" } | { kind: "connect-agent" } | { kind: "space"; spaceName: string } | { kind: "graph" } | { kind: "page"; pageId: string } | { kind: "distill-review" } | { kind: "decisions" };
 
 const SIDEBAR_KEY = "wenlan-sidebar-collapsed";
 const LEGACY_SIDEBAR_KEY = "origin-sidebar-collapsed";
@@ -179,7 +180,7 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
       if (e.key === "Escape") {
         if (query) {
           setQuery("");
-        } else if (view.kind === "entity" || view.kind === "memory" || view.kind === "settings" || view.kind === "import" || view.kind === "graph" || view.kind === "page" || view.kind === "decisions") {
+        } else if (view.kind === "entity" || view.kind === "memory" || view.kind === "settings" || view.kind === "import" || view.kind === "graph" || view.kind === "page" || view.kind === "distill-review" || view.kind === "decisions") {
           navigateBack();
         }
       }
@@ -526,6 +527,11 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
               onMemoryClick={(sid) => navigateTo({ kind: "memory", sourceId: sid })}
               onPageClick={(id) => navigateTo({ kind: "page", pageId: id })}
             />
+          ) : view.kind === "distill-review" ? (
+            <DistillReviewPanel
+              onBack={navigateBack}
+              onPageClick={(id) => navigateTo({ kind: "page", pageId: id })}
+            />
           ) : view.kind === "home" ? (
             <HomePage
               onNavigateMemory={(sid) => navigateTo({ kind: "memory", sourceId: sid })}
@@ -533,6 +539,7 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
               onNavigateLog={() => navigateTo({ kind: "stream" })}
               onNavigateGraph={() => navigateTo({ kind: "graph" })}
               onSelectPage={(id) => navigateTo({ kind: "page", pageId: id })}
+              onOpenDistillReview={() => navigateTo({ kind: "distill-review" })}
             />
           ) : view.kind === "activity" ? (
             <ActivityFeed

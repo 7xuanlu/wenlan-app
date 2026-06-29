@@ -42,7 +42,7 @@ vi.mock("../../lib/tauri", async () => {
 
 import * as tauri from "../../lib/tauri";
 
-function renderHome() {
+function renderHome(props: { onOpenDistillReview?: () => void } = {}) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
@@ -51,6 +51,7 @@ function renderHome() {
         onNavigateStream={() => {}}
         onNavigateLog={() => {}}
         onNavigateGraph={() => {}}
+        onOpenDistillReview={props.onOpenDistillReview}
       />
     </QueryClientProvider>,
   );
@@ -100,6 +101,17 @@ beforeEach(() => {
 });
 
 describe("HomePage redesign", () => {
+  it("opens the distill review route from the home refinement area", async () => {
+    const onOpenDistillReview = vi.fn();
+    const user = userEvent.setup();
+
+    renderHome({ onOpenDistillReview });
+
+    await user.click(await screen.findByRole("button", { name: /review distillation/i }));
+
+    expect(onOpenDistillReview).toHaveBeenCalledTimes(1);
+  });
+
   it("always renders the greeting", async () => {
     vi.mocked(tauri.getProfile).mockResolvedValue({
       id: "p1",

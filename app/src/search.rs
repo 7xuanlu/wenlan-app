@@ -1062,6 +1062,17 @@ pub async fn ingest_webpage(
 }
 
 #[tauri::command]
+pub async fn distill_review(
+    state: tauri::State<'_, State>,
+) -> Result<crate::api::DistillReviewResponse, String> {
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+    client.distill_review().await
+}
+
+#[tauri::command]
 pub async fn store_memory(
     state: tauri::State<'_, State>,
     req: StoreMemoryRequest,
@@ -2574,6 +2585,11 @@ mod space_command_type_tests {
     async fn move_space_command_uses_typed_affected_envelope(state: tauri::State<'_, State>) {
         let _: Result<crate::api::MoveSpaceResponse, String> =
             move_space(state, "Inbox".to_string(), "Archive".to_string()).await;
+    }
+
+    #[allow(dead_code)]
+    async fn distill_review_command_uses_typed_review_envelope(state: tauri::State<'_, State>) {
+        let _: Result<crate::api::DistillReviewResponse, String> = distill_review(state).await;
     }
 
     #[allow(dead_code)]

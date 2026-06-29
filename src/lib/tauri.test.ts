@@ -933,3 +933,23 @@ describe('page links wrappers', () => {
     expect(mockInvoke).toHaveBeenCalledWith('list_orphan_links', { minCount: 2 });
   });
 });
+
+describe('distillReview', () => {
+  it('distillReview invokes the review command without target or force args', async () => {
+    const payload: tauri.DistillReviewResponse = {
+      pages_created: 0,
+      scoped: false,
+      created_ids: [],
+      pending: [],
+      stale_pages: [],
+      stale_truncated: false,
+      orphan_topics: [],
+    };
+    mockInvoke.mockResolvedValue(payload);
+
+    const result = await tauri.distillReview();
+
+    expect(result).toEqual(payload);
+    expect(mockInvoke).toHaveBeenCalledWith('distill_review');
+  });
+});

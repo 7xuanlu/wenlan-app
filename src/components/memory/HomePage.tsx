@@ -37,6 +37,7 @@ interface HomePageProps {
   onNavigateLog: () => void;
   onNavigateGraph: () => void;
   onSelectPage?: (pageId: string) => void;
+  onOpenDistillReview?: () => void;
 }
 
 const FIRST_CONCEPT_SHOWN_KEY = "onboarding:firstConceptShownCount";
@@ -84,6 +85,7 @@ export default function HomePage({
   onNavigateLog: _onNavigateLog,
   onNavigateGraph: _onNavigateGraph,
   onSelectPage,
+  onOpenDistillReview,
 }: HomePageProps) {
   const queryClient = useQueryClient();
 
@@ -317,6 +319,26 @@ export default function HomePage({
     ]);
   };
 
+  const distillReviewEntry = onOpenDistillReview ? (
+    <div style={{ display: "flex", justifyContent: "flex-end", margin: "-4px 0 10px" }}>
+      <button
+        type="button"
+        onClick={onOpenDistillReview}
+        style={{
+          border: "1px solid var(--mem-border)",
+          background: "var(--mem-surface)",
+          color: "var(--mem-text-primary)",
+          borderRadius: 8,
+          padding: "7px 11px",
+          fontSize: 13,
+          cursor: "pointer",
+        }}
+      >
+        Review distillation
+      </button>
+    </div>
+  ) : null;
+
   return (
     <div className="flex flex-col gap-8 pb-16">
       <Greeting memoryCount={memoryCount} pageCount={conceptCount} />
@@ -328,6 +350,7 @@ export default function HomePage({
             memoryCount={memoryCount}
             daysInListening={daysInListening}
           />
+          {distillReviewEntry}
           <MilestoneHighlight
             active={
               !shouldShowFirstConceptModal &&
@@ -399,6 +422,7 @@ export default function HomePage({
             recapCount={recapCount}
             onViewRecaps={onNavigateStream}
           />
+          {distillReviewEntry}
           <RefiningList changes={changes} pages={recentConcepts} onSelectPage={onSelectPage} />
           <RetrievalsList
             events={retrievals}

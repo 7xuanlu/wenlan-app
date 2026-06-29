@@ -954,6 +954,44 @@ export interface OrphanLinksResponse {
   orphan_labels: OrphanLink[];
 }
 
+export interface DistillReviewResponse {
+  pages_created: number;
+  scoped: boolean;
+  created_ids: string[];
+  pending: DistillPendingCluster[];
+  stale_pages: DistillStalePage[];
+  stale_truncated: boolean;
+  orphan_topics: DistillOrphanTopic[];
+}
+
+export interface DistillPendingCluster {
+  source_ids: string[];
+  contents: string[];
+  entity_id?: string | null;
+  entity_name?: string | null;
+  space?: string | null;
+  estimated_tokens: number;
+  centroid_embedding?: number[] | null;
+  existing_page_id?: string | null;
+  existing_page_title?: string | null;
+  new_memory_count?: number | null;
+}
+
+export interface DistillStalePage {
+  page_id: string;
+  title: string;
+  summary?: string | null;
+  source_memory_ids: string[];
+  sources_updated_count?: number | null;
+  stale_reason?: string | null;
+  user_edited?: boolean | null;
+}
+
+export interface DistillOrphanTopic {
+  label: string;
+  count: number;
+}
+
 export async function getPageSources(
   pageId: string,
 ): Promise<PageSourceWithMemory[]> {
@@ -977,6 +1015,10 @@ export async function getPageLinks(pageId: string): Promise<PageLinksResponse> {
 
 export async function listOrphanLinks(minCount?: number): Promise<OrphanLinksResponse> {
   return invoke("list_orphan_links", { minCount: minCount ?? null });
+}
+
+export async function distillReview(): Promise<DistillReviewResponse> {
+  return invoke("distill_review");
 }
 
 // ── Profiles & Agent Connections ─────────────────────────────────────

@@ -847,6 +847,7 @@ pub fn run() {
             search::quick_capture,
             search::ingest_clipboard,
             search::ingest_webpage,
+            search::distill_review,
             search::get_clipboard_enabled,
             search::set_clipboard_enabled,
             search::get_api_key,
