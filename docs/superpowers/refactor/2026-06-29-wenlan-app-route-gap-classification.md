@@ -39,12 +39,12 @@ app source paths with no backend router path: 0
 |---|---|---|---|
 | `/api/config/skip-apps` | `superseded_route` | intentional | No app work unless the daemon removes the legacy route. |
 | `/api/context` | `agent_route` | intentional | Keep hidden unless a diagnostics context panel is designed. |
-| `/api/debug/pipeline` | `operator_diagnostics` | deferred | Design a Settings diagnostics panel before exposing. |
+| `/api/debug/pipeline` | `operator_diagnostics` | design_ready | Implement the read-only Settings diagnostics panel described in `docs/superpowers/refactor/2026-06-29-wenlan-app-settings-diagnostics-design.md`. |
 | `/api/memory/entities/{entity_id}/observations` | `alternate_route` | intentional | No direct wrapper unless the generic observation route is deprecated. |
 | `/api/memory/link-entity` | `graph_authoring` | design_required | Design graph-authoring or entity-suggestion acceptance before exposing. |
 | `/api/memory/relations` | `graph_authoring` | design_required | Design a relation editor/review flow with provenance and undo states. |
 | `/api/ping` | `redundant_health` | intentional | No app work. |
-| `/api/steep` | `operator_maintenance` | deferred | Design an operator maintenance panel with cost/failure states before exposing. |
+| `/api/steep` | `operator_maintenance` | deferred | Keep deferred; do not expose until a separate maintenance design covers cost, capability, progress, and failure states. |
 | `/ws/updates` | `architecture_gap` | deferred | Revisit only if daemon WebSocket events become an explicit app architecture goal. |
 
 ## Design Verdict
@@ -59,8 +59,8 @@ backlog. The migration backlog is now:
    classification will show up as an unclassified route gap in
    `api-route-diff.md` and `api-route-diff.json`.
 
-Recommended next product checkpoint: pick one designed surface, likely Settings
-diagnostics for `/api/debug/pipeline`, or the graph-authoring review flow now
-proposed in `docs/superpowers/refactor/2026-06-29-wenlan-app-graph-authoring-design.md`.
-Do not add raw write wrappers without product semantics, provenance,
-confirmation, and recovery.
+Recommended next product checkpoint: implement the read-only Settings diagnostics
+surface for `/api/debug/pipeline` described in
+`docs/superpowers/refactor/2026-06-29-wenlan-app-settings-diagnostics-design.md`.
+Do not add a raw `/api/steep` button or graph-authoring write wrappers without
+product semantics, provenance, confirmation, and recovery.

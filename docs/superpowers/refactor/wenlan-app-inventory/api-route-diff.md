@@ -18,12 +18,12 @@
 |---|---|---|---|
 | `/api/config/skip-apps` | `superseded_route` | intentional | No app work unless the daemon removes the legacy route. |
 | `/api/context` | `agent_route` | intentional | Keep hidden unless a diagnostics context panel is designed. |
-| `/api/debug/pipeline` | `operator_diagnostics` | deferred | Design a Settings diagnostics panel before exposing. |
+| `/api/debug/pipeline` | `operator_diagnostics` | design_ready | Implement the read-only Settings diagnostics panel described in docs/superpowers/refactor/2026-06-29-wenlan-app-settings-diagnostics-design.md. |
 | `/api/memory/entities/{entity_id}/observations` | `alternate_route` | intentional | No direct wrapper unless the generic observation route is deprecated. |
 | `/api/memory/link-entity` | `graph_authoring` | design_required | Design a graph-authoring or entity-suggestion acceptance flow before exposing. |
 | `/api/memory/relations` | `graph_authoring` | design_required | Design a relation editor/review flow with provenance and undo states. |
 | `/api/ping` | `redundant_health` | intentional | No app work. |
-| `/api/steep` | `operator_maintenance` | deferred | Design an operator maintenance panel with cost/failure states before exposing. |
+| `/api/steep` | `operator_maintenance` | deferred | Keep deferred; do not expose until a separate maintenance design covers cost, capability, progress, and failure states. |
 | `/ws/updates` | `architecture_gap` | deferred | Revisit only if replacing the app event flow with daemon events becomes an explicit product goal. |
 
 ## Unclassified Backend Route Gaps

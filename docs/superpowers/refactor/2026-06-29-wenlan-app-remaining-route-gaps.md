@@ -30,8 +30,8 @@ the corresponding product semantics.
 | `/api/config/skip-apps` | Legacy GET/PUT list route that reads/writes `cfg.skip_apps`. | App reads and writes skip apps through daemon `/api/config` sparse patches. | Superseded compatibility route. | No app work. Keep route-diff exception unless backend removes the legacy route. |
 | `/api/ping` | Plain `pong` health route. | App uses typed `/api/health` and `/api/status`. | Redundant health route. | No app work. |
 | `/api/context` | Trust-gated context bundle for MCP/agent callers, keyed by `x-agent-name`, with access logging. | Desktop has copy-as-context and memory/page views, but no agent-context injection caller. | Agent/MCP route, not a desktop parity blocker. | Do not add a desktop button. Consider only for future diagnostics. |
-| `/api/debug/pipeline` | Returns raw DB pipeline status JSON. | Status and reranker diagnostics already use `/api/status`. | Operator diagnostics. | Defer until Settings diagnostics has a designed operator panel. |
-| `/api/steep` | Manually runs refinery backstop phases and may invoke LLM/refinery/distillation work. | Activity feed displays steep events; no manual maintenance trigger. | Operator maintenance route. | Defer; do not expose without phase/cost copy and failure states. |
+| `/api/debug/pipeline` | Returns raw DB pipeline status JSON. | Status and reranker diagnostics already use `/api/status`. | Operator diagnostics. | Implement the read-only Settings diagnostics panel described in `docs/superpowers/refactor/2026-06-29-wenlan-app-settings-diagnostics-design.md`. |
+| `/api/steep` | Manually runs refinery backstop phases and may invoke LLM/refinery/distillation work. | Activity feed displays steep events; no manual maintenance trigger. | Operator maintenance route. | Keep deferred; do not expose until a separate maintenance design covers cost, capability, progress, and failure states. |
 | `/ws/updates` | WebSocket subscribe/ingest channel for index progress and ingest completion. | App uses Tauri events, query invalidation, and status polling. | Architecture replacement, not a route-wrapper task. | Defer until replacing app event flow with daemon events is an explicit product goal. |
 | `/api/distill/{page_id}` and `/api/distill` with `force` | Both destructive re-distill paths can clear `user_edited`; the page route does this before checking daemon LLM availability, and the global route does the same when a page target resolves with `force=true`. | PR #47 exposes safe global `/api/distill` review only, with an empty body and no `target` or `force`. PageDetail shows revisions and stale/source data but has no rebuild action. | Risky write route. | Backend/API contract should change before UI: add a non-destructive dry-run or confirmation contract, and avoid clearing `user_edited` before LLM availability is proven. |
 | `/api/memory/entities/{entity_id}/observations` | Adds an observation directly under the path entity id. | IdentityDetail already adds observations through `/api/memory/observations` with `entity_id` in the typed request. | Alternate route for existing graph write. | No direct wrapper needed unless the generic route is deprecated. |
@@ -46,9 +46,9 @@ remaining direct gaps fall into three groups:
 
 1. **No app work:** `/api/config/skip-apps`, `/api/ping`, and the entity-path
    observation route are covered by stronger existing app contracts.
-2. **Operator/agent architecture:** `/api/context`, `/api/debug/pipeline`,
-   `/api/steep`, and `/ws/updates` need a designed diagnostics/event surface
-   before app work.
+2. **Operator/agent architecture:** `/api/context`, `/api/steep`, and
+   `/ws/updates` still need a designed diagnostics/event surface before app
+   work. `/api/debug/pipeline` now has a read-only Settings diagnostics design.
 3. **Risky write surfaces:** `/api/distill/{page_id}`, `/api/distill` with
    `force`, `/api/memory/relations`, and `/api/memory/link-entity` should not
    be exposed as raw wrappers. They mutate user-authored pages or KG structure
@@ -57,21 +57,8 @@ remaining direct gaps fall into three groups:
 
 ## Recommended Next Checkpoint
 
-Do a backend-first page re-distill contract fix in the Wenlan daemon before
-adding a desktop command:
-
-- Cover both destructive entry points: `POST /api/distill/{page_id}` and
-  `POST /api/distill` when `target` resolves to a page and `force=true`.
-- Add a no-op readiness response or dry-run mode for page re-distill.
-- Do not clear `user_edited` until the daemon has proved an LLM is available and
-  the caller has explicitly opted into overwriting user prose.
-- Return a typed response shape that distinguishes `ok`, `skipped`, and
-  `requires_confirmation`.
-- Add backend tests proving no-LLM/skipped paths do not clear `user_edited` for
-  both page re-distill entry points.
-- Only after that contract lands, add a PageDetail UI action with explicit copy
-  and revision-history recovery affordance.
-
-If the next checkpoint must remain app-only, the safest useful work is a Settings
-diagnostics design for `/api/debug/pipeline` + `/api/steep`, with no write command
-until the operator semantics are reviewed.
+Implement the read-only Settings diagnostics surface for `/api/debug/pipeline`
+described in
+`docs/superpowers/refactor/2026-06-29-wenlan-app-settings-diagnostics-design.md`.
+Keep `/api/steep` out of P1 UI until a separate maintenance design covers cost,
+capability, progress, and failure states.
