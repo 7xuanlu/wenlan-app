@@ -1394,8 +1394,8 @@ export async function getEntitySuggestions(): Promise<EntitySuggestion[]> {
   return invoke("get_entity_suggestions_cmd");
 }
 
-export async function approveEntitySuggestion(id: string): Promise<AcceptRefinementResponse> {
-  return acceptRefinement(id);
+export async function approveEntitySuggestion(_id: string): Promise<never> {
+  throw new Error("Entity suggestion accept is not supported by this daemon contract");
 }
 
 export async function dismissEntitySuggestion(id: string): Promise<RejectRefinementResponse> {

@@ -60,6 +60,7 @@ backlog. The migration backlog is now:
    `api-route-diff.md` and `api-route-diff.json`.
 
 Recommended next product checkpoint: pick one designed surface, likely Settings
-diagnostics for `/api/debug/pipeline`, or a graph-authoring review flow for
-`/api/memory/link-entity` and `/api/memory/relations`. Do not add raw write
-wrappers without product semantics, provenance, confirmation, and recovery.
+diagnostics for `/api/debug/pipeline`, or the graph-authoring review flow now
+proposed in `docs/superpowers/refactor/2026-06-29-wenlan-app-graph-authoring-design.md`.
+Do not add raw write wrappers without product semantics, provenance,
+confirmation, and recovery.
