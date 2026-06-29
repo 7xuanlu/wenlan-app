@@ -2391,10 +2391,7 @@ pub async fn update_space(
 }
 
 #[tauri::command]
-pub async fn delete_space(
-    state: tauri::State<'_, State>,
-    name: String,
-) -> Result<(), String> {
+pub async fn delete_space(state: tauri::State<'_, State>, name: String) -> Result<(), String> {
     let client = {
         let s = state.read().await;
         s.client.clone()
