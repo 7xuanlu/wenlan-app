@@ -6,6 +6,7 @@ import {
   getPageLinks,
   getPageRevisions,
   listOrphanLinks,
+  redistillPage,
   updatePage,
   deletePage,
   clipboardWrite,
@@ -99,6 +100,10 @@ export default function PageDetail({ pageId, onBack, onMemoryClick, onPageClick 
   const [editing, setEditing] = useState(false);
   const [editContent, setEditContent] = useState("");
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [redistillNotice, setRedistillNotice] = useState<{
+    kind: "success" | "warning" | "error";
+    message: string;
+  } | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const { data: page, isLoading } = useQuery({
@@ -156,6 +161,10 @@ export default function PageDetail({ pageId, onBack, onMemoryClick, onPageClick 
     enabled: !!pageId,
   });
 
+  useEffect(() => {
+    setRedistillNotice(null);
+  }, [pageId]);
+
   // Extract MemoryItems from the join table result.
   // Sort: versioned (updated) memories first, then by last_modified descending.
   const sourceMemories: MemoryItem[] | undefined = pageSources
@@ -186,6 +195,45 @@ export default function PageDetail({ pageId, onBack, onMemoryClick, onPageClick 
       onBack();
     },
   });
+
+  const redistillMutation = useMutation({
+    mutationFn: () => redistillPage(pageId),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["page", pageId] });
+      queryClient.invalidateQueries({ queryKey: ["pages"] });
+      queryClient.invalidateQueries({ queryKey: ["page-links", pageId] });
+      queryClient.invalidateQueries({ queryKey: ["page-revisions", pageId] });
+      queryClient.invalidateQueries({ queryKey: ["page-sources", pageId] });
+      if (result.status === "skipped") {
+        setRedistillNotice({
+          kind: "warning",
+          message: result.hint || "Page re-distill skipped.",
+        });
+        return;
+      }
+      setRedistillNotice({
+        kind: "success",
+        message: result.updated ? "Page re-distilled." : "Page already up to date.",
+      });
+    },
+    onError: (error) => {
+      setRedistillNotice({
+        kind: "error",
+        message: error instanceof Error ? error.message : "Page re-distill failed.",
+      });
+    },
+  });
+
+  const pageHasUserEdits = Boolean(page?.user_edited || pageRevisions?.user_edited);
+  const handleRedistillClick = () => {
+    if (
+      pageHasUserEdits &&
+      !confirm("Re-distill this edited page? The current version stays in page history for recovery.")
+    ) {
+      return;
+    }
+    redistillMutation.mutate();
+  };
 
   const copyAsContext = useCallback(async () => {
     if (!page) return;
@@ -370,6 +418,29 @@ export default function PageDetail({ pageId, onBack, onMemoryClick, onPageClick 
                 </svg>
               </button>
             )}
+            {!editing && (
+              <button
+                onClick={handleRedistillClick}
+                disabled={redistillMutation.isPending}
+                className="p-1.5 rounded-md transition-colors duration-150 hover:bg-[var(--mem-hover-strong)] disabled:opacity-50"
+                style={{ color: "var(--mem-text-tertiary)" }}
+                aria-label={redistillMutation.isPending ? "Re-distilling page" : "Re-distill page"}
+                title={redistillMutation.isPending ? "Re-distilling..." : "Re-distill page"}
+              >
+                <svg
+                  aria-hidden="true"
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path d="M21 12a9 9 0 11-2.64-6.36" />
+                  <path d="M21 3v6h-6" />
+                </svg>
+              </button>
+            )}
             <button
               onClick={copyAsContext}
               className={`p-1.5 rounded-md transition-colors duration-150 ${
@@ -467,6 +538,34 @@ export default function PageDetail({ pageId, onBack, onMemoryClick, onPageClick 
           </div>
         </div>
       </div>
+
+      {redistillNotice && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="rounded-lg px-3 py-2"
+          style={{
+            backgroundColor:
+              redistillNotice.kind === "error"
+                ? "rgba(239, 68, 68, 0.08)"
+                : redistillNotice.kind === "warning"
+                  ? "rgba(245, 158, 11, 0.08)"
+                  : "rgba(16, 185, 129, 0.08)",
+            border: "1px solid var(--mem-border)",
+            color:
+              redistillNotice.kind === "error"
+                ? "#ef4444"
+                : redistillNotice.kind === "warning"
+                  ? "var(--mem-accent-amber)"
+                  : "var(--mem-text-secondary)",
+            fontFamily: "var(--mem-font-body)",
+            fontSize: "12px",
+            lineHeight: "1.5",
+          }}
+        >
+          {redistillNotice.message}
+        </div>
+      )}
 
       {/* Content — edit mode or rendered */}
       {editing ? (

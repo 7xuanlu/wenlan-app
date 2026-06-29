@@ -1073,6 +1073,18 @@ pub async fn distill_review(
 }
 
 #[tauri::command]
+pub async fn redistill_page(
+    state: tauri::State<'_, State>,
+    page_id: String,
+) -> Result<crate::api::PageRedistillResponse, String> {
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+    client.redistill_page(&page_id).await
+}
+
+#[tauri::command]
 pub async fn store_memory(
     state: tauri::State<'_, State>,
     req: StoreMemoryRequest,
@@ -2590,6 +2602,12 @@ mod space_command_type_tests {
     #[allow(dead_code)]
     async fn distill_review_command_uses_typed_review_envelope(state: tauri::State<'_, State>) {
         let _: Result<crate::api::DistillReviewResponse, String> = distill_review(state).await;
+    }
+
+    #[allow(dead_code)]
+    async fn redistill_page_command_uses_typed_response(state: tauri::State<'_, State>) {
+        let _: Result<crate::api::PageRedistillResponse, String> =
+            redistill_page(state, "page_1".to_string()).await;
     }
 
     #[allow(dead_code)]

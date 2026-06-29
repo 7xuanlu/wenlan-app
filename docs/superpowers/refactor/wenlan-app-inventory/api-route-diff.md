@@ -6,8 +6,8 @@
 ## Counts
 
 - backend route paths: 123
-- app source route paths: 113
-- backend routes with no direct app source path: 10
+- app source route paths: 114
+- backend routes with no direct app source path: 9
 - app source paths with no backend router path: 0
 
 ## Backend Routes With No Direct App Source Path
@@ -15,7 +15,6 @@
 - `/api/config/skip-apps`
 - `/api/context`
 - `/api/debug/pipeline`
-- `/api/distill/{page_id}`
 - `/api/memory/entities/{entity_id}/observations`
 - `/api/memory/link-entity`
 - `/api/memory/relations`

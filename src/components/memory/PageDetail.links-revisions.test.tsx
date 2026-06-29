@@ -13,6 +13,7 @@ const tauriMocks = vi.hoisted(() => ({
   listOrphanLinks: vi.fn(),
   getPageRevisions: vi.fn(),
   listPages: vi.fn(),
+  redistillPage: vi.fn(),
   updatePage: vi.fn(),
   deletePage: vi.fn(),
   clipboardWrite: vi.fn(),
@@ -72,6 +73,7 @@ describe("PageDetail page links", () => {
       entries: [],
     });
     tauriMocks.listPages.mockResolvedValue([]);
+    tauriMocks.redistillPage.mockResolvedValue({ status: "ok", updated: true });
     tauriMocks.updatePage.mockResolvedValue(undefined);
     tauriMocks.deletePage.mockResolvedValue(undefined);
     tauriMocks.clipboardWrite.mockResolvedValue(undefined);

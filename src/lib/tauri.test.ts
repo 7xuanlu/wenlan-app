@@ -953,3 +953,19 @@ describe('distillReview', () => {
     expect(mockInvoke).toHaveBeenCalledWith('distill_review');
   });
 });
+
+describe('redistillPage', () => {
+  it('invokes the page-specific re-distill command with only pageId', async () => {
+    const payload: tauri.PageRedistillResponse = {
+      status: 'skipped',
+      updated: false,
+      hint: 'page re-distill needs an LLM in the daemon',
+    };
+    mockInvoke.mockResolvedValue(payload);
+
+    const result = await tauri.redistillPage('page-refresh');
+
+    expect(result).toEqual(payload);
+    expect(mockInvoke).toHaveBeenCalledWith('redistill_page', { pageId: 'page-refresh' });
+  });
+});

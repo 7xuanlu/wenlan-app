@@ -992,6 +992,12 @@ export interface DistillOrphanTopic {
   count: number;
 }
 
+export interface PageRedistillResponse {
+  status: "ok" | "skipped" | string;
+  updated: boolean;
+  hint?: string | null;
+}
+
 export async function getPageSources(
   pageId: string,
 ): Promise<PageSourceWithMemory[]> {
@@ -1019,6 +1025,10 @@ export async function listOrphanLinks(minCount?: number): Promise<OrphanLinksRes
 
 export async function distillReview(): Promise<DistillReviewResponse> {
   return invoke("distill_review");
+}
+
+export async function redistillPage(pageId: string): Promise<PageRedistillResponse> {
+  return invoke("redistill_page", { pageId });
 }
 
 // ── Profiles & Agent Connections ─────────────────────────────────────
