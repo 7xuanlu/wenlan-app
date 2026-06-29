@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import PageDetail from "./PageDetail";
@@ -61,6 +61,7 @@ vi.mock("../../lib/tauri", () => ({
   getPageLinks: vi.fn().mockResolvedValue({ outbound: [], inbound: [] }),
   listOrphanLinks: vi.fn().mockResolvedValue({ min_count: 2, orphan_labels: [] }),
   listPages: vi.fn().mockResolvedValue([]),
+  redistillPage: vi.fn().mockResolvedValue({ status: "ok", updated: true }),
   updatePage: vi.fn().mockResolvedValue(undefined),
   deletePage: vi.fn().mockResolvedValue(undefined),
   FACET_COLORS: {},
@@ -70,8 +71,10 @@ vi.mock("../../lib/tauri", () => ({
   dismissPendingRevision: vi.fn(),
 }));
 
-function renderWithQuery(ui: React.ReactElement) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+function renderWithQuery(
+  ui: React.ReactElement,
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+) {
   return {
     user: userEvent.setup(),
     ...render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>),
@@ -114,6 +117,97 @@ describe("PageDetail", () => {
     await screen.findByText("libSQL Architecture");
     expect(container.querySelector('button[title="Copy as context"]')).toBeTruthy();
     expect(container.querySelector('button[title="Export to Obsidian"]')).toBeTruthy();
+  });
+
+  it("re-distills the current page and keeps skipped daemon hints visible", async () => {
+    const { redistillPage } = await import("../../lib/tauri");
+    const hint = "page re-distill needs an LLM in the daemon";
+    (redistillPage as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      status: "skipped",
+      updated: false,
+      hint,
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    const { user } = renderWithQuery(<PageDetail {...defaultProps} />, queryClient);
+
+    await screen.findByText("libSQL Architecture");
+    await user.click(screen.getByTitle("Re-distill page"));
+
+    expect(redistillPage).toHaveBeenCalledWith("concept_abc");
+    expect(await screen.findByText(hint)).toBeTruthy();
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["page", "concept_abc"] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["page-revisions", "concept_abc"] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["page-sources", "concept_abc"] });
+    expect(defaultProps.onBack).not.toHaveBeenCalled();
+  });
+
+  it("confirms before re-distilling a user-edited page", async () => {
+    const { getPage, redistillPage } = await import("../../lib/tauri");
+    (getPage as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      id: "concept_abc",
+      title: "Edited Page",
+      summary: null,
+      content: "Edited page prose.",
+      entity_id: null,
+      domain: null,
+      source_memory_ids: [],
+      version: 4,
+      status: "active",
+      created_at: "2026-04-01T00:00:00+00:00",
+      last_compiled: "2026-04-07T12:00:00+00:00",
+      last_modified: "2026-04-08T12:00:00+00:00",
+      user_edited: true,
+    });
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const { user } = renderWithQuery(<PageDetail {...defaultProps} />);
+
+    await screen.findByText("Edited Page");
+    await user.click(screen.getByTitle("Re-distill page"));
+
+    expect(confirmSpy).toHaveBeenCalledWith(
+      "Re-distill this edited page? The current version stays in page history for recovery.",
+    );
+    expect(redistillPage).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
+  });
+
+  it("clears re-distill notices when navigating between pages", async () => {
+    const { getPage, redistillPage } = await import("../../lib/tauri");
+    const hint = "page re-distill needs an LLM in the daemon";
+    (redistillPage as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      status: "skipped",
+      updated: false,
+      hint,
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { user, rerender } = renderWithQuery(<PageDetail {...defaultProps} />, queryClient);
+
+    await screen.findByText("libSQL Architecture");
+    await user.click(screen.getByTitle("Re-distill page"));
+    expect(await screen.findByText(hint)).toBeTruthy();
+
+    (getPage as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      id: "concept_next",
+      title: "Next Page",
+      summary: null,
+      content: "Next page content.",
+      entity_id: null,
+      domain: null,
+      source_memory_ids: [],
+      version: 1,
+      status: "active",
+      created_at: "2026-04-09T00:00:00+00:00",
+      last_compiled: "2026-04-09T12:00:00+00:00",
+      last_modified: "2026-04-09T12:00:00+00:00",
+    });
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <PageDetail {...defaultProps} pageId="concept_next" />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => expect(screen.queryByText(hint)).toBeNull());
   });
 
   it("renders back button as SVG arrow", async () => {

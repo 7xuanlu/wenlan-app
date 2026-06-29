@@ -64,6 +64,9 @@ pub struct MoveSpaceResponse {
 #[derive(Debug, Clone, Serialize)]
 struct DistillReviewRequest {}
 
+#[derive(Debug, Clone, Serialize)]
+struct PageRedistillRequest {}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct DistillReviewResponse {
@@ -108,6 +111,14 @@ pub struct DistillStalePage {
 pub struct DistillOrphanTopic {
     pub label: String,
     pub count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct PageRedistillResponse {
+    pub status: String,
+    pub updated: bool,
+    pub hint: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -309,6 +320,11 @@ impl WenlanClient {
     pub async fn distill_review(&self) -> Result<DistillReviewResponse, String> {
         self.post_json("/api/distill", &DistillReviewRequest {})
             .await
+    }
+
+    pub async fn redistill_page(&self, page_id: &str) -> Result<PageRedistillResponse, String> {
+        let path = format!("/api/distill/{}", percent_encode_path_segment(page_id));
+        self.post_json(&path, &PageRedistillRequest {}).await
     }
 
     pub async fn move_space(&self, from: &str, to: &str) -> Result<MoveSpaceResponse, String> {
@@ -1235,6 +1251,31 @@ mod tests {
         assert_eq!(
             request.lines().next().unwrap_or_default(),
             "POST /api/distill HTTP/1.1"
+        );
+        assert_eq!(request_body(&request), serde_json::json!({}));
+    }
+
+    #[tokio::test]
+    async fn redistill_page_posts_empty_page_specific_request_to_daemon() {
+        let body = r#"{"status":"skipped","updated":false,"hint":"page re-distill needs an LLM in the daemon"}"#;
+        let (base_url, request) = serve_json_once(body).await;
+        let client = WenlanClient {
+            client: reqwest::Client::new(),
+            base_url,
+        };
+
+        let resp = client.redistill_page("page_refresh").await.unwrap();
+
+        assert_eq!(resp.status, "skipped");
+        assert!(!resp.updated);
+        assert_eq!(
+            resp.hint.as_deref(),
+            Some("page re-distill needs an LLM in the daemon")
+        );
+        let request = request.await.unwrap();
+        assert_eq!(
+            request.lines().next().unwrap_or_default(),
+            "POST /api/distill/page_refresh HTTP/1.1"
         );
         assert_eq!(request_body(&request), serde_json::json!({}));
     }
