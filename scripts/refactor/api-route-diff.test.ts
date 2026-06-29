@@ -85,6 +85,8 @@ describe("api route diff", () => {
       backendRoutes: 6,
       appSourceRoutes: 5,
       missingInApp: 1,
+      classifiedMissingInApp: 0,
+      unclassifiedMissingInApp: 1,
       appOnly: 0,
     });
 
@@ -101,5 +103,130 @@ describe("api route diff", () => {
     expect(markdown).not.toContain("`/api/pages/export`");
     expect(markdown).not.toContain("`/api/pages/recent`");
     expect(markdown).not.toContain("`/api/shutdown`");
+  });
+
+  it("attaches route classifications and reports unclassified route gaps", () => {
+    const root = makeTempRoot();
+    const appRoot = resolve(root, "wenlan-app");
+    const backendRoot = resolve(root, "wenlan");
+    const outDir = resolve(root, "out");
+    const classificationsPath = resolve(root, "api-route-classifications.json");
+    writeFixture(appRoot, backendRoot);
+    writeFileSync(
+      classificationsPath,
+      JSON.stringify(
+        {
+          routes: {
+            "/api/context": {
+              category: "agent_route",
+              status: "intentional",
+              rationale: "Context bundles are an MCP/agent contract, not a desktop command.",
+              next_action: "Keep hidden | diagnostics panel must be designed.",
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    const result = spawnSync(
+      "node",
+      [
+        scriptPath,
+        "--app",
+        appRoot,
+        "--backend",
+        backendRoot,
+        "--out",
+        outDir,
+        "--classifications",
+        classificationsPath,
+        "--json",
+      ],
+      { encoding: "utf8" },
+    );
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({
+      backendRoutes: 6,
+      appSourceRoutes: 5,
+      missingInApp: 1,
+      classifiedMissingInApp: 1,
+      unclassifiedMissingInApp: 0,
+      appOnly: 0,
+    });
+
+    const markdown = readFileSync(resolve(outDir, "api-route-diff.md"), "utf8");
+    const json = JSON.parse(readFileSync(resolve(outDir, "api-route-diff.json"), "utf8"));
+    expect(json.missingInApp[0].classification).toEqual({
+      category: "agent_route",
+      status: "intentional",
+      rationale: "Context bundles are an MCP/agent contract, not a desktop command.",
+      next_action: "Keep hidden | diagnostics panel must be designed.",
+    });
+    expect(markdown).toContain("| `/api/context` | `agent_route` | intentional |");
+    expect(markdown).toContain("Keep hidden \\| diagnostics panel must be designed.");
+    expect(markdown).toContain("- none");
+  });
+
+  it("counts incomplete classifications as unclassified and matches normalized parameter keys", () => {
+    const root = makeTempRoot();
+    const appRoot = resolve(root, "wenlan-app");
+    const backendRoot = resolve(root, "wenlan");
+    const outDir = resolve(root, "out");
+    const classificationsPath = resolve(root, "api-route-classifications.json");
+    writeFixture(appRoot, backendRoot);
+    writeFileSync(
+      classificationsPath,
+      JSON.stringify(
+        {
+          routes: {
+            "/api/context": {},
+            "/api/memory/{source_id}/detail": {
+              category: "alternate_route",
+              status: "intentional",
+              rationale: "Parameter names should normalize before matching.",
+              next_action: "No action.",
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    const result = spawnSync(
+      "node",
+      [
+        scriptPath,
+        "--app",
+        appRoot,
+        "--backend",
+        backendRoot,
+        "--out",
+        outDir,
+        "--classifications",
+        classificationsPath,
+        "--json",
+      ],
+      { encoding: "utf8" },
+    );
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({
+      backendRoutes: 6,
+      appSourceRoutes: 5,
+      missingInApp: 1,
+      classifiedMissingInApp: 0,
+      unclassifiedMissingInApp: 1,
+      appOnly: 0,
+    });
+
+    const markdown = readFileSync(resolve(outDir, "api-route-diff.md"), "utf8");
+    const json = JSON.parse(readFileSync(resolve(outDir, "api-route-diff.json"), "utf8"));
+    expect(json.missingInApp[0].classification).toBeUndefined();
+    expect(markdown).toContain("| `/api/context` | `unclassified` |  |  |");
+    expect(markdown).toContain("## Unclassified Backend Route Gaps\n\n- `/api/context`");
   });
 });

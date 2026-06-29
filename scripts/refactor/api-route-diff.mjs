@@ -12,6 +12,7 @@ function parseArgs(argv) {
     app: repoRoot,
     backend: process.env.WENLAN_BACKEND_DIR || null,
     out: null,
+    classifications: null,
     json: false,
   };
   for (let i = 0; i < argv.length; i += 1) {
@@ -22,6 +23,8 @@ function parseArgs(argv) {
       args.backend = resolve(argv[++i]);
     } else if (arg === "--out") {
       args.out = resolve(argv[++i]);
+    } else if (arg === "--classifications") {
+      args.classifications = resolve(argv[++i]);
     } else if (arg === "--json") {
       args.json = true;
     } else {
@@ -142,13 +145,50 @@ function extractAppRoutes(appRoot) {
   return uniqueRoutes(routes);
 }
 
-function buildDiff(appRoot, backendRoot) {
+function readRouteClassifications(path) {
+  if (!path || !existsSync(path)) {
+    return new Map();
+  }
+  const parsed = JSON.parse(readFileSync(path, "utf8"));
+  const routes = parsed.routes || {};
+  const byNormalized = new Map();
+  for (const [routePath, classification] of Object.entries(routes)) {
+    byNormalized.set(normalizeRoute(routePath), classification);
+  }
+  return byNormalized;
+}
+
+function isCompleteClassification(classification) {
+  return (
+    classification &&
+    typeof classification.category === "string" &&
+    classification.category.trim() &&
+    typeof classification.status === "string" &&
+    classification.status.trim() &&
+    typeof classification.next_action === "string" &&
+    classification.next_action.trim()
+  );
+}
+
+function withClassifications(routes, classifications) {
+  return routes.map((route) => {
+    const classification = classifications.get(route.normalized);
+    return isCompleteClassification(classification) ? { ...route, classification } : route;
+  });
+}
+
+function buildDiff(appRoot, backendRoot, classifications = new Map()) {
   const backendRoutes = extractBackendRoutes(backendRoot);
   const appRoutes = extractAppRoutes(appRoot);
   const appSet = new Set(appRoutes.map((route) => route.normalized));
   const backendSet = new Set(backendRoutes.map((route) => route.normalized));
-  const missingInApp = backendRoutes.filter((route) => !appSet.has(route.normalized));
+  const missingInApp = withClassifications(
+    backendRoutes.filter((route) => !appSet.has(route.normalized)),
+    classifications,
+  );
   const appOnly = appRoutes.filter((route) => !backendSet.has(route.normalized));
+  const classifiedMissingInApp = missingInApp.filter((route) => route.classification).length;
+  const unclassifiedMissingInApp = missingInApp.length - classifiedMissingInApp;
   return {
     appRoot: ".",
     backendRoot: basename(backendRoot),
@@ -156,6 +196,8 @@ function buildDiff(appRoot, backendRoot) {
       backendRoutes: backendRoutes.length,
       appSourceRoutes: appRoutes.length,
       missingInApp: missingInApp.length,
+      classifiedMissingInApp,
+      unclassifiedMissingInApp,
       appOnly: appOnly.length,
     },
     backendRoutes,
@@ -177,6 +219,8 @@ function renderMarkdown(diff) {
     `- backend route paths: ${diff.counts.backendRoutes}`,
     `- app source route paths: ${diff.counts.appSourceRoutes}`,
     `- backend routes with no direct app source path: ${diff.counts.missingInApp}`,
+    `- classified backend route gaps: ${diff.counts.classifiedMissingInApp}`,
+    `- unclassified backend route gaps: ${diff.counts.unclassifiedMissingInApp}`,
     `- app source paths with no backend router path: ${diff.counts.appOnly}`,
     "",
     "## Backend Routes With No Direct App Source Path",
@@ -185,7 +229,23 @@ function renderMarkdown(diff) {
   if (diff.missingInApp.length === 0) {
     lines.push("- none");
   } else {
+    lines.push("| Route | Category | Status | Next Action |");
+    lines.push("|---|---|---|---|");
     for (const route of diff.missingInApp) {
+      const classification = route.classification;
+      lines.push(
+        classification
+          ? `| \`${route.paths[0]}\` | \`${escapeMarkdownTableCell(classification.category)}\` | ${escapeMarkdownTableCell(classification.status)} | ${escapeMarkdownTableCell(classification.next_action)} |`
+          : `| \`${route.paths[0]}\` | \`unclassified\` |  |  |`,
+      );
+    }
+  }
+  lines.push("", "## Unclassified Backend Route Gaps", "");
+  const unclassified = diff.missingInApp.filter((route) => !route.classification);
+  if (unclassified.length === 0) {
+    lines.push("- none");
+  } else {
+    for (const route of unclassified) {
       lines.push(`- \`${route.paths[0]}\``);
     }
   }
@@ -201,12 +261,19 @@ function renderMarkdown(diff) {
   return `${lines.join("\n")}\n`;
 }
 
+function escapeMarkdownTableCell(value) {
+  return String(value ?? "").replaceAll("|", "\\|");
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2));
   const appRoot = resolve(args.app);
   const backendRoot = resolveBackend(appRoot, args.backend);
   const outDir = args.out || resolve(appRoot, "docs/superpowers/refactor/wenlan-app-inventory");
-  const diff = buildDiff(appRoot, backendRoot);
+  const classificationsPath =
+    args.classifications || resolve(outDir, "api-route-classifications.json");
+  const classifications = readRouteClassifications(classificationsPath);
+  const diff = buildDiff(appRoot, backendRoot, classifications);
 
   mkdirSync(outDir, { recursive: true });
   writeFileSync(resolve(outDir, "api-route-diff.json"), `${JSON.stringify(diff, null, 2)}\n`);

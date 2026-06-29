@@ -5,6 +5,8 @@
     "backendRoutes": 123,
     "appSourceRoutes": 114,
     "missingInApp": 9,
+    "classifiedMissingInApp": 9,
+    "unclassifiedMissingInApp": 0,
     "appOnly": 0
   },
   "backendRoutes": [
@@ -2161,7 +2163,13 @@
       ],
       "files": [
         "crates/wenlan-server/src/router.rs"
-      ]
+      ],
+      "classification": {
+        "category": "superseded_route",
+        "status": "intentional",
+        "rationale": "The desktop app reads and patches skip-app settings through the stronger sparse /api/config contract.",
+        "next_action": "No app work unless the daemon removes the legacy route."
+      }
     },
     {
       "normalized": "/api/context",
@@ -2170,7 +2178,13 @@
       ],
       "files": [
         "crates/wenlan-server/src/router.rs"
-      ]
+      ],
+      "classification": {
+        "category": "agent_route",
+        "status": "intentional",
+        "rationale": "Context bundles are trust-gated MCP/agent calls, not a desktop user command.",
+        "next_action": "Keep hidden unless a diagnostics context panel is designed."
+      }
     },
     {
       "normalized": "/api/debug/pipeline",
@@ -2179,7 +2193,13 @@
       ],
       "files": [
         "crates/wenlan-server/src/router.rs"
-      ]
+      ],
+      "classification": {
+        "category": "operator_diagnostics",
+        "status": "deferred",
+        "rationale": "This returns raw pipeline state; the app already has user-facing status and reranker diagnostics.",
+        "next_action": "Design a Settings diagnostics panel before exposing."
+      }
     },
     {
       "normalized": "/api/memory/entities/{}/observations",
@@ -2188,7 +2208,13 @@
       ],
       "files": [
         "crates/wenlan-server/src/router.rs"
-      ]
+      ],
+      "classification": {
+        "category": "alternate_route",
+        "status": "intentional",
+        "rationale": "IdentityDetail already adds observations through /api/memory/observations with a typed entity_id request body.",
+        "next_action": "No direct wrapper unless the generic observation route is deprecated."
+      }
     },
     {
       "normalized": "/api/memory/link-entity",
@@ -2197,7 +2223,13 @@
       ],
       "files": [
         "crates/wenlan-server/src/router.rs"
-      ]
+      ],
+      "classification": {
+        "category": "graph_authoring",
+        "status": "design_required",
+        "rationale": "Linking memories to entities mutates knowledge-graph provenance and needs review/undo semantics.",
+        "next_action": "Design a graph-authoring or entity-suggestion acceptance flow before exposing."
+      }
     },
     {
       "normalized": "/api/memory/relations",
@@ -2206,7 +2238,13 @@
       ],
       "files": [
         "crates/wenlan-server/src/router.rs"
-      ]
+      ],
+      "classification": {
+        "category": "graph_authoring",
+        "status": "design_required",
+        "rationale": "Direct relation creation can corrupt the knowledge graph if exposed as a blind write.",
+        "next_action": "Design a relation editor/review flow with provenance and undo states."
+      }
     },
     {
       "normalized": "/api/ping",
@@ -2215,7 +2253,13 @@
       ],
       "files": [
         "crates/wenlan-server/src/router.rs"
-      ]
+      ],
+      "classification": {
+        "category": "redundant_health",
+        "status": "intentional",
+        "rationale": "The app uses typed /api/health and /api/status for health and status checks.",
+        "next_action": "No app work."
+      }
     },
     {
       "normalized": "/api/steep",
@@ -2224,7 +2268,13 @@
       ],
       "files": [
         "crates/wenlan-server/src/router.rs"
-      ]
+      ],
+      "classification": {
+        "category": "operator_maintenance",
+        "status": "deferred",
+        "rationale": "Manual steep/refinery work can invoke maintenance phases and should not be a raw desktop button.",
+        "next_action": "Design an operator maintenance panel with cost/failure states before exposing."
+      }
     },
     {
       "normalized": "/ws/updates",
@@ -2233,7 +2283,13 @@
       ],
       "files": [
         "crates/wenlan-server/src/router.rs"
-      ]
+      ],
+      "classification": {
+        "category": "architecture_gap",
+        "status": "deferred",
+        "rationale": "The current app uses Tauri events, query invalidation, and status polling instead of daemon WebSocket subscriptions.",
+        "next_action": "Revisit only if replacing the app event flow with daemon events becomes an explicit product goal."
+      }
     }
   ],
   "appOnly": []
