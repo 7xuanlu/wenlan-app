@@ -84,6 +84,11 @@ fn app_log_file_name() -> &'static str {
     "wenlan.log"
 }
 
+#[cfg(target_os = "macos")]
+fn startup_reveal_fallback_delay() -> std::time::Duration {
+    std::time::Duration::from_millis(1200)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Log sinks: stderr (for terminal launches, `pnpm tauri dev`) AND a
@@ -172,6 +177,7 @@ pub fn run() {
             // Dock app from startup, while close/hide only affects the window.
             #[cfg(target_os = "macos")]
             {
+                set_macos_application_icon_once();
                 app.set_activation_policy(activation_policy_for_main_window_visible(false));
             }
 
@@ -277,13 +283,35 @@ pub fn run() {
                     let _ = win.center();
                     {
                         use tauri::Listener;
+                        let app_ready = Arc::new(std::sync::atomic::AtomicBool::new(false));
                         let win_for_ready = win.clone();
                         let app_for_ready = handle.clone();
+                        let app_ready_for_event = app_ready.clone();
                         // Listen for the frontend "app-ready" event
                         handle.listen("app-ready", move |_| {
+                            app_ready_for_event
+                                .store(true, std::sync::atomic::Ordering::SeqCst);
                             set_main_window_dock_visibility(&app_for_ready, true);
                             let _ = win_for_ready.show();
+                            let _ = win_for_ready.unminimize();
                             let _ = win_for_ready.set_focus();
+                        });
+
+                        let win_for_fallback = win.clone();
+                        let app_for_fallback = handle.clone();
+                        tauri::async_runtime::spawn(async move {
+                            tokio::time::sleep(startup_reveal_fallback_delay()).await;
+                            let ready = app_ready.load(std::sync::atomic::Ordering::SeqCst);
+                            let visible = win_for_fallback.is_visible().unwrap_or(false);
+                            if !ready || !visible {
+                                log::warn!(
+                                    "[startup] app-ready did not reveal the main window; showing fallback"
+                                );
+                            }
+                            set_main_window_dock_visibility(&app_for_fallback, true);
+                            let _ = win_for_fallback.show();
+                            let _ = win_for_fallback.unminimize();
+                            let _ = win_for_fallback.set_focus();
                         });
                     }
                 }
@@ -1057,5 +1085,13 @@ mod tests {
     fn app_log_identity_uses_wenlan() {
         assert!(app_log_dir().ends_with("Library/Logs/com.wenlan.desktop"));
         assert_eq!(app_log_file_name(), "wenlan.log");
+    }
+
+    #[test]
+    fn startup_reveal_fallback_is_short_but_not_immediate() {
+        let delay = startup_reveal_fallback_delay();
+
+        assert!(delay >= std::time::Duration::from_millis(500));
+        assert!(delay <= std::time::Duration::from_secs(2));
     }
 }
