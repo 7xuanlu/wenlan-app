@@ -37,6 +37,8 @@ Backend behavior:
 - Normal `POST /api/distill` never invokes the daemon LLM for synthesis. It
   returns review data: `pending`, `stale_pages`, `stale_truncated`, and
   `orphan_topics`.
+- If a non-empty `target` cannot be resolved, the backend returns a different
+  hint payload without the normal review arrays.
 - `force=true` clears `user_edited` on a resolved page before recompile.
 - `POST /api/distill/{page_id}` also clears `user_edited` before re-distilling.
 
@@ -57,15 +59,17 @@ other memory refinement work while avoiding extra weight in `PageDetail`.
 
 The first version should be work-focused and quiet:
 
-- A refresh action runs the normal `/api/distill` review pass.
+- A user-triggered refresh action runs the global `/api/distill` review pass.
+- There is no target input in this checkpoint. Scoped distill can be designed
+  later with a response union for unresolved-target hints.
 - The panel renders three sections:
   - **Pending pages:** clusters not fully covered by an existing page.
   - **Stale pages:** pages with updated sources that may need attention.
   - **Unlinked topics:** repeated orphan page-link labels from the daemon.
 - Empty sections stay collapsed or show a compact empty state.
 - Rows are navigational or informational only:
-  - Pending clusters show title-like cluster label, source count, existing page
-    hint when present, and new-memory count when present.
+  - Pending clusters show a deterministic label, source count, short source
+    preview, existing page hint when present, and new-memory count when present.
   - Stale pages link to existing Page Detail.
   - Unlinked topics show label and mention count.
 - No row performs page rewrite, synthesis, force rebuild, or page deletion.
@@ -81,10 +85,6 @@ a stable typed distill response for this route yet.
 Minimum TypeScript/Rust shape:
 
 ```text
-DistillReviewRequest {
-  target?: string | null
-}
-
 DistillReviewResponse {
   pages_created: number
   scoped: boolean
@@ -93,8 +93,19 @@ DistillReviewResponse {
   stale_pages: DistillStalePage[]
   stale_truncated: boolean
   orphan_topics: DistillOrphanTopic[]
-  unresolved?: string | null
-  hint?: string | null
+}
+
+DistillPendingCluster {
+  source_ids: string[]
+  contents: string[]
+  entity_id?: string | null
+  entity_name?: string | null
+  space?: string | null
+  estimated_tokens: number
+  centroid_embedding?: number[] | null
+  existing_page_id?: string | null
+  existing_page_title?: string | null
+  new_memory_count?: number | null
 }
 
 DistillStalePage {
@@ -113,23 +124,29 @@ DistillOrphanTopic {
 }
 ```
 
-`DistillPendingCluster` should accept the daemon's current cluster fields plus:
-
-- `existing_page_id?: string | null`
-- `existing_page_title?: string | null`
-- `new_memory_count?: number | null`
-
 The implementation should preserve strict envelopes at the command boundary:
 daemon shape drift should fail tests rather than silently rendering nonsense.
+`centroid_embedding` is part of the current daemon payload and should be typed
+but ignored by UI rendering.
+
+Pending cluster display contract:
+
+- Label priority: `existing_page_title`, then `entity_name`, then `space`, then
+  the first non-empty `contents` item truncated to 72 characters, then
+  `Untitled cluster`.
+- Preview: show up to two non-empty `contents` snippets, each truncated to 140
+  characters.
+- Count copy: use `source_ids.length`; if `new_memory_count` is present, show it
+  as the number of new source memories.
 
 ## Architecture
 
 Use the existing app seam pattern:
 
 1. `app/src/api.rs`
-   - Add `WenlanClient::distill_review(target: Option<&str>)`.
-   - Use `POST /api/distill` with JSON body.
-   - Do not send `force`.
+   - Add `WenlanClient::distill_review()`.
+   - Use `POST /api/distill` with an empty JSON body or default request.
+   - Do not send `target` or `force`.
 
 2. `app/src/search.rs`
    - Add a `#[tauri::command] distill_review`.
@@ -140,24 +157,24 @@ Use the existing app seam pattern:
    - Register the new command.
 
 4. `src/lib/tauri.ts`
-   - Add request/response interfaces and `distillReview(target?: string)`.
+   - Add response interfaces and `distillReview()`.
 
 5. Frontend component
    - Add `src/components/memory/DistillReviewPanel.tsx` as a dedicated routed
      view in `Main.tsx`.
    - Add a compact Home entry point near `RefiningList`.
-   - Use React Query for loading, refresh, error, and retry states.
+   - Use a user-triggered React Query mutation or disabled query for loading,
+     refresh, error, and retry states. Do not run the POST on mount, window
+     focus, polling, or automatic retries.
    - Navigate stale pages into existing `PageDetail` instead of introducing a
      rebuild action.
 
 ## Error Handling
 
-- If the daemon returns `unresolved`/`hint`, show the hint as a compact
-  non-blocking notice.
 - If a refresh fails after a previous success, keep the last successful results
   visible and show a retryable error banner.
-- If `stale_truncated` is true, show a small note that more stale pages may
-  exist and another pass may be needed.
+- If `stale_truncated` is true, show a small note that the daemon returned the
+  first 10 stale pages and more may exist.
 - Older daemon incompatibility should surface as a clear route/shape error, not
   as an empty queue.
 
@@ -168,13 +185,18 @@ Use TDD before implementation.
 Required RED tests before code:
 
 - Rust API client posts to `/api/distill` and does not include `force`.
+- Rust API client does not send `target`.
+- Rust code has no wrapper or call path for `/api/distill/{page_id}` in this
+  checkpoint.
 - Rust response type deserializes a daemon-shaped payload containing pending,
-  stale pages, orphan topics, and `stale_truncated`.
+  stale pages, orphan topics, `stale_truncated`, and `centroid_embedding`.
 - Tauri command returns the typed response without holding a state guard across
   await.
-- TypeScript wrapper invokes `distill_review` with `{ target: null }` by default.
-- Frontend renders the three sections, empty states, unresolved hint, truncated
-  note, and stale-page navigation.
+- TypeScript wrapper invokes `distill_review` without `target` or `force`.
+- Frontend renders the three sections, empty states, truncated note, and
+  stale-page navigation.
+- Frontend exposes no rebuild, synthesize, or force controls.
+- Stale-page clicks only navigate to Page Detail.
 
 Required verification after implementation:
 
@@ -206,6 +228,7 @@ app-only routes: 0
 ## Explicit Non-Goals
 
 - No `force=true` UI.
+- No scoped or targeted distill input.
 - No `POST /api/distill/{page_id}` wrapper or button in this slice.
 - No page synthesis editor.
 - No relation/entity graph authoring.
