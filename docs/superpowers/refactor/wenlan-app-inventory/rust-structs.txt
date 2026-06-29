@@ -172,28 +172,28 @@ app/src/search.rs:88:    /// Protected memories auto-accepted by a full-trust ag
 app/src/search.rs:89:    #[serde(default)]
 app/src/search.rs:90:    pub auto_superseded: Vec<String>,
 app/src/search.rs:91:}
-app/src/search.rs:647:pub struct RemoteConnectionTest {
-app/src/search.rs:648:    pub ok: bool,
-app/src/search.rs:649:    pub latency_ms: Option<u64>,
-app/src/search.rs:650:    pub error: Option<String>,
-app/src/search.rs:651:}
-app/src/search.rs:1389:pub struct BulkDeleteItem {
-app/src/search.rs:1390:    pub source: String,
-app/src/search.rs:1391:    pub source_id: String,
-app/src/search.rs:1392:}
-app/src/search.rs:2245:pub struct EntitySuggestion {
-app/src/search.rs:2246:    pub id: String,
-app/src/search.rs:2247:    pub entity_name: Option<String>,
-app/src/search.rs:2248:    pub source_ids: Vec<String>,
-app/src/search.rs:2249:    pub confidence: f64,
-app/src/search.rs:2250:    pub created_at: String,
-app/src/search.rs:2251:}
-app/src/search.rs:2556:pub struct TagData {
-app/src/search.rs:2557:    pub tags: Vec<String>,
-app/src/search.rs:2558:    pub document_tags: HashMap<String, Vec<String>>,
-app/src/search.rs:2559:    pub categories: Vec<String>,
-app/src/search.rs:2560:    pub document_categories: HashMap<String, String>,
-app/src/search.rs:2561:}
+app/src/search.rs:666:pub struct RemoteConnectionTest {
+app/src/search.rs:667:    pub ok: bool,
+app/src/search.rs:668:    pub latency_ms: Option<u64>,
+app/src/search.rs:669:    pub error: Option<String>,
+app/src/search.rs:670:}
+app/src/search.rs:1420:pub struct BulkDeleteItem {
+app/src/search.rs:1421:    pub source: String,
+app/src/search.rs:1422:    pub source_id: String,
+app/src/search.rs:1423:}
+app/src/search.rs:2276:pub struct EntitySuggestion {
+app/src/search.rs:2277:    pub id: String,
+app/src/search.rs:2278:    pub entity_name: Option<String>,
+app/src/search.rs:2279:    pub source_ids: Vec<String>,
+app/src/search.rs:2280:    pub confidence: f64,
+app/src/search.rs:2281:    pub created_at: String,
+app/src/search.rs:2282:}
+app/src/search.rs:2587:pub struct TagData {
+app/src/search.rs:2588:    pub tags: Vec<String>,
+app/src/search.rs:2589:    pub document_tags: HashMap<String, Vec<String>>,
+app/src/search.rs:2590:    pub categories: Vec<String>,
+app/src/search.rs:2591:    pub document_categories: HashMap<String, String>,
+app/src/search.rs:2592:}
 app/src/sensor/vision.rs:5:pub struct WindowCapture {
 app/src/sensor/vision.rs:6:    pub image: image::DynamicImage,
 app/src/sensor/vision.rs:7:    pub app_name: String,

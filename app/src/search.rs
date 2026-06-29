@@ -387,6 +387,25 @@ mod capture_config_response_tests {
     fn capture_config_response_types_are_checked() {}
 }
 
+#[cfg(test)]
+mod ingest_command_tests {
+    use super::*;
+
+    #[allow(dead_code)]
+    async fn webpage_ingest_command_uses_shared_response(state: tauri::State<'_, State>) {
+        let req = requests::IngestWebpageRequest {
+            url: "https://example.com/post".to_string(),
+            title: "Example Post".to_string(),
+            content: "A durable article body.".to_string(),
+            metadata: None,
+        };
+        let _: Result<responses::IngestResponse, String> = ingest_webpage(state, req).await;
+    }
+
+    #[test]
+    fn webpage_ingest_command_response_type_is_checked() {}
+}
+
 // Phase 5-D Phase 4: route config reads/writes through the daemon so the
 // daemon's in-memory cache stays consistent with on-disk config.json.
 // Direct `crate::config::load_config()` calls here would let app and daemon
@@ -1029,6 +1048,18 @@ pub async fn search_memory(
 }
 
 // ── Memory CRUD ───────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn ingest_webpage(
+    state: tauri::State<'_, State>,
+    req: requests::IngestWebpageRequest,
+) -> Result<responses::IngestResponse, String> {
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+    client.ingest_webpage(req).await
+}
 
 #[tauri::command]
 pub async fn store_memory(

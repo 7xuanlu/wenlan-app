@@ -243,6 +243,15 @@ impl WenlanClient {
         self.get_json("/api/tags").await
     }
 
+    // ── Ingest ───────────────────────────────────────────────────────
+
+    pub async fn ingest_webpage(
+        &self,
+        req: wenlan_types::requests::IngestWebpageRequest,
+    ) -> Result<wenlan_types::responses::IngestResponse, String> {
+        self.post_json("/api/ingest/webpage", &req).await
+    }
+
     // ── Chat export import ─────────────────────────────────────────
 
     pub async fn import_chat_export(
@@ -1049,6 +1058,44 @@ mod tests {
         assert_eq!(
             request.lines().next().unwrap_or_default(),
             "GET /api/tags HTTP/1.1"
+        );
+    }
+
+    #[tokio::test]
+    async fn ingest_webpage_uses_daemon_webpage_ingest_endpoint() {
+        let (base_url, request) =
+            serve_json_once(r#"{"chunks_created":3,"document_id":"https://example.com/post"}"#)
+                .await;
+        let client = WenlanClient {
+            client: reqwest::Client::new(),
+            base_url,
+        };
+        let mut metadata = HashMap::new();
+        metadata.insert("source".to_string(), "manual-url".to_string());
+        let req = wenlan_types::requests::IngestWebpageRequest {
+            url: "https://example.com/post".to_string(),
+            title: "Example Post".to_string(),
+            content: "A durable article body.".to_string(),
+            metadata: Some(metadata),
+        };
+
+        let resp = client.ingest_webpage(req).await.unwrap();
+
+        assert_eq!(resp.chunks_created, 3);
+        assert_eq!(resp.document_id, "https://example.com/post");
+        let request = request.await.unwrap();
+        assert_eq!(
+            request.lines().next().unwrap_or_default(),
+            "POST /api/ingest/webpage HTTP/1.1"
+        );
+        assert_eq!(
+            request_body(&request),
+            serde_json::json!({
+                "url": "https://example.com/post",
+                "title": "Example Post",
+                "content": "A durable article body.",
+                "metadata": {"source": "manual-url"}
+            })
         );
     }
 
