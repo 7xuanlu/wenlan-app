@@ -6,7 +6,7 @@
 
 use reqwest::Client;
 use serde::de::DeserializeOwned;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use wenlan_types::responses::HealthResponse;
 
@@ -59,6 +59,55 @@ pub struct OnDeviceModelResponse {
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
 pub struct MoveSpaceResponse {
     pub affected: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct DistillReviewRequest {}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct DistillReviewResponse {
+    pub pages_created: usize,
+    pub scoped: bool,
+    pub created_ids: Vec<String>,
+    pub pending: Vec<DistillPendingCluster>,
+    pub stale_pages: Vec<DistillStalePage>,
+    pub stale_truncated: bool,
+    pub orphan_topics: Vec<DistillOrphanTopic>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct DistillPendingCluster {
+    pub source_ids: Vec<String>,
+    pub contents: Vec<String>,
+    pub entity_id: Option<String>,
+    pub entity_name: Option<String>,
+    pub space: Option<String>,
+    pub estimated_tokens: usize,
+    pub centroid_embedding: Option<Vec<f32>>,
+    pub existing_page_id: Option<String>,
+    pub existing_page_title: Option<String>,
+    pub new_memory_count: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct DistillStalePage {
+    pub page_id: String,
+    pub title: String,
+    pub summary: Option<String>,
+    pub source_memory_ids: Vec<String>,
+    pub sources_updated_count: Option<usize>,
+    pub stale_reason: Option<String>,
+    pub user_edited: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct DistillOrphanTopic {
+    pub label: String,
+    pub count: usize,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -255,6 +304,11 @@ impl WenlanClient {
         req: wenlan_types::requests::IngestWebpageRequest,
     ) -> Result<wenlan_types::responses::IngestResponse, String> {
         self.post_json("/api/ingest/webpage", &req).await
+    }
+
+    pub async fn distill_review(&self) -> Result<DistillReviewResponse, String> {
+        self.post_json("/api/distill", &DistillReviewRequest {})
+            .await
     }
 
     pub async fn move_space(&self, from: &str, to: &str) -> Result<MoveSpaceResponse, String> {
@@ -1161,6 +1215,88 @@ mod tests {
         assert_eq!(
             request.lines().next().unwrap_or_default(),
             "POST /api/spaces/Work%2FClients%3Fold%3Dtrue/move-to/Archive%232026 HTTP/1.1"
+        );
+    }
+
+    #[tokio::test]
+    async fn distill_review_posts_empty_global_request_to_daemon() {
+        let body = r#"{"pages_created":0,"scoped":false,"created_ids":[],"pending":[],"stale_pages":[],"stale_truncated":false,"orphan_topics":[]}"#;
+        let (base_url, request) = serve_json_once(body).await;
+        let client = WenlanClient {
+            client: reqwest::Client::new(),
+            base_url,
+        };
+
+        let resp = client.distill_review().await.unwrap();
+
+        assert_eq!(resp.pages_created, 0);
+        assert!(!resp.scoped);
+        let request = request.await.unwrap();
+        assert_eq!(
+            request.lines().next().unwrap_or_default(),
+            "POST /api/distill HTTP/1.1"
+        );
+        assert_eq!(request_body(&request), serde_json::json!({}));
+    }
+
+    #[test]
+    fn distill_review_deserializes_daemon_review_payload_with_centroid_embedding() {
+        let payload = serde_json::json!({
+            "pages_created": 1,
+            "scoped": false,
+            "created_ids": ["page_new"],
+            "pending": [{
+                "source_ids": ["mem_1", "mem_2"],
+                "contents": ["First source", "Second source"],
+                "entity_id": "entity_rust",
+                "entity_name": "Rust",
+                "space": "Engineering",
+                "estimated_tokens": 220,
+                "centroid_embedding": [0.1, 0.2],
+                "existing_page_id": "page_rust",
+                "existing_page_title": "Rust notes",
+                "new_memory_count": 1
+            }],
+            "stale_pages": [{
+                "page_id": "page_old",
+                "title": "Old page",
+                "summary": "Needs source review",
+                "source_memory_ids": ["mem_old"],
+                "sources_updated_count": 3,
+                "stale_reason": "source_updated",
+                "user_edited": false
+            }],
+            "stale_truncated": true,
+            "orphan_topics": [{"label": "Vector clocks", "count": 4}]
+        });
+
+        let resp: DistillReviewResponse = serde_json::from_value(payload).unwrap();
+
+        assert_eq!(resp.created_ids, vec!["page_new"]);
+        assert_eq!(resp.pending[0].centroid_embedding, Some(vec![0.1, 0.2]));
+        assert_eq!(
+            resp.pending[0].existing_page_title.as_deref(),
+            Some("Rust notes")
+        );
+        assert_eq!(resp.pending[0].new_memory_count, Some(1));
+        assert_eq!(resp.stale_pages[0].page_id, "page_old");
+        assert_eq!(resp.orphan_topics[0].label, "Vector clocks");
+        assert!(resp.stale_truncated);
+    }
+
+    #[test]
+    fn distill_review_rejects_unresolved_target_hint_shape() {
+        let payload = serde_json::json!({
+            "pages_created": 0,
+            "pages_updated": 0,
+            "unresolved": "unknown target",
+            "hint": "target must be a page id"
+        });
+
+        let err = serde_json::from_value::<DistillReviewResponse>(payload).unwrap_err();
+
+        assert!(
+            err.to_string().contains("missing field") || err.to_string().contains("unknown field")
         );
     }
 
