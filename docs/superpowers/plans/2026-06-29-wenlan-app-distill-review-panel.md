@@ -780,7 +780,7 @@ export default function DistillReviewPanel({ onBack, onPageClick }: DistillRevie
           marginBottom: 24,
         }}
       >
-        <- 
+        <-
       </button>
 
       <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "center" }}>
