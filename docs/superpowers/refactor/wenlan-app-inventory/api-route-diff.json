@@ -2196,9 +2196,9 @@
       ],
       "classification": {
         "category": "operator_diagnostics",
-        "status": "deferred",
+        "status": "design_ready",
         "rationale": "This returns raw pipeline state; the app already has user-facing status and reranker diagnostics.",
-        "next_action": "Design a Settings diagnostics panel before exposing."
+        "next_action": "Implement the read-only Settings diagnostics panel described in docs/superpowers/refactor/2026-06-29-wenlan-app-settings-diagnostics-design.md."
       }
     },
     {
@@ -2273,7 +2273,7 @@
         "category": "operator_maintenance",
         "status": "deferred",
         "rationale": "Manual steep/refinery work can invoke maintenance phases and should not be a raw desktop button.",
-        "next_action": "Design an operator maintenance panel with cost/failure states before exposing."
+        "next_action": "Keep deferred; do not expose until a separate maintenance design covers cost, capability, progress, and failure states."
       }
     },
     {
