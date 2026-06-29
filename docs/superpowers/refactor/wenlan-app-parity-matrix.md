@@ -2,22 +2,22 @@
 
 - **Date:** 2026-06-29 UTC / 2026-06-28 PDT
 - **App checkout:** `/Users/lucian/Repos/wenlan-app/.worktrees/wenlan-app-api-parity-audit`
-- **App branch:** `codex/wenlan-app-route-gap-classification`
+- **App branch:** `codex/wenlan-app-webpage-ingest-wrapper`
 - **Wenlan backend source:** `/Users/lucian/Repos/wenlan`
 - **Purpose:** prerequisite matrix before the full `origin-app` -> `wenlan-app` refactor run.
-- **Current status:** refreshed on 2026-06-29 after typed-client, sidecar, MCP bridge, Dock/app-activation, avatar path, neutral theme fallback, Home pending-revision/refinery review work, daemon-backed setup status work, post-merge API parity wrappers, `/api/capture-stats`, daemon-backed global tag inventory, daemon-backed status/reranker diagnostics, entity-suggestion action compatibility with the refinery queue, typed space/page/search/setup response envelopes, typed MCP setup entry surface, `wenlan-types` 0.9.2, `/api/search` supplemental page consumption/navigation, shared page-list/search response typing, daemon-config-backed settings toggles, daemon data-root alignment for sidecar plus launchd, Intelligence setup copy moved from Concept to Page language, repeatable Tauri sidecar prep before validation, route-diff revalidation in `docs/superpowers/refactor/2026-06-29-wenlan-app-api-parity-revalidation.md`, startup Dock-icon/reveal fallback work in `docs/superpowers/refactor/2026-06-29-wenlan-app-runtime-assets.md`, local bundled `.app` validation in `docs/superpowers/refactor/2026-06-29-wenlan-app-bundled-runtime.md`, reproducible API route-diff tooling in `docs/superpowers/refactor/2026-06-29-wenlan-app-route-diff-tooling.md`, and route-gap classification in `docs/superpowers/refactor/2026-06-29-wenlan-app-route-gap-classification.md`.
+- **Current status:** refreshed on 2026-06-29 after typed-client, sidecar, MCP bridge, Dock/app-activation, avatar path, neutral theme fallback, Home pending-revision/refinery review work, daemon-backed setup status work, post-merge API parity wrappers, `/api/capture-stats`, daemon-backed global tag inventory, daemon-backed status/reranker diagnostics, entity-suggestion action compatibility with the refinery queue, typed space/page/search/setup response envelopes, typed MCP setup entry surface, `wenlan-types` 0.9.2, `/api/search` supplemental page consumption/navigation, shared page-list/search response typing, daemon-config-backed settings toggles, daemon data-root alignment for sidecar plus launchd, Intelligence setup copy moved from Concept to Page language, repeatable Tauri sidecar prep before validation, route-diff revalidation in `docs/superpowers/refactor/2026-06-29-wenlan-app-api-parity-revalidation.md`, startup Dock-icon/reveal fallback work in `docs/superpowers/refactor/2026-06-29-wenlan-app-runtime-assets.md`, local bundled `.app` validation in `docs/superpowers/refactor/2026-06-29-wenlan-app-bundled-runtime.md`, reproducible API route-diff tooling in `docs/superpowers/refactor/2026-06-29-wenlan-app-route-diff-tooling.md`, route-gap classification in `docs/superpowers/refactor/2026-06-29-wenlan-app-route-gap-classification.md`, and typed webpage ingest wrapper work in `docs/superpowers/refactor/2026-06-29-wenlan-app-webpage-ingest-wrapper.md`.
 
 ## Evidence Snapshot
 
 | Evidence | Current value | Source |
 |---|---:|---|
-| Frontend `invoke(...)` calls | 153 | `docs/superpowers/refactor/wenlan-app-inventory/frontend-invokes.txt` |
-| Registered Tauri commands | 176 | `app/src/lib.rs` + `search-rs-outline.txt` |
+| Frontend `invoke(...)` calls | 154 | `docs/superpowers/refactor/wenlan-app-inventory/frontend-invokes.txt` |
+| Registered Tauri commands | 177 | `app/src/lib.rs` + `search-rs-outline.txt` |
 | Rust `origin_types` references | 0 | `app/src` residual scan |
 | Runtime identity references | 152 | `Origin`/`origin-server`/`origin-mcp`/`com.origin`/relay residual scan |
 | Stale taxonomy references | 182 | `concept`/`goal`/`domain` residual scan |
-| Source files under `app/src` and `src` | 164 | `docs/superpowers/refactor/wenlan-app-inventory/summary.md` |
-| API route diff | 123 backend paths / 110 app paths / 13 missing app direct paths / 0 app-only paths | `docs/superpowers/refactor/wenlan-app-inventory/api-route-diff.md` |
+| Source files under `app/src` and `src` | 165 | `docs/superpowers/refactor/wenlan-app-inventory/summary.md` |
+| API route diff | 123 backend paths / 111 app paths / 12 missing app direct paths / 0 app-only paths | `docs/superpowers/refactor/wenlan-app-inventory/api-route-diff.md` |
 | Wenlan typed request/response declarations in `requests.rs` + `responses.rs` | 115 | `wenlan-types` 0.9.2 scan |
 
 ## Compatibility Gates
@@ -76,7 +76,7 @@ These are required for feature parity but can follow the P0 review/status/setup 
 | `DELETE /api/pages/{id}` | `{ status: "deleted" }` | typed local Rust status envelope; public Tauri/TS surface remains void | move to shared response type after `wenlan-types` publishes a matching page status envelope | route required for delete action |
 | `/api/pages/export` | `ExportStats` | typed Rust/Tauri/TS wrapper present as `exportPagesToObsidian` | keep; rename "concept" UI/file wording where user-facing | optional |
 | `/api/pages/{id}/export` | `ExportPageResponse` | typed Rust/Tauri/TS wrapper present as `exportPageToObsidian`; preserves daemon response envelope | keep; rename "concept" UI/file wording where user-facing | optional |
-| `/api/ingest/webpage` | `IngestWebpageRequest` / `IngestResponse` | no direct app wrapper or URL-ingest flow yet; app only recognizes `webpage` as a source label | add typed wrapper before UI; design URL ingest flow separately | optional ingest surface, strong next candidate |
+| `/api/ingest/webpage` | `IngestWebpageRequest` / `IngestResponse` | typed Rust client, Tauri command, and TS wrapper present; no visible URL-ingest flow yet | design URL ingest flow separately before surfacing in UI | optional ingest surface; typed seam available |
 | `/api/on-device-model` | server-owned model DTOs | Rust/Tauri/TS wrappers use local typed mirrors; `serde_json::Value` removed from the app route | move `OnDeviceModel*` DTOs into `wenlan-types` upstream, then replace local mirrors | optional settings section |
 | `/api/llm/test` | `TestLlmRequest` / `TestLlmResponse` | typed Rust/Tauri/TS wrapper present as `testExternalLlm`; preserves daemon response envelope | keep response envelope; settings UI may display `response` if surfaced later | optional settings section |
 | `/api/tags` | `TagsResponse` | `list_all_tags` reads the daemon global tag list and preserves additive `document_tags` maps when available; older daemons default to an empty map | merge daemon `document_tags` response support before relying on per-document tag filters in release notes | global tags available; per-document tag map gated by daemon version |

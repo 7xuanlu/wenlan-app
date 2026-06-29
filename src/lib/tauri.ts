@@ -261,6 +261,22 @@ export async function ingestClipboard(content: string): Promise<number> {
   return invoke("ingest_clipboard", { content });
 }
 
+export interface IngestWebpageRequest {
+  url: string;
+  title: string;
+  content: string;
+  metadata?: Record<string, string> | null;
+}
+
+export interface IngestResponse {
+  chunks_created: number;
+  document_id: string;
+}
+
+export async function ingestWebpage(req: IngestWebpageRequest): Promise<IngestResponse> {
+  return invoke("ingest_webpage", { req });
+}
+
 export async function getClipboardEnabled(): Promise<boolean> {
   return invoke("get_clipboard_enabled");
 }
