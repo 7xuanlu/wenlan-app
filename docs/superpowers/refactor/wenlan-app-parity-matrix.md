@@ -17,7 +17,7 @@
 | Runtime identity references | 152 | `Origin`/`origin-server`/`origin-mcp`/`com.origin`/relay residual scan |
 | Stale taxonomy references | 182 | `concept`/`goal`/`domain` residual scan |
 | Source files under `app/src` and `src` | 165 | `docs/superpowers/refactor/wenlan-app-inventory/summary.md` |
-| API route diff | 123 backend paths / 113 app paths / 10 missing app direct paths / 0 app-only paths | `docs/superpowers/refactor/wenlan-app-inventory/api-route-diff.md` |
+| API route diff | 123 backend paths / 114 app paths / 9 missing app direct paths / 9 classified / 0 unclassified / 0 app-only paths | `docs/superpowers/refactor/wenlan-app-inventory/api-route-diff.md` |
 | Wenlan typed request/response declarations in `requests.rs` + `responses.rs` | 115 | `wenlan-types` 0.9.2 scan |
 
 ## Compatibility Gates
