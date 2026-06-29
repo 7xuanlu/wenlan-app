@@ -187,8 +187,8 @@ export default function DistillReviewPanel({ onBack, onPageClick }: DistillRevie
                 {lastResult.pending.map((cluster) => {
                   const label = pendingLabel(cluster);
                   const preview = cluster.contents
-                    .filter((content) => content.trim().length > 0)
-                    .filter((content) => truncateText(content.trim(), 72) !== label)
+                    .map((content) => content.trim())
+                    .filter((content) => content.length > 0)
                     .slice(0, 2);
                   return (
                     <article

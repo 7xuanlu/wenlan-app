@@ -27,6 +27,18 @@ function renderPanel(props: Partial<React.ComponentProps<typeof DistillReviewPan
   return { user, onBack, onPageClick };
 }
 
+function truncateForTest(value: string, max: number): string {
+  if (max <= 0) return "";
+  if (value.length <= max) return value;
+  if (max <= 3) return ".".repeat(max);
+  return `${value.slice(0, max - 3).trimEnd()}...`;
+}
+
+const fallbackSource =
+  "Fallback content label should appear when no title or entity exists, and this preview detail must stay visible in the review panel source list even when it becomes the cluster title.";
+const fallbackSecondSource =
+  "A second fallback source confirms the preview keeps the first two contents.";
+
 const reviewPayload: DistillReviewResponse = {
   pages_created: 0,
   scoped: false,
@@ -49,7 +61,7 @@ const reviewPayload: DistillReviewResponse = {
     },
     {
       source_ids: ["mem_3"],
-      contents: ["Fallback content label should appear when no title or entity exists."],
+      contents: [fallbackSource, fallbackSecondSource],
       estimated_tokens: 80,
     },
   ],
@@ -90,11 +102,22 @@ describe("DistillReviewPanel", () => {
 
     expect(await screen.findByText("Temporal page refresh")).toBeInTheDocument();
     expect(screen.getByText(/1 new source/)).toBeInTheDocument();
-    expect(screen.getByText(/Fallback content label should appear/)).toBeInTheDocument();
+    expect(screen.getByText(truncateForTest(fallbackSource, 72))).toBeInTheDocument();
     expect(screen.getByText("Retrieval Pipeline")).toBeInTheDocument();
     expect(screen.getByText(/first 10 stale pages/i)).toBeInTheDocument();
     expect(screen.getByText("Vector clocks")).toBeInTheDocument();
     expect(screen.getByText(/4 mentions/)).toBeInTheDocument();
+  });
+
+  it("renders source previews even when a fallback label comes from the first source", async () => {
+    vi.mocked(distillReview).mockResolvedValue(reviewPayload);
+    const { user } = renderPanel();
+
+    await user.click(screen.getByRole("button", { name: /refresh review/i }));
+
+    expect(await screen.findByText(truncateForTest(fallbackSource, 72))).toBeInTheDocument();
+    expect(screen.getByText(truncateForTest(fallbackSource, 140))).toBeInTheDocument();
+    expect(screen.getByText(fallbackSecondSource)).toBeInTheDocument();
   });
 
   it("navigates stale pages without exposing rebuild controls", async () => {
