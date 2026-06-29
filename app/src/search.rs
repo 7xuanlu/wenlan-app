@@ -2325,14 +2325,10 @@ pub async fn get_entity_suggestions_cmd(
 
 #[tauri::command]
 pub async fn approve_entity_suggestion_cmd(
-    state: tauri::State<'_, State>,
-    id: String,
-) -> Result<responses::AcceptRefinementResponse, String> {
-    let client = {
-        let s = state.read().await;
-        s.client.clone()
-    };
-    client.accept_refinement(&id).await
+    _state: tauri::State<'_, State>,
+    _id: String,
+) -> Result<(), String> {
+    Err("Entity suggestion accept is not supported by this daemon contract".to_string())
 }
 
 #[tauri::command]
@@ -2352,10 +2348,10 @@ mod entity_suggestion_command_type_tests {
     use super::*;
 
     #[allow(dead_code)]
-    async fn approve_entity_suggestion_uses_refinery_accept_response(
+    async fn approve_entity_suggestion_accept_is_unsupported(
         state: tauri::State<'_, State>,
     ) {
-        let _: Result<responses::AcceptRefinementResponse, String> =
+        let _: Result<(), String> =
             approve_entity_suggestion_cmd(state, String::new()).await;
     }
 

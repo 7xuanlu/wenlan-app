@@ -89,17 +89,32 @@ suggestions.
 This is acceptable if the migration scope is "do not expose graph mutation in
 desktop v0.9", but it does not move graph authoring forward.
 
+## Review Outcome
+
+The fallback merit review found no blocking flaw in the graph boundary, but it
+did identify one scope correction: graph authoring is not proven required for
+P1 desktop migration parity. The current app already keeps `suggest_entity`
+accept hidden, and the daemon deliberately rejects generic `suggest_entity`
+accepts with 422. Therefore the migration default is to keep graph authoring
+deferred unless accepting entity suggestions becomes an explicit product
+requirement.
+
+Option A remains the correct future shape if graph authoring is in scope. It is
+not the default next implementation slice for P1 parity.
+
 ## Recommended Design
 
-Use Option A as the next migration slice:
+If graph authoring becomes explicit product scope, use Option A:
 
 1. **Backend first:** add or promote a typed daemon contract for accepting
    `suggest_entity` proposals. The contract must not reuse the generic
    `/api/refinery/queue/{id}/accept` endpoint unless the daemon can apply the
    proposal without missing required input.
-2. **One transaction:** create the entity, link the proposal source memories,
-   record the refinement as resolved, and emit an activity/provenance event
-   together.
+2. **One transaction:** validate proposal state, entity name/type, and every
+   source memory before any write; then create the entity, link the proposal
+   source memories, record the refinement as resolved, and emit an
+   activity/provenance event together. Do not compose this out of current
+   primitives unless they are wrapped in a new atomic core operation.
 3. **Typed wire surface:** move the public request/response shape into
    `wenlan-types`; avoid app-local `serde_json::Value` and avoid untyped
    `{linked: true}` responses for desktop-facing mutation.
@@ -222,7 +237,8 @@ Do not force a devil's-advocate stance. Evaluate honestly and cite concrete flaw
 
 ## Open Decision
 
-Default recommendation: proceed with Option A after boule/user review. If the
-review concludes graph authoring is not required for the migration completion
-bar, keep both graph routes classified as `design_required/deferred` and move
-the next implementation slice to Settings diagnostics instead.
+Default recommendation after review: keep both graph routes classified as
+`design_required/deferred` for P1 migration and move the next implementation
+slice to Settings diagnostics or another read-only parity surface. Proceed with
+Option A only if graph authoring, specifically accepting entity suggestions,
+becomes explicit product scope.
