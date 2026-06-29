@@ -2348,11 +2348,8 @@ mod entity_suggestion_command_type_tests {
     use super::*;
 
     #[allow(dead_code)]
-    async fn approve_entity_suggestion_accept_is_unsupported(
-        state: tauri::State<'_, State>,
-    ) {
-        let _: Result<(), String> =
-            approve_entity_suggestion_cmd(state, String::new()).await;
+    async fn approve_entity_suggestion_accept_is_unsupported(state: tauri::State<'_, State>) {
+        let _: Result<(), String> = approve_entity_suggestion_cmd(state, String::new()).await;
     }
 
     #[allow(dead_code)]
