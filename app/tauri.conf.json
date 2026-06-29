@@ -6,8 +6,8 @@
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
-    "beforeDevCommand": "pnpm dev",
-    "beforeBuildCommand": "pnpm build"
+    "beforeDevCommand": "pnpm prepare:sidecars && pnpm dev",
+    "beforeBuildCommand": "pnpm prepare:sidecars:tauri-build && pnpm build"
   },
   "app": {
     "windows": [

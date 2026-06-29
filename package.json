@@ -11,6 +11,7 @@
     "dev:all": "pnpm clean:dev && pnpm dev:daemon && pnpm tauri dev",
     "build": "tsc -b && vite build",
     "prepare:sidecars": "bash scripts/prepare-sidecars.sh",
+    "prepare:sidecars:tauri-build": "bash scripts/prepare-tauri-build-sidecars.sh",
     "build:daemon": "pnpm prepare:sidecars",
     "build:all": "pnpm build:daemon && pnpm build",
     "release:daemon": "bash scripts/prepare-sidecars.sh --release --force-build",

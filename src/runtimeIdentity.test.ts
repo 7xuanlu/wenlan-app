@@ -69,6 +69,23 @@ describe("runtime product identity", () => {
     expect(lib).not.toContain("startup_reveal_fallback_delay");
   });
 
+  it("prepares sidecar binaries before Tauri validates external bins", () => {
+    const tauri = JSON.parse(
+      readFileSync(resolve(root, "app/tauri.conf.json"), "utf8"),
+    );
+
+    expect(tauri.bundle.externalBin).toEqual(
+      expect.arrayContaining([
+        "binaries/wenlan",
+        "binaries/wenlan-server",
+        "binaries/wenlan-mcp",
+        "binaries/cloudflared",
+      ]),
+    );
+    expect(tauri.build.beforeDevCommand).toContain("prepare:sidecars");
+    expect(tauri.build.beforeBuildCommand).toContain("prepare:sidecars:tauri-build");
+  });
+
   it("keeps product-owned visible copy on Wenlan", () => {
     const productOwnedFiles = [
       "src/components/memory/SettingsPage.tsx",
