@@ -2394,7 +2394,6 @@ pub async fn update_space(
 pub async fn delete_space(
     state: tauri::State<'_, State>,
     name: String,
-    _memory_action: Option<String>,
 ) -> Result<(), String> {
     let client = {
         let s = state.read().await;
