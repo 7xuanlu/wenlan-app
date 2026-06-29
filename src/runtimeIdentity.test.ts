@@ -58,7 +58,7 @@ describe("runtime product identity", () => {
     expect(capability.description).toBe("Default capability for Wenlan");
   });
 
-  it("declares the main window visible at launch", () => {
+  it("declares the main window visible at launch and keeps a backend reveal fallback", () => {
     const tauri = JSON.parse(
       readFileSync(resolve(root, "app/tauri.conf.json"), "utf8"),
     );
@@ -66,7 +66,9 @@ describe("runtime product identity", () => {
 
     expect(tauri.app.windows[0].visible).toBe(true);
     expect(lib).toContain('handle.listen("app-ready"');
-    expect(lib).not.toContain("startup_reveal_fallback_delay");
+    expect(lib).toContain("set_macos_application_icon_once();\n                app.set_activation_policy");
+    expect(lib).toContain("startup_reveal_fallback_delay");
+    expect(lib).toContain("app-ready did not reveal the main window");
   });
 
   it("prepares sidecar binaries before Tauri validates external bins", () => {
