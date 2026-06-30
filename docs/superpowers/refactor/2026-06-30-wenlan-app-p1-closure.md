@@ -8,6 +8,7 @@
 - **Base:** `origin/main` at `557840e` after PR #53
 - **Merged checkpoint:** PR #54, merge commit `965721bdccb9f7cfae1d1efa8b6bcd53ffec9af7`
 - **Status:** P0/P1 migration closure checkpoint merged. Deferred graph-authoring, maintenance, WebSocket, and palette work remains out of scope for this closure pass.
+- **Third-eye review:** completed after PRs #54, #55, and #56 merged; verdict was `ready with caveats`, with no critical issues.
 
 ## Scope
 
@@ -134,7 +135,7 @@ System Events process "wenlan-app" window title -> Wenlan
 System Events process "wenlan-app" window geometry -> 80, 120, 1280, 720, Wenlan
 ```
 
-Visual evidence:
+Visual evidence reviewed in the Codex thread:
 
 ```text
 /var/folders/tf/w6fz2l2x4vg5nx_n4clfvpgh0000gn/T/TemporaryItems/NSIRD_screencaptureui_VjUyYG/Screenshot 2026-06-29 at 7.03.51 PM.png
@@ -143,6 +144,9 @@ Visual evidence:
 The screenshot shows the Wenlan window open on Home with the profile avatar
 resolved, Spaces loaded, Worth-a-glance cards visible, "Where AI looked"
 entries visible, and real daemon-backed counts: 10 pages and 6205 memories.
+That local `/var/folders/...` screenshot path was temporary and is not a
+durable filesystem artifact; the durable runtime proof is the recorded daemon
+probes plus process/window evidence above.
 
 Backend checkout caveat:
 
@@ -203,6 +207,27 @@ not migration closure gaps:
 - `/ws/updates` needs an explicit app-event architecture decision before
   replacing the current Tauri event, polling, and query invalidation flow;
 - visual palette exploration is separate from daemon/API migration closure.
+
+## Third-Eye Validation
+
+An independent post-merge reviewer rechecked the closure against the original
+objective after PRs #54, #55, and #56 were merged. Verdict: `ready with
+caveats`.
+
+Findings resolved or bounded:
+
+- **CodeGraph readiness:** reviewer hit `unable to open database file` in a
+  restricted context. A follow-up run with filesystem access verified
+  `codegraph status .`: 179 files, 2,688 nodes, 6,648 edges, index up to date.
+- **Screenshot durability:** reviewer correctly flagged the `/var/folders/...`
+  screenshot path as ephemeral. The doc now treats it as reviewed thread
+  evidence, not a durable repository artifact.
+- **PR metadata:** #54 recorded the closure checkpoint; #55 and #56 then merged
+  post-merge status and guardrails. No open migration PRs remained in the
+  follow-up audit.
+- **Residual scope:** MCP socket auth warning, graph authoring, `/api/steep`,
+  `/ws/updates`, and palette exploration remain future product/backend or
+  release-security work, not P0/P1 migration closure blockers.
 
 ## Review Prompt
 
