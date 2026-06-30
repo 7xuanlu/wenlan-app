@@ -155,23 +155,29 @@ Baseline evidence from the closure worktree:
   daemon `0.9.1`. The user-provided runtime screenshot showed Home loaded with
   10 pages and 6205 memories.
 
-## Go/No-Go Before Full Refactor Run
+## Post-Closure Guardrails
 
-Go when all are true:
+The full `origin-app` -> `wenlan-app` migration checkpoint has landed. Keep
+these checks as regression guardrails for future app refactors:
 
-- This matrix is committed.
-- `bash scripts/refactor/inventory.sh` runs and generated summary is current.
-- `pnpm refactor:api-routes` runs and generated route-diff artifacts are current.
-- CodeGraph evaluation is recorded, `.codegraph/` is ignored, and cross-cutting edits use `codegraph sync` plus target-specific `query`/`impact`/`affected` probes before changing behavior.
-- `pnpm install --frozen-lockfile --offline` exits 0.
-- `pnpm test` exits 0.
-- `pnpm build:app:local` exits 0 and produces `target/release/bundle/macos/Wenlan.app` without requiring `TAURI_SIGNING_PRIVATE_KEY`.
-- `cargo build` exits 0 with the repeatable `wenlan-server`/`wenlan-mcp` sidecar strategy.
-- Remaining public rename work is gated by bridge classification: keep legacy Origin state readable, then migrate visible product/runtime identity in separate commits.
+- Keep `bash scripts/refactor/inventory.sh` and the generated inventory summary
+  current after structural app changes.
+- Keep `pnpm refactor:api-routes` current and require every missing direct
+  daemon route to be classified.
+- Use CodeGraph for cross-cutting edits: run `codegraph sync` plus
+  target-specific `query`, `impact`, or `affected` probes before changing
+  behavior.
+- Keep `pnpm test`, `pnpm build`, and `cargo test --manifest-path app/Cargo.toml`
+  green for app changes.
+- Preserve the repeatable `wenlan-server`/`wenlan-mcp` sidecar strategy; do not
+  hand-copy binaries to make Tauri builds pass.
+- Keep legacy Origin state readable until a release cleanup plan explicitly
+  removes bridge paths, tokens, MCP config, LaunchAgents, or data roots.
 
-No-go:
+Do not regress these migration boundaries:
 
-- Starting public `Origin` -> `Wenlan` rename before typed client and sidecar bridge.
-- Replacing text with `rg` globally before AST inventory surfaces are classified.
-- Removing old MCP config or token paths automatically.
-- Hand-copying sidecar binaries to make `cargo build` pass without a repeatable build/copy contract.
+- Do not replace text globally with `rg` before AST inventory surfaces are
+  classified.
+- Do not remove old MCP config or token paths automatically.
+- Do not add raw desktop wrappers for graph-authoring writes or operator
+  maintenance routes just to reduce the route-diff count.
