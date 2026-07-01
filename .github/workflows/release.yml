@@ -82,26 +82,6 @@ jobs:
           echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
           echo "Building $RELEASE_TAG (event: ${{ github.event_name }})"
 
-      # ponytail: pin to wenlan's latest published release, not main --
-      # a floating main could break the app build out from under a tagged
-      # app release. Bump the resolution logic if per-release pinning is
-      # ever needed.
-      - name: Resolve wenlan backend release tag
-        id: backend
-        run: |
-          BACKEND_TAG=$(gh release view --repo 7xuanlu/wenlan --json tagName -q .tagName)
-          echo "tag=$BACKEND_TAG" >> "$GITHUB_OUTPUT"
-          echo "Building against wenlan backend $BACKEND_TAG"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Checkout wenlan backend
-        uses: actions/checkout@v4
-        with:
-          repository: 7xuanlu/wenlan
-          path: wenlan
-          ref: ${{ steps.backend.outputs.tag }}
-
       - name: Validate version consistency
         run: |
           TAG="${RELEASE_TAG#v}"
@@ -140,7 +120,6 @@ jobs:
         with:
           workspaces: |
             wenlan-app/app
-            wenlan
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -169,6 +148,12 @@ jobs:
           chmod 755 /tmp/cloudflared
           xattr -cr /tmp/cloudflared
           echo "CLOUDFLARED_BIN=/tmp/cloudflared" >> "$GITHUB_ENV"
+
+      - name: Prepare daemon sidecars (download pinned release)
+        run: bash scripts/prepare-sidecars.sh --download
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CLOUDFLARED_BIN: ${{ env.CLOUDFLARED_BIN }}
 
       - name: Import code signing certificate
         if: env.APPLE_CERTIFICATE != ''
@@ -238,7 +223,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_DIR: app
           CXXFLAGS: "-std=c++17"
-          WENLAN_BACKEND_DIR: ${{ github.workspace }}/wenlan
           CLOUDFLARED_BIN: ${{ env.CLOUDFLARED_BIN }}
           # Ad-hoc sign ("-") when no Apple Developer cert is configured.
           # APPLE_ID/PASSWORD/TEAM_ID must be omitted (not empty) or Tauri
