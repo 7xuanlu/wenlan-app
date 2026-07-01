@@ -198,17 +198,21 @@ jobs:
       # needs to look nicer.
       - name: Compose release body
         run: |
+          # HEAD, not $RELEASE_TAG: RELEASE_TAG is only a real git ref for a
+          # push: tags: v* trigger (the tag was just pushed). workflow_dispatch
+          # builds off a branch/SHA before tauri-action creates the tag, so
+          # $RELEASE_TAG doesn't exist as a ref yet at this point in the job.
           PREV_TAG=$(git tag --sort=-version:refname | grep '^v' | sed -n '2p')
           {
             echo "## What's Changed"
             echo
             if [ -n "$PREV_TAG" ]; then
-              git log --pretty=format:'- %s' "$PREV_TAG..$RELEASE_TAG"
+              git log --pretty=format:'- %s' "$PREV_TAG..HEAD"
               echo
               echo
               echo "**Full Changelog**: https://github.com/7xuanlu/wenlan-app/compare/${PREV_TAG}...${RELEASE_TAG}"
             else
-              git log --pretty=format:'- %s' "$RELEASE_TAG"
+              git log --pretty=format:'- %s' HEAD
             fi
             echo
             echo
