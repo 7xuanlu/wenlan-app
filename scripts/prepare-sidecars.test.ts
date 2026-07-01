@@ -481,6 +481,32 @@ describe("prepare-sidecars --download mode", () => {
     }
   });
 
+  it("downloads sidecars from the tauri build hook when WENLAN_DOWNLOAD_SIDECARS=1", () => {
+    // The release flow has NO backend checkout: the tauri beforeBuildCommand
+    // wrapper must take the --download path, not fall through to --release
+    // (compile), which would die on resolve-backend-dir.
+    const base = makeTempRoot();
+    const appRoot = resolve(base, "wenlan-app");
+    writeAppScripts(appRoot);
+
+    const { tarballPath, sha256 } = buildFakeTarball(base);
+    writeVersionPin(appRoot, "v0.9.5", sha256);
+
+    const fakeBinDir = resolve(base, "fake-bin");
+    writeFakeGh(fakeBinDir, { tarballPath });
+
+    const result = spawnSync("bash", ["scripts/prepare-tauri-build-sidecars.sh"], {
+      cwd: appRoot,
+      encoding: "utf8",
+      env: childEnv({ ...withFakeBin(fakeBinDir), WENLAN_DOWNLOAD_SIDECARS: "1" }),
+    });
+
+    expect(result.status, `stderr: ${result.stderr}`).toBe(0);
+    for (const destName of DAEMON_DEST_NAMES) {
+      expect(existsSync(resolve(appRoot, "app/binaries", destName))).toBe(true);
+    }
+  });
+
   it("strips quarantine via xattr -cr on each installed daemon binary", () => {
     const base = makeTempRoot();
     const appRoot = resolve(base, "wenlan-app");
