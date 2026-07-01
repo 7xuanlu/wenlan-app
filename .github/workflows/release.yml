@@ -9,22 +9,20 @@ name: Release
 # cross-repo sidecar build (scripts/prepare-sidecars.sh, which needs a
 # sibling wenlan backend checkout) and current secret names.
 #
-# Two open items before this produces a real signed build:
+# Signing key: rotated 2026-07-01 to ~/.tauri/wenlan-updater.key (the prior
+# origin-updater.key was retired after its encrypted blob was accidentally
+# printed in full to a chat transcript). app/tauri.conf.json's
+# updater.pubkey and the TAURI_SIGNING_PRIVATE_KEY(_PASSWORD) secrets on this
+# repo are already updated to match.
 #
-# 1. TAURI_SIGNING_PRIVATE_KEY must be the PRIVATE key (the content of
-#    ~/.tauri/origin-updater.key, wherever it's kept), not the .pub file —
-#    the .pub content is already public, baked into app/tauri.conf.json's
-#    updater.pubkey. TAURI_SIGNING_PRIVATE_KEY_PASSWORD is required: the key
-#    file's own header says "encrypted secret key", so it was generated with
-#    a password. Without a correct key, tauri-action still builds but signs
-#    nothing, and "Verify updater metadata" below fails loud (by design) —
-#    safe to find out via a draft workflow_dispatch run first.
+# One open item before this produces a real signed build:
 #
-# 2. The tauri-action projectPath/TAURI_DIR wiring below is unverified.
-#    Local dev invokes `pnpm tauri dev` (= `TAURI_DIR=app tauri`) from the
-#    repo root, so this workflow mirrors that (projectPath: wenlan-app,
-#    TAURI_DIR=app env) rather than the old monorepo's `projectPath: app` —
-#    but that's a guess until a real CI run confirms it.
+# The tauri-action projectPath/TAURI_DIR wiring below is unverified. Local
+# dev invokes `pnpm tauri dev` (= `TAURI_DIR=app tauri`) from the repo root,
+# so this workflow mirrors that (projectPath: wenlan-app, TAURI_DIR=app env)
+# rather than the old monorepo's `projectPath: app` — but that's a guess
+# until a real CI run confirms it. Safe to find out via a draft
+# workflow_dispatch run first.
 
 on:
   push:
