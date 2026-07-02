@@ -32,42 +32,16 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 #[cfg(target_os = "macos")]
-fn macos_dock_icon_bytes() -> &'static [u8] {
-    include_bytes!("../icons/icon.png")
-}
-
-#[cfg(target_os = "macos")]
-#[allow(deprecated)]
-fn set_macos_application_icon_once() {
-    use cocoa::appkit::{NSApp, NSApplication, NSImage};
-    use cocoa::base::{id, nil};
-    use cocoa::foundation::{NSData, NSUInteger};
-    use std::ffi::c_void;
-    use std::sync::Once;
-
-    static SET_APPLICATION_ICON: Once = Once::new();
-    SET_APPLICATION_ICON.call_once(|| unsafe {
-        let icon = macos_dock_icon_bytes();
-        let data = NSData::dataWithBytes_length_(
-            nil,
-            icon.as_ptr() as *const c_void,
-            icon.len() as NSUInteger,
-        );
-        let image: id = NSImage::initWithData_(NSImage::alloc(nil), data);
-        if image != nil {
-            NSApp().setApplicationIconImage_(image);
-        }
-    });
-}
-
-#[cfg(target_os = "macos")]
 fn activation_policy_for_main_window_visible(_visible: bool) -> tauri::ActivationPolicy {
     tauri::ActivationPolicy::Regular
 }
 
 #[cfg(target_os = "macos")]
 fn set_main_window_dock_visibility<R: tauri::Runtime>(app: &tauri::AppHandle<R>, visible: bool) {
-    set_macos_application_icon_once();
+    // Dock tile comes from the app bundle via IconServices, which applies the
+    // standard macOS rounded-rect (squircle) mask. Do NOT re-assert it with
+    // setApplicationIconImage_ — a raw bitmap bypasses that mask and renders a
+    // square tile while running (round only when parked).
     let _ = app.set_activation_policy(activation_policy_for_main_window_visible(visible));
 }
 
@@ -177,7 +151,6 @@ pub fn run() {
             // Dock app from startup, while close/hide only affects the window.
             #[cfg(target_os = "macos")]
             {
-                set_macos_application_icon_once();
                 app.set_activation_policy(activation_policy_for_main_window_visible(false));
             }
 
@@ -1075,15 +1048,6 @@ mod tests {
         let info_plist = include_str!("../Info.plist");
 
         assert!(!info_plist.contains("<key>LSUIElement</key>\n    <true/>"));
-    }
-
-    #[test]
-    fn dock_icon_uses_full_app_icon_asset_not_tray_template() {
-        let dock_icon = macos_dock_icon_bytes();
-        let tray_icon = include_bytes!("../icons/tray-icon.png");
-
-        assert_eq!(&dock_icon[..8], b"\x89PNG\r\n\x1a\n");
-        assert!(dock_icon.len() > tray_icon.len() * 10);
     }
 
     #[test]
