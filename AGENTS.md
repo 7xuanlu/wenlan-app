@@ -57,6 +57,25 @@ release tag in CI. Nothing in `app/src` does a runtime version handshake
 between the two. If you see a "daemon vX, plugin/app expects vY" mismatch,
 this split pinning is why — it's a known gap, not a regression.
 
+## Environment
+
+- `WENLAN_BACKEND_DIR` — override for the sibling backend checkout path
+  (default: `../wenlan`). Consumed by `scripts/resolve-backend-dir.sh`.
+- `TAURI_SIGNING_PRIVATE_KEY` (+ `_PASSWORD`) — required by `tauri build`
+  because `app/tauri.conf.json` sets `bundle.createUpdaterArtifacts: true` with
+  an updater `pubkey`. Unset it and the build fails at the updater-signing step
+  (`release.yml` guards this with a "latest.json was not uploaded" check).
+
+## Code style
+
+No separate style doc — enforcement _is_ `ci.yml`, which is strict, not
+advisory. Run these locally before pushing:
+
+- `cargo fmt --check --all`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `pnpm exec tsc -b`
+- `pnpm test`
+
 ## Where things live
 
 - Rust app logic: `app/src/*.rs` (e.g. `api.rs`, `config.rs`, `lifecycle.rs`,
