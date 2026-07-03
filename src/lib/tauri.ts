@@ -217,6 +217,22 @@ export async function openFile(url: string): Promise<void> {
   return invoke("open_file", { path });
 }
 
+export interface SourceDirEntry {
+  name: string;
+  isDirectory: boolean;
+}
+
+/**
+ * List the immediate entries of a directory (for the Sources browser).
+ * Reads via the Rust `read_source_dir` command rather than the webview fs
+ * plugin, because `fs:default` has no path scope — a registered source's path
+ * isn't readable from the webview on a fresh launch. Names only, dotfiles
+ * hidden. Sorting is the caller's job.
+ */
+export async function readSourceDir(path: string): Promise<SourceDirEntry[]> {
+  return invoke("read_source_dir", { path });
+}
+
 export interface ChunkDetail {
   id: string;
   content: string;

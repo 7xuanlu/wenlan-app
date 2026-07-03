@@ -14,7 +14,6 @@ vi.mock("../../lib/tauri", () => ({
 
 vi.mock("./IdentityCard", () => ({ default: () => <div data-testid="identity-card" /> }));
 vi.mock("./SpaceList", () => ({ default: () => <div data-testid="space-list">Spaces</div> }));
-vi.mock("./SourceList", () => ({ default: () => <div data-testid="source-list">Sources</div> }));
 vi.mock("./EntitySuggestions", () => ({ default: () => <div data-testid="entity-suggestions" /> }));
 
 function renderSidebar(extraProps: Record<string, unknown> = {}) {
@@ -73,19 +72,25 @@ describe("Sidebar", () => {
     expect(graph.compareDocumentPosition(spaces) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("lists foundational sources below Spaces when source navigation is wired", () => {
-    renderSidebar({ onNavigateSources: () => {} });
+  it("places a Sources tab above Spaces and routes it through onNavigateSources", async () => {
+    const user = userEvent.setup();
+    const onNavigateSources = vi.fn();
+    renderSidebar({ onNavigateSources });
 
+    const sources = screen.getByRole("button", { name: "Sources" });
     const spaces = screen.getByTestId("space-list");
-    const sources = screen.getByTestId("source-list");
 
-    expect(spaces.compareDocumentPosition(sources) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Sources sits in the primary nav, above the Spaces list.
+    expect(sources.compareDocumentPosition(spaces) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    await user.click(sources);
+    expect(onNavigateSources).toHaveBeenCalledTimes(1);
   });
 
-  it("omits the Sources section when source navigation is not wired", () => {
+  it("omits the Sources tab when source navigation is not wired", () => {
     renderSidebar();
 
-    expect(screen.queryByTestId("source-list")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Sources" })).not.toBeInTheDocument();
   });
 
   it("keeps the Wenlan brand in the sidebar footer", () => {

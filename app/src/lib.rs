@@ -817,6 +817,7 @@ pub fn run() {
             search::delete_by_time_range,
             search::delete_bulk,
             search::open_file,
+            search::read_source_dir,
             search::quick_capture,
             search::ingest_clipboard,
             search::ingest_webpage,

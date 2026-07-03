@@ -3,7 +3,6 @@ import { useQuery } from "@tanstack/react-query";
 import { getMemoryStats } from "../../lib/tauri";
 import IdentityCard from "./IdentityCard";
 import SpaceList from "./SpaceList";
-import SourceList from "./SourceList";
 import EntitySuggestions from "./EntitySuggestions";
 
 interface SidebarProps {
@@ -110,15 +109,26 @@ export default function Sidebar({
                 </span>
               </button>
             )}
+
+            {onNavigateSources && (
+              <button
+                onClick={onNavigateSources}
+                className="flex items-center gap-2 px-1 py-1.5 rounded-md transition-colors duration-150 hover:bg-[var(--mem-hover)] w-full"
+              >
+                {/* Stacked strata — the foundational layer the wiki is built on. */}
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--mem-text-tertiary)" }}>
+                  <path d="M12 3 21 8 12 13 3 8z" />
+                  <path d="M3 12 12 17 21 12" />
+                  <path d="M3 16 12 21 21 16" />
+                </svg>
+                <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-secondary)" }}>
+                  Sources
+                </span>
+              </button>
+            )}
           </div>
 
           <SpaceList onSelectSpace={onSelectSpace} />
-
-          {onNavigateSources && (
-            <div className="pt-4">
-              <SourceList onNavigateSources={onNavigateSources} />
-            </div>
-          )}
         </div>
 
         <div

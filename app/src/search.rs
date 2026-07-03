@@ -807,6 +807,42 @@ pub async fn open_file(path: String) -> Result<(), String> {
     Ok(())
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DirEntryDto {
+    name: String,
+    is_directory: bool,
+}
+
+/// List the immediate entries of a directory for the Sources browser.
+///
+/// The webview's fs plugin is unscoped (`fs:default`), so a registered
+/// source's path isn't readable there on a fresh launch (only paths the user
+/// just picked via the dialog are in scope). The Rust side has no such limit,
+/// so it reads the directory directly. Names only — never file contents —
+/// which is the same trust level the webview already has via `open_file`.
+#[tauri::command]
+pub async fn read_source_dir(path: String) -> Result<Vec<DirEntryDto>, String> {
+    let rd = std::fs::read_dir(&path).map_err(|e| e.to_string())?;
+    let mut out = Vec::new();
+    for entry in rd.flatten() {
+        // ponytail: 10k-entry ceiling as a payload safety valve; real sources
+        // are far smaller. Raise it if a source ever legitimately exceeds it.
+        if out.len() >= 10_000 {
+            break;
+        }
+        let name = entry.file_name().to_string_lossy().to_string();
+        // Hide dotfiles (.obsidian, .git, .DS_Store) — the daemon skips them at
+        // ingest, so they aren't part of the "foundation" the browser shows.
+        if name.starts_with('.') {
+            continue;
+        }
+        let is_directory = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        out.push(DirEntryDto { name, is_directory });
+    }
+    Ok(out)
+}
+
 // ── Index / watch path / source commands (local + config) ─────────────
 
 #[tauri::command]
