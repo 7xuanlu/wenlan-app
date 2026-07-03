@@ -3546,6 +3546,15 @@ pub async fn sync_registered_source(
     })
 }
 
+#[tauri::command]
+pub async fn daemon_version(state: tauri::State<'_, State>) -> Result<String, String> {
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+    Ok(client.health().await?.version)
+}
+
 // ---------------------------------------------------------------------------
 // External LLM provider commands (Ollama, LM Studio, etc.)
 // ---------------------------------------------------------------------------

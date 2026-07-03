@@ -811,6 +811,7 @@ pub fn run() {
             search::remove_source,
             search::list_registered_sources,
             search::sync_registered_source,
+            search::daemon_version,
             search::list_watch_paths,
             search::list_indexed_files,
             search::delete_file_chunks,

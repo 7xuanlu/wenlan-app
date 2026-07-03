@@ -176,6 +176,26 @@ export async function syncRegisteredSource(id: string): Promise<SyncStats> {
   return invoke("sync_registered_source", { id });
 }
 
+/** Read the running daemon's version string from GET /api/health. */
+export async function getDaemonVersion(): Promise<string> {
+  return invoke("daemon_version");
+}
+
+/**
+ * True when the daemon version is >= floor. Daemon-native file ingest landed
+ * in 0.10.0; below that, files register but never index (§0 version gate).
+ */
+export function daemonMeetsFloor(version: string, floor = "0.10.0"): boolean {
+  const parse = (v: string) => v.split(".").map((n) => parseInt(n, 10) || 0);
+  const a = parse(version);
+  const b = parse(floor);
+  for (let i = 0; i < 3; i++) {
+    const d = (a[i] ?? 0) - (b[i] ?? 0);
+    if (d !== 0) return d > 0;
+  }
+  return true;
+}
+
 export interface IndexedFileInfo {
   source: string;
   source_id: string;
