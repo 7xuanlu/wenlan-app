@@ -143,6 +143,8 @@ describe("AddSourceDialog", () => {
     await waitFor(() => {
       expect(tauri.addSource).toHaveBeenCalledWith("directory", "/Users/test/papers");
     });
+    // Directory sources ride the daemon's background scheduler — no on-add sync.
+    expect(tauri.syncRegisteredSource).not.toHaveBeenCalled();
     first.unmount();
 
     // Vault → obsidian
@@ -161,6 +163,11 @@ describe("AddSourceDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: /add source/i }));
     await waitFor(() => {
       expect(tauri.addSource).toHaveBeenCalledWith("obsidian", "/Users/test/vault");
+    });
+    // Obsidian vaults are NOT on the daemon scheduler, so a one-shot first index
+    // must fire on add or the vault sits at "Indexing…" forever.
+    await waitFor(() => {
+      expect(tauri.syncRegisteredSource).toHaveBeenCalledWith("src");
     });
   });
 

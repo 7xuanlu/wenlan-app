@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { readDir } from "@tauri-apps/plugin-fs";
-import { addSource } from "../../../lib/tauri";
+import { addSource, syncRegisteredSource } from "../../../lib/tauri";
 
 // Mirrors the daemon's directory-ingest filter (wenlan-core sources/directory.rs).
 const SUPPORTED_EXTENSIONS = [".md", ".txt", ".pdf"];
@@ -27,8 +27,16 @@ export default function AddSourceDialog({ onClose, onSuccess }: Props) {
   const addMutation = useMutation({
     mutationFn: ({ sourceType, sourcePath }: { sourceType: "obsidian" | "directory"; sourcePath: string }) =>
       addSource(sourceType, sourcePath),
-    onSuccess: () => {
+    onSuccess: (newSource, { sourceType }) => {
       queryClient.invalidateQueries({ queryKey: ["registeredSources"] });
+      // Directory sources ride the daemon's 30s scheduler; Obsidian vaults are not
+      // on it, so kick a one-shot first index or a new vault sits at "Indexing…"
+      // forever (integration-review finding: scheduler filters to Directory only).
+      if (sourceType === "obsidian") {
+        syncRegisteredSource(newSource.id).then(() => {
+          queryClient.invalidateQueries({ queryKey: ["registeredSources"] });
+        });
+      }
       onSuccess();
     },
     onError: (err) => {

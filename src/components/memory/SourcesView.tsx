@@ -12,6 +12,7 @@ import {
   type SyncStatusStr,
 } from "../../lib/tauri";
 import AddSourceMenu from "./sources/AddSourceMenu";
+import { toast } from "sonner";
 
 // The daemon's directory-ingest filter (wenlan-core sources/directory.rs).
 // Files with these extensions feed the wiki; everything else is shown but dimmed.
@@ -423,9 +424,13 @@ function FolderBrowser({ source, subpath, onSubpath, filter, onFilter }: FolderB
                   )
                 )
                   return;
-                removeSource(source.id).then(() => {
-                  queryClient.invalidateQueries({ queryKey: ["registeredSources"] });
-                });
+                removeSource(source.id)
+                  .then(() => {
+                    queryClient.invalidateQueries({ queryKey: ["registeredSources"] });
+                  })
+                  .catch((e) => {
+                    toast("Couldn't remove source", { description: String(e) });
+                  });
               }}
               className="rounded-md transition-colors duration-150 hover:bg-[var(--mem-hover)]"
               style={{

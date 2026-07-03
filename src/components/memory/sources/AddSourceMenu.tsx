@@ -38,6 +38,11 @@ export default function AddSourceMenu({ onClose }: { onClose: () => void }) {
       qc.invalidateQueries({ queryKey: ["registeredSources"] });
       onClose();
     },
+    onError: (e) => {
+      // Without this the button silently reverts to "Add files" and the user
+      // never learns the upload failed (daemon down / IO error / bad file).
+      toast("Couldn't add file", { description: String(e) });
+    },
   });
 
   if (showFolder) {
