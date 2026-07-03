@@ -65,14 +65,15 @@ export default function SourcesView({ onManageSources }: SourcesViewProps) {
   const [filter, setFilter] = useState("");
   const [adding, setAdding] = useState(false);
 
-  const { data: sources = [] } = useQuery({
+  const { data: fetchedSources = [] } = useQuery({
     queryKey: ["registeredSources"],
     queryFn: listRegisteredSources,
     refetchInterval: 10000,
   });
+  const sources: RegisteredSource[] = fetchedSources;
 
-  // Tallest spine first — the shelf reads as a clear silhouette, most
-  // foundational source on top.
+  // Tallest spine first — the shelf reads as a clear silhouette, the
+  // source with the most memories on top.
   const shelf = useMemo(
     () => [...sources].sort((a, b) => b.memory_count - a.memory_count),
     [sources],
@@ -109,16 +110,14 @@ export default function SourcesView({ onManageSources }: SourcesViewProps) {
         <div className="px-5 pt-6 pb-3">
           <div
             style={{
-              fontFamily: "var(--mem-font-mono)",
-              fontSize: "10px",
-              fontWeight: 600,
-              letterSpacing: "0.16em",
-              textTransform: "uppercase",
-              color: "var(--mem-accent-indigo)",
-              opacity: 0.9,
+              fontFamily: "var(--mem-font-heading)",
+              fontSize: "15px",
+              fontWeight: 500,
+              color: "var(--mem-text)",
+              letterSpacing: "-0.01em",
             }}
           >
-            Foundation
+            Sources
           </div>
           <div
             style={{
@@ -563,19 +562,6 @@ function EmptyShelf({ onAdd }: { onAdd: () => void }) {
   return (
     <div className="flex h-full w-full items-center justify-center px-8">
       <div className="flex flex-col items-center text-center" style={{ maxWidth: 420 }}>
-        <div
-          style={{
-            fontFamily: "var(--mem-font-mono)",
-            fontSize: "10px",
-            fontWeight: 600,
-            letterSpacing: "0.18em",
-            textTransform: "uppercase",
-            color: "var(--mem-accent-indigo)",
-            opacity: 0.9,
-          }}
-        >
-          Foundation
-        </div>
         <h2
           style={{
             fontFamily: "var(--mem-font-heading)",
