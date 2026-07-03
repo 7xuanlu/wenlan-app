@@ -10,7 +10,7 @@ import {
   type SourceDirEntry,
   type SyncStatusStr,
 } from "../../lib/tauri";
-import AddSourceDialog from "./sources/AddSourceDialog";
+import AddSourceMenu from "./sources/AddSourceMenu";
 
 // The daemon's directory-ingest filter (wenlan-core sources/directory.rs).
 // Files with these extensions feed the wiki; everything else is shown but dimmed.
@@ -93,9 +93,7 @@ export default function SourcesView({ onManageSources }: SourcesViewProps) {
     return (
       <>
         <EmptyShelf onAdd={() => setAdding(true)} />
-        {adding && (
-          <AddSourceDialog onClose={() => setAdding(false)} onSuccess={() => setAdding(false)} />
-        )}
+        {adding && <AddSourceMenu onClose={() => setAdding(false)} />}
       </>
     );
   }
@@ -247,9 +245,7 @@ export default function SourcesView({ onManageSources }: SourcesViewProps) {
         />
       )}
 
-      {adding && (
-        <AddSourceDialog onClose={() => setAdding(false)} onSuccess={() => setAdding(false)} />
-      )}
+      {adding && <AddSourceMenu onClose={() => setAdding(false)} />}
     </div>
   );
 }

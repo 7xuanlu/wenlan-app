@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { readDir } from "@tauri-apps/plugin-fs";
-import { addSource, syncRegisteredSource } from "../../../lib/tauri";
+import { addSource } from "../../../lib/tauri";
 
 // Mirrors the daemon's directory-ingest filter (wenlan-core sources/directory.rs).
 const SUPPORTED_EXTENSIONS = [".md", ".txt", ".pdf"];
@@ -27,12 +27,8 @@ export default function AddSourceDialog({ onClose, onSuccess }: Props) {
   const addMutation = useMutation({
     mutationFn: ({ sourceType, sourcePath }: { sourceType: "obsidian" | "directory"; sourcePath: string }) =>
       addSource(sourceType, sourcePath),
-    onSuccess: (newSource) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["registeredSources"] });
-      // Auto-trigger sync in background (don't await)
-      syncRegisteredSource(newSource.id).then(() => {
-        queryClient.invalidateQueries({ queryKey: ["registeredSources"] });
-      });
       onSuccess();
     },
     onError: (err) => {
