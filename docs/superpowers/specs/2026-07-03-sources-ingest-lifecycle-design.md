@@ -133,6 +133,136 @@ removed once the minimum supported daemon is v0.10.0. `ponytail:` do not rip it
 out in this slice — leave it for existing app-registered directory sources
 until the daemon floor is raised.
 
+**Positioning reason, not just cleanliness:** the app watcher only indexes
+while the app is open. Wenlan's load-bearing differentiator is **Compounding**
+— "writes itself while the app is closed" (the autonomous daemon; see
+Positioning alignment below). A source that stops indexing when the window
+closes contradicts the core pitch. Daemon-native sourcing is the positioning,
+so no new UX is built on the watcher.
+
+## Frontend / UX design
+
+Applies the frontend-design pass **inside the existing Sources identity**, not a
+new palette. The bookshelf is already this view's signature; the design extends
+it to cover the ingest lifecycle rather than bolting on generic progress UI.
+
+### Design language (inherited)
+
+- **Tokens:** the `--mem-*` system (`--mem-surface`, `--mem-border`,
+  `--mem-text` / `-secondary` / `-tertiary`, `--mem-accent-indigo`,
+  `--mem-hover`, `--mem-shadow-toast`). No new colors.
+- **Type:** Fraunces (`--mem-font-heading`) for headings, body face for prose,
+  mono (`--mem-font-mono`) for counts and eyebrows.
+- **Metaphor:** the shelf. A source is a book spine; spine height already
+  scales with `memory_count` (`spineHeight`), so the shelf silhouette reads as
+  "how much each source knows."
+
+### Signature: the spine *is* the ingest indicator
+
+The one deliberate risk. A source being indexed is a book being shelved — no
+spinner, no progress bar:
+
+- **Added** → the spine appears as a hairline outline (a ghost book) at its
+  shelf slot.
+- **Indexing** (`last_sync` null or `memory_count` still climbing) → the spine
+  **fills from the base upward**. Determinate when the daemon reports
+  `files_total` (`files_indexed / files_total`); otherwise a slow vertical
+  shimmer. A mono caption reads `Indexing…`.
+- **Settled** → spine solid at full height; caption flips to `142 notes`.
+- **Skipped/failed** → a thin notch near the base + caption `2 skipped`
+  (hover reveals the reason from `last_sync_error_detail`, e.g. an image-only
+  PDF).
+
+Structure encodes truth: silhouette = knowledge-per-source; fill = still
+arriving. `prefers-reduced-motion` → no fill animation, static `Indexing…`
+label instead.
+
+### Moments
+
+1. **Add** — one quiet `＋` on the shelf-rail header opens a two-item menu:
+   **Add a folder** / **Add files**. Not "Register source." File picker filters
+   to `pdf / md / txt` (the daemon's supported set).
+2. **Upload a loose file** — copies to `~/.wenlan/sources/`, joins the managed
+   **Uploads** spine (created if absent). Toast in the MilestoneToaster idiom
+   (eyebrow · heading · body): `Added` / `paper.pdf is on the shelf` /
+   `Indexing in the background.`
+3. **Autonomy cue (Compounding, made visible)** — a persistent shelf-header
+   line when ≥1 directory source exists: `Syncs in the background, even when
+   Wenlan is closed.` This surfaces the differentiator instead of hiding it in
+   a tooltip.
+4. **Provenance (Source-cited, made visible)** — a selected spine shows
+   `grounds 142 notes` and links to the pages it cites (reuse `memory_count`
+   and the daemon's SOURCE projection via `GET /api/pages/{id}/sources`).
+   Sources are the cited foundation, not write-only inputs.
+5. **Remove** — inline **Remove** in the FolderBrowser header; confirm reads
+   `Remove Books? Indexed notes stay in your library; this source stops
+   syncing.`
+6. **Auto-sync state** — directory sources replace the (broken) manual "Sync"
+   button with a quiet `Auto-synced · updated 2m ago` (from `last_sync`).
+   Obsidian keeps **Sync**.
+7. **Empty state** — keep `Nothing on the shelf yet`; primary action
+   `Add your first source` opens the same two-item menu.
+
+### Shelf with an indexing source (wireframe)
+
+```
+┌ Sources ─────────────────────────────────────────── ＋ ─┐
+│ Syncs in the background, even when Wenlan is closed.     │
+│                                                          │
+│    ██     ██     ▁▁                                      │
+│    ██     ██     ▓▓  ← filling                           │
+│    ██     ██     ▓▓                                      │
+│   Books  Vault  Uploads                                  │
+│   142     210   Indexing… 12                             │
+└──────────────────────────────────────────────────────────┘
+```
+
+### Copy (user-side, active voice, no em-dashes)
+
+| Element | Text |
+|---|---|
+| Add menu | `Add a folder` · `Add files` |
+| Upload toast | `paper.pdf is on the shelf` / `Indexing in the background.` |
+| Indexing caption | `Indexing…` → `142 notes` |
+| Skipped | `2 skipped` (hover: reason) |
+| Autonomy line | `Syncs in the background, even when Wenlan is closed.` |
+| Remove confirm | `Remove Books? Indexed notes stay in your library; this source stops syncing.` |
+| Auto-sync state | `Auto-synced · updated 2m ago` |
+| Empty | `Nothing on the shelf yet` / `Add your first source` |
+
+### Quality floor
+
+Responsive (shelf scrolls horizontally on narrow widths, matching the existing
+`overflow-x` pattern), visible keyboard focus on spines / menu / buttons,
+`prefers-reduced-motion` honored (no spine-fill animation), errors give
+direction not apology.
+
+### Self-critique vs generic defaults
+
+The spine-as-ingest-state is subject-specific (books being shelved), not the
+default spinner/progress-bar, and it reuses the app's real `--mem-*` identity
+rather than the AI-generic cream/serif/terracotta look. The one bold element is
+the spine fill; everything else stays quiet.
+
+## Positioning alignment (llm-wiki)
+
+Checked against the locked positioning (`wenlan-positioning-lane-llm-wiki`,
+2026-06-23 / re-verified 2026-07-01). Triad: **Source-cited · Compounding ·
+Reconciled.** What this feature must honor:
+
+- **Compounding** ("writes itself while the app is closed") is the load-bearing
+  differentiator. → Daemon-native auto-sync, surfaced in the UI (moment 3).
+  The app watcher is positioning-wrong and gets no new UX.
+- **Source-cited** (provenance). → Ingested files stay traceable as the cited
+  foundation; surface `grounds N notes` + cited pages (moment 4). Do not treat
+  sources as write-only.
+- **Copy discipline** — no em-dashes in user-facing strings
+  (`no-em-dashes-in-user-facing-docs`); frame ingestion as an enjoyable
+  auto-wiki that cites everything, never as a chore.
+- **Reconciled** (human trust gate) is out of scope here (it lives in the
+  refinery/review queue), but nothing in this feature should auto-merge or
+  silently drop a source's conflicts.
+
 ## Data flow
 
 ```
@@ -149,9 +279,14 @@ Remove ─────────────────────► DELETE
 
 ## Constraints & caveats
 
-- **Requires daemon ≥ v0.10.0.** On the live 0.9.5, uploads stage into
-  `~/.wenlan/sources/` but do not index until the daemon is updated (user
-  action; do not touch `:7878`).
+- **Requires daemon ≥ v0.10.0.** The live daemon is **0.9.5** — the binary
+  bundled in the installed `/Applications/Wenlan.app`, launched via the
+  `com.wenlan.server` LaunchAgent (`KeepAlive`, `RunAtLoad`,
+  `WENLAN_DATA_DIR=~/Library/Application Support/wenlan`). Latest release is
+  **v0.11.0**. On 0.9.5, uploads stage into `~/.wenlan/sources/` but do not
+  index until the daemon is updated. Updating swaps a production binary and may
+  migrate the live db (9158 memories) — back up first; treat as a confirmed
+  step, not automatic.
 - The daemon extracts `.md/.txt/.pdf` only — no docx/rtf/OCR server-side.
   The upload picker filter must match (`pdf/md/txt`).
 - No blob copy for whole folders — only loose single-file uploads are copied.
@@ -184,5 +319,8 @@ Remove ─────────────────────► DELETE
 ## Open items for review
 
 1. Managed dir name: `~/.wenlan/sources/` vs `uploads/` vs `library/`.
-2. Whether to keep the app watcher at all, or gate the whole feature on
-   daemon ≥ v0.10.0 and remove it now.
+2. ~~Keep the app watcher?~~ **Resolved by positioning:** daemon-native only;
+   watcher is a legacy bridge with no new UX (see Positioning alignment). Full
+   removal deferred until the minimum daemon is raised to v0.10.0.
+3. Whether "provenance" (moment 4) ships in this slice or a fast-follow — it
+   needs `GET /api/pages/{id}/sources` wiring in the browser detail.
