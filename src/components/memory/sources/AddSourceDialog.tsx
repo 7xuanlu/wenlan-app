@@ -4,9 +4,12 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { readDir } from "@tauri-apps/plugin-fs";
 import { addSource, syncRegisteredSource } from "../../../lib/tauri";
 
+// Mirrors the daemon's directory-ingest filter (wenlan-core sources/directory.rs).
+const SUPPORTED_EXTENSIONS = [".md", ".txt", ".pdf"];
+
 interface Detection {
   isVault: boolean;
-  mdCount: number;
+  docCount: number;
 }
 
 interface Props {
@@ -22,8 +25,8 @@ export default function AddSourceDialog({ onClose, onSuccess }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   const addMutation = useMutation({
-    mutationFn: ({ sourceType, sourcePath }: { sourceType: string; sourcePath: string }) =>
-      addSource(sourceType as "obsidian", sourcePath),
+    mutationFn: ({ sourceType, sourcePath }: { sourceType: "obsidian" | "directory"; sourcePath: string }) =>
+      addSource(sourceType, sourcePath),
     onSuccess: (newSource) => {
       queryClient.invalidateQueries({ queryKey: ["registeredSources"] });
       // Auto-trigger sync in background (don't await)
@@ -52,13 +55,15 @@ export default function AddSourceDialog({ onClose, onSuccess }: Props) {
         const isVault = entries.some(
           (e) => e.name === ".obsidian" && e.isDirectory,
         );
-        const mdCount = entries.filter(
-          (e) => e.name?.endsWith(".md") && !e.isDirectory,
+        const docCount = entries.filter(
+          (e) =>
+            !e.isDirectory &&
+            SUPPORTED_EXTENSIONS.some((ext) => e.name?.toLowerCase().endsWith(ext)),
         ).length;
-        setDetection({ isVault, mdCount });
+        setDetection({ isVault, docCount });
       } catch {
         // If readDir fails, still allow the path but show no detection
-        setDetection({ isVault: false, mdCount: 0 });
+        setDetection({ isVault: false, docCount: 0 });
       }
       setDetecting(false);
     } catch {
@@ -68,8 +73,14 @@ export default function AddSourceDialog({ onClose, onSuccess }: Props) {
 
   const handleSubmit = useCallback(() => {
     setError(null);
-    addMutation.mutate({ sourceType: "obsidian", sourcePath: path });
-  }, [addMutation, path]);
+    // .obsidian/ detection is cosmetic on the daemon side too — vaults go
+    // through the markdown-only path, everything else through multi-format
+    // directory ingest.
+    addMutation.mutate({
+      sourceType: detection?.isVault ? "obsidian" : "directory",
+      sourcePath: path,
+    });
+  }, [addMutation, detection, path]);
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -83,17 +94,17 @@ export default function AddSourceDialog({ onClose, onSuccess }: Props) {
     path.length > 0 &&
     !detecting &&
     !addMutation.isPending &&
-    (detection === null || detection.mdCount > 0);
+    (detection === null || detection.docCount > 0);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div className="w-[28rem] rounded-lg bg-[var(--mem-surface)] p-6 shadow-xl">
         <h3 className="text-sm font-medium text-[var(--mem-text)] mb-1">
-          Add a markdown folder
+          Add a folder
         </h3>
         <p className="text-xs text-[var(--mem-text-secondary)] mb-4">
-          Wenlan reads .md files from the folder you choose. Obsidian vaults,
-          plain markdown directories, or any folder of notes.
+          Wenlan reads .md, .txt, and .pdf files from the folder you choose —
+          Obsidian vaults, note folders, books, and papers.
         </p>
 
         <div className="flex gap-2 mb-3">
@@ -125,13 +136,13 @@ export default function AddSourceDialog({ onClose, onSuccess }: Props) {
               <span className="text-[var(--mem-accent-indigo)]">
                 ✓ Detected .obsidian/ — Obsidian vault
               </span>
-            ) : detection.mdCount > 0 ? (
+            ) : detection.docCount > 0 ? (
               <span className="text-[var(--mem-text-secondary)]">
-                {detection.mdCount} markdown files found
+                {detection.docCount} supported {detection.docCount === 1 ? "file" : "files"} found
               </span>
             ) : (
               <span className="text-red-500">
-                No markdown files found in this folder
+                No supported files (.md, .txt, .pdf) found in this folder
               </span>
             )}
           </p>

@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { getMemoryStats } from "../../lib/tauri";
 import IdentityCard from "./IdentityCard";
 import SpaceList from "./SpaceList";
+import SourceList from "./SourceList";
 import EntitySuggestions from "./EntitySuggestions";
 
 interface SidebarProps {
@@ -12,6 +13,7 @@ interface SidebarProps {
   onNavigateLog?: () => void;
   onNavigateHome?: () => void;
   onNavigateGraph?: () => void;
+  onNavigateSources?: () => void;
 }
 
 
@@ -22,6 +24,7 @@ export default function Sidebar({
   onNavigateLog,
   onNavigateHome,
   onNavigateGraph,
+  onNavigateSources,
 }: SidebarProps) {
   const { data: _stats } = useQuery({
     queryKey: ["memoryStats"],
@@ -110,6 +113,12 @@ export default function Sidebar({
           </div>
 
           <SpaceList onSelectSpace={onSelectSpace} />
+
+          {onNavigateSources && (
+            <div className="pt-4">
+              <SourceList onNavigateSources={onNavigateSources} />
+            </div>
+          )}
         </div>
 
         <div

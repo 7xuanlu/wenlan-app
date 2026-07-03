@@ -121,7 +121,11 @@ export async function listSources(): Promise<SourceStatus[]> {
 // ===== Registered Sources =====
 
 export type SourceTypeStr = "obsidian" | "directory";
-export type SyncStatusStr = "Active" | "Paused" | { Error: string };
+export type SyncStatusStr =
+  | "Active"
+  | "Paused"
+  | { Error: string }
+  | { Unavailable: string };
 
 /**
  * Categorized sync error detail string. The Rust side sends this as

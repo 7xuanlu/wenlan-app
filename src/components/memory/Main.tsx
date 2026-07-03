@@ -353,6 +353,7 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
             onNavigateLog={() => { setView({ kind: "stream" }); setViewHistory([]); }}
             onNavigateHome={navigateHome}
             onNavigateGraph={() => navigateTo({ kind: "graph" })}
+            onNavigateSources={() => navigateTo({ kind: "settings", section: "sources" })}
           />
         )}
 
