@@ -109,6 +109,30 @@ describe("SourcesView", () => {
   });
 });
 
+describe("sync affordance by source type", () => {
+  it("directory sources show auto-synced state, no manual Sync button", async () => {
+    vi.mocked(listRegisteredSources).mockResolvedValue([
+      { id: "directory-books", source_type: "directory", path: "/x/Books", status: "Active", last_sync: 1_700_000_000, file_count: 3, memory_count: 42 },
+    ]);
+    vi.mocked(readSourceDir).mockResolvedValue([]);
+    renderView();
+
+    expect(await screen.findByText(/Auto-synced/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Sync" })).toBeNull();
+    expect(screen.getByText("Syncs in the background, even when Wenlan is closed.")).toBeInTheDocument();
+  });
+
+  it("obsidian sources keep the manual Sync button", async () => {
+    vi.mocked(listRegisteredSources).mockResolvedValue([
+      { id: "obsidian-vault", source_type: "obsidian", path: "/x/Vault", status: "Active", last_sync: null, file_count: 3, memory_count: 0 },
+    ]);
+    vi.mocked(readSourceDir).mockResolvedValue([]);
+    renderView();
+
+    expect(await screen.findByRole("button", { name: "Sync" })).toBeInTheDocument();
+  });
+});
+
 const base = {
   id: "s",
   source_type: "directory" as const,

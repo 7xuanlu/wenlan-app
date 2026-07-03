@@ -157,6 +157,19 @@ export default function SourcesView({ onManageSources }: SourcesViewProps) {
           >
             {sources.length} {sources.length === 1 ? "source" : "sources"}
           </div>
+          {sources.some((s) => s.source_type === "directory") && (
+            <div
+              style={{
+                fontFamily: "var(--mem-font-body)",
+                fontSize: "11px",
+                color: "var(--mem-text-tertiary)",
+                marginTop: 8,
+                lineHeight: 1.4,
+              }}
+            >
+              Syncs in the background, even when Wenlan is closed.
+            </div>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto px-3 pb-3 flex flex-col gap-0.5">
@@ -416,24 +429,36 @@ function FolderBrowser({ source, subpath, onSubpath, filter, onFilter }: FolderB
             >
               Reveal
             </button>
-            <button
-              onClick={() => syncMutation.mutate()}
-              disabled={syncMutation.isPending}
-              className="rounded-md transition-colors duration-150"
-              style={{
-                padding: "6px 13px",
-                fontFamily: "var(--mem-font-body)",
-                fontSize: "12px",
-                fontWeight: 500,
-                color: "white",
-                background: "var(--mem-accent-indigo)",
-                border: "none",
-                cursor: syncMutation.isPending ? "default" : "pointer",
-                opacity: syncMutation.isPending ? 0.6 : 1,
-              }}
-            >
-              {syncedFlash ? "✓ Synced" : syncMutation.isPending ? "Syncing…" : "Sync"}
-            </button>
+            {source.source_type === "obsidian" ? (
+              <button
+                onClick={() => syncMutation.mutate()}
+                disabled={syncMutation.isPending}
+                className="rounded-md transition-colors duration-150"
+                style={{
+                  padding: "6px 13px",
+                  fontFamily: "var(--mem-font-body)",
+                  fontSize: "12px",
+                  fontWeight: 500,
+                  color: "white",
+                  background: "var(--mem-accent-indigo)",
+                  border: "none",
+                  cursor: syncMutation.isPending ? "default" : "pointer",
+                  opacity: syncMutation.isPending ? 0.6 : 1,
+                }}
+              >
+                {syncedFlash ? "✓ Synced" : syncMutation.isPending ? "Syncing…" : "Sync"}
+              </button>
+            ) : (
+              <span
+                style={{
+                  fontFamily: "var(--mem-font-mono)",
+                  fontSize: "11px",
+                  color: "var(--mem-text-tertiary)",
+                }}
+              >
+                Auto-synced{source.last_sync ? ` · updated ${relTime(source.last_sync).replace(/^synced /, "")}` : ""}
+              </span>
+            )}
           </div>
         </div>
       </div>
