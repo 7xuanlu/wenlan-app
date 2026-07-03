@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import DistillReviewPanel from "./DistillReviewPanel";
@@ -85,22 +85,26 @@ beforeEach(() => {
 });
 
 describe("DistillReviewPanel", () => {
-  it("does not run the distill POST on mount", () => {
+  it("loads the page review once on mount", async () => {
     vi.mocked(distillReview).mockResolvedValue(reviewPayload);
 
     renderPanel();
 
-    expect(distillReview).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: /refresh review/i })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(distillReview).toHaveBeenCalledTimes(1);
+    });
+    expect(await screen.findByRole("heading", { name: "Page review" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^refresh$/i })).toBeInTheDocument();
   });
 
-  it("renders review sections after a user-triggered refresh", async () => {
+  it("renders page review sections after loading", async () => {
     vi.mocked(distillReview).mockResolvedValue(reviewPayload);
-    const { user } = renderPanel();
-
-    await user.click(screen.getByRole("button", { name: /refresh review/i }));
+    renderPanel();
 
     expect(await screen.findByText("Temporal page refresh")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "New page candidates" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Pages with new sources" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Unlinked topics" })).toBeInTheDocument();
     expect(screen.getByText(/1 new source/)).toBeInTheDocument();
     expect(screen.getByText(truncateForTest(fallbackSource, 72))).toBeInTheDocument();
     expect(screen.getByText("Retrieval Pipeline")).toBeInTheDocument();
@@ -111,9 +115,7 @@ describe("DistillReviewPanel", () => {
 
   it("renders source previews even when a fallback label comes from the first source", async () => {
     vi.mocked(distillReview).mockResolvedValue(reviewPayload);
-    const { user } = renderPanel();
-
-    await user.click(screen.getByRole("button", { name: /refresh review/i }));
+    renderPanel();
 
     expect(await screen.findByText(truncateForTest(fallbackSource, 72))).toBeInTheDocument();
     expect(screen.getByText(truncateForTest(fallbackSource, 140))).toBeInTheDocument();
@@ -124,7 +126,6 @@ describe("DistillReviewPanel", () => {
     vi.mocked(distillReview).mockResolvedValue(reviewPayload);
     const { user, onPageClick } = renderPanel();
 
-    await user.click(screen.getByRole("button", { name: /refresh review/i }));
     await user.click(await screen.findByRole("button", { name: /open Retrieval Pipeline/i }));
 
     expect(onPageClick).toHaveBeenCalledWith("page_stale");
@@ -139,12 +140,21 @@ describe("DistillReviewPanel", () => {
       .mockRejectedValueOnce(new Error("HTTP POST /api/distill returned 500"));
     const { user } = renderPanel();
 
-    await user.click(screen.getByRole("button", { name: /refresh review/i }));
     expect(await screen.findByText("Temporal page refresh")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: /refresh review/i }));
+    await user.click(screen.getByRole("button", { name: /^refresh$/i }));
 
     expect(await screen.findByText(/HTTP POST \/api\/distill returned 500/)).toBeInTheDocument();
     expect(screen.getByText("Temporal page refresh")).toBeInTheDocument();
+  });
+
+  it("keeps manual refresh available after the initial load", async () => {
+    vi.mocked(distillReview).mockResolvedValue(reviewPayload);
+    const { user } = renderPanel();
+
+    await screen.findByText("Temporal page refresh");
+    await user.click(screen.getByRole("button", { name: /^refresh$/i }));
+
+    expect(distillReview).toHaveBeenCalledTimes(2);
   });
 });

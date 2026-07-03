@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { listSpaces, createSpace, deleteSpace, updateSpace, reorderSpace, toggleSpaceStarred, type Space } from "../../lib/tauri";
+import { listSpaces, listPages, createSpace, deleteSpace, updateSpace, reorderSpace, toggleSpaceStarred, type Space } from "../../lib/tauri";
 
 const SPACES_STORAGE_KEY = "sidebar:spacesCollapsed";
 const TTL_MS = 7 * 86_400_000;
@@ -71,10 +71,27 @@ export default function SpaceList({ onSelectSpace }: SpaceListProps) {
     refetchInterval: 10000,
   });
 
+  const { data: pages = [] } = useQuery({
+    queryKey: ["sidebar-space-page-counts"],
+    queryFn: () => listPages("active", undefined, 1000),
+    refetchInterval: 10000,
+  });
+
+  const pageCountsBySpace = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const page of pages) {
+      const spaceName = page.domain?.trim() || page.space?.trim();
+      if (!spaceName) continue;
+      counts.set(spaceName, (counts.get(spaceName) ?? 0) + 1);
+    }
+    return counts;
+  }, [pages]);
+
   const createMutation = useMutation({
     mutationFn: () => createSpace(newName.trim()),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["spaces"] });
+      queryClient.invalidateQueries({ queryKey: ["sidebar-space-page-counts"] });
       setNewName("");
       setShowForm(false);
     },
@@ -84,6 +101,7 @@ export default function SpaceList({ onSelectSpace }: SpaceListProps) {
     mutationFn: (name: string) => deleteSpace(name),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["spaces"] });
+      queryClient.invalidateQueries({ queryKey: ["sidebar-space-page-counts"] });
       queryClient.invalidateQueries({ queryKey: ["memories"] });
       setContextMenu(null);
     },
@@ -94,6 +112,7 @@ export default function SpaceList({ onSelectSpace }: SpaceListProps) {
       updateSpace(oldName, n),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["spaces"] });
+      queryClient.invalidateQueries({ queryKey: ["sidebar-space-page-counts"] });
       queryClient.invalidateQueries({ queryKey: ["memories"] });
       setRenamingSpace(null);
     },
@@ -202,6 +221,7 @@ export default function SpaceList({ onSelectSpace }: SpaceListProps) {
   // ── Render a space row ──
   const renderSpaceRow = (s: Space, index: number, isSuggested: boolean) => {
     const isDragging = drag?.spaceName === s.name;
+    const pageCount = pageCountsBySpace.get(s.name) ?? 0;
 
     // Calculate visual offset during drag
     let translateY = 0;
@@ -287,7 +307,7 @@ export default function SpaceList({ onSelectSpace }: SpaceListProps) {
             color: isSuggested ? "var(--mem-text-tertiary)" : "var(--mem-text-secondary)",
           }}
         >
-          <span className="flex items-center gap-1 capitalize truncate">
+          <span className="flex min-w-0 items-center gap-1 capitalize truncate">
             <span className="shrink-0 w-3.5 text-center" style={{ fontSize: "10px" }}>
               {s.starred
                 ? <span style={{ color: "var(--mem-accent-amber)" }}>&#9733;</span>
@@ -298,7 +318,7 @@ export default function SpaceList({ onSelectSpace }: SpaceListProps) {
             {s.name}
           </span>
           <span style={{ fontFamily: "var(--mem-font-mono)", fontSize: "11px", opacity: 0.5 }}>
-            {s.memory_count || ""}
+            {pageCount || ""}
           </span>
         </button>
       </div>

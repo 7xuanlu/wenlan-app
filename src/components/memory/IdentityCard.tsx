@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useQuery } from "@tanstack/react-query";
-import { listEntities, getEntityDetail, getProfile } from "../../lib/tauri";
+import { listEntities, getProfile } from "../../lib/tauri";
 import ProfileAvatar from "./ProfileAvatar";
 
 interface IdentityCardProps {
@@ -23,24 +23,6 @@ export default function IdentityCard({ onOpenDetail }: IdentityCardProps) {
   const selfEntity = entities[0];
   // Profile name is canonical — entity name may be partial (e.g. "Lu" vs "Qi-Xuan Lu")
   const displayName = profile?.display_name || profile?.name || selfEntity?.name || "";
-
-  const { data: detail } = useQuery({
-    queryKey: ["entityDetail", selfEntity?.id],
-    queryFn: () => getEntityDetail(selfEntity!.id),
-    enabled: !!selfEntity,
-    refetchInterval: 10000,
-  });
-
-  const observations = detail?.observations ?? [];
-
-  const roleObs = observations.find(
-    (o) =>
-      o.content.toLowerCase().includes("engineer") ||
-      o.content.toLowerCase().includes("developer") ||
-      o.content.toLowerCase().includes("designer") ||
-      o.content.toLowerCase().includes("manager") ||
-      o.content.toLowerCase().includes("founder"),
-  );
 
   if (!selfEntity) {
     return (
@@ -100,21 +82,6 @@ export default function IdentityCard({ onOpenDetail }: IdentityCardProps) {
       >
         {displayName}
       </p>
-
-      {roleObs && (
-        <p
-          className="text-center mt-0.5"
-          style={{
-            fontFamily: "var(--mem-font-body)",
-            fontSize: "12px",
-            color: "var(--mem-text-secondary)",
-          }}
-        >
-          {roleObs.content.length > 40
-            ? roleObs.content.slice(0, 40) + "..."
-            : roleObs.content}
-        </p>
-      )}
 
     </button>
   );

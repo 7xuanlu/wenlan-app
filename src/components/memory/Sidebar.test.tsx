@@ -1,0 +1,96 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import Sidebar from "./Sidebar";
+
+const listAgentsMock = vi.hoisted(() => vi.fn().mockResolvedValue([]));
+
+vi.mock("../../lib/tauri", () => ({
+  getMemoryStats: vi.fn().mockResolvedValue({ total: 0, new_today: 0, confirmed: 0, domains: [] }),
+  listAgents: listAgentsMock,
+}));
+
+vi.mock("./IdentityCard", () => ({ default: () => <div data-testid="identity-card" /> }));
+vi.mock("./SpaceList", () => ({ default: () => <div data-testid="space-list">Spaces</div> }));
+vi.mock("./EntitySuggestions", () => ({ default: () => <div data-testid="entity-suggestions" /> }));
+
+function renderSidebar(extraProps: Record<string, unknown> = {}) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <Sidebar
+        collapsed={false}
+        onSelectSpace={() => {}}
+        onEntityClick={() => {}}
+        onNavigateHome={() => {}}
+        onNavigateLog={() => {}}
+        onNavigateGraph={() => {}}
+        {...(extraProps as any)}
+      />
+    </QueryClientProvider>,
+  );
+}
+
+describe("Sidebar", () => {
+  beforeEach(() => {
+    listAgentsMock.mockResolvedValue([]);
+  });
+
+  it("places Home in the primary nav and routes it through onNavigateHome", async () => {
+    const user = userEvent.setup();
+    const onNavigateHome = vi.fn();
+    renderSidebar({ onNavigateHome });
+
+    const home = screen.getByRole("button", { name: "Home" });
+    const spaces = screen.getByTestId("space-list");
+
+    expect(home.compareDocumentPosition(spaces) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    await user.click(home);
+
+    expect(onNavigateHome).toHaveBeenCalledTimes(1);
+  });
+
+  it("labels the memory view as Memories and keeps Decisions out of the left nav", () => {
+    renderSidebar();
+
+    expect(screen.getByRole("button", { name: "Memories" })).toBeInTheDocument();
+    expect(screen.queryByText("Memory Log")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Decisions" })).not.toBeInTheDocument();
+  });
+
+  it("places Memories and Graph above Spaces", () => {
+    renderSidebar();
+
+    const memories = screen.getByRole("button", { name: "Memories" });
+    const graph = screen.getByRole("button", { name: "Graph" });
+    const spaces = screen.getByTestId("space-list");
+
+    expect(memories.compareDocumentPosition(spaces) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(graph.compareDocumentPosition(spaces) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("keeps the Wenlan brand in the sidebar footer", () => {
+    renderSidebar();
+
+    const spaces = screen.getByTestId("space-list");
+    const brand = screen.getByRole("button", { name: "Wenlan" });
+
+    expect(spaces.compareDocumentPosition(brand) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("does not show agent connection status in the footer", async () => {
+    listAgentsMock.mockResolvedValue([
+      { id: "agent-1", name: "Codex", enabled: true },
+      { id: "agent-2", name: "Claude", enabled: true },
+    ]);
+
+    renderSidebar();
+
+    expect(await screen.findByRole("button", { name: "Wenlan" })).toBeInTheDocument();
+    expect(screen.queryByText(/agents? connected/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/No agents connected/i)).not.toBeInTheDocument();
+  });
+});

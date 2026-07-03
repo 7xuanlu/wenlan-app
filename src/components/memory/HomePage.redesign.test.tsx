@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import HomePage from "./HomePage";
@@ -42,7 +42,12 @@ vi.mock("../../lib/tauri", async () => {
 
 import * as tauri from "../../lib/tauri";
 
-function renderHome(props: { onOpenDistillReview?: () => void } = {}) {
+function renderHome(
+  props: {
+    onOpenDistillReview?: () => void;
+    onSelectPage?: (pageId: string) => void;
+  } = {},
+) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
@@ -52,9 +57,28 @@ function renderHome(props: { onOpenDistillReview?: () => void } = {}) {
         onNavigateLog={() => {}}
         onNavigateGraph={() => {}}
         onOpenDistillReview={props.onOpenDistillReview}
+        onSelectPage={props.onSelectPage}
       />
     </QueryClientProvider>,
   );
+}
+
+const nowIso = new Date().toISOString();
+
+function page(overrides: Partial<tauri.Page> & Pick<tauri.Page, "id" | "title">): tauri.Page {
+  return {
+    summary: null,
+    content: "",
+    entity_id: null,
+    domain: null,
+    source_memory_ids: [],
+    version: 1,
+    status: "active",
+    created_at: nowIso,
+    last_compiled: nowIso,
+    last_modified: nowIso,
+    ...overrides,
+  };
 }
 
 beforeEach(() => {
@@ -101,13 +125,213 @@ beforeEach(() => {
 });
 
 describe("HomePage redesign", () => {
-  it("opens the distill review route from the home refinement area", async () => {
+  it("uses wiki pages as the primary home surface when pages exist without activity", async () => {
+    vi.mocked(tauri.listPages).mockResolvedValue([
+      page({
+        id: "page-architecture",
+        title: "Wenlan app architecture",
+        domain: "Projects",
+        summary: "How the desktop app, daemon, and page compiler fit together.",
+        source_memory_ids: ["m1", "m2", "m3", "m4"],
+        version: 3,
+      }),
+      page({
+        id: "page-policy",
+        title: "Codex workflow policy",
+        domain: "Decisions",
+        source_memory_ids: ["m5", "m6"],
+        version: 2,
+      }),
+    ]);
+
+    renderHome();
+
+    expect(await screen.findByRole("heading", { name: "Today in Wenlan" })).toBeInTheDocument();
+    expect(tauri.listPages).toHaveBeenCalledWith("active", undefined, 1000);
+    expect(screen.getByTestId("wiki-home")).toHaveStyle({ display: "grid" });
+    expect(screen.getByTestId("wiki-context-rail")).toHaveTextContent("Index");
+    expect(screen.getByTestId("wiki-context-rail")).not.toHaveTextContent("Recently active");
+    expect(screen.getByTestId("wiki-context-rail")).toHaveTextContent("2 pages");
+    expect(screen.getByTestId("wiki-context-rail")).toHaveTextContent("6 sources");
+    expect(screen.queryByTestId("wiki-space-filter-row")).toBeNull();
+    expect(screen.queryByTestId("wiki-recent-spaces")).toBeNull();
+    expect(screen.queryByText("Wiki pages")).toBeNull();
+    expect(screen.queryByText("Compiled pages, links, and sources your agents can traverse.")).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Recent Space" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Recently refined" })).toBeNull();
+    expect(screen.getByText("Wenlan app architecture")).toBeInTheDocument();
+    expect(screen.getByText("4 sources")).toBeInTheDocument();
+    expect(screen.getAllByText("updated today").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Key facts")).toBeNull();
+    expect(screen.queryByText("Related pages")).toBeNull();
+    expect(screen.queryByText("Related sources")).toBeNull();
+    expect(screen.queryByText("source-backed")).toBeNull();
+    expect(screen.queryByTestId("what-happens-next")).toBeNull();
+  });
+
+  it("opens wiki page rows from the home index", async () => {
+    const onSelectPage = vi.fn();
+    const user = userEvent.setup();
+    vi.mocked(tauri.listPages).mockResolvedValue([
+      page({
+        id: "page-architecture",
+        title: "Wenlan app architecture",
+        domain: "Projects",
+        source_memory_ids: ["m1", "m2", "m3"],
+        version: 2,
+      }),
+    ]);
+
+    renderHome({ onSelectPage });
+
+    await user.click(await screen.findByRole("button", { name: /open Wenlan app architecture/i }));
+
+    expect(onSelectPage).toHaveBeenCalledWith("page-architecture");
+  });
+
+  it("does not duplicate space navigation on the home index", async () => {
+    vi.mocked(tauri.listPages).mockResolvedValue([
+      page({
+        id: "page-architecture",
+        title: "Wenlan app architecture",
+        domain: "Projects",
+      }),
+      page({
+        id: "page-policy",
+        title: "Codex workflow policy",
+        domain: "Decisions",
+      }),
+    ]);
+
+    renderHome();
+
+    await screen.findByRole("heading", { name: "Today in Wenlan" });
+
+    expect(screen.queryByTestId("wiki-space-filter-row")).toBeNull();
+    expect(screen.queryByRole("button", { name: /open Projects space/i })).toBeNull();
+  });
+
+  it("does not expose recent spaces from the home context rail", async () => {
+    vi.mocked(tauri.listPages).mockResolvedValue([
+      page({
+        id: "page-architecture",
+        title: "Wenlan app architecture",
+        domain: "Projects",
+        last_modified: "2026-06-30T12:00:00Z",
+      }),
+      page({
+        id: "page-policy",
+        title: "Codex workflow policy",
+        domain: "Decisions",
+        last_modified: "2026-06-29T12:00:00Z",
+      }),
+    ]);
+
+    renderHome();
+
+    await screen.findByRole("heading", { name: "Today in Wenlan" });
+
+    expect(screen.queryByTestId("wiki-recent-spaces")).toBeNull();
+    expect(screen.getByTestId("wiki-context-rail")).not.toHaveTextContent("Recently active");
+  });
+
+  it("counts only named spaces in the context rail without showing compact top filters", async () => {
+    vi.mocked(tauri.listPages).mockResolvedValue([
+      page({ id: "page-a", title: "A", domain: "Alpha" }),
+      page({ id: "page-b", title: "B", domain: "Beta" }),
+      page({ id: "page-c", title: "C", domain: "Gamma" }),
+      page({ id: "page-d", title: "D", domain: "Delta" }),
+      page({ id: "page-e", title: "E", domain: "Epsilon" }),
+      page({ id: "page-unsorted", title: "Unassigned" }),
+    ]);
+
+    renderHome();
+
+    await screen.findByRole("heading", { name: "Today in Wenlan" });
+
+    expect(screen.queryByTestId("wiki-space-filter-row")).toBeNull();
+    expect(screen.getByTestId("wiki-context-spaces")).toHaveTextContent("5");
+  });
+
+  it("does not navigate to the synthetic Unsorted page bucket", async () => {
+    vi.mocked(tauri.listPages).mockResolvedValue([
+      page({ id: "page-unsorted", title: "Unassigned page" }),
+    ]);
+
+    renderHome();
+
+    await screen.findByRole("heading", { name: "Today in Wenlan" });
+
+    expect(screen.getByText("Unassigned page")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /open Unsorted space/i })).toBeNull();
+    expect(screen.queryByText("Unsorted")).toBeNull();
+  });
+
+  it("does not render traversal paths on the home surface", async () => {
+    vi.mocked(tauri.listPages).mockResolvedValue([
+      page({ id: "page-wenlan", title: "Wenlan app architecture", domain: "Projects" }),
+    ]);
+    vi.mocked(tauri.listRecentRetrievals).mockResolvedValue([
+      {
+        timestamp_ms: Date.now(),
+        agent_name: "claude-code",
+        query: "wiki home",
+        page_titles: ["Wenlan app architecture", "Codex workflow policy"],
+        page_ids: ["page-wenlan", "page-policy"],
+        memory_snippets: [],
+      },
+    ]);
+
+    renderHome();
+
+    await screen.findByRole("heading", { name: "Today in Wenlan" });
+
+    expect(screen.queryByTestId("wiki-traversal-paths")).toBeNull();
+    expect(screen.queryByText("Traversal paths")).toBeNull();
+  });
+
+  it("keeps page updates secondary in the context rail", async () => {
+    const onOpenDistillReview = vi.fn();
+    const onSelectPage = vi.fn();
+    const user = userEvent.setup();
+    vi.mocked(tauri.listPages).mockResolvedValue([
+      page({
+        id: "page-wenlan",
+        title: "Wenlan app architecture",
+        domain: "Projects",
+        source_memory_ids: ["m1", "m2", "m3"],
+        stale_reason: "source_updated",
+      }),
+      page({ id: "page-current", title: "Current page", domain: "Projects" }),
+    ]);
+
+    renderHome({ onOpenDistillReview, onSelectPage });
+
+    const contextRail = await screen.findByTestId("wiki-context-rail");
+    expect(contextRail).toHaveTextContent("Index");
+    expect(contextRail).not.toHaveTextContent("Recently active");
+    expect(contextRail).toHaveTextContent("Page updates");
+    expect(contextRail).toHaveTextContent("Wenlan app architecture");
+    expect(contextRail).toHaveTextContent("3 sources");
+    expect(contextRail).toHaveTextContent("New sources waiting");
+    expect(contextRail).not.toHaveTextContent("Current page");
+    expect(contextRail).toHaveTextContent("Review page changes");
+
+    await user.click(screen.getByRole("button", { name: "Open Wenlan app architecture page update" }));
+    expect(onSelectPage).toHaveBeenCalledWith("page-wenlan");
+
+    await user.click(screen.getByRole("button", { name: /review page changes/i }));
+
+    expect(onOpenDistillReview).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens the page review route from the home maintenance area", async () => {
     const onOpenDistillReview = vi.fn();
     const user = userEvent.setup();
 
     renderHome({ onOpenDistillReview });
 
-    await user.click(await screen.findByRole("button", { name: /review distillation/i }));
+    await user.click(await screen.findByRole("button", { name: /review page changes/i }));
 
     expect(onOpenDistillReview).toHaveBeenCalledTimes(1);
   });
@@ -192,8 +416,11 @@ describe("HomePage redesign", () => {
     expect(screen.queryByTestId("contradiction-resolver")).toBeNull();
   });
 
-  it("renders worth-a-glance with only review-worthy items", async () => {
+  it("does not use recent activity as page updates", async () => {
     const now = Date.now();
+    vi.mocked(tauri.listPages).mockResolvedValue([
+      page({ id: "page-current", title: "Current page", domain: "Projects" }),
+    ]);
     vi.mocked(tauri.listRecentPages).mockResolvedValue([
       { kind: "concept", id: "c1", title: "Flagged concept", snippet: "s", timestamp_ms: now, badge: { kind: "needs_review" } },
       { kind: "concept", id: "c2", title: "Fresh concept", snippet: "s", timestamp_ms: now - 500, badge: { kind: "new" } },
@@ -204,12 +431,13 @@ describe("HomePage redesign", () => {
     renderHome();
     const strip = await screen.findByTestId("worth-a-glance");
     expect(strip).toBeInTheDocument();
-    expect(strip.textContent).toContain("Flagged concept");
+    expect(strip.textContent).toContain("Pages are current.");
+    expect(strip.textContent).not.toContain("Flagged concept");
     expect(strip.textContent).not.toContain("Fresh concept");
     expect(strip.textContent).not.toContain("Refined memory");
   });
 
-  it("surfaces pending revisions in worth-a-glance and accepts them", async () => {
+  it("does not ask users to review memory revisions from home", async () => {
     vi.mocked(tauri.listPendingRevisions).mockResolvedValue([
       {
         target_source_id: "mem-target",
@@ -219,22 +447,23 @@ describe("HomePage redesign", () => {
         last_modified: 1_782_365_076,
       },
     ]);
+    vi.mocked(tauri.listPages).mockResolvedValue([
+      page({ id: "page-current", title: "Current page", domain: "Projects" }),
+    ]);
 
     renderHome();
 
     const strip = await screen.findByTestId("worth-a-glance");
-    expect(strip).toHaveTextContent("Proposed update");
-    expect(strip).toHaveTextContent("The durable updated wording from the daemon.");
-
-    await userEvent.click(screen.getByRole("button", { name: "Accept" }));
-
-    await waitFor(() => {
-      expect(tauri.acceptPendingRevision).toHaveBeenCalledWith("mem-target");
-    });
+    expect(strip).toHaveTextContent("Pages are current.");
+    expect(strip).not.toHaveTextContent("Proposed update");
+    expect(strip).not.toHaveTextContent("The durable updated wording from the daemon.");
+    expect(screen.queryByRole("button", { name: "Accept" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Dismiss" })).not.toBeInTheDocument();
+    expect(tauri.acceptPendingRevision).not.toHaveBeenCalled();
     expect(tauri.confirmMemory).not.toHaveBeenCalledWith("mem-target", true);
   });
 
-  it("surfaces refinery proposals in worth-a-glance and accepts them", async () => {
+  it("does not ask users to review refinery proposals from home", async () => {
     vi.mocked(tauri.listRefinements).mockResolvedValue({
       proposals: [
         {
@@ -252,22 +481,23 @@ describe("HomePage redesign", () => {
         },
       ],
     });
+    vi.mocked(tauri.listPages).mockResolvedValue([
+      page({ id: "page-current", title: "Current page", domain: "Projects" }),
+    ]);
 
     renderHome();
 
     const strip = await screen.findByTestId("worth-a-glance");
-    expect(strip).toHaveTextContent("Entity merge");
-    expect(strip).toHaveTextContent("86% confidence");
-
-    await userEvent.click(screen.getByRole("button", { name: "Accept" }));
-
-    await waitFor(() => {
-      expect(tauri.acceptRefinement).toHaveBeenCalledWith("ref-merge");
-    });
+    expect(strip).toHaveTextContent("Pages are current.");
+    expect(strip).not.toHaveTextContent("Entity merge");
+    expect(strip).not.toHaveTextContent("86% confidence");
+    expect(screen.queryByRole("button", { name: "Accept" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Dismiss" })).not.toBeInTheDocument();
+    expect(tauri.acceptRefinement).not.toHaveBeenCalled();
     expect(tauri.confirmMemory).not.toHaveBeenCalledWith("ref-merge", true);
   });
 
-  it("does not offer accept for refinery actions without daemon accept paths", async () => {
+  it("does not surface refinery suggestions on home", async () => {
     vi.mocked(tauri.listRefinements).mockResolvedValue({
       proposals: [
         {
@@ -283,86 +513,131 @@ describe("HomePage redesign", () => {
         },
       ],
     });
+    vi.mocked(tauri.listPages).mockResolvedValue([
+      page({ id: "page-current", title: "Current page", domain: "Projects" }),
+    ]);
 
     renderHome();
 
     const strip = await screen.findByTestId("worth-a-glance");
-    expect(strip).toHaveTextContent("Entity suggestion");
+    expect(strip).toHaveTextContent("Pages are current.");
+    expect(strip).not.toHaveTextContent("Entity suggestion");
     expect(screen.queryByRole("button", { name: "Accept" })).not.toBeInTheDocument();
-    expect(screen.getByText("Dismiss")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Dismiss" })).not.toBeInTheDocument();
   });
 
-  it("refreshes pending revisions and connection state after accepting a refinery proposal", async () => {
+  it("does not surface deprecated contradiction refinery rows on home", async () => {
     vi.mocked(tauri.listRefinements).mockResolvedValue({
       proposals: [
         {
-          id: "ref-contradiction",
+          id: "ref-merge-visible",
+          action: "entity_merge",
+          source_ids: ["ent-new", "ent-existing"],
+          payload: {
+            action: "entity_merge",
+            existing_id: "ent-existing",
+            new_id: "ent-new",
+            similarity: 0.86,
+          },
+          confidence: 0.86,
+          created_at: "2026-06-26T00:00:00Z",
+        },
+        {
+          id: "ref-contradiction-a",
           action: "detect_contradiction",
-          source_ids: ["mem-new", "mem-existing"],
+          source_ids: ["mem-new-a", "mem-existing-a"],
+          payload: { action: "detect_contradiction" },
+          confidence: 0.8,
+          created_at: "2026-06-26T00:00:00Z",
+        },
+        {
+          id: "ref-contradiction-b",
+          action: "detect_contradiction",
+          source_ids: ["mem-new-b", "mem-existing-b"],
           payload: { action: "detect_contradiction" },
           confidence: 0.8,
           created_at: "2026-06-26T00:00:00Z",
         },
       ],
     });
-    vi.mocked(tauri.acceptRefinement).mockResolvedValue({
-      id: "ref-contradiction",
-      action_applied: "detect_contradiction",
-    });
+    vi.mocked(tauri.listPages).mockResolvedValue([
+      page({ id: "page-current", title: "Current page", domain: "Projects" }),
+    ]);
 
     renderHome();
 
-    await screen.findByText("Contradiction check");
-    const pendingRevisionCalls = vi.mocked(tauri.listPendingRevisions).mock.calls.length;
-    const conceptCalls = vi.mocked(tauri.listConcepts).mock.calls.length;
-    const entityCalls = vi.mocked(tauri.listEntities).mock.calls.length;
-
-    await userEvent.click(screen.getByRole("button", { name: "Accept" }));
-
-    await waitFor(() => {
-      expect(tauri.acceptRefinement).toHaveBeenCalledWith("ref-contradiction");
-      expect(vi.mocked(tauri.listPendingRevisions).mock.calls.length).toBeGreaterThan(
-        pendingRevisionCalls,
-      );
-      expect(vi.mocked(tauri.listConcepts).mock.calls.length).toBeGreaterThan(conceptCalls);
-      expect(vi.mocked(tauri.listEntities).mock.calls.length).toBeGreaterThan(entityCalls);
-    });
+    expect(await screen.findByText("Pages are current.")).toBeInTheDocument();
+    expect(screen.queryByText("Entity merge")).not.toBeInTheDocument();
+    expect(screen.queryByText("Contradiction check")).not.toBeInTheDocument();
+    expect(screen.queryByText("80% confidence · 2 memories")).not.toBeInTheDocument();
   });
 
-  it("refreshes recent review-derived activity after dismissing a refinery proposal", async () => {
+  it("sorts source conflicts before other page updates", async () => {
+    const onSelectPage = vi.fn();
+    const older = new Date(Date.now() - 5 * 86_400_000).toISOString();
+    const newer = new Date(Date.now() - 1 * 86_400_000).toISOString();
+    vi.mocked(tauri.listPages).mockResolvedValue([
+      page({
+        id: "page-new-source",
+        title: "New source page",
+        source_memory_ids: ["m1"],
+        stale_reason: "source_updated",
+        last_modified: newer,
+      }),
+      page({
+        id: "page-conflict",
+        title: "Conflict page",
+        source_memory_ids: ["m2", "m3"],
+        stale_reason: "source_conflict",
+        last_modified: older,
+      }),
+    ]);
+
+    renderHome({ onSelectPage });
+
+    const rail = await screen.findByTestId("worth-a-glance");
+    expect(rail.textContent?.indexOf("Conflict page")).toBeLessThan(
+      rail.textContent?.indexOf("New source page") ?? Number.MAX_SAFE_INTEGER,
+    );
+    expect(rail).toHaveTextContent("Source conflict");
+
+    await userEvent.click(screen.getByRole("button", { name: "Open Conflict page page update" }));
+    expect(onSelectPage).toHaveBeenCalledWith("page-conflict");
+  });
+
+  it("does not render approval actions in the page updates rail", async () => {
     vi.mocked(tauri.listRefinements).mockResolvedValue({
       proposals: [
         {
           id: "ref-merge",
           action: "entity_merge",
           source_ids: ["mem-a", "mem-b"],
-          payload: {
-            action: "entity_merge",
-            existing_id: "ent-a",
-            new_id: "ent-b",
-            similarity: 0.86,
-          },
+          payload: { action: "entity_merge", existing_id: "ent-a", new_id: "ent-b", similarity: 0.86 },
           confidence: 0.86,
-          created_at: "2026-06-26T00:00:00Z",
+          created_at: nowIso,
         },
       ],
     });
+    vi.mocked(tauri.listPendingRevisions).mockResolvedValue([
+      {
+        target_source_id: "mem-target",
+        revision_source_id: "mem-revision",
+        revision_content: "The durable updated wording from the daemon.",
+        source_agent: "claude-code",
+        last_modified: 1_782_365_076,
+      },
+    ]);
+    vi.mocked(tauri.listPages).mockResolvedValue([
+      page({ id: "page-stale", title: "Stale page", stale_reason: "source_updated" }),
+    ]);
 
     renderHome();
 
-    await screen.findByText("Entity merge");
-    const recentMemoryCalls = vi.mocked(tauri.listRecentMemories).mock.calls.length;
-    const recentPageCalls = vi.mocked(tauri.listRecentPages).mock.calls.length;
-
-    await userEvent.click(screen.getByText("Dismiss"));
-
-    await waitFor(() => {
-      expect(tauri.rejectRefinement).toHaveBeenCalledWith("ref-merge");
-      expect(vi.mocked(tauri.listRecentMemories).mock.calls.length).toBeGreaterThan(
-        recentMemoryCalls,
-      );
-      expect(vi.mocked(tauri.listRecentPages).mock.calls.length).toBeGreaterThan(recentPageCalls);
-    });
+    const rail = await screen.findByTestId("worth-a-glance");
+    expect(rail).toHaveTextContent("Stale page");
+    expect(screen.queryByRole("button", { name: "Accept" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Dismiss" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Looks good")).not.toBeInTheDocument();
   });
 
   it("retrieval card with archived concept shows archived badge and does not navigate", async () => {

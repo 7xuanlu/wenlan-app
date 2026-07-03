@@ -48,4 +48,18 @@ describe("IdentityCard", () => {
     expect(screen.queryByRole("img", { name: "Lucian" })).not.toBeInTheDocument();
     expect(screen.getByText("L")).toBeInTheDocument();
   });
+
+  it("shows only avatar and display name without observation text", async () => {
+    vi.mocked(tauri.getEntityDetail).mockResolvedValue({
+      observations: [{ content: "The user is a senior engineer working on Wenlan." }],
+    } as any);
+
+    renderIdentityCard();
+
+    await screen.findByText("Lucian");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(tauri.getEntityDetail).not.toHaveBeenCalled();
+    expect(screen.queryByText(/senior engineer/i)).not.toBeInTheDocument();
+  });
 });

@@ -133,17 +133,23 @@ pub async fn dismiss_quick_capture(app: tauri::AppHandle) -> Result<(), String> 
         #[cfg(target_os = "macos")]
         #[allow(deprecated)]
         {
-            use cocoa::base::id;
-            use raw_window_handle::HasWindowHandle;
-            if let Ok(raw_handle) = qc.window_handle() {
-                if let raw_window_handle::RawWindowHandle::AppKit(appkit) = raw_handle.as_raw() {
-                    let ns_view = appkit.ns_view.as_ptr() as id;
-                    unsafe {
-                        let ns_win: id = objc::msg_send![ns_view, window];
-                        let _: () = objc::msg_send![ns_win, orderOut: ns_win];
+            let qc_for_main_thread = qc.clone();
+            qc.run_on_main_thread(move || {
+                use cocoa::base::id;
+                use raw_window_handle::HasWindowHandle;
+
+                if let Ok(raw_handle) = qc_for_main_thread.window_handle() {
+                    if let raw_window_handle::RawWindowHandle::AppKit(appkit) = raw_handle.as_raw()
+                    {
+                        let ns_view = appkit.ns_view.as_ptr() as id;
+                        unsafe {
+                            let ns_win: id = objc::msg_send![ns_view, window];
+                            let _: () = objc::msg_send![ns_win, orderOut: ns_win];
+                        }
                     }
                 }
-            }
+            })
+            .map_err(|e| e.to_string())?;
         }
         #[cfg(not(target_os = "macos"))]
         {
