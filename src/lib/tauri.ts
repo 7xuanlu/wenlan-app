@@ -196,6 +196,11 @@ export function daemonMeetsFloor(version: string, floor = "0.10.0"): boolean {
   return true;
 }
 
+/** Stage a loose file into the managed dir and ensure it is a daemon source. */
+export async function uploadSourceFile(path: string): Promise<RegisteredSource> {
+  return invoke("upload_source_file", { path });
+}
+
 export interface IndexedFileInfo {
   source: string;
   source_id: string;

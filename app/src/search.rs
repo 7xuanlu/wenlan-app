@@ -3349,10 +3349,41 @@ pub async fn list_decision_domains_cmd(
 
 pub use crate::sources::sync::SyncStats;
 
+/// The daemon dedupes sources by path; a repeat POST returns this string. The
+/// app treats it as success (check-or-ignore), not an error path (§2).
+fn already_registered(err: &str) -> bool {
+    err.contains("Source already registered")
+}
+
+/// Register a directory (folder in place, or the managed uploads dir) with the
+/// daemon, which owns ingestion (§1, §6). On repeat registration the daemon
+/// returns "Source already registered" — resolve the existing source instead
+/// of erroring.
+async fn register_directory_source_with_daemon(
+    state: &tauri::State<'_, State>,
+    path: &std::path::Path,
+) -> Result<crate::sources::Source, String> {
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+    let path_str = path.to_string_lossy().to_string();
+    match client.add_source("directory".to_string(), path_str).await {
+        Ok(source) => Ok(source),
+        Err(e) if already_registered(&e) => client
+            .list_sources()
+            .await?
+            .into_iter()
+            .find(|s| s.path == path)
+            .ok_or_else(|| "source registered but not returned by daemon".to_string()),
+        Err(e) => Err(e),
+    }
+}
+
 #[tauri::command]
 pub async fn add_source(
     state: tauri::State<'_, State>,
-    watcher: tauri::State<'_, WatcherState>,
+    _watcher: tauri::State<'_, WatcherState>,
     source_type: String,
     path: String,
 ) -> Result<crate::sources::Source, String> {
@@ -3380,11 +3411,15 @@ pub async fn add_source(
             };
             client.add_source("obsidian".to_string(), path).await
         }
-        "directory" => add_directory_source(&state, &watcher, path_buf, &path).await,
+        "directory" => register_directory_source_with_daemon(&state, &path_buf).await,
         other => Err(format!("Unknown source_type: {}", other)),
     }
 }
 
+// ponytail: legacy bridge for pre-v0.10.0 daemons only; new directory sources
+// go straight to the daemon (register_directory_source_with_daemon). Remove
+// once the minimum supported daemon is raised to v0.10.0 (§6).
+#[allow(dead_code)]
 async fn add_directory_source(
     state: &tauri::State<'_, State>,
     watcher: &tauri::State<'_, WatcherState>,
@@ -3439,6 +3474,19 @@ async fn add_directory_source(
     }
 
     Ok(source)
+}
+
+#[cfg(test)]
+mod already_registered_tests {
+    #[test]
+    fn already_registered_matches_daemon_dedupe_string() {
+        assert!(super::already_registered("Source already registered"));
+        assert!(super::already_registered(
+            "ValidationError: Source already registered for path"
+        ));
+        assert!(!super::already_registered("Path does not exist"));
+        assert!(!super::already_registered("connection refused"));
+    }
 }
 
 #[tauri::command]
@@ -3553,6 +3601,22 @@ pub async fn daemon_version(state: tauri::State<'_, State>) -> Result<String, St
         s.client.clone()
     };
     Ok(client.health().await?.version)
+}
+
+/// Stage a loose file into the managed uploads dir, then ensure that dir is
+/// registered with the daemon as a `directory` source (§2, §6).
+#[tauri::command]
+pub async fn upload_source_file(
+    state: tauri::State<'_, State>,
+    path: String,
+) -> Result<crate::sources::Source, String> {
+    let src = std::path::PathBuf::from(&path);
+    if !src.is_file() {
+        return Err(format!("Not a file: {}", path));
+    }
+    let dir = crate::sources::uploads::sources_dir();
+    crate::sources::uploads::place_upload_file(&dir, &src).map_err(|e| e.to_string())?;
+    register_directory_source_with_daemon(&state, &dir).await
 }
 
 // ---------------------------------------------------------------------------
