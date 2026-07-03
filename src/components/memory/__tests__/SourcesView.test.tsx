@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import SourcesView from "../SourcesView";
+import SourcesView, { spineVisual, spineCaption } from "../SourcesView";
 import {
   listRegisteredSources,
   openFile,
@@ -106,5 +106,40 @@ describe("SourcesView", () => {
     const index = await screen.findByText("index.md");
     const row = index.closest("button")!;
     expect(within(row).getByText("md")).toBeInTheDocument();
+  });
+});
+
+const base = {
+  id: "s",
+  source_type: "directory" as const,
+  path: "/x/Books",
+  status: "Active" as const,
+  file_count: 0,
+};
+
+describe("spineVisual", () => {
+  it("ghost before any memories arrive", () => {
+    expect(spineVisual({ ...base, last_sync: null, memory_count: 0 }, undefined)).toBe("ghost");
+  });
+  it("indexing while last_sync is null and memories exist", () => {
+    expect(spineVisual({ ...base, last_sync: null, memory_count: 4 }, undefined)).toBe("indexing");
+  });
+  it("indexing while the count is still climbing between polls", () => {
+    expect(spineVisual({ ...base, last_sync: 100, memory_count: 20 }, 12)).toBe("indexing");
+  });
+  it("settled once synced and the count is stable", () => {
+    expect(spineVisual({ ...base, last_sync: 100, memory_count: 20 }, 20)).toBe("settled");
+  });
+});
+
+describe("spineCaption", () => {
+  it("says Indexing while settling", () => {
+    expect(spineCaption({ ...base, last_sync: null, memory_count: 0 })).toBe("Indexing…");
+  });
+  it("shows notes when settled", () => {
+    expect(spineCaption({ ...base, last_sync: 100, memory_count: 142 })).toBe("142 notes");
+  });
+  it("appends skipped count", () => {
+    expect(spineCaption({ ...base, last_sync: 100, memory_count: 142, last_sync_errors: 2 })).toBe("142 notes, 2 skipped");
   });
 });

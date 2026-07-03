@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   listRegisteredSources,
@@ -45,6 +45,24 @@ function spineHeight(memoryCount: number, maxMemories: number): number {
   return 12 + Math.round(18 * (memoryCount / maxMemories));
 }
 
+export type SpineVisual = "ghost" | "indexing" | "settled";
+
+/** Ingest state for the spine (§Signature). Determinate percent is impossible
+ *  (daemon reports no per-source total); the fill means "still arriving". */
+export function spineVisual(s: RegisteredSource, prevMemoryCount: number | undefined): SpineVisual {
+  if (s.last_sync === null) return s.memory_count === 0 ? "ghost" : "indexing";
+  if (prevMemoryCount !== undefined && s.memory_count > prevMemoryCount) return "indexing";
+  return "settled";
+}
+
+/** Mono caption under a source: Indexing… while settling, else "N notes" (+ skipped). */
+export function spineCaption(s: RegisteredSource): string {
+  if (s.last_sync === null) return "Indexing…";
+  const skipped = s.last_sync_errors ?? 0;
+  const notes = `${s.memory_count.toLocaleString()} notes`;
+  return skipped > 0 ? `${notes}, ${skipped} skipped` : notes;
+}
+
 function relTime(ts: number | null): string {
   if (!ts) return "never synced";
   const secs = Math.floor(Date.now() / 1000 - ts);
@@ -65,12 +83,24 @@ export default function SourcesView({ onManageSources }: SourcesViewProps) {
   const [filter, setFilter] = useState("");
   const [adding, setAdding] = useState(false);
 
+  const prevCounts = useRef<Record<string, number>>({});
+
   const { data: fetchedSources = [] } = useQuery({
     queryKey: ["registeredSources"],
     queryFn: listRegisteredSources,
-    refetchInterval: 10000,
+    // Refetch fast while anything is still settling; slow when idle (§3).
+    refetchInterval: (q) => {
+      const list = (q.state.data as RegisteredSource[] | undefined) ?? [];
+      return list.some((s) => s.last_sync === null) ? 3000 : 10000;
+    },
   });
   const sources: RegisteredSource[] = fetchedSources;
+
+  useEffect(() => {
+    const next: Record<string, number> = {};
+    for (const s of fetchedSources) next[s.id] = s.memory_count;
+    prevCounts.current = next;
+  }, [fetchedSources]);
 
   // Tallest spine first — the shelf reads as a clear silhouette, the
   // source with the most memories on top.
@@ -152,19 +182,30 @@ export default function SourcesView({ onManageSources }: SourcesViewProps) {
                   if (!active) e.currentTarget.style.background = "transparent";
                 }}
               >
-                {/* Book spine: height = memory share, color = sync status. */}
-                <span className="shrink-0 w-1.5 flex items-end justify-center" style={{ height: 30 }}>
-                  <span
-                    data-testid="source-spine"
-                    style={{
-                      width: 3,
-                      borderRadius: 1.5,
-                      height: spineHeight(s.memory_count, maxMemories),
-                      backgroundColor: label ? STATUS_COLORS[label] : "var(--mem-accent-indigo)",
-                      opacity: label ? 0.9 : active ? 0.85 : 0.5,
-                    }}
-                  />
-                </span>
+                {/* Book spine: height = memory share, color = sync status,
+                    fill/shimmer = ingest state (ghost/indexing/settled). */}
+                {(() => {
+                  const visual = spineVisual(s, prevCounts.current[s.id]);
+                  const h = spineHeight(s.memory_count, maxMemories);
+                  return (
+                    <span className="shrink-0 w-1.5 flex items-end justify-center" style={{ height: 30 }}>
+                      <span
+                        data-testid="source-spine"
+                        data-visual={visual}
+                        className={visual === "indexing" ? "spine-indexing" : undefined}
+                        style={{
+                          width: 3,
+                          borderRadius: 1.5,
+                          height: visual === "ghost" ? 30 : h,
+                          backgroundColor: label ? STATUS_COLORS[label] : "var(--mem-accent-indigo)",
+                          border: visual === "ghost" ? "1px solid var(--mem-accent-indigo)" : undefined,
+                          background: visual === "ghost" ? "transparent" : undefined,
+                          opacity: visual === "ghost" ? 0.5 : label ? 0.9 : active ? 0.85 : 0.5,
+                        }}
+                      />
+                    </span>
+                  );
+                })()}
                 <span className="flex-1 min-w-0">
                   <span
                     className="block truncate"
@@ -187,7 +228,7 @@ export default function SourcesView({ onManageSources }: SourcesViewProps) {
                       marginTop: 1,
                     }}
                   >
-                    {label ?? `${s.memory_count.toLocaleString()} memories`}
+                    {label ?? spineCaption(s)}
                   </span>
                 </span>
               </button>
