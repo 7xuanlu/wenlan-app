@@ -12,6 +12,15 @@ function darkToken(name: string): string | null {
   return body.match(new RegExp(`${name}:\\s*([^;]+);`))?.[1].trim() ?? null;
 }
 
+function lightToken(name: string): string | null {
+  const blocks = css.matchAll(/html\[data-theme="light"\]\s*\{(?<body>[\s\S]*?)\n\}/g);
+  for (const block of blocks) {
+    const value = block.groups?.body.match(new RegExp(`${name}:\\s*([^;]+);`))?.[1].trim();
+    if (value) return value;
+  }
+  return null;
+}
+
 function rootToken(name: string): string | null {
   const rootBlock = css.match(/:root\s*\{(?<body>[\s\S]*?)\n\}/);
   const body = rootBlock?.groups?.body ?? "";
@@ -30,31 +39,50 @@ function rgb(hex: string): { r: number; g: number; b: number } {
   };
 }
 
-function expectNeutralGraphite(hex: string | null): void {
+function expectLogoInk(hex: string | null): void {
   expect(hex).not.toBeNull();
   const color = rgb(hex ?? "");
-  const channels = [color.r, color.g, color.b];
-  const spread = Math.max(...channels) - Math.min(...channels);
+  const spread = Math.max(color.r, color.g, color.b) - Math.min(color.r, color.g, color.b);
 
-  expect(spread).toBeLessThanOrEqual(18);
-  expect(color.r).toBeLessThanOrEqual(color.g);
-  expect(color.r).toBeLessThanOrEqual(color.b);
+  expect(color.b).toBeGreaterThan(color.r);
+  expect(color.g).toBeGreaterThan(color.r);
+  expect(spread).toBeGreaterThanOrEqual(8);
+}
+
+function luminance(hex: string): number {
+  const channel = (value: number) => {
+    const normalized = value / 255;
+    return normalized <= 0.03928
+      ? normalized / 12.92
+      : ((normalized + 0.055) / 1.055) ** 2.4;
+  };
+
+  const color = rgb(hex);
+  return 0.2126 * channel(color.r) + 0.7152 * channel(color.g) + 0.0722 * channel(color.b);
+}
+
+function contrastRatio(foreground: string | null, background: string | null): number {
+  expect(foreground).not.toBeNull();
+  expect(background).not.toBeNull();
+  const lighter = Math.max(luminance(foreground ?? ""), luminance(background ?? ""));
+  const darker = Math.min(luminance(foreground ?? ""), luminance(background ?? ""));
+  return (lighter + 0.05) / (darker + 0.05);
 }
 
 describe("dark theme brand tokens", () => {
-  it("uses a professional graphite-gray scale while brand colors are unsettled", () => {
-    expect(rootToken("--bg-primary")).toBe("#202124");
-    expect(rootToken("--bg-secondary")).toBe("#272A2E");
-    expect(rootToken("--border")).toBe("#3B4047");
+  it("uses a deep logo-ink scale instead of orange or flat graphite gray", () => {
+    expect(rootToken("--bg-primary")).toBe("#10161A");
+    expect(rootToken("--bg-secondary")).toBe("#171E22");
+    expect(rootToken("--border")).toBe("#2A373B");
 
-    expect(darkToken("--mem-bg")).toBe("#202124");
-    expect(darkToken("--mem-surface")).toBe("#272A2E");
-    expect(darkToken("--mem-sidebar")).toBe("#181B1F");
-    expect(darkToken("--mem-border")).toBe("#3B4047");
-    expect(darkToken("--mem-accent-indigo")).toBe("#A4ACB6");
+    expect(darkToken("--mem-bg")).toBe("#10161A");
+    expect(darkToken("--mem-surface")).toBe("#171E22");
+    expect(darkToken("--mem-sidebar")).toBe("#0C1216");
+    expect(darkToken("--mem-border")).toBe("#2A373B");
+    expect(darkToken("--mem-brand-text")).toBe("#E7ECE5");
   });
 
-  it("keeps dark structural surfaces neutral instead of purple or blue-led", () => {
+  it("keeps dark structural surfaces logo-tinted ink, not neutral gray", () => {
     for (const token of [
       rootToken("--bg-primary"),
       rootToken("--bg-secondary"),
@@ -62,7 +90,79 @@ describe("dark theme brand tokens", () => {
       darkToken("--mem-surface"),
       darkToken("--mem-sidebar"),
     ]) {
-      expectNeutralGraphite(token);
+      expectLogoInk(token);
+    }
+  });
+
+  it("moves page emphasis to logo-cyan while keeping warm states muted", () => {
+    expect(darkToken("--mem-accent-page")).toBe("#7DB9CF");
+    expect(darkToken("--mem-accent-indigo")).toBe("#9EADEB");
+    expect(darkToken("--mem-accent-warm")).toBe("#A1745D");
+
+    const page = rgb(darkToken("--mem-accent-page") ?? "");
+    expect(page.g).toBeGreaterThan(page.r);
+    expect(page.b).toBeGreaterThan(page.r);
+    expect(page.b - page.r).toBeGreaterThanOrEqual(35);
+
+    const warm = rgb(darkToken("--mem-accent-warm") ?? "");
+    expect(warm.r - warm.g).toBeLessThanOrEqual(50);
+    expect(warm.g - warm.b).toBeLessThanOrEqual(35);
+  });
+
+  it("keeps wiki page icons quieter than page emphasis colors", () => {
+    expect(darkToken("--mem-page-icon")).toBe("#B99A86");
+    expect(darkToken("--mem-page-icon-hover")).toBe("#C9AD9D");
+
+    const icon = rgb(darkToken("--mem-page-icon") ?? "");
+    const accent = rgb(darkToken("--mem-accent-page") ?? "");
+    const warm = rgb(darkToken("--mem-accent-warm") ?? "");
+
+    expect(icon.r).toBeGreaterThan(icon.g);
+    expect(icon.g).toBeGreaterThan(icon.b);
+    expect(warm.r - warm.g).toBeGreaterThan(icon.r - icon.g);
+    expect(accent.b - accent.r).toBeGreaterThan(icon.b - icon.r);
+  });
+});
+
+describe("light theme brand tokens", () => {
+  it("uses a cool lichen-paper scale instead of lavender or beige-heavy chrome", () => {
+    expect(lightToken("--bg-primary")).toBe("#F7F9F5");
+    expect(lightToken("--bg-secondary")).toBe("#FFFFFF");
+    expect(lightToken("--border")).toBe("#D8E0D8");
+
+    expect(lightToken("--mem-bg")).toBe("#FBFCF8");
+    expect(lightToken("--mem-surface")).toBe("#FFFFFF");
+    expect(lightToken("--mem-sidebar")).toBe("#F3F6F1");
+    expect(lightToken("--mem-border")).toBe("#D8E0D8");
+    expect(lightToken("--mem-brand-text")).toBe("#2D372E");
+    expect(lightToken("--mem-accent-page")).toBe("#4B8394");
+    expect(lightToken("--mem-accent-warm")).toBe("#9F7059");
+    expect(lightToken("--mem-page-icon")).toBe("#C4733B");
+    expect(lightToken("--mem-page-icon-hover")).toBe("#A65F34");
+  });
+
+  it("keeps light structural surfaces out of the lavender family", () => {
+    for (const token of [
+      lightToken("--bg-primary"),
+      lightToken("--bg-tertiary"),
+      lightToken("--mem-bg"),
+      lightToken("--mem-sidebar"),
+    ]) {
+      expect(token).not.toBeNull();
+      const color = rgb(token ?? "");
+      expect(color.g).toBeGreaterThanOrEqual(color.b);
+      expect(color.r).toBeGreaterThanOrEqual(color.b);
+    }
+  });
+});
+
+describe("reading contrast", () => {
+  it("keeps body and sidebar text readable in both themes", () => {
+    for (const token of [darkToken, lightToken]) {
+      expect(contrastRatio(token("--mem-text"), token("--mem-bg"))).toBeGreaterThan(12);
+      expect(contrastRatio(token("--mem-text-secondary"), token("--mem-bg"))).toBeGreaterThan(4.5);
+      expect(contrastRatio(token("--mem-text-tertiary"), token("--mem-bg"))).toBeGreaterThan(2.8);
+      expect(contrastRatio(token("--mem-text-secondary"), token("--mem-sidebar"))).toBeGreaterThan(4.5);
     }
   });
 });

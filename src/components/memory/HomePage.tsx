@@ -1,27 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { useEffect, useMemo, useRef } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
-  acceptPendingRevision,
-  acceptRefinement,
-  confirmMemory,
-  deleteFileChunks,
-  dismissContradiction,
-  dismissPendingRevision,
   getMemoryStats,
   listPages,
-  listMemoriesRich,
-  listPendingRevisions,
-  listRefinements,
   listRecentChanges,
-  listRecentPages,
-  listRecentMemories,
   listRecentRetrievals,
-  listUnconfirmedMemories,
-  rejectRefinement,
+  type Page,
 } from "../../lib/tauri";
 import { Greeting } from "./Greeting";
-import { WorthAGlanceScroll, type WorthAGlanceItem } from "./WorthAGlanceScroll";
 import { RefiningList } from "./RefiningList";
 import { ConnectionsList } from "./ConnectionsList";
 import { RetrievalsList } from "./RetrievalsList";
@@ -42,6 +29,7 @@ interface HomePageProps {
 
 const FIRST_CONCEPT_SHOWN_KEY = "onboarding:firstConceptShownCount";
 const MAX_MODAL_SHOWS = 3;
+type DirectoryItem = { name: string; count: number };
 
 function deriveHomePageState(params: {
   intelligenceReady: boolean;
@@ -58,93 +46,14 @@ function deriveHomePageState(params: {
   return "seed";
 }
 
-function refinementTitle(action: string): string {
-  switch (action) {
-    case "entity_merge":
-      return "Entity merge";
-    case "relation_conflict":
-      return "Relation conflict";
-    case "detect_contradiction":
-      return "Contradiction check";
-    case "suggest_entity":
-      return "Entity suggestion";
-    case "dedup_merge":
-      return "Duplicate memory";
-    default:
-      return "Refinement proposal";
-  }
-}
-
-function canAcceptRefinementAction(action: string): boolean {
-  return action === "entity_merge" || action === "relation_conflict" || action === "detect_contradiction";
-}
-
 export default function HomePage({
-  onNavigateMemory,
-  onNavigateStream,
+  onNavigateMemory: _onNavigateMemory,
+  onNavigateStream: _onNavigateStream,
   onNavigateLog: _onNavigateLog,
   onNavigateGraph: _onNavigateGraph,
   onSelectPage,
   onOpenDistillReview,
 }: HomePageProps) {
-  const queryClient = useQueryClient();
-
-  // Snapshot lastVisitMs ONCE at first render so badges don't drift while the
-  // user sits on the page. Default first-time users to a 7-day window.
-  //
-  // Debounce against HMR / Cmd+R / quick navigation: if the stored anchor is
-  // very fresh (< 1h) it's almost certainly a re-mount rather than a genuine
-  // return visit, and using it would collapse the "since last visit" window
-  // to seconds. Fall back to the 7-day window in that case, and only advance
-  // the anchor on unmount when the user actually spent >= 10 min on the page.
-  const mountedAtRef = useRef(Date.now());
-  const lastVisitMs = useMemo(() => {
-    const stored = parseInt(localStorage.getItem("home:lastVisitMs") ?? "0", 10);
-    const now = Date.now();
-    if (!stored || now - stored < 60 * 60_000) {
-      return now - 7 * 86_400_000;
-    }
-    return stored;
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (Date.now() - mountedAtRef.current >= 10 * 60_000) {
-        localStorage.setItem("home:lastVisitMs", String(Date.now()));
-      }
-    };
-  }, []);
-
-  const { data: recentConceptItems = [] } = useQuery({
-    queryKey: ["recentConceptItems", lastVisitMs],
-    queryFn: () => listRecentPages(10, lastVisitMs),
-    refetchInterval: 30_000,
-  });
-
-  const { data: recentMemoryItems = [] } = useQuery({
-    queryKey: ["recentMemoryItems", lastVisitMs],
-    queryFn: () => listRecentMemories(10, lastVisitMs),
-    refetchInterval: 30_000,
-  });
-
-  const { data: unconfirmedItems = [] } = useQuery({
-    queryKey: ["unconfirmedMemories"],
-    queryFn: () => listUnconfirmedMemories(6),
-    refetchInterval: 30_000,
-  });
-
-  const { data: pendingRevisions = [] } = useQuery({
-    queryKey: ["pendingRevisions"],
-    queryFn: () => listPendingRevisions(6),
-    refetchInterval: 30_000,
-  });
-
-  const { data: refinementQueue = { proposals: [] } } = useQuery({
-    queryKey: ["refineryQueue"],
-    queryFn: () => listRefinements(6),
-    refetchInterval: 30_000,
-  });
-
   const { data: retrievals = [] } = useQuery({
     queryKey: ["recentRetrievals"],
     queryFn: () => listRecentRetrievals(12),
@@ -159,7 +68,7 @@ export default function HomePage({
 
   const { data: recentConcepts = [] } = useQuery({
     queryKey: ["recent-concepts"],
-    queryFn: () => listPages("active", undefined, 10),
+    queryFn: () => listPages("active", undefined, 1000),
     refetchInterval: 10_000,
   });
 
@@ -169,76 +78,24 @@ export default function HomePage({
     refetchInterval: 10_000,
   });
 
-  const { data: recapCount = 0 } = useQuery({
-    queryKey: ["recap-count"],
-    queryFn: async () => {
-      const all = await listMemoriesRich(undefined, undefined, undefined, 200);
-      return all.filter((m) => m.is_recap === true).length;
-    },
-    refetchInterval: 30_000,
-  });
-
-  const activityItems = useMemo(
-    () =>
-      [...recentConceptItems, ...recentMemoryItems]
-        .sort((a, b) => b.timestamp_ms - a.timestamp_ms)
-        .slice(0, 12),
-    [recentConceptItems, recentMemoryItems],
-  );
-
-  const pendingRevisionItems = useMemo<WorthAGlanceItem[]>(
-    () =>
-      pendingRevisions.map((revision) => ({
-        kind: "memory",
-        id: revision.target_source_id,
-        title: "Proposed update",
-        snippet: revision.revision_content,
-        timestamp_ms: revision.last_modified * 1000,
-        badge: { kind: "needs_review" },
-        reviewKind: "pending_revision",
-        sourceAgent: revision.source_agent,
-      })),
-    [pendingRevisions],
-  );
-
-  const refinementItems = useMemo<WorthAGlanceItem[]>(
-    () =>
-      refinementQueue.proposals.map((proposal) => {
-        const timestamp = Date.parse(proposal.created_at);
-        return {
-          kind: "memory",
-          id: proposal.source_ids[0] ?? proposal.id,
-          title: refinementTitle(proposal.action),
-          snippet: `${Math.round(proposal.confidence * 100)}% confidence · ${proposal.source_ids.length} ${proposal.source_ids.length === 1 ? "memory" : "memories"}`,
-          timestamp_ms: Number.isNaN(timestamp) ? Date.now() : timestamp,
-          badge: { kind: "needs_review" },
-          reviewKind: "refinement",
-          reviewId: proposal.id,
-          canConfirm: canAcceptRefinementAction(proposal.action),
-        };
-      }),
-    [refinementQueue.proposals],
-  );
-
-  // Worth-a-glance surfaces items that benefit from a quick confirm/edit pass:
-  //   (1) daemon pending revisions awaiting accept/dismiss
-  //   (2) contradiction-flagged items from the recent activity stream
-  //   (3) explicitly unconfirmed memories (confirmed=0), regardless of age
-  // Dedupe by id so a contradiction-flagged unconfirmed memory doesn't appear
-  // twice. Contradictions take precedence in ordering.
-  const worthAGlanceItems = useMemo(() => {
-    const seen = new Set(pendingRevisionItems.map((i) => i.id));
-    const freshRefinements = refinementItems.filter((i) => !seen.has(i.id));
-    for (const item of freshRefinements) seen.add(item.id);
-    const contradictions = activityItems.filter((i) => i.badge.kind === "needs_review");
-    const freshContradictions = contradictions.filter((i) => !seen.has(i.id));
-    for (const item of freshContradictions) seen.add(item.id);
-    const extras = unconfirmedItems.filter((i) => !seen.has(i.id));
-    return [...pendingRevisionItems, ...freshRefinements, ...freshContradictions, ...extras].slice(0, 6);
-  }, [activityItems, pendingRevisionItems, refinementItems, unconfirmedItems]);
-
   const memoryCount = stats?.total ?? 0;
   const conceptCount = recentConcepts.length;
+  const hasPages = recentConcepts.length > 0;
+  const recentlyRefinedPages = useMemo(
+    () =>
+      [...recentConcepts]
+        .sort((a, b) => Date.parse(b.last_modified) - Date.parse(a.last_modified))
+        .slice(0, 6),
+    [recentConcepts],
+  );
+  const directoryItems = useMemo(
+    () => directoryFromPages(recentConcepts),
+    [recentConcepts],
+  );
+  const pageUpdateItems = useMemo(
+    () => pageUpdatesFromPages(recentConcepts),
+    [recentConcepts],
+  );
 
   const { milestones, acknowledge } = useMilestones();
   const intelligenceReady = milestones.some(
@@ -295,29 +152,8 @@ export default function HomePage({
     firstConceptShownCount <= MAX_MODAL_SHOWS;
 
   const isEmpty =
-    activityItems.length === 0 &&
-    pendingRevisionItems.length === 0 &&
-    refinementItems.length === 0 &&
     retrievals.length === 0 &&
     changes.length === 0;
-
-  const invalidateReviewActivity = async () => {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["refineryQueue"] }),
-      queryClient.invalidateQueries({ queryKey: ["recentConceptItems"] }),
-      queryClient.invalidateQueries({ queryKey: ["recentMemoryItems"] }),
-      queryClient.invalidateQueries({ queryKey: ["recentChanges"] }),
-    ]);
-  };
-
-  const invalidateRefineryAcceptEffects = async () => {
-    await Promise.all([
-      invalidateReviewActivity(),
-      queryClient.invalidateQueries({ queryKey: ["pendingRevisions"] }),
-      queryClient.invalidateQueries({ queryKey: ["connections-concepts"] }),
-      queryClient.invalidateQueries({ queryKey: ["connections-entities"] }),
-    ]);
-  };
 
   const distillReviewEntry = onOpenDistillReview ? (
     <div style={{ display: "flex", justifyContent: "flex-end", margin: "-4px 0 10px" }}>
@@ -334,10 +170,40 @@ export default function HomePage({
           cursor: "pointer",
         }}
       >
-        Review distillation
+        Review page changes
       </button>
     </div>
   ) : null;
+
+  if (hasPages) {
+    return (
+      <>
+        <WikiHome
+          directoryItems={directoryItems}
+          allPages={recentConcepts}
+          pages={recentlyRefinedPages}
+          pageUpdates={pageUpdateItems}
+          onSelectPage={onSelectPage}
+          onOpenDistillReview={onOpenDistillReview}
+        />
+
+        {shouldShowFirstConceptModal && firstConcept && (
+          <FirstPageModal
+            page={firstConcept}
+            onOpen={(id) => {
+              localStorage.removeItem(FIRST_CONCEPT_SHOWN_KEY);
+              acknowledge("first-concept");
+              onSelectPage?.(id);
+            }}
+            onDismiss={() => {
+              localStorage.removeItem(FIRST_CONCEPT_SHOWN_KEY);
+              acknowledge("first-concept");
+            }}
+          />
+        )}
+      </>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-8 pb-16">
@@ -368,60 +234,6 @@ export default function HomePage({
         </>
       ) : (
         <>
-          <WorthAGlanceScroll
-            items={worthAGlanceItems}
-            onConfirm={async (item) => {
-              if (item.reviewKind === "pending_revision") {
-                await acceptPendingRevision(item.id);
-                await queryClient.invalidateQueries({ queryKey: ["pendingRevisions"] });
-                await queryClient.invalidateQueries({ queryKey: ["recentMemoryItems"] });
-                return;
-              }
-
-              if (item.reviewKind === "refinement") {
-                if (item.canConfirm === false) return;
-                await acceptRefinement(item.reviewId ?? item.id);
-                await invalidateRefineryAcceptEffects();
-                return;
-              }
-
-              await Promise.all([
-                dismissContradiction(item.id).catch(() => undefined),
-                confirmMemory(item.id, true).catch(() => undefined),
-              ]);
-              await queryClient.invalidateQueries({ queryKey: ["recentConceptItems"] });
-              await queryClient.invalidateQueries({ queryKey: ["recentMemoryItems"] });
-              await queryClient.invalidateQueries({ queryKey: ["unconfirmedMemories"] });
-            }}
-            onDelete={async (item) => {
-              if (item.reviewKind === "pending_revision") {
-                await dismissPendingRevision(item.id);
-                await queryClient.invalidateQueries({ queryKey: ["pendingRevisions"] });
-                return;
-              }
-
-              if (item.reviewKind === "refinement") {
-                await rejectRefinement(item.reviewId ?? item.id);
-                await invalidateReviewActivity();
-                return;
-              }
-
-              await deleteFileChunks("memory", item.id);
-              await queryClient.invalidateQueries({ queryKey: ["recentConceptItems"] });
-              await queryClient.invalidateQueries({ queryKey: ["recentMemoryItems"] });
-              await queryClient.invalidateQueries({ queryKey: ["unconfirmedMemories"] });
-            }}
-            onEdit={async (_kind, _id) => {
-              await queryClient.invalidateQueries({ queryKey: ["recentMemoryItems"] });
-              await queryClient.invalidateQueries({ queryKey: ["unconfirmedMemories"] });
-            }}
-            onNavigate={(kind, id) => {
-              if (kind === "concept") onSelectPage?.(id);
-              else onNavigateMemory(id);
-            }}
-            recapCount={recapCount}
-            onViewRecaps={onNavigateStream}
-          />
           {distillReviewEntry}
           <RefiningList changes={changes} pages={recentConcepts} onSelectPage={onSelectPage} />
           <RetrievalsList
@@ -450,5 +262,591 @@ export default function HomePage({
         />
       )}
     </div>
+  );
+}
+
+function pageSpaceName(page: Page): string {
+  return page.domain?.trim() || page.space?.trim() || "Unsorted";
+}
+
+function directoryFromPages(pages: Page[]): DirectoryItem[] {
+  const counts = new Map<string, number>();
+  for (const page of pages) {
+    const name = pageSpaceName(page);
+    if (name === "Unsorted") continue;
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => {
+      if (b.count !== a.count) return b.count - a.count;
+      return a.name.localeCompare(b.name);
+    });
+}
+
+function pageUpdatesFromPages(pages: Page[]): Page[] {
+  return [...pages]
+    .filter((page) => page.stale_reason?.trim())
+    .sort((a, b) => {
+      const aPriority = a.stale_reason === "source_conflict" ? 0 : 1;
+      const bPriority = b.stale_reason === "source_conflict" ? 0 : 1;
+      if (aPriority !== bPriority) return aPriority - bPriority;
+      return Date.parse(b.last_modified) - Date.parse(a.last_modified);
+    })
+    .slice(0, 3);
+}
+
+function pageUpdateReason(page: Page): string {
+  if (page.stale_reason === "source_conflict") return "Source conflict";
+  if (page.stale_reason === "source_updated") return "New sources waiting";
+  return "Needs page refresh";
+}
+
+function formatPagePath(page: Page): string {
+  const domain = page.domain?.trim() || page.space?.trim();
+  const title = page.title.replace(/\s+/g, "-");
+  return `[[${domain ? `${domain}/` : ""}${title}]]`;
+}
+
+function formatSourceCount(count: number): string {
+  return `${count} ${count === 1 ? "source" : "sources"}`;
+}
+
+function formatPageCount(count: number): string {
+  return `${count} ${count === 1 ? "page" : "pages"}`;
+}
+
+function uniqueSourceCount(pages: Page[]): number {
+  const sourceIds = new Set<string>();
+  for (const page of pages) {
+    for (const sourceId of page.source_memory_ids) {
+      sourceIds.add(sourceId);
+    }
+  }
+  return sourceIds.size;
+}
+
+function latestPageUpdate(pages: Page[]): string {
+  const latest = pages.reduce<string | null>((current, page) => {
+    if (!current) return page.last_modified;
+    return Date.parse(page.last_modified) > Date.parse(current) ? page.last_modified : current;
+  }, null);
+  return latest ? relativePageDate(latest) : "no updates yet";
+}
+
+function relativePageDate(value: string): string {
+  const ms = Date.parse(value);
+  if (Number.isNaN(ms)) return "updated recently";
+  const delta = Date.now() - ms;
+  const days = Math.floor(delta / 86_400_000);
+  if (days <= 0) return "updated today";
+  if (days === 1) return "updated yesterday";
+  if (days < 7) return `updated ${days}d ago`;
+  const weeks = Math.floor(days / 7);
+  return weeks === 1 ? "updated 1w ago" : `updated ${weeks}w ago`;
+}
+
+function useElementMinWidth<T extends HTMLElement>(minWidth: number) {
+  const ref = useRef<T | null>(null);
+  const [matches, setMatches] = useState(false);
+
+  function getMatches() {
+    if (typeof window === "undefined") return false;
+    const width = ref.current?.getBoundingClientRect().width ?? window.innerWidth;
+    return width >= minWidth;
+  }
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const element = ref.current;
+    const update = () => setMatches(getMatches());
+    update();
+
+    if (element && "ResizeObserver" in window) {
+      const observer = new ResizeObserver(update);
+      observer.observe(element);
+      return () => observer.disconnect();
+    }
+
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, [minWidth]);
+
+  return [ref, matches] as const;
+}
+
+function WikiHome({
+  directoryItems,
+  allPages,
+  pages,
+  pageUpdates,
+  onSelectPage,
+  onOpenDistillReview,
+}: {
+  directoryItems: DirectoryItem[];
+  allPages: Page[];
+  pages: Page[];
+  pageUpdates: Page[];
+  onSelectPage?: (pageId: string) => void;
+  onOpenDistillReview?: () => void;
+}) {
+  const [containerRef, isWideLayout] = useElementMinWidth<HTMLDivElement>(820);
+  return (
+    <div
+      data-testid="wiki-home"
+      ref={containerRef}
+      style={{
+        display: "grid",
+        gap: isWideLayout ? 32 : 30,
+        gridTemplateColumns: isWideLayout ? "minmax(0, 1fr) minmax(264px, 300px)" : "minmax(0, 1fr)",
+        maxWidth: 1280,
+        margin: "0 auto",
+        width: "100%",
+        paddingBottom: 64,
+        alignItems: "start",
+      }}
+    >
+      <div style={{ minWidth: 0 }}>
+        <TodayPages
+          pages={pages}
+          pageCount={allPages.length}
+          onSelectPage={onSelectPage}
+          isWideLayout={isWideLayout}
+        />
+      </div>
+
+      <aside
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 16,
+          minWidth: 0,
+        }}
+      >
+        <HomeContextRail
+          pages={allPages}
+          directoryItems={directoryItems}
+          pageUpdates={pageUpdates}
+          onSelectPage={onSelectPage}
+          onOpenDistillReview={onOpenDistillReview}
+        />
+      </aside>
+    </div>
+  );
+}
+
+function SectionHeading({
+  title,
+  action,
+  size = "default",
+}: {
+  title: string;
+  action?: React.ReactNode;
+  size?: "default" | "compact";
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "baseline",
+        justifyContent: "space-between",
+        gap: 12,
+        marginBottom: 12,
+      }}
+    >
+      <h2
+        style={{
+          fontFamily: "var(--mem-font-heading)",
+          fontSize: size === "compact" ? 16 : 21,
+          fontWeight: 400,
+          color: "var(--mem-text)",
+          letterSpacing: 0,
+          lineHeight: 1.2,
+          margin: 0,
+        }}
+      >
+        {title}
+      </h2>
+      {action}
+    </div>
+  );
+}
+
+function TodayPages({
+  pages,
+  pageCount,
+  onSelectPage,
+  isWideLayout,
+}: {
+  pages: Page[];
+  pageCount: number;
+  onSelectPage?: (pageId: string) => void;
+  isWideLayout: boolean;
+}) {
+  if (!pages.length) return null;
+  return (
+    <section style={{ marginBottom: 32 }}>
+      <SectionHeading
+        title="Today in Wenlan"
+        action={
+          <span
+            style={{
+              fontFamily: "var(--mem-font-mono)",
+              fontSize: 10,
+              color: "var(--mem-text-tertiary)",
+            }}
+          >
+            {formatPageCount(pageCount)}
+          </span>
+        }
+      />
+      <PageList
+        pages={pages}
+        onSelectPage={onSelectPage}
+        isWideLayout={isWideLayout}
+      />
+    </section>
+  );
+}
+
+function PageList({
+  pages,
+  onSelectPage,
+  isWideLayout,
+}: {
+  pages: Page[];
+  onSelectPage?: (pageId: string) => void;
+  isWideLayout: boolean;
+}) {
+  if (!pages.length) return null;
+  return (
+    <div style={{ marginBottom: 32 }}>
+      <div
+        data-testid="wiki-page-list"
+        style={{
+          display: "grid",
+          gap: 0,
+          borderTop: "1px solid var(--mem-border)",
+        }}
+      >
+        {pages.map((page, index) => (
+          <button
+            key={page.id}
+            type="button"
+            aria-label={`Open ${page.title}`}
+            className="transition-colors duration-150 hover:bg-[var(--mem-hover)]"
+            style={{
+              display: "grid",
+              width: "100%",
+              gap: isWideLayout ? 20 : 12,
+              gridTemplateColumns: isWideLayout
+                ? "minmax(240px, 1fr) minmax(128px, auto)"
+                : "minmax(0, 1fr)",
+              padding: isWideLayout ? "14px 4px" : "15px 4px",
+              textAlign: "left",
+              border: "none",
+              borderBottom: "1px solid color-mix(in srgb, var(--mem-border) 70%, transparent)",
+              background: "transparent",
+              color: "inherit",
+              cursor: onSelectPage ? "pointer" : "default",
+              animation: `mem-fade-up 280ms cubic-bezier(0.16, 1, 0.3, 1) ${index * 35}ms both`,
+            }}
+            onClick={() => onSelectPage?.(page.id)}
+          >
+            <div style={{ display: "flex", minWidth: 0, gap: 12 }}>
+              <PageIcon />
+              <div className="min-w-0">
+                <p
+                  style={{
+                    display: "-webkit-box",
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: "vertical",
+                    overflow: "hidden",
+                    fontFamily: "var(--mem-font-heading)",
+                    fontSize: 16,
+                    fontWeight: 500,
+                    color: "var(--mem-text)",
+                    lineHeight: 1.18,
+                    margin: 0,
+                  }}
+                >
+                  {page.title}
+                </p>
+                <p
+                  className="truncate"
+                  style={{
+                    fontFamily: "var(--mem-font-mono)",
+                    fontSize: 11,
+                    color: "var(--mem-text-tertiary)",
+                    margin: "6px 0 0",
+                  }}
+                >
+                  {formatPagePath(page)}
+                </p>
+                {page.summary && (
+                  <p
+                    style={{
+                      display: isWideLayout ? "none" : "-webkit-box",
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: "vertical",
+                      overflow: "hidden",
+                      fontFamily: "var(--mem-font-body)",
+                      fontSize: 12,
+                      color: "var(--mem-text-secondary)",
+                      lineHeight: 1.45,
+                      margin: "8px 0 0",
+                    }}
+                  >
+                    {page.summary}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                flexDirection: isWideLayout ? "column" : "row",
+                flexWrap: "wrap",
+                alignItems: isWideLayout ? "flex-end" : "center",
+                justifyContent: isWideLayout ? "center" : "flex-start",
+                gap: isWideLayout ? 4 : 12,
+                fontFamily: "var(--mem-font-body)",
+                fontSize: 12,
+                color: "var(--mem-text-tertiary)",
+                textAlign: isWideLayout ? "right" : "left",
+              }}
+            >
+              <span>{formatSourceCount(page.source_memory_ids.length)}</span>
+              <span>{relativePageDate(page.last_modified)}</span>
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function HomeContextRail({
+  pages,
+  directoryItems,
+  pageUpdates,
+  onSelectPage,
+  onOpenDistillReview,
+}: {
+  pages: Page[];
+  directoryItems: DirectoryItem[];
+  pageUpdates: Page[];
+  onSelectPage?: (pageId: string) => void;
+  onOpenDistillReview?: () => void;
+}) {
+  return (
+    <div
+      data-testid="wiki-context-rail"
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 18,
+      }}
+    >
+      <section
+        style={{
+          borderTop: "1px solid var(--mem-border)",
+          borderBottom: "1px solid color-mix(in srgb, var(--mem-border) 70%, transparent)",
+          padding: "12px 0",
+        }}
+      >
+        <SectionHeading title="Index" size="compact" />
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 10,
+          }}
+        >
+          <ContextMetric label="Pages" value={formatPageCount(pages.length)} />
+          <ContextMetric label="Sources" value={formatSourceCount(uniqueSourceCount(pages))} />
+          <ContextMetric label="Spaces" value={String(directoryItems.length)} />
+          <ContextMetric label="Latest" value={latestPageUpdate(pages)} />
+        </div>
+      </section>
+
+      <PageUpdatesRail
+        pages={pageUpdates}
+        onSelectPage={onSelectPage}
+        onOpenDistillReview={onOpenDistillReview}
+      />
+    </div>
+  );
+}
+
+function ContextMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div data-testid={`wiki-context-${label.toLowerCase()}`}>
+      <p
+        style={{
+          fontFamily: "var(--mem-font-mono)",
+          fontSize: 9,
+          color: "var(--mem-text-tertiary)",
+          lineHeight: 1.2,
+          margin: "0 0 4px",
+          textTransform: "uppercase",
+        }}
+      >
+        {label}
+      </p>
+      <p
+        style={{
+          fontFamily: "var(--mem-font-body)",
+          fontSize: 12,
+          fontWeight: 500,
+          color: "var(--mem-text)",
+          lineHeight: 1.25,
+          margin: 0,
+        }}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function PageUpdatesRail({
+  embedded = false,
+  pages,
+  onSelectPage,
+  onOpenDistillReview,
+}: {
+  embedded?: boolean;
+  pages: Page[];
+  onSelectPage?: (pageId: string) => void;
+  onOpenDistillReview?: () => void;
+}) {
+  return (
+    <section
+      data-testid="wiki-page-updates"
+      style={{
+        border: embedded ? "none" : "1px solid var(--mem-border)",
+        borderRadius: embedded ? 0 : 8,
+        padding: embedded ? 0 : 12,
+        backgroundColor: embedded ? "transparent" : "color-mix(in srgb, var(--mem-surface) 76%, transparent)",
+        maxHeight: embedded ? "none" : "min(420px, calc(100vh - 180px))",
+        overflowY: embedded ? "visible" : "auto",
+      }}
+    >
+      <SectionHeading
+        title="Page updates"
+        size="compact"
+      />
+      <div data-testid="worth-a-glance" style={{ display: "grid", gap: 7 }}>
+        {pages.length === 0 ? (
+          <p
+            style={{
+              fontFamily: "var(--mem-font-body)",
+              fontSize: 12,
+              color: "var(--mem-text-tertiary)",
+              lineHeight: 1.5,
+              margin: 0,
+            }}
+          >
+            Pages are current.
+          </p>
+        ) : (
+          pages.map((page) => (
+            <PageUpdateRailItem
+              key={page.id}
+              page={page}
+              onSelectPage={onSelectPage}
+            />
+          ))
+        )}
+      </div>
+
+      {onOpenDistillReview && (
+        <button
+          type="button"
+          onClick={onOpenDistillReview}
+          style={{
+            width: "100%",
+            marginTop: 10,
+            borderRadius: 6,
+            padding: "7px 10px",
+            textAlign: "left",
+            border: "1px solid var(--mem-border)",
+            backgroundColor: "transparent",
+            color: "var(--mem-text-secondary)",
+            cursor: "pointer",
+            fontFamily: "var(--mem-font-body)",
+            fontSize: 11,
+          }}
+        >
+          Review page changes
+        </button>
+      )}
+    </section>
+  );
+}
+
+function PageUpdateRailItem({
+  page,
+  onSelectPage,
+}: {
+  page: Page;
+  onSelectPage?: (pageId: string) => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={`Open ${page.title} page update`}
+      onClick={() => onSelectPage?.(page.id)}
+      style={{
+        display: "grid",
+        gap: 6,
+        width: "100%",
+        textAlign: "left",
+        border: "1px solid color-mix(in srgb, var(--mem-border) 74%, transparent)",
+        borderRadius: 6,
+        padding: "8px",
+        backgroundColor: "transparent",
+        color: "inherit",
+        cursor: onSelectPage ? "pointer" : "default",
+      }}
+    >
+      <p
+        style={{
+          display: "-webkit-box",
+          WebkitLineClamp: 1,
+          WebkitBoxOrient: "vertical",
+          overflow: "hidden",
+          fontFamily: "var(--mem-font-heading)",
+          fontSize: 13,
+          fontWeight: 500,
+          color: "var(--mem-text)",
+          lineHeight: 1.2,
+          margin: 0,
+        }}
+      >
+        {page.title}
+      </p>
+      <p
+        style={{
+          fontFamily: "var(--mem-font-body)",
+          fontSize: 11,
+          color: "var(--mem-text-tertiary)",
+          lineHeight: 1.35,
+          margin: 0,
+        }}
+      >
+        {formatSourceCount(page.source_memory_ids.length)} · {pageUpdateReason(page)}
+      </p>
+    </button>
+  );
+}
+
+function PageIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true" className="mt-1.5 shrink-0" style={{ color: "var(--mem-page-icon)" }}>
+      <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }

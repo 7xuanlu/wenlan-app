@@ -650,7 +650,7 @@ export default function PageDetail({ pageId, onBack, onMemoryClick, onPageClick 
               const targetPageId = link.target_page_id;
               const inner = (
                 <div className="flex items-center gap-2">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ color: "var(--mem-accent-page)" }} className="shrink-0">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ color: "var(--mem-page-icon)" }} className="shrink-0">
                     <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
                   </svg>
                   <span
@@ -917,7 +917,7 @@ export default function PageDetail({ pageId, onBack, onMemoryClick, onPageClick 
 }
 
 // Evidence card for a single source memory.
-// Hairline border-bottom row, hover background shift, click opens Memory Log.
+// Hairline border-bottom row, hover background shift, click opens memory detail.
 function EvidenceCard({
   mem,
   isLast,

@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 // Settings sidebar. Replaces the default Spaces/Profile sidebar when the
-// Settings page is active. Matches the main Sidebar chrome exactly — same
-// width, same bg, same border, same Wenlan heading at the top — so the
-// transition feels like "the sidebar switched modes" rather than "a
-// different layout loaded".
+// Settings page is active. It keeps the same width, background, border, and
+// footer brand treatment as the main Sidebar so the transition feels like
+// "the sidebar switched modes" rather than "a different layout loaded".
 
 import { useEffect, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
@@ -142,20 +141,32 @@ export default function SettingsSidebar({
           pointerEvents: collapsed ? "none" : "auto",
         }}
       >
-        {/* Wenlan heading — clickable to return home. Matches main Sidebar. */}
-        <div className="px-4 pt-3 pb-3">
-          <h1
+        <div className="px-2 pt-3 pb-3">
+          <button
             onClick={onNavigateHome}
-            className="cursor-pointer"
+            className="flex items-center gap-3 px-3 py-2 rounded-md transition-colors duration-150 text-left hover:bg-[var(--mem-hover)] w-full"
             style={{
-              fontFamily: "var(--mem-font-heading)",
-              fontSize: "20px",
-              fontWeight: 500,
-              color: "var(--mem-text)",
+              border: "none",
+              background: "transparent",
+              color: "var(--mem-text-secondary)",
+              cursor: "pointer",
             }}
           >
-            Wenlan
-          </h1>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--mem-text-tertiary)" }}>
+              <path d="M3 10.5L12 3l9 7.5" />
+              <path d="M5 9.5V21h14V9.5" />
+              <path d="M9.5 21v-6h5v6" />
+            </svg>
+            <span
+              style={{
+                fontFamily: "var(--mem-font-body)",
+                fontSize: "13px",
+                fontWeight: 400,
+              }}
+            >
+              Home
+            </span>
+          </button>
         </div>
 
         {/* Section caption */}
@@ -242,11 +253,45 @@ export default function SettingsSidebar({
           })}
         </nav>
 
-        {/* Bottom privacy reassurance — pinned. Mirrors main Sidebar pattern. */}
+        {/* Bottom brand and privacy reassurance — pinned. Mirrors main Sidebar pattern. */}
         <div
           className="px-4 pt-3 pb-4 flex-shrink-0"
           style={{ borderTop: "1px solid var(--mem-border)" }}
         >
+          <div className="flex items-center justify-between gap-2" style={{ paddingBottom: 8 }}>
+            <button
+              type="button"
+              onClick={onNavigateHome}
+              className="rounded-sm transition-colors duration-150 hover:text-[var(--mem-text-secondary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--mem-accent-sage)]"
+              style={{
+                border: "none",
+                background: "transparent",
+                color: "var(--mem-text-tertiary)",
+                cursor: "pointer",
+                fontFamily: "var(--mem-font-body)",
+                fontSize: "11px",
+                fontWeight: 600,
+                lineHeight: 1,
+                padding: 0,
+              }}
+            >
+              Wenlan
+            </button>
+            {appVersion && (
+              <span
+                style={{
+                  fontFamily: "var(--mem-font-mono)",
+                  fontSize: "9.5px",
+                  color: "var(--mem-text-tertiary)",
+                  letterSpacing: "0.02em",
+                  opacity: 0.7,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                v{appVersion}
+              </span>
+            )}
+          </div>
           <div className="flex items-start gap-2">
             <svg
               width="12"
@@ -272,21 +317,6 @@ export default function SettingsSidebar({
               }}
             >
               Local-only. Your data never leaves this machine.
-              {appVersion && (
-                <>
-                  <span aria-hidden style={{ margin: "0 5px", opacity: 0.55 }}>·</span>
-                  <span
-                    style={{
-                      fontFamily: "var(--mem-font-mono)",
-                      fontSize: "9.5px",
-                      letterSpacing: "0.02em",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    v{appVersion}
-                  </span>
-                </>
-              )}
             </span>
           </div>
         </div>

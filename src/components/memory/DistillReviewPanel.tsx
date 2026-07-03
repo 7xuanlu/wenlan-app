@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import {
   distillReview,
@@ -78,6 +78,7 @@ const itemSurfaceStyle = {
 
 export default function DistillReviewPanel({ onBack, onPageClick }: DistillReviewPanelProps) {
   const [lastResult, setLastResult] = useState<DistillReviewResponse | null>(null);
+  const didLoadInitialReview = useRef(false);
   const review = useMutation({
     mutationFn: distillReview,
     retry: false,
@@ -88,6 +89,12 @@ export default function DistillReviewPanel({ onBack, onPageClick }: DistillRevie
     : review.error
       ? String(review.error)
       : null;
+
+  useEffect(() => {
+    if (didLoadInitialReview.current) return;
+    didLoadInitialReview.current = true;
+    review.mutate();
+  }, [review]);
 
   return (
     <div
@@ -129,10 +136,10 @@ export default function DistillReviewPanel({ onBack, onPageClick }: DistillRevie
               color: "var(--mem-text)",
             }}
           >
-            Distill Review
+            Page review
           </h1>
           <p style={{ ...secondaryTextStyle, margin: "5px 0 0", fontSize: "13px" }}>
-            Current daemon review queue
+            Page changes and new page candidates
           </p>
         </div>
         <button
@@ -148,7 +155,7 @@ export default function DistillReviewPanel({ onBack, onPageClick }: DistillRevie
             fontFamily: "var(--mem-font-body)",
           }}
         >
-          {review.isPending ? "Refreshing..." : "Refresh review"}
+          {review.isPending ? "Refreshing..." : "Refresh"}
         </button>
       </div>
 
@@ -170,17 +177,17 @@ export default function DistillReviewPanel({ onBack, onPageClick }: DistillRevie
 
       {!lastResult && !review.isPending && (
         <p style={{ ...secondaryTextStyle, margin: "24px 0 0", fontSize: "13px" }}>
-          No review loaded.
+          No page review loaded.
         </p>
       )}
 
       {lastResult && (
         <div className="grid gap-6" style={{ marginTop: 24 }}>
           <section>
-            <h2 style={sectionTitleStyle}>Pending pages</h2>
+            <h2 style={sectionTitleStyle}>New page candidates</h2>
             {lastResult.pending.length === 0 ? (
               <p style={{ ...secondaryTextStyle, margin: 0, fontSize: "13px" }}>
-                No pending page clusters.
+                No new page candidates.
               </p>
             ) : (
               <div className="grid gap-2.5">
@@ -234,14 +241,14 @@ export default function DistillReviewPanel({ onBack, onPageClick }: DistillRevie
           </section>
 
           <section>
-            <h2 style={sectionTitleStyle}>Stale pages</h2>
+            <h2 style={sectionTitleStyle}>Pages with new sources</h2>
             {lastResult.stale_truncated && (
               <p style={{ ...secondaryTextStyle, margin: "0 0 10px", fontSize: "12px" }}>
                 Showing the first 10 stale pages returned by the daemon.
               </p>
             )}
             {lastResult.stale_pages.length === 0 ? (
-              <p style={{ ...secondaryTextStyle, margin: 0, fontSize: "13px" }}>No stale pages.</p>
+              <p style={{ ...secondaryTextStyle, margin: 0, fontSize: "13px" }}>Pages are current.</p>
             ) : (
               <div className="grid gap-2.5">
                 {lastResult.stale_pages.map((page) => (

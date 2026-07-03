@@ -3,21 +3,21 @@
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 :root {
-  --bg-primary: #202124;
-  --bg-secondary: #272A2E;
-  --bg-tertiary: #30343A;
-  --text-primary: #F2F4F7;
-  --text-secondary: #B8BEC8;
-  --accent: #A4ACB6;
-  --accent-hover: #BAC2CC;
-  --border: #3B4047;
-  --text-tertiary: #7D8591;
-  --separator: rgba(59, 64, 71, 0.65);
-  --overlay-subtle: rgba(255, 255, 255, 0.04);
-  --overlay-hover: rgba(255, 255, 255, 0.06);
-  --overlay-active: rgba(255, 255, 255, 0.08);
-  --overlay-ring: rgba(255, 255, 255, 0.04);
-  --overlay-border: rgba(255, 255, 255, 0.08);
+  --bg-primary: #10161A;
+  --bg-secondary: #171E22;
+  --bg-tertiary: #20292E;
+  --text-primary: #EEF2EA;
+  --text-secondary: #C3CBC0;
+  --accent: #8FB6C7;
+  --accent-hover: #A8CDE0;
+  --border: #2A373B;
+  --text-tertiary: #8C968B;
+  --separator: rgba(70, 86, 88, 0.48);
+  --overlay-subtle: rgba(238, 242, 234, 0.04);
+  --overlay-hover: rgba(238, 242, 234, 0.07);
+  --overlay-active: rgba(238, 242, 234, 0.10);
+  --overlay-ring: rgba(238, 242, 234, 0.05);
+  --overlay-border: rgba(238, 242, 234, 0.09);
 
   /* Spotlight badge & highlight tokens */
   --badge-entity: rgba(52, 211, 153, 0.12);
@@ -36,21 +36,21 @@
 }
 
 html[data-theme="light"] {
-  --bg-primary: #f4f4f8;
-  --bg-secondary: #ffffff;
-  --bg-tertiary: #e8eaef;
-  --text-primary: #1a1a2e;
-  --text-secondary: #5a5a6e;
-  --text-tertiary: #8a8a9a;
-  --accent: #6c63ff;
-  --accent-hover: #5a52d5;
-  --border: #d8d8e8;
-  --separator: rgba(0, 0, 0, 0.08);
-  --overlay-subtle: rgba(0, 0, 0, 0.03);
-  --overlay-hover: rgba(0, 0, 0, 0.05);
-  --overlay-active: rgba(0, 0, 0, 0.08);
-  --overlay-ring: rgba(0, 0, 0, 0.06);
-  --overlay-border: rgba(0, 0, 0, 0.1);
+  --bg-primary: #F7F9F5;
+  --bg-secondary: #FFFFFF;
+  --bg-tertiary: #EEF3ED;
+  --text-primary: #232A24;
+  --text-secondary: #616D63;
+  --text-tertiary: #859083;
+  --accent: #587F8D;
+  --accent-hover: #3F6876;
+  --border: #D8E0D8;
+  --separator: rgba(54, 70, 61, 0.14);
+  --overlay-subtle: rgba(54, 70, 61, 0.035);
+  --overlay-hover: rgba(54, 70, 61, 0.055);
+  --overlay-active: rgba(54, 70, 61, 0.085);
+  --overlay-ring: rgba(54, 70, 61, 0.06);
+  --overlay-border: rgba(54, 70, 61, 0.12);
 
   /* Spotlight badge & highlight tokens */
   --badge-entity: rgba(16, 185, 129, 0.10);
@@ -131,63 +131,68 @@ body {
   --mem-font-mono: 'JetBrains Mono', monospace;
 }
 
-/* Dark (default — neutral graphite while the Wenlan brand palette settles) */
+/* Dark (default — logo ink with a quiet reading cast) */
 :root,
 html[data-theme="dark"] {
-  --mem-bg: #202124;
-  --mem-surface: #272A2E;
-  --mem-sidebar: #181B1F;
-  --mem-text: #F2F4F7;
-  --mem-text-secondary: #B8BEC8;
-  --mem-text-tertiary: #7D8591;
-  --mem-accent-warm: #C68A55;
-  --mem-accent-amber: #D5A45B;
-  --mem-accent-indigo: #A4ACB6;
-  --mem-accent-page: #A4ACB6;
-  --mem-accent-sage: #8DA28D;
-  --mem-accent-glow: #e8c97a;
-  --mem-border: #3B4047;
-  --mem-hover: rgba(164, 172, 182, 0.07);
-  --mem-hover-strong: rgba(164, 172, 182, 0.13);
-  --mem-confirm-bg: rgba(198, 138, 85, 0.13);
-  --mem-indigo-bg: rgba(164, 172, 182, 0.12);
-  --mem-distilled-border: rgba(164, 172, 182, 0.38);
-  --mem-distilled-bg: rgba(164, 172, 182, 0.08);
-  --mem-shimmer-color: rgba(186, 194, 204, 0.14);
-  /* Depth on dark: pronounced drop with a soft secondary halo so surfaces
-     lift cleanly off the navy canvas without a grey cast. */
+  --mem-bg: #10161A;
+  --mem-surface: #171E22;
+  --mem-sidebar: #0C1216;
+  --mem-text: #EEF2EA;
+  --mem-text-secondary: #C3CBC0;
+  --mem-text-tertiary: #8C968B;
+  --mem-brand-text: #E7ECE5;
+  --mem-accent-warm: #A1745D;
+  --mem-accent-amber: #B3A15F;
+  --mem-accent-indigo: #9EADEB;
+  --mem-accent-page: #7DB9CF;
+  --mem-page-icon: #B99A86;
+  --mem-page-icon-hover: #C9AD9D;
+  --mem-accent-sage: #8BAE8A;
+  --mem-accent-glow: #C1B66A;
+  --mem-border: #2A373B;
+  --mem-hover: rgba(139, 174, 138, 0.08);
+  --mem-hover-strong: rgba(139, 174, 138, 0.15);
+  --mem-confirm-bg: rgba(161, 116, 93, 0.12);
+  --mem-indigo-bg: rgba(158, 173, 235, 0.12);
+  --mem-distilled-border: rgba(158, 173, 235, 0.34);
+  --mem-distilled-bg: rgba(158, 173, 235, 0.08);
+  --mem-shimmer-color: rgba(168, 205, 224, 0.14);
+  /* Depth on dark: ink-black shadow so surfaces lift without a grey cast. */
   --mem-shadow-toast:
-    0 14px 36px rgba(5, 6, 20, 0.55),
-    0 2px 6px rgba(5, 6, 20, 0.35);
+    0 14px 36px rgba(2, 4, 2, 0.58),
+    0 2px 6px rgba(2, 4, 2, 0.40);
 }
 
-/* Light (warm neutral) */
+/* Light (cool lichen paper) */
 html[data-theme="light"] {
-  --mem-bg: #FDFCFA;
-  --mem-surface: #FFFEFC;
-  --mem-sidebar: #F8F6F2;
-  --mem-text: #2C2820;
-  --mem-text-secondary: #847B6E;
-  --mem-text-tertiary: #B0A89C;
-  --mem-accent-warm: #C4733B;
-  --mem-accent-amber: #D4943A;
-  --mem-accent-indigo: #5E58C8;
-  --mem-accent-page: #C4733B;
-  --mem-accent-sage: #7A9B7E;
-  --mem-accent-glow: #E8C97A;
-  --mem-border: #E8E4DE;
-  --mem-hover: rgba(140, 130, 115, 0.04);
-  --mem-hover-strong: rgba(140, 130, 115, 0.07);
-  --mem-confirm-bg: rgba(196, 115, 59, 0.08);
-  --mem-indigo-bg: rgba(91, 84, 212, 0.06);
-  --mem-distilled-border: rgba(94, 88, 200, 0.35);
-  --mem-distilled-bg: rgba(91, 84, 212, 0.04);
-  --mem-shimmer-color: rgba(91, 84, 212, 0.12);
+  --mem-bg: #FBFCF8;
+  --mem-surface: #FFFFFF;
+  --mem-sidebar: #F3F6F1;
+  --mem-text: #232A24;
+  --mem-text-secondary: #616D63;
+  --mem-text-tertiary: #859083;
+  --mem-brand-text: #2D372E;
+  --mem-accent-warm: #9F7059;
+  --mem-accent-amber: #AA8542;
+  --mem-accent-indigo: #596FC7;
+  --mem-accent-page: #4B8394;
+  --mem-page-icon: #C4733B;
+  --mem-page-icon-hover: #A65F34;
+  --mem-accent-sage: #678F6B;
+  --mem-accent-glow: #C2A65A;
+  --mem-border: #D8E0D8;
+  --mem-hover: rgba(82, 105, 88, 0.06);
+  --mem-hover-strong: rgba(82, 105, 88, 0.10);
+  --mem-confirm-bg: rgba(159, 112, 89, 0.10);
+  --mem-indigo-bg: rgba(89, 111, 199, 0.07);
+  --mem-distilled-border: rgba(89, 111, 199, 0.30);
+  --mem-distilled-bg: rgba(89, 111, 199, 0.05);
+  --mem-shimmer-color: rgba(75, 131, 148, 0.12);
   /* Depth on light: a warm ink-toned shadow (anchored in the body text hue
      rather than flat grey) so the toast feels letterpressed on cream. */
   --mem-shadow-toast:
-    0 14px 36px rgba(44, 36, 23, 0.10),
-    0 2px 6px rgba(44, 36, 23, 0.06);
+    0 14px 36px rgba(34, 40, 28, 0.10),
+    0 2px 6px rgba(34, 40, 28, 0.06);
 }
 
 @keyframes mem-fade-up {

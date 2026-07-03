@@ -1,0 +1,74 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+import { describe, expect, it, vi } from "vitest";
+import { render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ComponentProps } from "react";
+import Main from "./Main";
+
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(() => Promise.resolve(() => {})),
+}));
+
+vi.mock("../../hooks/useSearch", () => ({
+  useSearch: () => ({
+    query: "",
+    setQuery: vi.fn(),
+    results: [],
+  }),
+}));
+
+vi.mock("../../lib/tauri", () => ({
+  listMemoriesRich: vi.fn().mockResolvedValue([]),
+  getMemoryStats: vi.fn().mockResolvedValue({ total: 0, new_today: 0, confirmed: 0, domains: [] }),
+  searchEntities: vi.fn().mockResolvedValue([]),
+  searchPages: vi.fn().mockResolvedValue([]),
+  deleteFileChunks: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("./ActivityFeed", () => ({ default: () => <div /> }));
+vi.mock("./IdentityDetail", () => ({ default: () => <div /> }));
+vi.mock("./ProfilePage", () => ({ default: () => <div /> }));
+vi.mock("./MemoryStream", () => ({ default: () => <div /> }));
+vi.mock("./HomePage", () => ({ default: () => <div data-testid="home-page" /> }));
+vi.mock("./ConstellationMap", () => ({ default: () => <div /> }));
+vi.mock("./MemoryStatusBar", () => ({ default: () => <div /> }));
+vi.mock("./MemorySearchResult", () => ({ default: () => <div /> }));
+vi.mock("./MemoryDetail", () => ({ default: () => <div data-testid="memory-detail" /> }));
+vi.mock("./PageDetail", () => ({ default: () => <div /> }));
+vi.mock("./DistillReviewPanel", () => ({ default: () => <div /> }));
+vi.mock("./SettingsPage", () => ({ default: () => <div /> }));
+vi.mock("../SetupWizard", () => ({ SetupWizard: () => <div /> }));
+vi.mock("../ViewToggle", () => ({ default: () => <div /> }));
+vi.mock("./Sidebar", () => ({
+  default: () => <aside />,
+  SidebarToggleButton: () => <button type="button" aria-label="Toggle sidebar" />,
+}));
+vi.mock("./settings/SettingsSidebar", () => ({ default: () => <aside /> }));
+vi.mock("./SpaceDetail", () => ({ default: () => <div /> }));
+vi.mock("./DecisionLog", () => ({ default: () => <div /> }));
+vi.mock("./MemoryCard", () => ({ default: () => <div /> }));
+vi.mock("./ImportView", () => ({ ImportView: () => <div /> }));
+
+function renderMain(props: ComponentProps<typeof Main> = {}) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <Main {...props} />
+    </QueryClientProvider>,
+  );
+}
+
+describe("Main search", () => {
+  it("keeps the Wenlan brand out of the top chrome", () => {
+    renderMain();
+
+    expect(screen.queryByAltText("Wenlan")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Go to home" })).toBeNull();
+  });
+
+  it("labels the global search around wiki pages, entities, and sources", () => {
+    renderMain();
+
+    expect(screen.getByPlaceholderText("Search pages, entities, sources...")).toBeInTheDocument();
+  });
+});

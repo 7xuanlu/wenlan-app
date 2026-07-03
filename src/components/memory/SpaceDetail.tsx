@@ -556,7 +556,7 @@ export default function SpaceDetail({
                 }}
               >
                 <div className="flex items-start gap-2.5">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ color: "var(--mem-accent-page)", marginTop: "2px" }} className="shrink-0">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ color: "var(--mem-page-icon)", marginTop: "2px" }} className="shrink-0">
                     <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
                   </svg>
                   <span
@@ -567,7 +567,7 @@ export default function SpaceDetail({
                       color: "var(--mem-text)",
                       lineHeight: "1.4",
                     }}
-                    className="group-hover:text-[var(--mem-accent-page)] transition-colors"
+                    className="group-hover:text-[var(--mem-page-icon-hover)] transition-colors"
                   >
                     {c.title}
                   </span>

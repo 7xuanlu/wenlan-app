@@ -46,6 +46,7 @@ type View = { kind: "home" } | { kind: "stream" } | { kind: "activity" } | { kin
 
 const SIDEBAR_KEY = "wenlan-sidebar-collapsed";
 const LEGACY_SIDEBAR_KEY = "origin-sidebar-collapsed";
+const SEARCH_PLACEHOLDER = "Search pages, entities, sources...";
 
 export default function Main({ initialMemoryId, initialPageId, initialView, onBackFromDetail }: MainProps) {
   const queryClient = useQueryClient();
@@ -75,6 +76,12 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
   const navigateTo = (next: View) => {
     setViewHistory((prev) => [...prev, view]);
     setView(next);
+  };
+
+  const navigateHome = () => {
+    setView({ kind: "home" });
+    setActiveTab("home");
+    setViewHistory([]);
   };
 
   // Navigate back — pops from history stack, falls back to activeTab
@@ -160,7 +167,9 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
   // Cmd+K global shortcut (fired from App.tsx) — focus the header search input.
   useEffect(() => {
     const unlisten = listen("focus-search", () => {
-      const searchInput = document.querySelector<HTMLInputElement>('input[placeholder="Search..."]');
+      const searchInput = document.querySelector<HTMLInputElement>(
+        `input[placeholder="${SEARCH_PLACEHOLDER}"]`,
+      );
       searchInput?.focus();
       searchInput?.select();
     });
@@ -174,7 +183,9 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
         const active = document.activeElement;
         if (active?.tagName === "INPUT" || active?.tagName === "TEXTAREA") return;
         e.preventDefault();
-        const searchInput = document.querySelector<HTMLInputElement>('input[placeholder="Search..."]');
+        const searchInput = document.querySelector<HTMLInputElement>(
+          `input[placeholder="${SEARCH_PLACEHOLDER}"]`,
+        );
         searchInput?.focus();
       }
       if (e.key === "Escape") {
@@ -261,6 +272,9 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
             </button>
             {/* Settings */}
             <button
+              type="button"
+              aria-label="Settings"
+              title="Settings"
               onClick={() => navigateTo({ kind: "settings" })}
               className="p-1.5 rounded-md transition-colors duration-150 hover:bg-[var(--mem-hover-strong)]"
               style={{ color: "var(--mem-text-secondary)" }}
@@ -274,13 +288,13 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
 
           {/* Search — absolutely centered */}
           <div
-            className="absolute flex items-center"
+            className="absolute hidden lg:flex items-center"
             style={{ left: "50%", transform: "translateX(-50%)" }}
           >
             <div
               className="flex items-center gap-2 rounded-md px-3 py-[6px]"
               style={{
-                width: 480,
+                width: "clamp(220px, 40vw, 480px)",
                 backgroundColor: "var(--mem-sidebar)",
                 border: "1px solid var(--mem-border)",
               }}
@@ -291,7 +305,7 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search..."
+              placeholder={SEARCH_PLACEHOLDER}
               className="flex-1 bg-transparent outline-none"
               style={{
                 fontFamily: "var(--mem-font-body)",
@@ -323,11 +337,7 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
             collapsed={sidebarCollapsed}
             active={view.section ?? "general"}
             onSelect={(section) => setView({ kind: "settings", section })}
-            onNavigateHome={() => {
-              setView({ kind: "home" });
-              setActiveTab("home");
-              setViewHistory([]);
-            }}
+            onNavigateHome={navigateHome}
           />
         ) : (
           <Sidebar
@@ -336,15 +346,12 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
               if (name) {
                 navigateTo({ kind: "space", spaceName: name });
               } else {
-                setView({ kind: "home" });
-                setActiveTab("home");
-                setViewHistory([]);
+                navigateHome();
               }
             }}
             onEntityClick={handleEntityClick}
             onNavigateLog={() => { setView({ kind: "stream" }); setViewHistory([]); }}
-            onNavigateHome={() => { setView({ kind: "home" }); setActiveTab("home"); setViewHistory([]); }}
-            onNavigateDecisions={() => navigateTo({ kind: "decisions" })}
+            onNavigateHome={navigateHome}
             onNavigateGraph={() => navigateTo({ kind: "graph" })}
           />
         )}
@@ -572,7 +579,7 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
               <button onClick={() => navigateTo({ kind: "home" })} className="p-1.5 -ml-1.5 rounded-md transition-colors duration-150 hover:bg-[var(--mem-hover)] mb-3" style={{ color: "var(--mem-text-tertiary)", background: "none", border: "none", cursor: "pointer", lineHeight: 0 }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
               </button>
-              <h2 style={{ fontFamily: "var(--mem-font-heading)", fontSize: "24px", fontWeight: 500, color: "var(--mem-text)", margin: "0 0 12px 0" }}>Memory Log</h2>
+              <h2 style={{ fontFamily: "var(--mem-font-heading)", fontSize: "24px", fontWeight: 500, color: "var(--mem-text)", margin: "0 0 12px 0" }}>Memories</h2>
               <MemoryStream
                 memories={memories}
                 selectedDomain={null}
