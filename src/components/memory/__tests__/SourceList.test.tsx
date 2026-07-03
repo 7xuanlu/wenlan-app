@@ -65,6 +65,20 @@ describe("SourceList", () => {
     expect(screen.getByText("3118")).toBeInTheDocument();
   });
 
+  it("renders a spine per source, tallest for the source with the most memories", async () => {
+    renderSourceList();
+
+    await screen.findByText("second-brain");
+    const spines = screen.getAllByTestId("source-spine");
+    expect(spines).toHaveLength(3);
+
+    const heights = spines.map((el) => parseInt(el.style.height, 10));
+    // second-brain (3118 memories) caps the scale at 14px; the others sit above the 8px floor
+    expect(heights[0]).toBe(14);
+    expect(Math.max(...heights.slice(1))).toBeLessThan(14);
+    expect(Math.min(...heights)).toBeGreaterThanOrEqual(8);
+  });
+
   it("marks non-active sources with their sync status", async () => {
     renderSourceList();
 

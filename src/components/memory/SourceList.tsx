@@ -49,6 +49,11 @@ const STATUS_COLORS: Record<string, string> = {
   Unavailable: "var(--mem-text-tertiary)",
 };
 
+/** Spine height in px: 8px floor, 14px for the largest source. */
+function spineHeight(memoryCount: number, maxMemories: number): number {
+  return 8 + Math.round(6 * (memoryCount / maxMemories));
+}
+
 interface SourceListProps {
   /** Opens Settings › Sources, where sources are added, synced, and removed. */
   onNavigateSources: () => void;
@@ -62,6 +67,8 @@ export default function SourceList({ onNavigateSources }: SourceListProps) {
     queryFn: listRegisteredSources,
     refetchInterval: 10000,
   });
+
+  const maxMemories = Math.max(...sources.map((s) => s.memory_count), 1);
 
   return (
     <div className="flex flex-col gap-0.5">
@@ -137,13 +144,22 @@ export default function SourceList({ onNavigateSources }: SourceListProps) {
                 }}
               >
                 <span className="flex min-w-0 items-center gap-1 truncate">
-                  <span className="shrink-0 w-3.5 text-center">
-                    {label && (
-                      <span
-                        className="inline-block w-1.5 h-1.5 rounded-full"
-                        style={{ backgroundColor: STATUS_COLORS[label] }}
-                      />
-                    )}
+                  {/* Book spine: height = this source's share of ingested
+                      memories, color = sync status. The shelf of the wiki. */}
+                  <span className="shrink-0 w-3.5 flex items-center justify-center">
+                    <span
+                      data-testid="source-spine"
+                      className="inline-block"
+                      style={{
+                        width: 3,
+                        borderRadius: 1,
+                        height: spineHeight(s.memory_count, maxMemories),
+                        backgroundColor: label
+                          ? STATUS_COLORS[label]
+                          : "var(--mem-accent-indigo)",
+                        opacity: label ? 0.9 : 0.55,
+                      }}
+                    />
                   </span>
                   <span className="truncate">{folderName(s.path)}</span>
                 </span>
