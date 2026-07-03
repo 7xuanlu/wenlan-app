@@ -6,6 +6,7 @@ import {
   syncRegisteredSource,
   openFile,
   readSourceDir,
+  removeSource,
   type RegisteredSource,
   type SourceDirEntry,
   type SyncStatusStr,
@@ -413,6 +414,32 @@ function FolderBrowser({ source, subpath, onSubpath, filter, onFilter }: FolderB
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => {
+                const name = folderName(source.path);
+                if (
+                  !window.confirm(
+                    `Remove ${name}? Indexed notes stay in your library; this source stops syncing.`,
+                  )
+                )
+                  return;
+                removeSource(source.id).then(() => {
+                  queryClient.invalidateQueries({ queryKey: ["registeredSources"] });
+                });
+              }}
+              className="rounded-md transition-colors duration-150 hover:bg-[var(--mem-hover)]"
+              style={{
+                padding: "6px 11px",
+                fontFamily: "var(--mem-font-body)",
+                fontSize: "12px",
+                color: "var(--mem-text-secondary)",
+                background: "transparent",
+                border: "1px solid var(--mem-border)",
+                cursor: "pointer",
+              }}
+            >
+              Remove
+            </button>
             <button
               onClick={() => openFile(fullPath)}
               className="rounded-md transition-colors duration-150 hover:bg-[var(--mem-hover)]"

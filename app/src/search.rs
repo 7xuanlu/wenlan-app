@@ -3489,6 +3489,49 @@ mod already_registered_tests {
     }
 }
 
+/// Blobs to delete on removal. Only the app-managed uploads dir holds copies;
+/// in-place folder sources are never copied, so nothing to clean (§4).
+fn managed_blob_paths(
+    sources_dir: &std::path::Path,
+    source: &crate::sources::Source,
+) -> Vec<std::path::PathBuf> {
+    if source.path == sources_dir {
+        vec![sources_dir.to_path_buf()]
+    } else {
+        Vec::new()
+    }
+}
+
+#[cfg(test)]
+mod managed_blob_paths_tests {
+    #[test]
+    fn managed_blob_paths_targets_only_the_managed_dir() {
+        let sources_dir = std::path::Path::new("/home/u/.wenlan/sources");
+        let managed = crate::sources::Source {
+            id: "directory-sources".into(),
+            source_type: crate::sources::SourceType::Directory,
+            path: sources_dir.to_path_buf(),
+            status: crate::sources::SyncStatus::Active,
+            last_sync: None,
+            file_count: 0,
+            memory_count: 0,
+            last_sync_errors: 0,
+            last_sync_error_detail: None,
+        };
+        // The managed dir itself is cleaned; an in-place folder source is not.
+        assert_eq!(
+            super::managed_blob_paths(sources_dir, &managed),
+            vec![sources_dir.to_path_buf()]
+        );
+
+        let in_place = crate::sources::Source {
+            path: "/home/u/Documents/Books".into(),
+            ..managed.clone()
+        };
+        assert!(super::managed_blob_paths(sources_dir, &in_place).is_empty());
+    }
+}
+
 #[tauri::command]
 pub async fn remove_source(state: tauri::State<'_, State>, id: String) -> Result<(), String> {
     let local_source = config::load_config()
@@ -3507,7 +3550,12 @@ pub async fn remove_source(state: tauri::State<'_, State>, id: String) -> Result
         let s = state.read().await;
         s.client.clone()
     };
-    client.remove_source(&id).await
+    client.remove_source(&id).await?;
+    if id == "directory-sources" {
+        let dir = crate::sources::uploads::sources_dir();
+        let _ = std::fs::remove_dir_all(&dir); // managed uploads only, best-effort
+    }
+    Ok(())
 }
 
 async fn remove_directory_source(
@@ -3521,6 +3569,11 @@ async fn remove_directory_source(
     }
     cfg.sources.retain(|s| s.id != id);
     config::save_config(&cfg).map_err(|e| e.to_string())?;
+
+    let sources_dir = crate::sources::uploads::sources_dir();
+    for blob in managed_blob_paths(&sources_dir, &source) {
+        let _ = std::fs::remove_dir_all(&blob); // best-effort; missing dir is fine
+    }
 
     let mut app_state = state.write().await;
     app_state.watch_paths.retain(|p| p != &source.path);

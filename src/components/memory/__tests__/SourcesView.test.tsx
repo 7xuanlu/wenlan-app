@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, within, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import SourcesView, { spineVisual, spineCaption } from "../SourcesView";
@@ -8,6 +8,7 @@ import {
   listRegisteredSources,
   openFile,
   readSourceDir,
+  removeSource,
   type RegisteredSource,
 } from "../../../lib/tauri";
 
@@ -17,6 +18,7 @@ vi.mock("../../../lib/tauri", () => ({
   openFile: vi.fn(),
   readSourceDir: vi.fn(),
   addSource: vi.fn(),
+  removeSource: vi.fn(),
 }));
 
 const SOURCES: RegisteredSource[] = [
@@ -106,6 +108,18 @@ describe("SourcesView", () => {
     const index = await screen.findByText("index.md");
     const row = index.closest("button")!;
     expect(within(row).getByText("md")).toBeInTheDocument();
+  });
+
+  it("Remove calls DELETE after confirm", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    vi.mocked(removeSource).mockResolvedValue(undefined);
+    vi.mocked(listRegisteredSources).mockResolvedValue([
+      { id: "directory-books", source_type: "directory", path: "/x/Books", status: "Active", last_sync: 1, file_count: 1, memory_count: 5 },
+    ]);
+    renderView();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Remove" }));
+    await waitFor(() => expect(removeSource).toHaveBeenCalledWith("directory-books"));
   });
 });
 
