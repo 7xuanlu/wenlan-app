@@ -88,10 +88,13 @@ jobs:
 
           CARGO_VERSION=$(grep '^version = ' app/Cargo.toml | head -1 | sed 's/version = "\([^"]*\)".*/\1/')
           PKG_VERSION=$(node -p "require('./package.json').version")
+          PINNED_DAEMON_TAG=$(sed -n '1p' .wenlan-backend-version | tr -d '[:space:]')
+          PINNED_DAEMON_VERSION="${PINNED_DAEMON_TAG#v}"
 
           echo "Release tag (from app/tauri.conf.json): $TAG"
           echo "app/Cargo.toml:                          $CARGO_VERSION"
           echo "package.json:                             $PKG_VERSION"
+          echo ".wenlan-backend-version:                  $PINNED_DAEMON_TAG"
 
           MISMATCH=0
           if [ "$TAG" != "$CARGO_VERSION" ]; then
@@ -102,9 +105,13 @@ jobs:
             echo "ERROR: app/tauri.conf.json version $TAG does not match package.json version $PKG_VERSION"
             MISMATCH=1
           fi
+          if [ "$TAG" != "$PINNED_DAEMON_VERSION" ]; then
+            echo "ERROR: app/tauri.conf.json version $TAG does not match pinned daemon release $PINNED_DAEMON_TAG"
+            MISMATCH=1
+          fi
 
           if [ "$MISMATCH" -eq 1 ]; then
-            echo "Fix: bump versions in app/Cargo.toml, app/tauri.conf.json, and package.json to the same value."
+            echo "Fix: bump versions in app/Cargo.toml, app/tauri.conf.json, package.json, and .wenlan-backend-version to the same release."
             exit 1
           fi
 
