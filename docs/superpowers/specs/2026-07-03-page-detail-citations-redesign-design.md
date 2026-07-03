@@ -1,7 +1,8 @@
 # Page detail redesign: per-claim citations + reading-page structure
 
 - **Date:** 2026-07-03
-- **Status:** approved layout (option A "reading page"); spec pending user review
+- **Status:** approved layout (option A "reading page"); boule-debate reviewed
+  (approve-with-changes, all six required changes incorporated); pending user review
 - **Visual reference:** design-review artifact (option A mockup with annotations); original inspiration mockup provided by user
 - **Backend dependency:** `7xuanlu/wenlan` PR #332 "feat: per-claim verified citations for wiki pages" (commit `2f6ee4bd`, merged 2026-07-03, **unreleased** — on `origin/main` only)
 
@@ -65,19 +66,41 @@ on a crates.io publish of a newer `wenlan-types`. Other page endpoints stay type
 
 ### 2. Citation rendering pipeline
 
-- Marker mapping runs against the **original** `page.content` (the backend's
-  `occurrence` indexing is defined on body order of the raw content), *before* the
-  existing title-heading and `## Sources` stripping.
-- The k-th `[N]` instance is rewritten to a markdown link `[<locator>](#citation:k)` —
-  the same preprocessing idiom `[[wikilinks]]` already use (`PageDetail.tsx:320-329`).
+Backend counting contract (verified against `origin/main`
+`crates/wenlan-core/src/citations.rs`, `process_citation_output`): stored content is
+already marker-normalized with out-of-range markers stripped; `occurrence` k is the
+k-th `\[(\d+)\]` regex match over the raw stored body, in order, with **no code-fence
+or inline-code awareness**. In-range markers therefore correspond 1:1 with
+`citations` entries in body order. The frontend mirrors this exactly:
+
+- **Counting** runs the same plain `\[(\d+)\]` regex over the **original**
+  `page.content`, *before* the existing title-heading and `## Sources` stripping.
+  Matches inside fenced/inline code **do** consume occurrence indices (mirroring the
+  backend); they are simply not rewritten for display (a rewritten link inside a code
+  span would render as literal `[…](…)` garbage — the raw `[N]` is correct display
+  for code).
+- **Rewriting**: the k-th countable, non-code match becomes `[k](#citation:k)` —
+  opaque link text, *never* the locator, so bracket/paren-bearing locators (URLs,
+  paths) cannot break markdown link syntax. Same preprocessing idiom `[[wikilinks]]`
+  already use (`PageDetail.tsx:320-329`).
 - `ContentRenderer`'s existing `a` component override detects the `#citation:` href
-  and renders `CitationChip` inline: mono pill showing the locator plus a superscript
-  occurrence number. Long locators (URLs, paths) truncate to domain / basename.
-- Markers inside fenced code blocks are left literal (the preprocessor skips fenced
-  regions).
-- A marker with no matching `citations` entry is stripped from display.
-- `citations` empty or absent → content passes through untouched (old pages carry no
-  markers; the daemon strips markers when citations are not retained).
+  and renders `CitationChip` inline, pulling display text from the `citations[k]`
+  data: mono pill showing the locator plus a superscript occurrence number. Long
+  locators (URLs, paths) truncate to domain / basename.
+- **Mismatch fallback (conservative):** if the regex match count ≠ `citations.length`
+  or any `marker` value disagrees with its matched `N`, render **no chips** and
+  display-strip all markers instead — misattributed citations are worse than none.
+  The Page info diagnosability line (section 5) reports the state.
+- **`citations` empty or absent → display-strip `\[\d+\]`** from the rendered content
+  (plus double-space collapse), mirroring the backend's `strip_markers`. This is a
+  display-only transform; stored content is never modified. This handles the
+  verified backend behavior where a user content edit resets `citations` to `[]`
+  **without** stripping markers from content
+  (`crates/wenlan-server/src/memory_routes.rs:3370-3372`) — without it, every edited
+  page renders permanent `[N]` noise. Known ceiling: legitimate `[N]`-shaped prose
+  (e.g. reference-style link labels) is also hidden — the exact regex the backend
+  itself applies when stripping; acceptable. A backend fix (strip markers on the
+  edit path) is worth filing upstream but is not a blocker.
 
 ### 3. Popover (`CitationPopover`)
 
@@ -97,12 +120,22 @@ on a crates.io publish of a newer `wenlan-types`. Other page endpoints stay type
 - Locator that does not resolve in page-sources data → popover shows the locator and
   "source not available".
 - Popover data still loading → chip renders normally; popover shows a skeleton.
+- **Accessibility (required):** the chip is a real `<button>` (focusable, visible
+  focus ring). Popover uses `role="tooltip"` linked via `aria-describedby`; opens on
+  hover and `focus`, closes on `blur`, mouse-out, and **Escape**. Focus stays on the
+  chip (the popover is descriptive; its single action is also reachable by
+  activating the chip). Popover flips/shifts to stay inside the viewport — use an
+  existing positioning dependency if one is already installed, otherwise minimal
+  manual flip logic; do not add a new dependency for this alone.
 
 ### 4. Page structure (top → bottom)
 
 1. Header (back, serif title, meta line) — unchanged.
 2. Actions toolbar — unchanged.
-3. TLDR pull-quote — unchanged.
+3. TLDR pull-quote — extraction unchanged, but it runs on marker-processed text:
+   markers landing inside the extracted first sentence are display-stripped (the
+   pull-quote stays plain text; those citations remain reachable via Page info
+   sources). Known ceiling: a first-sentence citation gets no inline chip.
 4. Body with citation chips.
 5. **Related pages**: outbound links (`get_page_links.outbound`) as cards; resolved
    targets clickable, unresolved targets muted and inert (no more dead links styled
@@ -129,19 +162,32 @@ roughly 300 lines. `EvidenceCard` is absorbed into `PageInfo`'s source rows.
 - Old daemon (response lacks `citations`): no chips; related pages and Page info
   work unchanged. Silent graceful degrade — no version banner on the read path.
   Re-distilling on a new daemon populates citations.
+- **Diagnosability line** (muted, one line at the bottom of expanded Page info):
+  - citations present → "Citations: N (M unverified)";
+  - markers present but citations empty (display-stripped, e.g. after a user edit) →
+    "Citations cleared by edit — re-distill to restore";
+  - count/marker mismatch fallback triggered → "Citation data mismatched —
+    re-distill to repair";
+  - no citations and no markers → line omitted.
+  Wire limitation (accepted): `citations` uses `skip_serializing_if empty`, so
+  "old daemon" and "processed, none found" are indistinguishable — the line reflects
+  what is knowable client-side.
 - `get_page` failure modes unchanged (404 → "Page not found" state, real errors
   surface).
 
 ### 6. Testing
 
 - **Vitest + Testing Library:**
-  - Marker-mapping util: occurrence ordering, `[1][3]` runs, code-fence skip,
-    unmatched-marker strip, empty-citations passthrough.
+  - Marker-mapping util: occurrence ordering, `[1][3]` runs, fenced/inline-code
+    matches counted but not rewritten, count/marker mismatch → strip-all fallback,
+    empty-citations → display-strip (edited-page noise case), whitespace collapse
+    parity with backend `strip_markers`.
   - `CitationChip` / `CitationPopover`: verified / unverified / unresolved states,
-    each `source_kind` variant.
+    each `source_kind` variant; keyboard focus opens, Escape closes, focus ring
+    visible.
   - `PageDetail` integration: chips render from a fixture page with citations;
-    Page info disclosure toggles; orphan-links query no longer issued;
-    empty-citations fallback renders old layout without chips.
+    Page info disclosure toggles; diagnosability line per state; orphan-links query
+    no longer issued; empty-citations fallback strips markers and renders no chips.
 - **Manual:** `git -C ../wenlan pull` (PR #332 is on `origin/main`), `pnpm dev:all`,
   verify chips + popovers on a re-distilled page. No e2e harness exists in this repo —
   known limitation.
@@ -156,13 +202,20 @@ roughly 300 lines. `EvidenceCard` is absorbed into `PageInfo`'s source rows.
   tag**. Shipping this feature requires the backend to tag a release containing
   PR #332 first. Until then the app degrades gracefully (no chips).
 
-## Implementation-time verifications
+## Verified backend facts (were open questions; resolved 2026-07-03 against `origin/main`)
 
-- Confirm `PageCitation.locator` values match `PageSource.memory_source_id`
-  namespace for `source_kind: "memory"` (spec assumes they match; the
-  "source not available" popover fallback covers a mismatch).
-- Confirm the daemon's `## Sources` markdown section never contains `[N]` markers
-  (occurrence mapping runs before stripping, so this is belt-and-braces).
+- `PageCitation.locator` **is** the memory `source_id`
+  (`crates/wenlan-core/src/citations.rs:386-390`: `locator: m.source_id.clone()`
+  from `get_memories_by_source_ids`) — same namespace as
+  `PageSource.memory_source_id`. Popover resolution via page-sources is sound; the
+  "source not available" fallback remains as belt-and-braces.
+- Occurrence counting is a plain `\[(\d+)\]` regex over the raw stored body with no
+  code-fence awareness (`process_citation_output`); stored content is
+  pre-normalized with out-of-range markers stripped, so in-range markers ↔
+  `citations` entries are 1:1 in body order.
+- The user-edit path resets `citations` to `[]` but stores content **with markers
+  intact** (`crates/wenlan-server/src/memory_routes.rs:3370-3372`) — the reason the
+  empty-citations display-strip rule in section 2 exists.
 
 ## Alternatives considered
 
@@ -171,9 +224,39 @@ roughly 300 lines. `EvidenceCard` is absorbed into `PageInfo`'s source rows.
   collapse breakpoint. Can be layered on later if reading mode proves insufficient.
 - **C — citations only, sections untouched**: rejected — ships every audit finding
   unfixed (global Unlinked Mentions, raw UUIDs, four look-alike always-open sections).
-- **Bumping `wenlan-types`** instead of JSON passthrough: rejected — blocks on an
-  unreleased crate publish and re-couples the app to backend release cadence;
-  passthrough removes the silent-drop bug class entirely for these endpoints.
+- **Bumping `wenlan-types`** (crates.io) instead of JSON passthrough: rejected —
+  blocks on an unreleased crate publish and re-couples the app to backend release
+  cadence.
+- **Git dependency / `[patch.crates-io]`** on `wenlan-types` at commit `2f6ee4bd`:
+  viable today (no publish needed) — rejected because it couples every app build to
+  the backend repo's availability and pins a rev that needs manual churn on each
+  backend change, while these endpoints' fields have **no Rust consumer**; typing
+  them buys drift exposure without a beneficiary.
+
+Scope honesty on the passthrough: it removes the silent-field-drop class **for
+`get_page` and `get_page_revisions` only**. `get_page_sources` stays on the typed
+0.9.2 path and remains exposed to additive-field drops — accepted because its shape
+is unchanged by PR #332 and a dropped future field there degrades to the popover's
+"source not available" state, not silent misrendering.
+
+## Design review record (boule debate, 2026-07-03)
+
+Adversarial 3-lab council (Claude main-loop, Codex gpt-5.5, Gemini 3.1 Pro):
+initial tally unanimous approve-with-changes; stake-free judgment
+**approve-with-changes, medium confidence, position-stable** across both
+counterbalanced orderings. Six required changes, all incorporated above:
+
+1. Empty-citations display-strip (fixes the verified edited-page marker-noise
+   defect) — section 2.
+2. TLDR marker handling specified — section 4, item 3.
+3. Occurrence-counting parity verified against PR #332's code; fence handling
+   corrected (count everything, rewrite only non-code) + conservative mismatch
+   fallback — section 2 and "Verified backend facts".
+4. Popover accessibility (Escape, aria, focus, viewport collision) + opaque link
+   text eliminating locator-escaping bugs — sections 2 and 3.
+5. Alternatives section repaired (`[patch.crates-io]` acknowledged) and passthrough
+   scope claim softened (`get_page_sources` stays typed) — "Alternatives considered".
+6. Diagnosability line distinguishing knowable citation states — section 5.
 
 ## Audit findings → resolution map
 
