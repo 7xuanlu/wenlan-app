@@ -7,6 +7,7 @@ import {
   openFile,
   readSourceDir,
   removeSource,
+  listIndexedFiles,
   type RegisteredSource,
   type SourceDirEntry,
   type SyncStatusStr,
@@ -334,6 +335,32 @@ function FolderBrowser({ source, subpath, onSubpath, filter, onFilter }: FolderB
     },
   });
 
+  // Which files the daemon actually indexed. The daemon silently drops files
+  // it can't extract text from (e.g. a scanned PDF), so the folder listing can
+  // show files that never made it into the library — surface that here instead
+  // of leaving the count quietly wrong.
+  // ponytail: pulls the whole indexed-file list to cross-ref one folder; fine
+  // at localhost/desktop scale, add a per-source endpoint if it ever drags.
+  const { data: indexedFiles } = useQuery({
+    queryKey: ["indexedFiles"],
+    queryFn: listIndexedFiles,
+  });
+  const indexReady = indexedFiles !== undefined;
+  const indexedPaths = useMemo(() => {
+    const prefix = `${source.id}::`;
+    const set = new Set<string>();
+    for (const f of indexedFiles ?? []) {
+      if (f.source_id.startsWith(prefix)) set.add(f.source_id.slice(prefix.length));
+    }
+    return set;
+  }, [indexedFiles, source.id]);
+  const isIndexed = (name: string) => indexedPaths.has([fullPath, name].join("/"));
+  const notIndexedCount = indexReady
+    ? (entries ?? []).filter(
+        (e) => !e.isDirectory && SUPPORTED_EXTENSIONS.includes(ext(e.name)) && !isIndexed(e.name),
+      ).length
+    : 0;
+
   const syncMutation = useMutation({
     mutationFn: () => syncRegisteredSource(source.id),
     onSuccess: () => {
@@ -409,6 +436,14 @@ function FolderBrowser({ source, subpath, onSubpath, filter, onFilter }: FolderB
               {source.file_count.toLocaleString()} files
               {" · "}
               {source.memory_count.toLocaleString()} memories
+              {notIndexedCount > 0 && (
+                <>
+                  {" · "}
+                  <span style={{ color: "var(--mem-accent-amber)" }}>
+                    {notIndexedCount.toLocaleString()} not indexed
+                  </span>
+                </>
+              )}
               {" · "}
               {label ?? relTime(source.last_sync)}
             </div>
@@ -527,6 +562,10 @@ function FolderBrowser({ source, subpath, onSubpath, filter, onFilter }: FolderB
             {shown.map((e) => {
               const isDir = e.isDirectory;
               const supported = !isDir && SUPPORTED_EXTENSIONS.includes(ext(e.name));
+              // A supported file the daemon never indexed — usually a PDF with
+              // no extractable text layer. Gated on indexReady so nothing is
+              // wrongly flagged while the indexed-file list is still loading.
+              const notIndexed = supported && indexReady && !isIndexed(e.name);
               return (
                 <button
                   key={e.name}
@@ -542,15 +581,31 @@ function FolderBrowser({ source, subpath, onSubpath, filter, onFilter }: FolderB
                     style={{
                       fontFamily: "var(--mem-font-body)",
                       fontSize: "13.5px",
-                      color: isDir
-                        ? "var(--mem-text)"
-                        : supported
-                          ? "var(--mem-text-secondary)"
-                          : "var(--mem-text-tertiary)",
+                      color: notIndexed
+                        ? "var(--mem-text-tertiary)"
+                        : isDir
+                          ? "var(--mem-text)"
+                          : supported
+                            ? "var(--mem-text-secondary)"
+                            : "var(--mem-text-tertiary)",
                     }}
                   >
                     {e.name}
                   </span>
+                  {notIndexed && (
+                    <span
+                      title="No readable text found — this file isn't in your library."
+                      style={{
+                        fontFamily: "var(--mem-font-mono)",
+                        fontSize: "10px",
+                        letterSpacing: "0.02em",
+                        color: "var(--mem-accent-amber)",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      not indexed
+                    </span>
+                  )}
                   {!isDir && ext(e.name) && (
                     <span
                       style={{

@@ -9,7 +9,9 @@ import {
   openFile,
   readSourceDir,
   removeSource,
+  listIndexedFiles,
   type RegisteredSource,
+  type IndexedFileInfo,
 } from "../../../lib/tauri";
 
 vi.mock("../../../lib/tauri", () => ({
@@ -19,7 +21,19 @@ vi.mock("../../../lib/tauri", () => ({
   readSourceDir: vi.fn(),
   addSource: vi.fn(),
   removeSource: vi.fn(),
+  listIndexedFiles: vi.fn(),
 }));
+
+/** Minimal IndexedFileInfo for a given source id + absolute file path. */
+function indexed(sourceId: string, absPath: string): IndexedFileInfo {
+  return {
+    source: "directory",
+    source_id: `${sourceId}::${absPath}`,
+    title: absPath.split("/").pop() ?? absPath,
+    chunk_count: 1,
+    last_modified: 1,
+  };
+}
 
 const SOURCES: RegisteredSource[] = [
   { id: "a", source_type: "directory", path: "/Users/me/notes", status: "Active", last_sync: null, file_count: 3, memory_count: 12 },
@@ -50,6 +64,12 @@ describe("SourcesView", () => {
           ],
     );
     vi.mocked(openFile).mockResolvedValue(undefined);
+    // Default: the vault's supported files are all indexed, so nothing is
+    // flagged in the existing tests.
+    vi.mocked(listIndexedFiles).mockResolvedValue([
+      indexed("b", "/Users/me/vault/index.md"),
+      indexed("b", "/Users/me/vault/research/paper.md"),
+    ]);
   });
 
   it("defaults to the source with the most memories and lists its folder, folders first", async () => {
@@ -120,6 +140,47 @@ describe("SourcesView", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Remove" }));
     await waitFor(() => expect(removeSource).toHaveBeenCalledWith("directory-books"));
+  });
+});
+
+describe("un-indexed files", () => {
+  it("flags a supported file the daemon has not indexed and counts it in the header", async () => {
+    vi.mocked(listRegisteredSources).mockResolvedValue([
+      { id: "directory-books", source_type: "directory", path: "/x/Books", status: "Active", last_sync: 1, file_count: 2, memory_count: 2 },
+    ]);
+    vi.mocked(readSourceDir).mockResolvedValue([
+      { name: "readable.pdf", isDirectory: false },
+      { name: "scanned.pdf", isDirectory: false },
+    ]);
+    // Only the readable PDF made it into the index; the scanned one was dropped.
+    vi.mocked(listIndexedFiles).mockResolvedValue([
+      indexed("directory-books", "/x/Books/readable.pdf"),
+    ]);
+    renderView();
+
+    // The indexed file is not flagged.
+    const readableRow = (await screen.findByText("readable.pdf")).closest("button")!;
+    expect(within(readableRow).queryByText(/not indexed/i)).toBeNull();
+
+    // The un-indexed file is flagged in its own row.
+    const scannedRow = (await screen.findByText("scanned.pdf")).closest("button")!;
+    expect(within(scannedRow).getByText(/not indexed/i)).toBeInTheDocument();
+
+    // The header surfaces the discrepancy count.
+    expect(await screen.findByText(/1 not indexed/i)).toBeInTheDocument();
+  });
+
+  it("flags nothing while the indexed-file list is still loading", async () => {
+    vi.mocked(listRegisteredSources).mockResolvedValue([
+      { id: "directory-books", source_type: "directory", path: "/x/Books", status: "Active", last_sync: 1, file_count: 1, memory_count: 1 },
+    ]);
+    vi.mocked(readSourceDir).mockResolvedValue([{ name: "a.pdf", isDirectory: false }]);
+    // Never resolves — mimics the fetch still in flight.
+    vi.mocked(listIndexedFiles).mockReturnValue(new Promise(() => {}));
+    renderView();
+
+    await screen.findByText("a.pdf");
+    expect(screen.queryByText(/not indexed/i)).toBeNull();
   });
 });
 
