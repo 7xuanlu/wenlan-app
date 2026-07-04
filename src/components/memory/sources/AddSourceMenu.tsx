@@ -36,6 +36,11 @@ export default function AddSourceMenu({ onClose }: { onClose: () => void }) {
     onSuccess: (name) => {
       if (!name) return;
       qc.invalidateQueries({ queryKey: ["registeredSources"] });
+      // The uploaded file lands in the managed dir; refresh its on-disk listing
+      // and the index cross-ref so the new file appears immediately instead of
+      // waiting for a window-focus refetch.
+      qc.invalidateQueries({ queryKey: ["sourceDir"] });
+      qc.invalidateQueries({ queryKey: ["indexedFiles"] });
       onClose();
     },
     onError: (e) => {
