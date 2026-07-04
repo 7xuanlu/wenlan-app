@@ -362,7 +362,13 @@ function FolderBrowser({ source, subpath, onSubpath, filter, onFilter }: FolderB
   // daemon's source.file_count (whole-source, and known to miscount — it drops
   // files it can't extract text from without adjusting the total).
   const fileCount = (entries ?? []).filter((e) => !e.isDirectory).length;
-  const notIndexedCount = indexReady
+  // Supported files not yet in the index. On a directory source the daemon
+  // auto-syncs, so these are almost always mid-flight rather than failures —
+  // call it "Indexing…", not the alarming "not indexed".
+  // ponytail: no per-file mtime in the listing, so a genuinely unreadable file
+  // (e.g. a scanned PDF) reads as "Indexing…" indefinitely; add per-file status
+  // to the DTO if we ever need to call out permanent skips.
+  const indexingCount = indexReady
     ? (entries ?? []).filter(
         (e) => !e.isDirectory && SUPPORTED_EXTENSIONS.includes(ext(e.name)) && !isIndexed(e.name),
       ).length
@@ -443,11 +449,11 @@ function FolderBrowser({ source, subpath, onSubpath, filter, onFilter }: FolderB
               {fileCount.toLocaleString()} {fileCount === 1 ? "file" : "files"}
               {" · "}
               {source.memory_count.toLocaleString()} memories
-              {notIndexedCount > 0 && (
+              {indexingCount > 0 && (
                 <>
                   {" · "}
-                  <span style={{ color: "var(--mem-accent-amber)" }}>
-                    {notIndexedCount.toLocaleString()} not indexed
+                  <span style={{ color: "var(--mem-text-tertiary)" }}>
+                    {indexingCount.toLocaleString()} indexing
                   </span>
                 </>
               )}
@@ -569,10 +575,11 @@ function FolderBrowser({ source, subpath, onSubpath, filter, onFilter }: FolderB
             {shown.map((e) => {
               const isDir = e.isDirectory;
               const supported = !isDir && SUPPORTED_EXTENSIONS.includes(ext(e.name));
-              // A supported file the daemon never indexed — usually a PDF with
-              // no extractable text layer. Gated on indexReady so nothing is
-              // wrongly flagged while the indexed-file list is still loading.
-              const notIndexed = supported && indexReady && !isIndexed(e.name);
+              // A supported file not yet in the index — on an auto-syncing
+              // directory source this means the daemon hasn't reached it yet.
+              // Gated on indexReady so nothing is flagged while the indexed-file
+              // list is still loading.
+              const indexing = supported && indexReady && !isIndexed(e.name);
               const selected = !isDir && selectedName === e.name;
               return (
                 <button
@@ -595,7 +602,7 @@ function FolderBrowser({ source, subpath, onSubpath, filter, onFilter }: FolderB
                     style={{
                       fontFamily: "var(--mem-font-body)",
                       fontSize: "13.5px",
-                      color: notIndexed
+                      color: indexing
                         ? "var(--mem-text-tertiary)"
                         : isDir
                           ? "var(--mem-text)"
@@ -606,18 +613,18 @@ function FolderBrowser({ source, subpath, onSubpath, filter, onFilter }: FolderB
                   >
                     {e.name}
                   </span>
-                  {notIndexed && (
+                  {indexing && (
                     <span
-                      title="No readable text found — this file isn't in your library."
+                      title="Indexing… — not in your library yet."
                       style={{
                         fontFamily: "var(--mem-font-mono)",
                         fontSize: "10px",
                         letterSpacing: "0.02em",
-                        color: "var(--mem-accent-amber)",
+                        color: "var(--mem-text-tertiary)",
                         whiteSpace: "nowrap",
                       }}
                     >
-                      not indexed
+                      Indexing…
                     </span>
                   )}
                   {!isDir && ext(e.name) && (

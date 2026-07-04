@@ -154,8 +154,8 @@ describe("SourcesView", () => {
   });
 });
 
-describe("un-indexed files", () => {
-  it("flags a supported file the daemon has not indexed and counts it in the header", async () => {
+describe("indexing files", () => {
+  it("marks a supported file the daemon hasn't indexed yet as Indexing and counts it in the header", async () => {
     vi.mocked(listRegisteredSources).mockResolvedValue([
       { id: "directory-books", source_type: "directory", path: "/x/Books", status: "Active", last_sync: 1, file_count: 2, memory_count: 2 },
     ]);
@@ -163,25 +163,27 @@ describe("un-indexed files", () => {
       { name: "readable.pdf", isDirectory: false },
       { name: "scanned.pdf", isDirectory: false },
     ]);
-    // Only the readable PDF made it into the index; the scanned one was dropped.
+    // Only the readable PDF is in the index so far; the other is still pending.
     vi.mocked(listIndexedFiles).mockResolvedValue([
       indexed("directory-books", "/x/Books/readable.pdf"),
     ]);
     renderView();
 
-    // The indexed file is not flagged.
+    // The indexed file carries no badge.
     const readableRow = (await screen.findByText("readable.pdf")).closest("button")!;
-    expect(within(readableRow).queryByText(/not indexed/i)).toBeNull();
+    expect(within(readableRow).queryByText(/indexing/i)).toBeNull();
 
-    // The un-indexed file is flagged in its own row.
+    // The not-yet-indexed file reads as in-progress, not as an error.
     const scannedRow = (await screen.findByText("scanned.pdf")).closest("button")!;
-    expect(within(scannedRow).getByText(/not indexed/i)).toBeInTheDocument();
+    expect(within(scannedRow).getByText(/indexing/i)).toBeInTheDocument();
 
-    // The header surfaces the discrepancy count.
-    expect(await screen.findByText(/1 not indexed/i)).toBeInTheDocument();
+    // The header surfaces the in-progress count with the same calm wording.
+    expect(await screen.findByText(/1 indexing/i)).toBeInTheDocument();
+    // The old alarming wording is gone.
+    expect(screen.queryByText(/not indexed/i)).toBeNull();
   });
 
-  it("flags nothing while the indexed-file list is still loading", async () => {
+  it("marks nothing while the indexed-file list is still loading", async () => {
     vi.mocked(listRegisteredSources).mockResolvedValue([
       { id: "directory-books", source_type: "directory", path: "/x/Books", status: "Active", last_sync: 1, file_count: 1, memory_count: 1 },
     ]);
@@ -190,8 +192,8 @@ describe("un-indexed files", () => {
     vi.mocked(listIndexedFiles).mockReturnValue(new Promise(() => {}));
     renderView();
 
-    await screen.findByText("a.pdf");
-    expect(screen.queryByText(/not indexed/i)).toBeNull();
+    const row = (await screen.findByText("a.pdf")).closest("button")!;
+    expect(within(row).queryByText(/indexing/i)).toBeNull();
   });
 });
 
