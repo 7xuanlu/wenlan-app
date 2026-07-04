@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, within, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import SourcesView, { spineVisual, spineCaption } from "../SourcesView";
+import SourcesView, { sourceCaption, isManagedSourcePath } from "../SourcesView";
 import {
   listRegisteredSources,
   openFile,
@@ -35,10 +35,36 @@ function indexed(sourceId: string, absPath: string): IndexedFileInfo {
   };
 }
 
+const MANAGED = "/Users/me/.wenlan/sources";
+
+// notes: directory folder-source; daemon file_count (5) deliberately disagrees
+// with the on-disk non-dir count (2) so the "on-disk count" test can tell them
+// apart. vault: obsidian, most memories → default selection. managed: the
+// hoisted dir — must never appear as its own node.
 const SOURCES: RegisteredSource[] = [
-  { id: "a", source_type: "directory", path: "/Users/me/notes", status: "Active", last_sync: null, file_count: 3, memory_count: 12 },
-  { id: "b", source_type: "obsidian", path: "/Users/me/vault", status: "Active", last_sync: null, file_count: 9, memory_count: 210 },
+  { id: "notes", source_type: "directory", path: "/Users/me/notes", status: "Active", last_sync: 1, file_count: 5, memory_count: 12 },
+  { id: "vault", source_type: "obsidian", path: "/Users/me/vault", status: "Active", last_sync: null, file_count: 9, memory_count: 210 },
+  { id: "managed", source_type: "directory", path: MANAGED, status: "Active", last_sync: 1, file_count: 2, memory_count: 4 },
 ];
+
+/** Path-aware directory listing shared by all rendering tests. */
+async function fakeReadDir(p: string) {
+  const s = String(p);
+  if (s === MANAGED)
+    return [
+      { name: "report.pdf", isDirectory: false },
+      { name: "notes.md", isDirectory: false },
+    ];
+  if (s === "/Users/me/notes")
+    return [
+      { name: "research", isDirectory: true },
+      { name: "index.md", isDirectory: false },
+      { name: "cover.png", isDirectory: false },
+    ];
+  if (s === "/Users/me/notes/research") return [{ name: "paper.md", isDirectory: false }];
+  if (s === "/Users/me/vault") return [{ name: "vault-note.md", isDirectory: false }];
+  return [];
+}
 
 function renderView() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -49,81 +75,121 @@ function renderView() {
   );
 }
 
-describe("SourcesView", () => {
-  beforeEach(() => {
-    vi.clearAllMocks(); // isolate call history — openFile is asserted not-called
-    vi.mocked(listRegisteredSources).mockResolvedValue(SOURCES);
-    // Path-aware: the vault root has a `research/` subfolder; drilling into it
-    // yields a distinct listing (no duplicate "research" to confuse queries).
-    vi.mocked(readSourceDir).mockImplementation(async (p) =>
-      String(p).endsWith("/research")
-        ? [{ name: "paper.md", isDirectory: false }]
-        : [
-            { name: "cover.png", isDirectory: false },
-            { name: "research", isDirectory: true },
-            { name: "index.md", isDirectory: false },
-          ],
-    );
-    vi.mocked(openFile).mockResolvedValue(undefined);
-    // Default: the vault's supported files are all indexed, so nothing is
-    // flagged in the existing tests.
-    vi.mocked(listIndexedFiles).mockResolvedValue([
-      indexed("b", "/Users/me/vault/index.md"),
-      indexed("b", "/Users/me/vault/research/paper.md"),
-    ]);
-  });
+beforeEach(() => {
+  vi.clearAllMocks(); // isolate call history — openFile / removeSource asserted per test
+  vi.mocked(listRegisteredSources).mockResolvedValue(SOURCES);
+  vi.mocked(readSourceDir).mockImplementation(fakeReadDir);
+  vi.mocked(openFile).mockResolvedValue(undefined);
+  // report.pdf (loose) and notes/index.md are in the library; notes.md is not.
+  vi.mocked(listIndexedFiles).mockResolvedValue([
+    indexed("managed", `${MANAGED}/report.pdf`),
+    indexed("notes", "/Users/me/notes/index.md"),
+  ]);
+});
 
-  it("defaults to the source with the most memories and lists its folder, folders first", async () => {
+describe("Sources left tree", () => {
+  it("hides the managed sources dir and hoists its files as root peers", async () => {
     renderView();
 
-    // Both sources appear on the shelf.
+    // Folder-sources render as folder nodes.
     expect(await screen.findByText("notes")).toBeInTheDocument();
-    // vault has more memories, so it is selected: its path is read.
-    expect(vi.mocked(readSourceDir)).toHaveBeenCalledWith("/Users/me/vault");
+    expect(screen.getByText("vault")).toBeInTheDocument();
 
-    // Entries render; the directory sorts ahead of the files.
-    const research = await screen.findByText("research");
-    const index = screen.getByText("index.md");
-    expect(research.compareDocumentPosition(index) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // The managed dir's loose files are hoisted to the root as peers.
+    expect(await screen.findByText("report.pdf")).toBeInTheDocument();
+    expect(screen.getByText("notes.md")).toBeInTheDocument();
+
+    // The managed `~/.wenlan/sources` dir is NOT shown as its own node.
+    // (folderName(MANAGED) === "sources", lowercase.)
+    expect(screen.queryByText("sources")).toBeNull();
   });
 
-  it("drills into a subfolder and reads the joined path", async () => {
-    const user = userEvent.setup();
-    renderView();
-
-    await user.click(await screen.findByText("research"));
-
-    expect(vi.mocked(readSourceDir)).toHaveBeenCalledWith("/Users/me/vault/research");
-    // Breadcrumb now shows the subfolder segment.
-    expect(await screen.findByRole("button", { name: "research" })).toBeInTheDocument();
-  });
-
-  it("opens a file on double-click via openFile", async () => {
-    const user = userEvent.setup();
-    renderView();
-
-    await user.dblClick(await screen.findByText("index.md"));
-    expect(vi.mocked(openFile)).toHaveBeenCalledWith("/Users/me/vault/index.md");
-  });
-
-  it("single-clicking a file selects it without opening", async () => {
-    const user = userEvent.setup();
-    renderView();
-
-    const index = await screen.findByText("index.md");
-    await user.click(index);
-    expect(vi.mocked(openFile)).not.toHaveBeenCalled();
-    expect(index.closest("button")).toHaveAttribute("data-selected", "true");
-  });
-
-  it("switching sources on the shelf reads the other source's path", async () => {
+  it("expands a folder node on click, revealing its children (accordion)", async () => {
     const user = userEvent.setup();
     renderView();
 
     await user.click(await screen.findByText("notes"));
+
     expect(vi.mocked(readSourceDir)).toHaveBeenCalledWith("/Users/me/notes");
+    expect(await screen.findByText("index.md")).toBeInTheDocument();
+    expect(screen.getByText("research")).toBeInTheDocument();
   });
 
+  it("expands a subfolder and reads the joined path", async () => {
+    const user = userEvent.setup();
+    renderView();
+
+    await user.click(await screen.findByText("notes"));
+    await user.click(await screen.findByText("research"));
+
+    expect(vi.mocked(readSourceDir)).toHaveBeenCalledWith("/Users/me/notes/research");
+    expect(await screen.findByText("paper.md")).toBeInTheDocument();
+  });
+});
+
+describe("detail pane", () => {
+  it("shows a folder source's on-disk file count, not the daemon's stale count", async () => {
+    const user = userEvent.setup();
+    renderView();
+
+    await user.click(await screen.findByText("notes"));
+
+    // On disk: research(dir) + index.md + cover.png → 2 files. Daemon says 5.
+    expect(await screen.findByText(/\b2 files\b/i)).toBeInTheDocument();
+    expect(screen.queryByText(/\b5 files\b/i)).toBeNull();
+  });
+
+  it("directory source shows Auto-synced, no manual Sync button", async () => {
+    const user = userEvent.setup();
+    renderView();
+
+    await user.click(await screen.findByText("notes"));
+
+    expect(await screen.findByText(/Auto-synced/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Sync" })).toBeNull();
+  });
+
+  it("obsidian source keeps the manual Sync button", async () => {
+    renderView();
+
+    // vault has the most memories → default-selected on load.
+    expect(await screen.findByRole("button", { name: "Sync" })).toBeInTheDocument();
+  });
+
+  it("selecting a loose file shows Open and an in-library status", async () => {
+    const user = userEvent.setup();
+    renderView();
+
+    await user.click(await screen.findByText("report.pdf"));
+
+    expect(await screen.findByRole("button", { name: "Open" })).toBeInTheDocument();
+    // report.pdf is indexed → calm "in your library" status.
+    expect(screen.getByText(/in your library/i)).toBeInTheDocument();
+  });
+
+  it("marks a not-yet-indexed supported file as Indexing, never 'not indexed'", async () => {
+    const user = userEvent.setup();
+    renderView();
+
+    await user.click(await screen.findByText("notes.md"));
+
+    expect(await screen.findByText(/indexing/i)).toBeInTheDocument();
+    expect(screen.queryByText(/not indexed/i)).toBeNull();
+  });
+
+  it("Remove calls removeSource after confirm", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    vi.mocked(removeSource).mockResolvedValue(undefined);
+    renderView();
+
+    await user.click(await screen.findByText("notes"));
+    fireEvent.click(await screen.findByRole("button", { name: "Remove" }));
+    await waitFor(() => expect(removeSource).toHaveBeenCalledWith("notes"));
+  });
+});
+
+describe("empty state", () => {
   it("shows the empty-shelf state when there are no sources", async () => {
     vi.mocked(listRegisteredSources).mockResolvedValue([]);
     renderView();
@@ -131,125 +197,16 @@ describe("SourcesView", () => {
     expect(await screen.findByText("Nothing on the shelf yet")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /add your first source/i })).toBeInTheDocument();
   });
-
-  it("marks supported extensions distinctly from unsupported ones", async () => {
-    renderView();
-
-    // .md is ingest-eligible; the extension tag renders. .png is not supported.
-    const index = await screen.findByText("index.md");
-    const row = index.closest("button")!;
-    expect(within(row).getByText("md")).toBeInTheDocument();
-  });
-
-  it("Remove calls DELETE after confirm", async () => {
-    vi.spyOn(window, "confirm").mockReturnValue(true);
-    vi.mocked(removeSource).mockResolvedValue(undefined);
-    vi.mocked(listRegisteredSources).mockResolvedValue([
-      { id: "directory-books", source_type: "directory", path: "/x/Books", status: "Active", last_sync: 1, file_count: 1, memory_count: 5 },
-    ]);
-    renderView();
-
-    fireEvent.click(await screen.findByRole("button", { name: "Remove" }));
-    await waitFor(() => expect(removeSource).toHaveBeenCalledWith("directory-books"));
-  });
 });
 
-describe("indexing files", () => {
-  it("marks a supported file the daemon hasn't indexed yet as Indexing and counts it in the header", async () => {
-    vi.mocked(listRegisteredSources).mockResolvedValue([
-      { id: "directory-books", source_type: "directory", path: "/x/Books", status: "Active", last_sync: 1, file_count: 2, memory_count: 2 },
-    ]);
-    vi.mocked(readSourceDir).mockResolvedValue([
-      { name: "readable.pdf", isDirectory: false },
-      { name: "scanned.pdf", isDirectory: false },
-    ]);
-    // Only the readable PDF is in the index so far; the other is still pending.
-    vi.mocked(listIndexedFiles).mockResolvedValue([
-      indexed("directory-books", "/x/Books/readable.pdf"),
-    ]);
-    renderView();
-
-    // The indexed file carries no badge.
-    const readableRow = (await screen.findByText("readable.pdf")).closest("button")!;
-    expect(within(readableRow).queryByText(/indexing/i)).toBeNull();
-
-    // The not-yet-indexed file reads as in-progress, not as an error.
-    const scannedRow = (await screen.findByText("scanned.pdf")).closest("button")!;
-    expect(within(scannedRow).getByText(/indexing/i)).toBeInTheDocument();
-
-    // The header surfaces the in-progress count with the same calm wording.
-    expect(await screen.findByText(/1 indexing/i)).toBeInTheDocument();
-    // The old alarming wording is gone.
-    expect(screen.queryByText(/not indexed/i)).toBeNull();
+describe("isManagedSourcePath", () => {
+  it("matches the managed uploads dir, with or without a trailing slash", () => {
+    expect(isManagedSourcePath("/Users/me/.wenlan/sources")).toBe(true);
+    expect(isManagedSourcePath("/Users/me/.wenlan/sources/")).toBe(true);
   });
-
-  it("marks nothing while the indexed-file list is still loading", async () => {
-    vi.mocked(listRegisteredSources).mockResolvedValue([
-      { id: "directory-books", source_type: "directory", path: "/x/Books", status: "Active", last_sync: 1, file_count: 1, memory_count: 1 },
-    ]);
-    vi.mocked(readSourceDir).mockResolvedValue([{ name: "a.pdf", isDirectory: false }]);
-    // Never resolves — mimics the fetch still in flight.
-    vi.mocked(listIndexedFiles).mockReturnValue(new Promise(() => {}));
-    renderView();
-
-    const row = (await screen.findByText("a.pdf")).closest("button")!;
-    expect(within(row).queryByText(/indexing/i)).toBeNull();
-  });
-});
-
-describe("folder file count", () => {
-  it("shows the on-disk file count, not the daemon's stale file_count", async () => {
-    // Daemon claims 2 files; the folder actually holds 3 on disk. The header
-    // must reflect what's really there, not the daemon's miscount.
-    vi.mocked(listRegisteredSources).mockResolvedValue([
-      { id: "directory-books", source_type: "directory", path: "/x/Books", status: "Active", last_sync: 1, file_count: 2, memory_count: 2 },
-    ]);
-    vi.mocked(readSourceDir).mockResolvedValue([
-      { name: "a.pdf", isDirectory: false },
-      { name: "b.pdf", isDirectory: false },
-      { name: "c.pdf", isDirectory: false },
-    ]);
-    renderView();
-
-    expect(await screen.findByText(/3 files/i)).toBeInTheDocument();
-    expect(screen.queryByText(/2 files/i)).toBeNull();
-  });
-
-  it("counts only files, not subfolders", async () => {
-    vi.mocked(listRegisteredSources).mockResolvedValue([
-      { id: "directory-books", source_type: "directory", path: "/x/Books", status: "Active", last_sync: 1, file_count: 9, memory_count: 2 },
-    ]);
-    vi.mocked(readSourceDir).mockResolvedValue([
-      { name: "sub", isDirectory: true },
-      { name: "a.pdf", isDirectory: false },
-    ]);
-    renderView();
-
-    expect(await screen.findByText(/1 file/i)).toBeInTheDocument();
-  });
-});
-
-describe("sync affordance by source type", () => {
-  it("directory sources show auto-synced state, no manual Sync button", async () => {
-    vi.mocked(listRegisteredSources).mockResolvedValue([
-      { id: "directory-books", source_type: "directory", path: "/x/Books", status: "Active", last_sync: 1_700_000_000, file_count: 3, memory_count: 42 },
-    ]);
-    vi.mocked(readSourceDir).mockResolvedValue([]);
-    renderView();
-
-    expect(await screen.findByText(/Auto-synced/)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Sync" })).toBeNull();
-    expect(screen.getByText("Syncs in the background, even when Wenlan is closed.")).toBeInTheDocument();
-  });
-
-  it("obsidian sources keep the manual Sync button", async () => {
-    vi.mocked(listRegisteredSources).mockResolvedValue([
-      { id: "obsidian-vault", source_type: "obsidian", path: "/x/Vault", status: "Active", last_sync: null, file_count: 3, memory_count: 0 },
-    ]);
-    vi.mocked(readSourceDir).mockResolvedValue([]);
-    renderView();
-
-    expect(await screen.findByRole("button", { name: "Sync" })).toBeInTheDocument();
+  it("rejects ordinary folders and near-misses", () => {
+    expect(isManagedSourcePath("/Users/me/notes")).toBe(false);
+    expect(isManagedSourcePath("/x/.wenlan/sources-backup")).toBe(false);
   });
 });
 
@@ -261,29 +218,14 @@ const base = {
   file_count: 0,
 };
 
-describe("spineVisual", () => {
-  it("ghost before any memories arrive", () => {
-    expect(spineVisual({ ...base, last_sync: null, memory_count: 0 }, undefined)).toBe("ghost");
-  });
-  it("indexing while last_sync is null and memories exist", () => {
-    expect(spineVisual({ ...base, last_sync: null, memory_count: 4 }, undefined)).toBe("indexing");
-  });
-  it("indexing while the count is still climbing between polls", () => {
-    expect(spineVisual({ ...base, last_sync: 100, memory_count: 20 }, 12)).toBe("indexing");
-  });
-  it("settled once synced and the count is stable", () => {
-    expect(spineVisual({ ...base, last_sync: 100, memory_count: 20 }, 20)).toBe("settled");
-  });
-});
-
-describe("spineCaption", () => {
+describe("sourceCaption", () => {
   it("says Indexing while settling", () => {
-    expect(spineCaption({ ...base, last_sync: null, memory_count: 0 })).toBe("Indexing…");
+    expect(sourceCaption({ ...base, last_sync: null, memory_count: 0 })).toBe("Indexing…");
   });
   it("shows notes when settled", () => {
-    expect(spineCaption({ ...base, last_sync: 100, memory_count: 142 })).toBe("142 notes");
+    expect(sourceCaption({ ...base, last_sync: 100, memory_count: 142 })).toBe("142 notes");
   });
   it("appends skipped count", () => {
-    expect(spineCaption({ ...base, last_sync: 100, memory_count: 142, last_sync_errors: 2 })).toBe("142 notes, 2 skipped");
+    expect(sourceCaption({ ...base, last_sync: 100, memory_count: 142, last_sync_errors: 2 })).toBe("142 notes, 2 skipped");
   });
 });

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   listRegisteredSources,
@@ -42,24 +42,8 @@ const STATUS_COLORS: Record<string, string> = {
   Unavailable: "var(--mem-text-tertiary)",
 };
 
-/** Spine height in px: 12px floor, up to 30px for the largest source. The
- *  rail reads as a shelf of book-spines — height = share of ingested memory. */
-function spineHeight(memoryCount: number, maxMemories: number): number {
-  return 12 + Math.round(18 * (memoryCount / maxMemories));
-}
-
-export type SpineVisual = "ghost" | "indexing" | "settled";
-
-/** Ingest state for the spine (§Signature). Determinate percent is impossible
- *  (daemon reports no per-source total); the fill means "still arriving". */
-export function spineVisual(s: RegisteredSource, prevMemoryCount: number | undefined): SpineVisual {
-  if (s.last_sync === null) return s.memory_count === 0 ? "ghost" : "indexing";
-  if (prevMemoryCount !== undefined && s.memory_count > prevMemoryCount) return "indexing";
-  return "settled";
-}
-
 /** Mono caption under a source: Indexing… while settling, else "N notes" (+ skipped). */
-export function spineCaption(s: RegisteredSource): string {
+export function sourceCaption(s: RegisteredSource): string {
   if (s.last_sync === null) return "Indexing…";
   const skipped = s.last_sync_errors ?? 0;
   const notes = `${s.memory_count.toLocaleString()} notes`;
@@ -75,18 +59,34 @@ function relTime(ts: number | null): string {
   return `synced ${Math.floor(secs / 86400)}d ago`;
 }
 
+/** True for the managed uploads dir (`~/.wenlan/sources`) — hoisted to the root
+ *  as peers of its entries, never shown as a node of its own. */
+export function isManagedSourcePath(path: string): boolean {
+  return /\.wenlan\/sources\/?$/.test(path);
+}
+
+/** Folders first, then alphabetical — shared by the root build and every
+ *  lazily-loaded subfolder. */
+function sortDirEntries(entries: SourceDirEntry[]): SourceDirEntry[] {
+  return [...entries].sort((a, b) => {
+    if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+type SourcesNode =
+  | { kind: "folder"; name: string; path: string; source: RegisteredSource; isSourceRoot: boolean }
+  | { kind: "file"; name: string; path: string; source: RegisteredSource };
+
 interface SourcesViewProps {
   /** Settings › Sources, for remove and advanced source management. */
   onManageSources: () => void;
 }
 
 export default function SourcesView({ onManageSources }: SourcesViewProps) {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [subpath, setSubpath] = useState<string[]>([]);
-  const [filter, setFilter] = useState("");
   const [adding, setAdding] = useState(false);
-
-  const prevCounts = useRef<Record<string, number>>({});
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [selectedNode, setSelectedNode] = useState<SourcesNode | null>(null);
 
   const { data: fetchedSources = [] } = useQuery({
     queryKey: ["registeredSources"],
@@ -99,28 +99,88 @@ export default function SourcesView({ onManageSources }: SourcesViewProps) {
   });
   const sources: RegisteredSource[] = fetchedSources;
 
-  useEffect(() => {
-    const next: Record<string, number> = {};
-    for (const s of fetchedSources) next[s.id] = s.memory_count;
-    prevCounts.current = next;
-  }, [fetchedSources]);
+  // Which files the daemon actually indexed. The daemon silently drops files
+  // it can't extract text from (e.g. a scanned PDF), so a folder listing can
+  // show files that never made it into the library — surface that instead of
+  // leaving a count quietly wrong.
+  const { data: indexedFiles } = useQuery({
+    queryKey: ["indexedFiles"],
+    queryFn: listIndexedFiles,
+  });
+  const indexReady = indexedFiles !== undefined;
+  const indexedSet = useMemo(
+    () => new Set((indexedFiles ?? []).map((f) => f.source_id)),
+    [indexedFiles],
+  );
+  function isIndexed(source: RegisteredSource, absPath: string): boolean {
+    return indexedSet.has(`${source.id}::${absPath}`);
+  }
 
-  // Tallest spine first — the shelf reads as a clear silhouette, the
-  // source with the most memories on top.
-  const shelf = useMemo(
-    () => [...sources].sort((a, b) => b.memory_count - a.memory_count),
+  // Tallest source first — the tree reads as a clear silhouette, the source
+  // with the most memories on top (and the default selection).
+  const folderSources = useMemo(
+    () =>
+      sources
+        .filter((s) => !isManagedSourcePath(s.path))
+        .sort((a, b) => b.memory_count - a.memory_count),
     [sources],
   );
-  const maxMemories = Math.max(...sources.map((s) => s.memory_count), 1);
+  const managed = useMemo(() => sources.find((s) => isManagedSourcePath(s.path)), [sources]);
 
-  const selected: RegisteredSource | undefined =
-    shelf.find((s) => s.id === selectedId) ?? shelf[0];
+  const { data: managedEntries } = useQuery({
+    queryKey: ["sourceDir", managed?.path ?? ""],
+    queryFn: () => readSourceDir(managed?.path ?? ""),
+    enabled: managed !== undefined,
+  });
 
-  function selectSource(id: string) {
-    setSelectedId(id);
-    setSubpath([]);
-    setFilter("");
+  const rootNodes: SourcesNode[] = useMemo(() => {
+    const nodes: SourcesNode[] = folderSources.map((s) => ({
+      kind: "folder",
+      name: folderName(s.path),
+      path: s.path,
+      source: s,
+      isSourceRoot: true,
+    }));
+    if (managed) {
+      for (const e of sortDirEntries(managedEntries ?? [])) {
+        const path = `${managed.path}/${e.name}`;
+        nodes.push(
+          e.isDirectory
+            ? { kind: "folder", name: e.name, path, source: managed, isSourceRoot: false }
+            : { kind: "file", name: e.name, path, source: managed },
+        );
+      }
+    }
+    return nodes;
+  }, [folderSources, managed, managedEntries]);
+
+  function selectNode(node: SourcesNode) {
+    setSelectedPath(node.path);
+    setSelectedNode(node);
   }
+
+  useEffect(() => {
+    if (rootNodes.length === 0) return;
+    if (selectedPath === null) {
+      selectNode(rootNodes[0]);
+      return;
+    }
+    // The selected source may have been removed — fall back to root rather
+    // than pointing the detail pane at a source that no longer exists.
+    if (selectedNode && !sources.some((s) => s.id === selectedNode.source.id)) {
+      selectNode(rootNodes[0]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rootNodes, selectedPath, selectedNode, sources]);
+
+  // Re-derive the selected node's source from the live list on every render so
+  // sync status / memory counts stay fresh across refetches without resetting
+  // which node is selected.
+  const liveSelectedNode: SourcesNode | null = useMemo(() => {
+    if (!selectedNode) return null;
+    const liveSource = sources.find((s) => s.id === selectedNode.source.id) ?? selectedNode.source;
+    return { ...selectedNode, source: liveSource } as SourcesNode;
+  }, [selectedNode, sources]);
 
   if (sources.length === 0) {
     return (
@@ -133,7 +193,7 @@ export default function SourcesView({ onManageSources }: SourcesViewProps) {
 
   return (
     <div className="flex h-full w-full overflow-hidden">
-      {/* ── The shelf: source picker ── */}
+      {/* ── LEFT: folder/file tree ── */}
       <aside
         className="flex-shrink-0 flex flex-col"
         style={{ width: 260, borderRight: "1px solid var(--mem-border)" }}
@@ -158,97 +218,34 @@ export default function SourcesView({ onManageSources }: SourcesViewProps) {
               marginTop: 4,
             }}
           >
-            {sources.length} {sources.length === 1 ? "source" : "sources"}
+            {folderSources.length} {folderSources.length === 1 ? "source" : "sources"}
           </div>
-          {sources.some((s) => s.source_type === "directory") && (
-            <div
-              style={{
-                fontFamily: "var(--mem-font-body)",
-                fontSize: "11px",
-                color: "var(--mem-text-tertiary)",
-                marginTop: 8,
-                lineHeight: 1.4,
-              }}
-            >
-              Syncs in the background, even when Wenlan is closed.
-            </div>
-          )}
         </div>
 
         <div className="flex-1 overflow-y-auto px-3 pb-3 flex flex-col gap-0.5">
-          {shelf.map((s) => {
-            const label = statusLabel(s.status);
-            const active = selected?.id === s.id;
-            return (
-              <button
-                key={s.id}
-                onClick={() => selectSource(s.id)}
-                title={label ? `${s.path} · ${label}` : s.path}
-                className="w-full flex items-center gap-3 rounded-md text-left transition-colors duration-150"
-                style={{
-                  padding: "9px 10px",
-                  background: active ? "var(--mem-indigo-bg)" : "transparent",
-                  cursor: "pointer",
-                }}
-                onMouseEnter={(e) => {
-                  if (!active) e.currentTarget.style.background = "var(--mem-hover)";
-                }}
-                onMouseLeave={(e) => {
-                  if (!active) e.currentTarget.style.background = "transparent";
-                }}
-              >
-                {/* Book spine: height = memory share, color = sync status,
-                    fill/shimmer = ingest state (ghost/indexing/settled). */}
-                {(() => {
-                  const visual = spineVisual(s, prevCounts.current[s.id]);
-                  const h = spineHeight(s.memory_count, maxMemories);
-                  return (
-                    <span className="shrink-0 w-1.5 flex items-end justify-center" style={{ height: 30 }}>
-                      <span
-                        data-testid="source-spine"
-                        data-visual={visual}
-                        className={visual === "indexing" ? "spine-indexing" : undefined}
-                        style={{
-                          width: 3,
-                          borderRadius: 1.5,
-                          height: visual === "ghost" ? 30 : h,
-                          backgroundColor: label ? STATUS_COLORS[label] : "var(--mem-accent-indigo)",
-                          border: visual === "ghost" ? "1px solid var(--mem-accent-indigo)" : undefined,
-                          background: visual === "ghost" ? "transparent" : undefined,
-                          opacity: visual === "ghost" ? 0.5 : label ? 0.9 : active ? 0.85 : 0.5,
-                        }}
-                      />
-                    </span>
-                  );
-                })()}
-                <span className="flex-1 min-w-0">
-                  <span
-                    className="block truncate"
-                    style={{
-                      fontFamily: "var(--mem-font-heading)",
-                      fontSize: "14px",
-                      fontWeight: 500,
-                      color: active ? "var(--mem-text)" : "var(--mem-text-secondary)",
-                      letterSpacing: "-0.005em",
-                    }}
-                  >
-                    {folderName(s.path)}
-                  </span>
-                  <span
-                    className="block truncate"
-                    style={{
-                      fontFamily: "var(--mem-font-mono)",
-                      fontSize: "10.5px",
-                      color: label ? STATUS_COLORS[label] : "var(--mem-text-tertiary)",
-                      marginTop: 1,
-                    }}
-                  >
-                    {label ?? spineCaption(s)}
-                  </span>
-                </span>
-              </button>
-            );
-          })}
+          {rootNodes.map((node) =>
+            node.kind === "folder" ? (
+              <FolderRow
+                key={node.path}
+                node={node}
+                depth={0}
+                selectedPath={selectedPath}
+                onSelect={selectNode}
+                isIndexed={isIndexed}
+                indexReady={indexReady}
+              />
+            ) : (
+              <FileRow
+                key={node.path}
+                node={node}
+                depth={0}
+                selectedPath={selectedPath}
+                onSelect={selectNode}
+                isIndexed={isIndexed}
+                indexReady={indexReady}
+              />
+            ),
+          )}
         </div>
 
         <div
@@ -289,90 +286,314 @@ export default function SourcesView({ onManageSources }: SourcesViewProps) {
         </div>
       </aside>
 
-      {/* ── The open folder ── */}
-      {selected && (
-        <FolderBrowser
-          key={selected.id}
-          source={selected}
-          subpath={subpath}
-          onSubpath={setSubpath}
-          filter={filter}
-          onFilter={setFilter}
-        />
-      )}
+      {/* ── RIGHT: details of the selected node ── */}
+      <DetailPane node={liveSelectedNode} isIndexed={isIndexed} indexReady={indexReady} />
 
       {adding && <AddSourceMenu onClose={() => setAdding(false)} />}
     </div>
   );
 }
 
-interface FolderBrowserProps {
-  source: RegisteredSource;
-  subpath: string[];
-  onSubpath: (p: string[]) => void;
-  filter: string;
-  onFilter: (v: string) => void;
+function Chevron({ expanded }: { expanded: boolean }) {
+  return (
+    <svg
+      width="10"
+      height="10"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{
+        color: "var(--mem-text-tertiary)",
+        transform: expanded ? "rotate(90deg)" : undefined,
+        transition: "transform 150ms",
+        flexShrink: 0,
+      }}
+    >
+      <polyline points="9 18 15 12 9 6" />
+    </svg>
+  );
 }
 
-function FolderBrowser({ source, subpath, onSubpath, filter, onFilter }: FolderBrowserProps) {
+interface FolderRowProps {
+  node: Extract<SourcesNode, { kind: "folder" }>;
+  depth: number;
+  selectedPath: string | null;
+  onSelect: (node: SourcesNode) => void;
+  isIndexed: (source: RegisteredSource, absPath: string) => boolean;
+  indexReady: boolean;
+}
+
+function FolderRow({ node, depth, selectedPath, onSelect, isIndexed, indexReady }: FolderRowProps) {
+  const [expanded, setExpanded] = useState(false);
+  const active = selectedPath === node.path;
+
+  const { data: children, isLoading: childrenLoading } = useQuery({
+    queryKey: ["sourceDir", node.path],
+    queryFn: async () => sortDirEntries(await readSourceDir(node.path)),
+    enabled: expanded,
+  });
+
+  return (
+    <>
+      <button
+        onClick={() => {
+          setExpanded((e) => !e);
+          onSelect(node);
+        }}
+        title={node.path}
+        className="w-full flex items-center gap-2 rounded-md text-left transition-colors duration-150"
+        style={{
+          padding: "7px 8px",
+          paddingLeft: 8 + depth * 16,
+          background: active ? "var(--mem-indigo-bg)" : "transparent",
+          cursor: "pointer",
+        }}
+        onMouseEnter={(e) => {
+          if (!active) e.currentTarget.style.background = "var(--mem-hover)";
+        }}
+        onMouseLeave={(e) => {
+          if (!active) e.currentTarget.style.background = "transparent";
+        }}
+      >
+        <Chevron expanded={expanded} />
+        <FileGlyph isDir supported={false} />
+        <span
+          className="flex-1 min-w-0 truncate"
+          style={{
+            fontFamily: "var(--mem-font-heading)",
+            fontSize: "14px",
+            fontWeight: 500,
+            color: active ? "var(--mem-text)" : "var(--mem-text-secondary)",
+            letterSpacing: "-0.005em",
+          }}
+        >
+          {node.name}
+        </span>
+      </button>
+      {expanded &&
+        (childrenLoading ? (
+          <div style={{ paddingLeft: 8 + (depth + 1) * 16 }}>
+            <SkeletonRows />
+          </div>
+        ) : (children ?? []).length === 0 ? (
+          <div style={{ paddingLeft: 8 + (depth + 1) * 16 }}>
+            <EmptyLine text="This folder is empty." />
+          </div>
+        ) : (
+          (children ?? []).map((e) => {
+            const path = `${node.path}/${e.name}`;
+            return e.isDirectory ? (
+              <FolderRow
+                key={path}
+                node={{ kind: "folder", name: e.name, path, source: node.source, isSourceRoot: false }}
+                depth={depth + 1}
+                selectedPath={selectedPath}
+                onSelect={onSelect}
+                isIndexed={isIndexed}
+                indexReady={indexReady}
+              />
+            ) : (
+              <FileRow
+                key={path}
+                node={{ kind: "file", name: e.name, path, source: node.source }}
+                depth={depth + 1}
+                selectedPath={selectedPath}
+                onSelect={onSelect}
+                isIndexed={isIndexed}
+                indexReady={indexReady}
+              />
+            );
+          })
+        ))}
+    </>
+  );
+}
+
+interface FileRowProps {
+  node: Extract<SourcesNode, { kind: "file" }>;
+  depth: number;
+  selectedPath: string | null;
+  onSelect: (node: SourcesNode) => void;
+  isIndexed: (source: RegisteredSource, absPath: string) => boolean;
+  indexReady: boolean;
+}
+
+function FileRow({ node, depth, selectedPath, onSelect, isIndexed, indexReady }: FileRowProps) {
+  const active = selectedPath === node.path;
+  const supported = SUPPORTED_EXTENSIONS.includes(ext(node.name));
+  // A supported file not yet in the index — gated on indexReady so nothing is
+  // flagged while the indexed-file list is still loading. Suppressed on the
+  // active row: the detail pane already states this file's index status.
+  const indexing = supported && indexReady && !isIndexed(node.source, node.path) && !active;
+
+  return (
+    <button
+      onClick={() => onSelect(node)}
+      title={node.path}
+      className="w-full flex items-center gap-2 rounded-md text-left transition-colors duration-150"
+      style={{
+        padding: "7px 8px",
+        paddingLeft: 8 + 14 + depth * 16,
+        background: active ? "var(--mem-indigo-bg)" : "transparent",
+        cursor: "pointer",
+      }}
+      onMouseEnter={(e) => {
+        if (!active) e.currentTarget.style.background = "var(--mem-hover)";
+      }}
+      onMouseLeave={(e) => {
+        if (!active) e.currentTarget.style.background = "transparent";
+      }}
+    >
+      <FileGlyph isDir={false} supported={supported} />
+      <span
+        className="flex-1 min-w-0 truncate"
+        style={{
+          fontFamily: "var(--mem-font-body)",
+          fontSize: "13.5px",
+          color: indexing
+            ? "var(--mem-text-tertiary)"
+            : supported
+              ? "var(--mem-text-secondary)"
+              : "var(--mem-text-tertiary)",
+        }}
+      >
+        {node.name}
+      </span>
+      {indexing && (
+        <span
+          style={{
+            fontFamily: "var(--mem-font-mono)",
+            fontSize: "10px",
+            letterSpacing: "0.02em",
+            color: "var(--mem-text-tertiary)",
+            whiteSpace: "nowrap",
+          }}
+        >
+          Indexing…
+        </span>
+      )}
+    </button>
+  );
+}
+
+interface DetailPaneProps {
+  node: SourcesNode | null;
+  isIndexed: (source: RegisteredSource, absPath: string) => boolean;
+  indexReady: boolean;
+}
+
+function DetailPane({ node, isIndexed, indexReady }: DetailPaneProps) {
+  if (!node) return <section className="flex-1 flex flex-col overflow-hidden" />;
+  return node.kind === "file" ? (
+    <FileDetail node={node} isIndexed={isIndexed} indexReady={indexReady} />
+  ) : (
+    <FolderDetail node={node} />
+  );
+}
+
+function FileDetail({
+  node,
+  isIndexed,
+  indexReady,
+}: {
+  node: Extract<SourcesNode, { kind: "file" }>;
+  isIndexed: (source: RegisteredSource, absPath: string) => boolean;
+  indexReady: boolean;
+}) {
+  const e = ext(node.name);
+  const supported = SUPPORTED_EXTENSIONS.includes(e);
+  const indexed = indexReady && isIndexed(node.source, node.path);
+
+  // Gate on indexReady before deciding indexed-vs-indexing; never claim
+  // "not indexed" — an auto-syncing source is almost always mid-flight.
+  let statusText: string;
+  if (!supported) statusText = "Unsupported type";
+  else if (indexReady && indexed) statusText = "In your library";
+  else statusText = "Indexing…";
+
+  return (
+    <section className="flex-1 flex flex-col overflow-hidden">
+      <div className="px-8 pt-6 pb-4" style={{ borderBottom: "1px solid var(--mem-border)" }}>
+        <div className="flex items-center gap-2 flex-wrap">
+          <h2
+            style={{
+              fontFamily: "var(--mem-font-heading)",
+              fontSize: "18px",
+              fontWeight: 500,
+              color: "var(--mem-text)",
+              letterSpacing: "-0.01em",
+              margin: 0,
+            }}
+          >
+            {node.name}
+          </h2>
+          {e && (
+            <span
+              style={{
+                fontFamily: "var(--mem-font-mono)",
+                fontSize: "10px",
+                letterSpacing: "0.04em",
+                color: supported ? "var(--mem-accent-indigo)" : "var(--mem-text-tertiary)",
+                opacity: supported ? 0.9 : 0.5,
+              }}
+            >
+              {e}
+            </span>
+          )}
+        </div>
+        <div
+          style={{
+            fontFamily: "var(--mem-font-mono)",
+            fontSize: "11px",
+            color: "var(--mem-text-tertiary)",
+            marginTop: 6,
+          }}
+        >
+          {statusText}
+        </div>
+      </div>
+      <div className="px-8 pt-4">
+        <button
+          onClick={() => openFile(node.path)}
+          className="rounded-md transition-colors duration-150 hover:bg-[var(--mem-hover)]"
+          style={{
+            padding: "6px 13px",
+            fontFamily: "var(--mem-font-body)",
+            fontSize: "12px",
+            fontWeight: 500,
+            color: "white",
+            background: "var(--mem-accent-indigo)",
+            border: "none",
+            cursor: "pointer",
+          }}
+        >
+          Open
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function FolderDetail({ node }: { node: Extract<SourcesNode, { kind: "folder" }> }) {
   const queryClient = useQueryClient();
   const [syncedFlash, setSyncedFlash] = useState(false);
-  // Single-click selects a file (safe — no accidental external open); double-click
-  // opens it. Reset when the folder changes so a name can't stay selected across dirs.
-  const [selectedName, setSelectedName] = useState<string | null>(null);
-  const fullPath = [source.path, ...subpath].join("/");
-  useEffect(() => setSelectedName(null), [fullPath]);
+  const { source, isSourceRoot, path, name } = node;
 
   const {
     data: entries,
     isLoading,
     isError,
   } = useQuery({
-    queryKey: ["sourceDir", fullPath],
-    queryFn: async (): Promise<SourceDirEntry[]> => {
-      const raw = await readSourceDir(fullPath);
-      return [...raw].sort((a, b) => {
-        if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
-        return a.name.localeCompare(b.name);
-      });
-    },
+    queryKey: ["sourceDir", path],
+    queryFn: () => readSourceDir(path),
   });
-
-  // Which files the daemon actually indexed. The daemon silently drops files
-  // it can't extract text from (e.g. a scanned PDF), so the folder listing can
-  // show files that never made it into the library — surface that here instead
-  // of leaving the count quietly wrong.
-  // ponytail: pulls the whole indexed-file list to cross-ref one folder; fine
-  // at localhost/desktop scale, add a per-source endpoint if it ever drags.
-  const { data: indexedFiles } = useQuery({
-    queryKey: ["indexedFiles"],
-    queryFn: listIndexedFiles,
-  });
-  const indexReady = indexedFiles !== undefined;
-  const indexedPaths = useMemo(() => {
-    const prefix = `${source.id}::`;
-    const set = new Set<string>();
-    for (const f of indexedFiles ?? []) {
-      if (f.source_id.startsWith(prefix)) set.add(f.source_id.slice(prefix.length));
-    }
-    return set;
-  }, [indexedFiles, source.id]);
-  const isIndexed = (name: string) => indexedPaths.has([fullPath, name].join("/"));
   // Ground truth for "how many files are here" is the on-disk listing, not the
   // daemon's source.file_count (whole-source, and known to miscount — it drops
   // files it can't extract text from without adjusting the total).
   const fileCount = (entries ?? []).filter((e) => !e.isDirectory).length;
-  // Supported files not yet in the index. On a directory source the daemon
-  // auto-syncs, so these are almost always mid-flight rather than failures —
-  // call it "Indexing…", not the alarming "not indexed".
-  // ponytail: no per-file mtime in the listing, so a genuinely unreadable file
-  // (e.g. a scanned PDF) reads as "Indexing…" indefinitely; add per-file status
-  // to the DTO if we ever need to call out permanent skips.
-  const indexingCount = indexReady
-    ? (entries ?? []).filter(
-        (e) => !e.isDirectory && SUPPORTED_EXTENSIONS.includes(ext(e.name)) && !isIndexed(e.name),
-      ).length
-    : 0;
 
   const syncMutation = useMutation({
     mutationFn: () => syncRegisteredSource(source.id),
@@ -384,58 +605,47 @@ function FolderBrowser({ source, subpath, onSubpath, filter, onFilter }: FolderB
     },
   });
 
-  const q = filter.trim().toLowerCase();
-  const shown = (entries ?? []).filter((e) => !q || e.name.toLowerCase().includes(q));
   const label = statusLabel(source.status);
+
+  function handleRemove() {
+    if (
+      !window.confirm(
+        `Remove ${name}? Indexed notes stay in your library; this source stops syncing.`,
+      )
+    )
+      return;
+    removeSource(source.id)
+      .then(() => {
+        queryClient.invalidateQueries({ queryKey: ["registeredSources"] });
+      })
+      .catch((err) => {
+        toast("Couldn't remove source", { description: String(err) });
+      });
+  }
 
   return (
     <section className="flex-1 flex flex-col overflow-hidden">
-      {/* Header: breadcrumb + actions */}
       <div className="px-8 pt-6 pb-4" style={{ borderBottom: "1px solid var(--mem-border)" }}>
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <div className="flex items-center gap-1.5 flex-wrap" style={{ minHeight: 22 }}>
-              <button
-                onClick={() => onSubpath([])}
-                className="transition-colors duration-150 hover:text-[var(--mem-text)]"
-                style={{
-                  fontFamily: "var(--mem-font-heading)",
-                  fontSize: "18px",
-                  fontWeight: 500,
-                  color: subpath.length === 0 ? "var(--mem-text)" : "var(--mem-text-secondary)",
-                  background: "none",
-                  border: "none",
-                  cursor: "pointer",
-                  padding: 0,
-                  letterSpacing: "-0.01em",
-                }}
-              >
-                {folderName(source.path)}
-              </button>
-              {subpath.map((seg, i) => (
-                <span key={i} className="flex items-center gap-1.5">
-                  <span style={{ color: "var(--mem-text-tertiary)", fontSize: 13 }}>/</span>
-                  <button
-                    onClick={() => onSubpath(subpath.slice(0, i + 1))}
-                    className="transition-colors duration-150 hover:text-[var(--mem-text)]"
-                    style={{
-                      fontFamily: "var(--mem-font-body)",
-                      fontSize: "14px",
-                      color:
-                        i === subpath.length - 1
-                          ? "var(--mem-text)"
-                          : "var(--mem-text-secondary)",
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      padding: 0,
-                    }}
-                  >
-                    {seg}
-                  </button>
-                </span>
-              ))}
-            </div>
+            {/* The tree already shows the bare name as its own row label —
+                the detail heading shows the full path (no breadcrumb drill
+                exists anymore, so this is the only place "where is this" is
+                answered). */}
+            <h2
+              className="truncate"
+              style={{
+                fontFamily: "var(--mem-font-heading)",
+                fontSize: "18px",
+                fontWeight: 500,
+                color: "var(--mem-text)",
+                letterSpacing: "-0.01em",
+                margin: 0,
+              }}
+              title={path}
+            >
+              {path}
+            </h2>
             <div
               style={{
                 fontFamily: "var(--mem-font-mono)",
@@ -444,57 +654,32 @@ function FolderBrowser({ source, subpath, onSubpath, filter, onFilter }: FolderB
                 marginTop: 6,
               }}
             >
-              {source.source_type === "obsidian" ? "Obsidian vault" : "Folder"}
-              {" · "}
-              {fileCount.toLocaleString()} {fileCount === 1 ? "file" : "files"}
-              {" · "}
-              {source.memory_count.toLocaleString()} memories
-              {indexingCount > 0 && (
-                <>
-                  {" · "}
-                  <span style={{ color: "var(--mem-text-tertiary)" }}>
-                    {indexingCount.toLocaleString()} indexing
-                  </span>
-                </>
-              )}
-              {" · "}
-              {label ?? relTime(source.last_sync)}
+              {isLoading ? "…" : `${fileCount.toLocaleString()} ${fileCount === 1 ? "file" : "files"}`}
+              {isSourceRoot && ` · ${source.memory_count.toLocaleString()} memories`}
+              {isSourceRoot && ` · ${label ?? relTime(source.last_sync)}`}
             </div>
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            {isSourceRoot && (
+              <button
+                onClick={handleRemove}
+                className="rounded-md transition-colors duration-150 hover:bg-[var(--mem-hover)]"
+                style={{
+                  padding: "6px 11px",
+                  fontFamily: "var(--mem-font-body)",
+                  fontSize: "12px",
+                  color: "var(--mem-text-secondary)",
+                  background: "transparent",
+                  border: "1px solid var(--mem-border)",
+                  cursor: "pointer",
+                }}
+              >
+                Remove
+              </button>
+            )}
             <button
-              onClick={() => {
-                const name = folderName(source.path);
-                if (
-                  !window.confirm(
-                    `Remove ${name}? Indexed notes stay in your library; this source stops syncing.`,
-                  )
-                )
-                  return;
-                removeSource(source.id)
-                  .then(() => {
-                    queryClient.invalidateQueries({ queryKey: ["registeredSources"] });
-                  })
-                  .catch((e) => {
-                    toast("Couldn't remove source", { description: String(e) });
-                  });
-              }}
-              className="rounded-md transition-colors duration-150 hover:bg-[var(--mem-hover)]"
-              style={{
-                padding: "6px 11px",
-                fontFamily: "var(--mem-font-body)",
-                fontSize: "12px",
-                color: "var(--mem-text-secondary)",
-                background: "transparent",
-                border: "1px solid var(--mem-border)",
-                cursor: "pointer",
-              }}
-            >
-              Remove
-            </button>
-            <button
-              onClick={() => openFile(fullPath)}
+              onClick={() => openFile(path)}
               className="rounded-md transition-colors duration-150 hover:bg-[var(--mem-hover)]"
               title="Reveal in Finder"
               style={{
@@ -509,147 +694,44 @@ function FolderBrowser({ source, subpath, onSubpath, filter, onFilter }: FolderB
             >
               Reveal
             </button>
-            {source.source_type === "obsidian" ? (
-              <button
-                onClick={() => syncMutation.mutate()}
-                disabled={syncMutation.isPending}
-                className="rounded-md transition-colors duration-150"
-                style={{
-                  padding: "6px 13px",
-                  fontFamily: "var(--mem-font-body)",
-                  fontSize: "12px",
-                  fontWeight: 500,
-                  color: "white",
-                  background: "var(--mem-accent-indigo)",
-                  border: "none",
-                  cursor: syncMutation.isPending ? "default" : "pointer",
-                  opacity: syncMutation.isPending ? 0.6 : 1,
-                }}
-              >
-                {syncedFlash ? "✓ Synced" : syncMutation.isPending ? "Syncing…" : "Sync"}
-              </button>
-            ) : (
-              <span
-                style={{
-                  fontFamily: "var(--mem-font-mono)",
-                  fontSize: "11px",
-                  color: "var(--mem-text-tertiary)",
-                }}
-              >
-                Auto-synced{source.last_sync ? ` · updated ${relTime(source.last_sync).replace(/^synced /, "")}` : ""}
-              </span>
-            )}
+            {isSourceRoot &&
+              (source.source_type === "obsidian" ? (
+                <button
+                  onClick={() => syncMutation.mutate()}
+                  disabled={syncMutation.isPending}
+                  className="rounded-md transition-colors duration-150"
+                  style={{
+                    padding: "6px 13px",
+                    fontFamily: "var(--mem-font-body)",
+                    fontSize: "12px",
+                    fontWeight: 500,
+                    color: "white",
+                    background: "var(--mem-accent-indigo)",
+                    border: "none",
+                    cursor: syncMutation.isPending ? "default" : "pointer",
+                    opacity: syncMutation.isPending ? 0.6 : 1,
+                  }}
+                >
+                  {syncedFlash ? "✓ Synced" : syncMutation.isPending ? "Syncing…" : "Sync"}
+                </button>
+              ) : (
+                <span
+                  style={{
+                    fontFamily: "var(--mem-font-mono)",
+                    fontSize: "11px",
+                    color: "var(--mem-text-tertiary)",
+                  }}
+                >
+                  Auto-synced
+                  {source.last_sync ? ` · updated ${relTime(source.last_sync).replace(/^synced /, "")}` : ""}
+                </span>
+              ))}
           </div>
         </div>
       </div>
 
-      {/* Toolbar: filter */}
-      <div className="px-8 pt-3 pb-2">
-        <input
-          value={filter}
-          onChange={(e) => onFilter(e.target.value)}
-          placeholder="Filter this folder…"
-          className="w-full rounded-md transition-colors duration-150"
-          style={{
-            padding: "6px 10px",
-            fontFamily: "var(--mem-font-mono)",
-            fontSize: "12px",
-            color: "var(--mem-text)",
-            background: "var(--mem-surface)",
-            border: "1px solid var(--mem-border)",
-            outline: "none",
-          }}
-        />
-      </div>
-
-      {/* Entries */}
-      <div className="flex-1 overflow-y-auto px-8 pb-8">
-        {isLoading ? (
-          <SkeletonRows />
-        ) : isError ? (
-          <FolderError onReveal={() => openFile(fullPath)} atRoot={subpath.length === 0} />
-        ) : shown.length === 0 ? (
-          <EmptyLine text={q ? `No matches for “${filter}”.` : "This folder is empty."} />
-        ) : (
-          <div className="flex flex-col">
-            {shown.map((e) => {
-              const isDir = e.isDirectory;
-              const supported = !isDir && SUPPORTED_EXTENSIONS.includes(ext(e.name));
-              // A supported file not yet in the index — on an auto-syncing
-              // directory source this means the daemon hasn't reached it yet.
-              // Gated on indexReady so nothing is flagged while the indexed-file
-              // list is still loading.
-              const indexing = supported && indexReady && !isIndexed(e.name);
-              const selected = !isDir && selectedName === e.name;
-              return (
-                <button
-                  key={e.name}
-                  data-selected={selected ? "true" : undefined}
-                  // Folders navigate on single click. Files select on single
-                  // click and open on double click — no accidental external open.
-                  onClick={() =>
-                    isDir ? onSubpath([...subpath, e.name]) : setSelectedName(e.name)
-                  }
-                  onDoubleClick={() => {
-                    if (!isDir) openFile([fullPath, e.name].join("/"));
-                  }}
-                  className="w-full flex items-center gap-3 rounded-md text-left transition-colors duration-150 hover:bg-[var(--mem-hover)]"
-                  style={{ padding: "8px 10px", background: selected ? "var(--mem-indigo-bg)" : undefined }}
-                >
-                  <FileGlyph isDir={isDir} supported={supported} />
-                  <span
-                    className="flex-1 min-w-0 truncate"
-                    style={{
-                      fontFamily: "var(--mem-font-body)",
-                      fontSize: "13.5px",
-                      color: indexing
-                        ? "var(--mem-text-tertiary)"
-                        : isDir
-                          ? "var(--mem-text)"
-                          : supported
-                            ? "var(--mem-text-secondary)"
-                            : "var(--mem-text-tertiary)",
-                    }}
-                  >
-                    {e.name}
-                  </span>
-                  {indexing && (
-                    <span
-                      title="Indexing… — not in your library yet."
-                      style={{
-                        fontFamily: "var(--mem-font-mono)",
-                        fontSize: "10px",
-                        letterSpacing: "0.02em",
-                        color: "var(--mem-text-tertiary)",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      Indexing…
-                    </span>
-                  )}
-                  {!isDir && ext(e.name) && (
-                    <span
-                      style={{
-                        fontFamily: "var(--mem-font-mono)",
-                        fontSize: "10px",
-                        letterSpacing: "0.04em",
-                        color: supported ? "var(--mem-accent-indigo)" : "var(--mem-text-tertiary)",
-                        opacity: supported ? 0.9 : 0.5,
-                      }}
-                    >
-                      {ext(e.name)}
-                    </span>
-                  )}
-                  {isDir && (
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--mem-text-tertiary)" }}>
-                      <polyline points="9 18 15 12 9 6" />
-                    </svg>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        )}
+      <div className="flex-1 overflow-y-auto px-8 py-6">
+        {isError && <FolderError onReveal={() => openFile(path)} atRoot={isSourceRoot} />}
       </div>
     </section>
   );
