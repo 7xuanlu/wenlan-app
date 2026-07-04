@@ -106,6 +106,11 @@ export default function SourcesView({ onManageSources }: SourcesViewProps) {
   const { data: indexedFiles } = useQuery({
     queryKey: ["indexedFiles"],
     queryFn: listIndexedFiles,
+    // Poll while on the Sources tab so a file that finishes indexing flips from
+    // "Indexing…" to "In your library" without waiting for a window blur/focus.
+    // Pauses when the window is unfocused (React Query default) and stops when
+    // this view unmounts. ponytail: steady 5s is plenty at desktop scale.
+    refetchInterval: 5000,
   });
   const indexReady = indexedFiles !== undefined;
   const indexedSet = useMemo(
@@ -330,9 +335,13 @@ function FolderRow({ node, depth, selectedPath, onSelect, isIndexed, indexReady 
   const [expanded, setExpanded] = useState(false);
   const active = selectedPath === node.path;
 
+  // Raw queryFn (no sort) so it matches FolderDetail's observer on the same
+  // ["sourceDir", path] key — React Query caches one result per key, so a
+  // clicked folder (selected + expanded) must not depend on which observer's
+  // queryFn wins the fetch. Order is applied at render below.
   const { data: children, isLoading: childrenLoading } = useQuery({
     queryKey: ["sourceDir", node.path],
-    queryFn: async () => sortDirEntries(await readSourceDir(node.path)),
+    queryFn: () => readSourceDir(node.path),
     enabled: expanded,
   });
 
@@ -383,7 +392,7 @@ function FolderRow({ node, depth, selectedPath, onSelect, isIndexed, indexReady 
             <EmptyLine text="This folder is empty." />
           </div>
         ) : (
-          (children ?? []).map((e) => {
+          sortDirEntries(children ?? []).map((e) => {
             const path = `${node.path}/${e.name}`;
             return e.isDirectory ? (
               <FolderRow
