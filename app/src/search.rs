@@ -843,6 +843,27 @@ pub async fn read_source_dir(path: String) -> Result<Vec<DirEntryDto>, String> {
     Ok(out)
 }
 
+/// Read a text file's contents for inline preview in the Sources detail pane.
+///
+/// Same trust level as `open_file`, which already hands the whole file to the
+/// native app; the webview's `fs:default` scope can't reach arbitrary
+/// registered paths, so the Rust side reads it. The caller gates this to
+/// markdown/plain-text extensions — never PDFs or binaries.
+#[tauri::command]
+pub async fn read_text_file(path: String) -> Result<String, String> {
+    // ponytail: 512 KiB ceiling so a stray huge file can't wedge the webview.
+    // Real notes are a few KB; raise it if a legit doc ever exceeds it.
+    const MAX_BYTES: u64 = 512 * 1024;
+    let meta = std::fs::metadata(&path).map_err(|e| e.to_string())?;
+    if meta.len() > MAX_BYTES {
+        return Err(format!(
+            "file is {} KB — too large to preview inline (open it instead)",
+            meta.len() / 1024
+        ));
+    }
+    std::fs::read_to_string(&path).map_err(|e| e.to_string())
+}
+
 // ── Index / watch path / source commands (local + config) ─────────────
 
 #[tauri::command]

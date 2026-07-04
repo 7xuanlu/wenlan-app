@@ -258,6 +258,17 @@ export async function readSourceDir(path: string): Promise<SourceDirEntry[]> {
   return invoke("read_source_dir", { path });
 }
 
+/**
+ * Read a text file's full contents for inline preview in the detail pane.
+ * Backed by the Rust `read_text_file` command (same reason as readSourceDir:
+ * the webview fs plugin is unscoped). Caller must gate to text extensions —
+ * the command rejects files over 512 KiB. Named `readSourceText` to avoid
+ * colliding with the fs plugin's own `readTextFile`.
+ */
+export async function readSourceText(path: string): Promise<string> {
+  return invoke("read_text_file", { path });
+}
+
 export interface ChunkDetail {
   id: string;
   content: string;

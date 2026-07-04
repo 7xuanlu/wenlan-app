@@ -8,6 +8,7 @@ import {
   listRegisteredSources,
   openFile,
   readSourceDir,
+  readSourceText,
   removeSource,
   listIndexedFiles,
   type RegisteredSource,
@@ -19,6 +20,7 @@ vi.mock("../../../lib/tauri", () => ({
   syncRegisteredSource: vi.fn(),
   openFile: vi.fn(),
   readSourceDir: vi.fn(),
+  readSourceText: vi.fn(),
   addSource: vi.fn(),
   removeSource: vi.fn(),
   listIndexedFiles: vi.fn(),
@@ -79,6 +81,7 @@ beforeEach(() => {
   vi.clearAllMocks(); // isolate call history — openFile / removeSource asserted per test
   vi.mocked(listRegisteredSources).mockResolvedValue(SOURCES);
   vi.mocked(readSourceDir).mockImplementation(fakeReadDir);
+  vi.mocked(readSourceText).mockResolvedValue("");
   vi.mocked(openFile).mockResolvedValue(undefined);
   // report.pdf (loose) and notes/index.md are in the library; notes.md is not.
   vi.mocked(listIndexedFiles).mockResolvedValue([
@@ -166,6 +169,29 @@ describe("detail pane", () => {
     expect(await screen.findByRole("button", { name: "Open" })).toBeInTheDocument();
     // report.pdf is indexed → calm "in your library" status.
     expect(screen.getByText(/in your library/i)).toBeInTheDocument();
+  });
+
+  it("renders a text file's content inline below the header", async () => {
+    vi.mocked(readSourceText).mockResolvedValue("# Heading\n\nThe body text.");
+    const user = userEvent.setup();
+    renderView();
+
+    await user.click(await screen.findByText("notes.md"));
+
+    // The real file content is fetched and rendered, not just the summary.
+    expect(await screen.findByText("The body text.")).toBeInTheDocument();
+    expect(vi.mocked(readSourceText)).toHaveBeenCalledWith(`${MANAGED}/notes.md`);
+  });
+
+  it("does not read file contents for a PDF — Open handles it", async () => {
+    const user = userEvent.setup();
+    renderView();
+
+    await user.click(await screen.findByText("report.pdf"));
+    await screen.findByRole("button", { name: "Open" });
+
+    // PDFs have no inline renderer; the pane never reads their bytes.
+    expect(vi.mocked(readSourceText)).not.toHaveBeenCalled();
   });
 
   it("marks a not-yet-indexed supported file as Indexing, never 'not indexed'", async () => {

@@ -6,6 +6,7 @@ import {
   syncRegisteredSource,
   openFile,
   readSourceDir,
+  readSourceText,
   removeSource,
   listIndexedFiles,
   type RegisteredSource,
@@ -14,11 +15,17 @@ import {
   type IndexedFileInfo,
 } from "../../lib/tauri";
 import AddSourceMenu from "./sources/AddSourceMenu";
+import ContentRenderer from "./ContentRenderer";
 import { toast } from "sonner";
 
 // The daemon's directory-ingest filter (wenlan-core sources/directory.rs).
 // Files with these extensions feed the wiki; everything else is shown but dimmed.
 const SUPPORTED_EXTENSIONS = ["md", "txt", "pdf"];
+
+// Extensions we can render inline in the detail pane. Subset of the supported
+// set — PDFs and binaries stay Open-only (no inline viewer). Plain text goes
+// through the markdown renderer too; with no markup it just renders as prose.
+const TEXT_RENDER_EXTENSIONS = ["md", "markdown", "mdx", "txt", "text"];
 
 function folderName(p: string): string {
   return p.split("/").filter(Boolean).pop() || p;
@@ -532,6 +539,18 @@ function FileDetail({
   const indexed = indexReady && isIndexed(node.source, node.path);
   const info = indexedFiles?.find((f) => f.source_id === `${node.source.id}::${node.path}`);
 
+  // Render the real file inline for text formats; PDFs/binaries stay Open-only.
+  const isText = TEXT_RENDER_EXTENSIONS.includes(e);
+  const {
+    data: fileText,
+    isLoading: textLoading,
+    isError: textError,
+  } = useQuery({
+    queryKey: ["fileText", node.path],
+    queryFn: () => readSourceText(node.path),
+    enabled: isText,
+  });
+
   // Gate on indexReady before deciding indexed-vs-indexing; never claim
   // "not indexed" — an auto-syncing source is almost always mid-flight.
   let statusText: string;
@@ -542,110 +561,113 @@ function FileDetail({
   return (
     <section className="flex-1 flex flex-col overflow-hidden">
       <div className="px-8 pt-6 pb-4" style={{ borderBottom: "1px solid var(--mem-border)" }}>
-        <div className="flex items-center gap-2 flex-wrap">
-          <h2
-            style={{
-              fontFamily: "var(--mem-font-heading)",
-              fontSize: "18px",
-              fontWeight: 500,
-              color: "var(--mem-text)",
-              letterSpacing: "-0.01em",
-              margin: 0,
-            }}
-          >
-            {node.name}
-          </h2>
-          {e && (
-            <span
-              style={{
-                fontFamily: "var(--mem-font-mono)",
-                fontSize: "10px",
-                letterSpacing: "0.04em",
-                color: supported ? "var(--mem-accent-indigo)" : "var(--mem-text-tertiary)",
-                opacity: supported ? 0.9 : 0.5,
-              }}
-            >
-              {e}
-            </span>
-          )}
-        </div>
-        <div
-          style={{
-            fontFamily: "var(--mem-font-mono)",
-            fontSize: "11px",
-            color: "var(--mem-text-tertiary)",
-            marginTop: 6,
-          }}
-        >
-          {statusText}
-        </div>
-        {info && (
-          <div className="flex items-center gap-2 flex-wrap" style={{ marginTop: 4 }}>
-            <span
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2
+                style={{
+                  fontFamily: "var(--mem-font-heading)",
+                  fontSize: "18px",
+                  fontWeight: 500,
+                  color: "var(--mem-text)",
+                  letterSpacing: "-0.01em",
+                  margin: 0,
+                }}
+              >
+                {node.name}
+              </h2>
+              {e && (
+                <span
+                  style={{
+                    fontFamily: "var(--mem-font-mono)",
+                    fontSize: "10px",
+                    letterSpacing: "0.04em",
+                    color: supported ? "var(--mem-accent-indigo)" : "var(--mem-text-tertiary)",
+                    opacity: supported ? 0.9 : 0.5,
+                  }}
+                >
+                  {e}
+                </span>
+              )}
+            </div>
+            <div
               style={{
                 fontFamily: "var(--mem-font-mono)",
                 fontSize: "11px",
                 color: "var(--mem-text-tertiary)",
+                marginTop: 6,
               }}
             >
-              Indexed as {info.chunk_count} {info.chunk_count === 1 ? "passage" : "passages"}
-              {info.last_modified
-                ? ` · updated ${relTime(info.last_modified).replace(/^synced /, "")}`
-                : ""}
-            </span>
-            {info.memory_type && (
-              <span
-                style={{
-                  fontFamily: "var(--mem-font-mono)",
-                  fontSize: "10px",
-                  letterSpacing: "0.02em",
-                  padding: "1px 6px",
-                  borderRadius: 4,
-                  background: "var(--mem-indigo-bg)",
-                  color: "var(--mem-accent-indigo)",
-                }}
-              >
-                {info.memory_type}
-              </span>
-            )}
-            {info.domain && (
-              <span
-                style={{
-                  fontFamily: "var(--mem-font-mono)",
-                  fontSize: "10px",
-                  letterSpacing: "0.02em",
-                  padding: "1px 6px",
-                  borderRadius: 4,
-                  background: "var(--mem-hover)",
-                  color: "var(--mem-text-tertiary)",
-                }}
-              >
-                {info.domain}
-              </span>
+              {statusText}
+            </div>
+            {info && (
+              <div className="flex items-center gap-2 flex-wrap" style={{ marginTop: 4 }}>
+                <span
+                  style={{
+                    fontFamily: "var(--mem-font-mono)",
+                    fontSize: "11px",
+                    color: "var(--mem-text-tertiary)",
+                  }}
+                >
+                  Indexed as {info.chunk_count} {info.chunk_count === 1 ? "passage" : "passages"}
+                  {info.last_modified
+                    ? ` · updated ${relTime(info.last_modified).replace(/^synced /, "")}`
+                    : ""}
+                </span>
+                {info.memory_type && (
+                  <span
+                    style={{
+                      fontFamily: "var(--mem-font-mono)",
+                      fontSize: "10px",
+                      letterSpacing: "0.02em",
+                      padding: "1px 6px",
+                      borderRadius: 4,
+                      background: "var(--mem-indigo-bg)",
+                      color: "var(--mem-accent-indigo)",
+                    }}
+                  >
+                    {info.memory_type}
+                  </span>
+                )}
+                {info.domain && (
+                  <span
+                    style={{
+                      fontFamily: "var(--mem-font-mono)",
+                      fontSize: "10px",
+                      letterSpacing: "0.02em",
+                      padding: "1px 6px",
+                      borderRadius: 4,
+                      background: "var(--mem-hover)",
+                      color: "var(--mem-text-tertiary)",
+                    }}
+                  >
+                    {info.domain}
+                  </span>
+                )}
+              </div>
             )}
           </div>
-        )}
+          <div className="shrink-0">
+            <button
+              onClick={() => openFile(node.path)}
+              className="rounded-md transition-colors duration-150 hover:bg-[var(--mem-hover)]"
+              style={{
+                padding: "6px 13px",
+                fontFamily: "var(--mem-font-body)",
+                fontSize: "12px",
+                fontWeight: 500,
+                color: "white",
+                background: "var(--mem-accent-indigo)",
+                border: "none",
+                cursor: "pointer",
+              }}
+            >
+              Open
+            </button>
+          </div>
+        </div>
       </div>
       <div className="flex-1 overflow-y-auto px-8 pt-4 pb-8 flex flex-col gap-4">
-        <div>
-          <button
-            onClick={() => openFile(node.path)}
-            className="rounded-md transition-colors duration-150 hover:bg-[var(--mem-hover)]"
-            style={{
-              padding: "6px 13px",
-              fontFamily: "var(--mem-font-body)",
-              fontSize: "12px",
-              fontWeight: 500,
-              color: "white",
-              background: "var(--mem-accent-indigo)",
-              border: "none",
-              cursor: "pointer",
-            }}
-          >
-            Open
-          </button>
-        </div>
-
         {info?.summary && (
           <p
             style={{
@@ -661,6 +683,33 @@ function FileDetail({
           </p>
         )}
 
+        {isText && textLoading && (
+          <div
+            style={{
+              fontFamily: "var(--mem-font-mono)",
+              fontSize: "11px",
+              color: "var(--mem-text-tertiary)",
+            }}
+          >
+            Loading…
+          </div>
+        )}
+        {isText && textError && (
+          <div
+            style={{
+              fontFamily: "var(--mem-font-mono)",
+              fontSize: "11px",
+              color: "var(--mem-text-tertiary)",
+            }}
+          >
+            Couldn't read this file.
+          </div>
+        )}
+        {isText && !textLoading && !textError && fileText && (
+          <div style={{ maxWidth: 680 }}>
+            <ContentRenderer content={fileText} variant="detail" />
+          </div>
+        )}
       </div>
     </section>
   );

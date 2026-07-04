@@ -820,6 +820,7 @@ pub fn run() {
             search::delete_bulk,
             search::open_file,
             search::read_source_dir,
+            search::read_text_file,
             search::quick_capture,
             search::ingest_clipboard,
             search::ingest_webpage,
