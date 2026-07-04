@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import SpaceList from "../SpaceList";
 import { deleteSpace } from "../../../lib/tauri";
+import { i18n } from "../../../i18n";
 
 vi.mock("../../../lib/tauri", () => ({
   listSpaces: vi.fn().mockResolvedValue([
@@ -30,8 +31,9 @@ describe("SpaceList", () => {
   const onSelectSpace = vi.fn();
   const mockDeleteSpace = vi.mocked(deleteSpace);
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
+    await i18n.changeLanguage("en");
   });
 
   it("renders confirmed and suggested spaces", async () => {
@@ -89,6 +91,22 @@ describe("SpaceList", () => {
     fireEvent.contextMenu(screen.getByText("work"));
     expect(screen.getByText("Rename")).toBeTruthy();
     expect(screen.getByText("Delete space")).toBeTruthy();
+  });
+
+  it("localizes the space section controls", async () => {
+    await i18n.changeLanguage("zh-Hant");
+    render(<SpaceList onSelectSpace={onSelectSpace} />, { wrapper });
+
+    expect(await screen.findByText("空間")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTitle("新增空間"));
+    expect(screen.getByPlaceholderText("名稱")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "新增" })).toBeInTheDocument();
+
+    fireEvent.contextMenu(await screen.findByText("work"));
+    expect(screen.getByText("加上星號")).toBeInTheDocument();
+    expect(screen.getByText("重新命名")).toBeInTheDocument();
+    expect(screen.getByText("刪除空間")).toBeInTheDocument();
   });
 
   it("deletes a space without unsupported memoryAction arguments", async () => {

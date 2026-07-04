@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useQuery } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { listEntities, getProfile } from "../../lib/tauri";
 import ProfileAvatar from "./ProfileAvatar";
 
@@ -8,6 +9,7 @@ interface IdentityCardProps {
 }
 
 export default function IdentityCard({ onOpenDetail }: IdentityCardProps) {
+  const { t } = useTranslation();
 
   const { data: profile } = useQuery({
     queryKey: ["profile"],
@@ -49,7 +51,7 @@ export default function IdentityCard({ onOpenDetail }: IdentityCardProps) {
             lineHeight: "1.5",
           }}
         >
-          Set up your profile
+          {t("identityCard.setupProfile")}
         </p>
       </button>
     );

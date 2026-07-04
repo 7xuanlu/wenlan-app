@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useState, useRef, useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { quickCapture } from "../lib/tauri";
 
 interface QuickCaptureProps {
@@ -10,6 +11,7 @@ interface QuickCaptureProps {
 }
 
 export default function QuickCapture({ isOpen, onClose, standalone }: QuickCaptureProps) {
+  const { t } = useTranslation();
   const [content, setContent] = useState("");
   const [saved, setSaved] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -134,14 +136,14 @@ export default function QuickCapture({ isOpen, onClose, standalone }: QuickCaptu
               textTransform: "uppercase" as const,
             }}
           >
-            {saved ? "Saved to memory" : isPending ? "Saving..." : "Quick capture"}
+            {saved ? t("quickCapture.savedToMemory") : isPending ? t("quickCapture.saving") : t("quickCapture.title")}
           </span>
         </div>
         <button
           onClick={onClose}
           className="p-0.5 rounded transition-colors duration-150 hover:bg-[var(--mem-hover-strong)]"
           style={{ color: "var(--mem-text-tertiary)" }}
-          title="Close (Esc)"
+          title={t("quickCapture.closeTitle")}
         >
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -155,7 +157,7 @@ export default function QuickCapture({ isOpen, onClose, standalone }: QuickCaptu
           ref={textareaRef}
           value={content}
           onChange={(e) => setContent(e.target.value)}
-          placeholder="What's on your mind?"
+          placeholder={t("quickCapture.placeholder")}
           rows={standalone ? undefined : 7}
           className={`w-full bg-transparent focus:outline-none resize-none pt-3 ${standalone ? "flex-1" : ""}`}
           style={{
@@ -183,7 +185,7 @@ export default function QuickCapture({ isOpen, onClose, standalone }: QuickCaptu
               opacity: isEmpty ? 0 : 1,
             }}
           >
-            {charCount} char{charCount !== 1 ? "s" : ""}
+            {t("quickCapture.chars", { count: charCount })}
           </span>
           <div className="flex items-center gap-3">
             <span
@@ -195,7 +197,7 @@ export default function QuickCapture({ isOpen, onClose, standalone }: QuickCaptu
                 opacity: 0.5,
               }}
             >
-              {standalone ? "esc close" : "\u2318\u23CE save"}
+              {standalone ? t("quickCapture.standaloneShortcut") : t("quickCapture.saveShortcut")}
             </span>
             <button
               onClick={handleSubmit}
@@ -226,7 +228,7 @@ export default function QuickCapture({ isOpen, onClose, standalone }: QuickCaptu
                     : "none",
               }}
             >
-              {saved ? "Saved" : isPending ? "..." : "Save"}
+              {saved ? t("quickCapture.saved") : isPending ? "..." : t("quickCapture.save")}
             </button>
           </div>
         </div>

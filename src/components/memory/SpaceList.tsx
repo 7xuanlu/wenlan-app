@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { listSpaces, listPages, createSpace, deleteSpace, updateSpace, reorderSpace, toggleSpaceStarred, type Space } from "../../lib/tauri";
 
 const SPACES_STORAGE_KEY = "sidebar:spacesCollapsed";
@@ -50,6 +51,7 @@ interface DragState {
 }
 
 export default function SpaceList({ onSelectSpace }: SpaceListProps) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [collapsed, setCollapsed] = useSpacesCollapsed();
   const [showForm, setShowForm] = useState(false);
@@ -345,12 +347,12 @@ export default function SpaceList({ onSelectSpace }: SpaceListProps) {
             color: "var(--mem-text-tertiary)",
           }}
         >
-          Spaces
+          {t("sidebar.spaces")}
         </span>
         <div className="flex items-center gap-2">
           <span
             role="button"
-            title="New space"
+            title={t("sidebar.newSpace")}
             onClick={(e) => { e.stopPropagation(); setShowForm(true); }}
             className="flex items-center justify-center rounded transition-colors duration-150"
             style={{ color: "var(--mem-text-tertiary)", cursor: "pointer" }}
@@ -403,7 +405,7 @@ export default function SpaceList({ onSelectSpace }: SpaceListProps) {
                 ref={nameInputRef}
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
-                placeholder="Name"
+                placeholder={t("sidebar.namePlaceholder")}
                 className="flex-1 min-w-0 rounded-md px-2 py-1 bg-transparent outline-none"
                 style={{
                   fontFamily: "var(--mem-font-body)",
@@ -425,7 +427,7 @@ export default function SpaceList({ onSelectSpace }: SpaceListProps) {
                   border: newName.trim() ? "none" : "1px solid var(--mem-border)",
                 }}
               >
-                Add
+                {t("sidebar.addSpace")}
               </button>
             </form>
           )}
@@ -450,7 +452,9 @@ export default function SpaceList({ onSelectSpace }: SpaceListProps) {
             className="w-full text-left px-3 py-1.5 text-xs transition-colors duration-150 hover:bg-[var(--mem-hover)]"
             style={{ fontFamily: "var(--mem-font-body)", color: "var(--mem-text-secondary)" }}
           >
-            {spaces.find((s) => s.name === contextMenu.spaceName)?.starred ? "Unstar" : "Star"}
+            {spaces.find((s) => s.name === contextMenu.spaceName)?.starred
+              ? t("sidebar.unstarSpace")
+              : t("sidebar.starSpace")}
           </button>
           <button
             onClick={() => {
@@ -461,7 +465,7 @@ export default function SpaceList({ onSelectSpace }: SpaceListProps) {
             className="w-full text-left px-3 py-1.5 text-xs transition-colors duration-150 hover:bg-[var(--mem-hover)]"
             style={{ fontFamily: "var(--mem-font-body)", color: "var(--mem-text-secondary)" }}
           >
-            Rename
+            {t("sidebar.renameSpace")}
           </button>
           <div style={{ height: "1px", backgroundColor: "var(--mem-border)", margin: "2px 0" }} />
           <button
@@ -469,7 +473,7 @@ export default function SpaceList({ onSelectSpace }: SpaceListProps) {
             className="w-full text-left px-3 py-1.5 text-xs transition-colors duration-150 hover:bg-red-500/10"
             style={{ fontFamily: "var(--mem-font-body)", color: "#ef4444" }}
           >
-            Delete space
+            {t("sidebar.deleteSpace")}
           </button>
         </div>
       )}

@@ -2,6 +2,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { i18n } from "../../../i18n";
 import IdentityCard from "../IdentityCard";
 
 vi.mock("../../../lib/tauri", () => ({
@@ -21,7 +22,8 @@ function renderIdentityCard() {
   );
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  await i18n.changeLanguage("en");
   vi.mocked(tauri.getProfile).mockResolvedValue({
     id: "p1",
     name: "Lucian",
@@ -61,5 +63,16 @@ describe("IdentityCard", () => {
 
     expect(tauri.getEntityDetail).not.toHaveBeenCalled();
     expect(screen.queryByText(/senior engineer/i)).not.toBeInTheDocument();
+  });
+
+  it("localizes the setup profile placeholder", async () => {
+    await i18n.changeLanguage("zh-Hant");
+    vi.mocked(tauri.getProfile).mockResolvedValue(null);
+    vi.mocked(tauri.listEntities).mockResolvedValue([]);
+
+    renderIdentityCard();
+
+    expect(await screen.findByText("設定你的個人資料")).toBeInTheDocument();
+    expect(screen.queryByText("Set up your profile")).not.toBeInTheDocument();
   });
 });

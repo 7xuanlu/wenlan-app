@@ -5,21 +5,33 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { availableMonitors } from "@tauri-apps/api/window";
 import { LogicalPosition } from "@tauri-apps/api/dpi";
 import { Toaster, toast } from "sonner";
+import { useTranslation } from "react-i18next";
 
-const SOURCE_CONFIG: Record<string, { label: string; color: string; silent?: boolean }> = {
-  clipboard:      { label: "Clipboard", color: "#4ade80" },
-  screen_capture: { label: "Screen",    color: "#fbbf24" },
-  local_files:    { label: "Files",     color: "#60a5fa" },
-  manual:         { label: "Captured",  color: "#c084fc" },
-  ambient:        { label: "Ambient",   color: "#2dd4bf", silent: true },
-  focus:          { label: "Focus",     color: "#fbbf24", silent: true },
-  focus_capture:  { label: "Focus",     color: "#fbbf24", silent: true },
-  hotkey:         { label: "Capture",   color: "#c084fc" },
-  hotkey_capture: { label: "Capture",   color: "#c084fc" },
-  snip:           { label: "Snip",      color: "#fb7185" },
-  snip_capture:   { label: "Snip",      color: "#fb7185" },
-  quick_thought:  { label: "Thought",   color: "#f472b6" },
-  thought:        { label: "Thought",   color: "#f472b6" },
+type ToastLabelKey =
+  | "toast.clipboard"
+  | "toast.screen"
+  | "toast.files"
+  | "toast.captured"
+  | "toast.ambient"
+  | "toast.focus"
+  | "toast.capture"
+  | "toast.snip"
+  | "toast.thought";
+
+const SOURCE_CONFIG: Record<string, { labelKey: ToastLabelKey; color: string; silent?: boolean }> = {
+  clipboard:      { labelKey: "toast.clipboard", color: "#4ade80" },
+  screen_capture: { labelKey: "toast.screen",    color: "#fbbf24" },
+  local_files:    { labelKey: "toast.files",     color: "#60a5fa" },
+  manual:         { labelKey: "toast.captured",  color: "#c084fc" },
+  ambient:        { labelKey: "toast.ambient",   color: "#2dd4bf", silent: true },
+  focus:          { labelKey: "toast.focus",     color: "#fbbf24", silent: true },
+  focus_capture:  { labelKey: "toast.focus",     color: "#fbbf24", silent: true },
+  hotkey:         { labelKey: "toast.capture",   color: "#c084fc" },
+  hotkey_capture: { labelKey: "toast.capture",   color: "#c084fc" },
+  snip:           { labelKey: "toast.snip",      color: "#fb7185" },
+  snip_capture:   { labelKey: "toast.snip",      color: "#fb7185" },
+  quick_thought:  { labelKey: "toast.thought",   color: "#f472b6" },
+  thought:        { labelKey: "toast.thought",   color: "#f472b6" },
 };
 
 const pillStyle: React.CSSProperties = {
@@ -84,6 +96,7 @@ interface CapturePayload {
 }
 
 export default function ToastOverlay() {
+  const { t } = useTranslation();
   const activeCount = useRef(0);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingCapture = useRef(false);
@@ -131,7 +144,7 @@ export default function ToastOverlay() {
 
     function showToast(
       win: ReturnType<typeof getCurrentWindow>,
-      config: { label: string; color: string },
+      config: { labelKey: ToastLabelKey; color: string },
       text: string,
     ) {
       positionAndShow(win).catch(() => {});
@@ -156,7 +169,7 @@ export default function ToastOverlay() {
         () => (
           <div style={pillStyle}>
             <span style={dotStyle(config.color)} />
-            <span style={labelStyle}>{config.label}</span>
+            <span style={labelStyle}>{t(config.labelKey)}</span>
             <span style={summaryStyle}>{text}</span>
           </div>
         ),
@@ -173,7 +186,7 @@ export default function ToastOverlay() {
       if (unlistenFn) unlistenFn();
       if (hideTimer.current) clearTimeout(hideTimer.current);
     };
-  }, []);
+  }, [t]);
 
   return (
     <>

@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { useTranslation } from "react-i18next";
+
 interface ViewToggleProps {
   active: "home" | "activity";
   onSwitch: (view: "home" | "activity") => void;
@@ -8,6 +10,7 @@ interface ViewToggleProps {
  * Segmented control for switching between Home and Activity views.
  */
 export default function ViewToggle({ active, onSwitch }: ViewToggleProps) {
+  const { t } = useTranslation();
   const btnStyle = (isActive: boolean): React.CSSProperties => ({
     fontFamily: "var(--mem-font-body)",
     fontSize: "12px",
@@ -32,14 +35,14 @@ export default function ViewToggle({ active, onSwitch }: ViewToggleProps) {
         className="px-2.5 py-1 rounded transition-colors duration-150"
         style={btnStyle(active === "home")}
       >
-        Home
+        {t("main.home")}
       </button>
       <button
         onClick={() => onSwitch("activity")}
         className="px-2.5 py-1 rounded transition-colors duration-150"
         style={btnStyle(active === "activity")}
       >
-        Activity
+        {t("main.activity")}
       </button>
     </div>
   );

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SetupWizard } from "./SetupWizard";
+import { i18n } from "../i18n";
 
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(() => Promise.resolve(() => {})),
@@ -78,8 +79,9 @@ function renderWizard(
 }
 
 describe("SetupWizard", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
+    await i18n.changeLanguage("en");
     (detectMcpClients as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     (writeMcpConfig as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
     (listAgents as ReturnType<typeof vi.fn>).mockResolvedValue([]);
@@ -91,6 +93,14 @@ describe("SetupWizard", () => {
     expect(screen.getByText("Welcome to Wenlan")).toBeInTheDocument();
     expect(screen.getByText(/Where understanding compounds/i)).toBeInTheDocument();
     expect(screen.getByText("Everything stays on your device")).toBeInTheDocument();
+  });
+
+  it("renders Welcome step in Simplified Chinese when selected", async () => {
+    await i18n.changeLanguage("zh-Hans");
+    renderWizard();
+
+    expect(screen.getByText("欢迎使用文澜")).toBeInTheDocument();
+    expect(screen.getByText("所有内容都留在你的设备上")).toBeInTheDocument();
   });
 
   it('advances from Welcome to intelligence choice on "Get started" click', () => {

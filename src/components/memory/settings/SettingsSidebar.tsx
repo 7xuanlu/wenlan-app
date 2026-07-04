@@ -7,6 +7,7 @@
 
 import { useEffect, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
+import { useTranslation } from "react-i18next";
 
 export type SettingsSection =
   | "capture"
@@ -16,11 +17,25 @@ export type SettingsSection =
   | "diagnostics"
   | "general";
 
+type SettingsGroupLabelKey =
+  | "settings.groups.general.label"
+  | "settings.groups.intelligence.label"
+  | "settings.groups.diagnostics.label"
+  | "settings.groups.agents.label"
+  | "settings.groups.sources.label";
+
+type SettingsGroupHintKey =
+  | "settings.groups.general.hint"
+  | "settings.groups.intelligence.hint"
+  | "settings.groups.diagnostics.hint"
+  | "settings.groups.agents.hint"
+  | "settings.groups.sources.hint";
+
 export interface SettingsGroup {
   id: SettingsSection;
-  label: string;
+  labelKey: SettingsGroupLabelKey;
   /** One-line caption shown beneath the label when the group is active. */
-  hint: string;
+  hintKey: SettingsGroupHintKey;
   icon: React.ReactNode;
 }
 
@@ -37,8 +52,8 @@ export interface SettingsGroup {
 export const SETTINGS_GROUPS: SettingsGroup[] = [
   {
     id: "general",
-    label: "General",
-    hint: "Startup and background behavior",
+    labelKey: "settings.groups.general.label",
+    hintKey: "settings.groups.general.hint",
     icon: (
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="12" r="3" />
@@ -48,8 +63,8 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
   },
   {
     id: "intelligence",
-    label: "Intelligence",
-    hint: "On-device and routed models",
+    labelKey: "settings.groups.intelligence.label",
+    hintKey: "settings.groups.intelligence.hint",
     icon: (
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="12" r="9" />
@@ -59,8 +74,8 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
   },
   {
     id: "diagnostics",
-    label: "Diagnostics",
-    hint: "Daemon pipeline health",
+    labelKey: "settings.groups.diagnostics.label",
+    hintKey: "settings.groups.diagnostics.hint",
     icon: (
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
         <path d="M4 19V5" />
@@ -71,8 +86,8 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
   },
   {
     id: "agents",
-    label: "Agents",
-    hint: "Connected clients and remote access",
+    labelKey: "settings.groups.agents.label",
+    hintKey: "settings.groups.agents.hint",
     icon: (
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
         <path d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
@@ -81,8 +96,8 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
   },
   {
     id: "sources",
-    label: "Sources",
-    hint: "Connected files and imports",
+    labelKey: "settings.groups.sources.label",
+    hintKey: "settings.groups.sources.hint",
     icon: (
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
         <ellipse cx="12" cy="5" rx="9" ry="3" />
@@ -119,6 +134,7 @@ export default function SettingsSidebar({
   onSelect,
   onNavigateHome,
 }: SettingsSidebarProps) {
+  const { t } = useTranslation();
   const [appVersion, setAppVersion] = useState<string>("");
   useEffect(() => {
     getVersion().then(setAppVersion).catch(() => setAppVersion(""));
@@ -164,7 +180,7 @@ export default function SettingsSidebar({
                 fontWeight: 400,
               }}
             >
-              Home
+              {t("settings.home")}
             </span>
           </button>
         </div>
@@ -181,7 +197,7 @@ export default function SettingsSidebar({
               color: "var(--mem-text-tertiary)",
             }}
           >
-            Settings
+            {t("settings.title")}
           </span>
         </div>
 
@@ -246,7 +262,7 @@ export default function SettingsSidebar({
                     fontWeight: isActive ? 500 : 400,
                   }}
                 >
-                  {group.label}
+                  {t(group.labelKey)}
                 </span>
               </button>
             );
@@ -316,7 +332,7 @@ export default function SettingsSidebar({
                 opacity: 0.7,
               }}
             >
-              Local-only. Your data never leaves this machine.
+              {t("settings.localOnly")}
             </span>
           </div>
         </div>
