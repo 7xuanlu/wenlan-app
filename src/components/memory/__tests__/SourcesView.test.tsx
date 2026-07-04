@@ -174,6 +174,15 @@ describe("SourcesView root", () => {
     await openFolder(user, "Books");
     fireEvent.click(await screen.findByRole("button", { name: "Remove" }));
     await waitFor(() => expect(removeSource).toHaveBeenCalledWith("directory-books"));
+
+    // Back at the root — otherwise the removed id lingers as `selectedId`, and
+    // since source ids are deterministic (e.g. re-adding the same folder later
+    // in the session reuses "directory-books"), it would auto-drill right back
+    // in unbidden. The mocked source list still returns the "removed" source,
+    // so assert on navigation state (root-only affordances back, Remove gone),
+    // not on the row disappearing.
+    await waitFor(() => expect(screen.getByRole("button", { name: /Add source/ })).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: "Remove" })).toBeNull();
   });
 });
 
@@ -226,6 +235,15 @@ describe("managed uploads at the root", () => {
     await user.click(report);
     expect(vi.mocked(openFile)).not.toHaveBeenCalled();
     expect(report.closest("button")).toHaveAttribute("data-selected", "true");
+  });
+
+  it("counts only the visible folder sources, excluding the invisible managed dir", async () => {
+    renderView();
+
+    // One folder source (Books) + the managed uploads dir registered
+    // underneath — the header should read "1 source", not "2 sources".
+    expect(await screen.findByText(/\b1 source\b/)).toBeInTheDocument();
+    expect(screen.queryByText(/2 sources/)).toBeNull();
   });
 });
 

@@ -146,7 +146,6 @@ export default function SourcesView({ onManageSources }: SourcesViewProps) {
         />
       ) : (
         <RootBrowser
-          sourceCount={sources.length}
           folderSources={folderSources}
           managed={managed}
           onSelectSource={selectSource}
@@ -161,7 +160,6 @@ export default function SourcesView({ onManageSources }: SourcesViewProps) {
 }
 
 interface RootBrowserProps {
-  sourceCount: number;
   /** Non-managed sources (directory + obsidian), sorted by memory_count desc. */
   folderSources: RegisteredSource[];
   /** The app-managed uploads dir, if registered. Its loose files render as
@@ -176,7 +174,6 @@ interface RootBrowserProps {
  *  source) followed by file rows for loose uploads sitting directly in the
  *  managed dir — folders and files as peers, per the drill-in tree design. */
 function RootBrowser({
-  sourceCount,
   folderSources,
   managed,
   onSelectSource,
@@ -265,7 +262,7 @@ function RootBrowser({
                 marginTop: 6,
               }}
             >
-              {sourceCount} {sourceCount === 1 ? "source" : "sources"}
+              {folderSources.length} {folderSources.length === 1 ? "source" : "sources"}
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -545,6 +542,11 @@ function FolderBrowser({ source, subpath, onSubpath, filter, onFilter, onRoot }:
                 removeSource(source.id)
                   .then(() => {
                     queryClient.invalidateQueries({ queryKey: ["registeredSources"] });
+                    // Source ids are deterministic (e.g. `directory-books`) —
+                    // leaving `selectedId` pointed at the removed source would
+                    // let a same-path re-add later in the session silently
+                    // re-match it and auto-drill back in unbidden.
+                    onRoot();
                   })
                   .catch((e) => {
                     toast("Couldn't remove source", { description: String(e) });
