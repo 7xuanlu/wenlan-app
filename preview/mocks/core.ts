@@ -1,11 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Browser stand-in for @tauri-apps/api/core (aliased in vite.preview.config.ts).
+// Two backends: fixture data for /preview/ (flag set inline in its index.html),
+// live daemon HTTP for the real app at /.
 import { PAGES, PRISTINE, SOURCES, LINKS, REVISIONS } from "../fixtures";
+import { liveInvoke } from "./live-invoke";
 
 export async function invoke(
   cmd: string,
   args?: Record<string, unknown>,
 ): Promise<unknown> {
+  if (!(window as { __PREVIEW_FIXTURES__?: boolean }).__PREVIEW_FIXTURES__) {
+    return liveInvoke(cmd, args);
+  }
   switch (cmd) {
     case "get_page":
       return PAGES[args?.id as string] ?? null;
