@@ -506,15 +506,18 @@ function DetailPane({ node, isIndexed, indexReady, indexedFiles }: DetailPanePro
   if (!node) return <section className="flex-1 flex flex-col overflow-hidden" />;
   return node.kind === "file" ? (
     <FileDetail
+      key={node.path}
       node={node}
       isIndexed={isIndexed}
       indexReady={indexReady}
       indexedFiles={indexedFiles}
     />
   ) : (
-    <FolderDetail node={node} />
+    <FolderDetail key={node.path} node={node} />
   );
 }
+
+const MAX_INLINE_CHUNKS = 12;
 
 function FileDetail({
   node,
@@ -618,6 +621,21 @@ function FileDetail({
                 {info.memory_type}
               </span>
             )}
+            {info.domain && (
+              <span
+                style={{
+                  fontFamily: "var(--mem-font-mono)",
+                  fontSize: "10px",
+                  letterSpacing: "0.02em",
+                  padding: "1px 6px",
+                  borderRadius: 4,
+                  background: "var(--mem-hover)",
+                  color: "var(--mem-text-tertiary)",
+                }}
+              >
+                {info.domain}
+              </span>
+            )}
           </div>
         )}
       </div>
@@ -677,7 +695,7 @@ function FileDetail({
             </button>
 
             {chunksExpanded && (
-              <div className="flex flex-col gap-2" style={{ marginTop: 8 }}>
+              <div className="flex flex-col gap-2 min-w-0" style={{ marginTop: 8 }}>
                 {chunksLoading ? (
                   <div
                     style={{
@@ -688,70 +706,94 @@ function FileDetail({
                   >
                     Loading…
                   </div>
+                ) : chunks.length === 0 ? (
+                  <div
+                    style={{
+                      fontFamily: "var(--mem-font-mono)",
+                      fontSize: "11px",
+                      color: "var(--mem-text-tertiary)",
+                    }}
+                  >
+                    No chunk text available.
+                  </div>
                 ) : (
-                  chunks.map((chunk) => (
-                    <div
-                      key={chunk.id}
-                      className="rounded-md"
-                      style={{ border: "1px solid var(--mem-border)", padding: "8px 10px" }}
-                    >
+                  <>
+                    {chunks.slice(0, MAX_INLINE_CHUNKS).map((chunk) => (
                       <div
-                        className="flex items-center gap-2 flex-wrap"
-                        style={{ marginBottom: 4 }}
+                        key={chunk.id}
+                        className="rounded-md overflow-hidden"
+                        style={{ border: "1px solid var(--mem-border)", padding: "8px 10px", minWidth: 0 }}
                       >
-                        <span
-                          style={{
-                            fontFamily: "var(--mem-font-mono)",
-                            fontSize: "10px",
-                            color: "var(--mem-text-tertiary)",
-                          }}
+                        <div
+                          className="flex items-center gap-2 flex-wrap"
+                          style={{ marginBottom: 4 }}
                         >
-                          #{chunk.chunk_index}
-                        </span>
-                        {chunk.chunk_type && (
                           <span
                             style={{
                               fontFamily: "var(--mem-font-mono)",
                               fontSize: "10px",
-                              letterSpacing: "0.02em",
-                              padding: "1px 6px",
-                              borderRadius: 4,
-                              background: "var(--mem-hover)",
                               color: "var(--mem-text-tertiary)",
                             }}
                           >
-                            {chunk.chunk_type}
+                            #{chunk.chunk_index}
                           </span>
-                        )}
-                        {chunk.language && (
-                          <span
-                            style={{
-                              fontFamily: "var(--mem-font-mono)",
-                              fontSize: "10px",
-                              letterSpacing: "0.02em",
-                              padding: "1px 6px",
-                              borderRadius: 4,
-                              background: "var(--mem-indigo-bg)",
-                              color: "var(--mem-accent-indigo)",
-                            }}
-                          >
-                            {chunk.language}
-                          </span>
-                        )}
+                          {chunk.chunk_type && (
+                            <span
+                              style={{
+                                fontFamily: "var(--mem-font-mono)",
+                                fontSize: "10px",
+                                letterSpacing: "0.02em",
+                                padding: "1px 6px",
+                                borderRadius: 4,
+                                background: "var(--mem-hover)",
+                                color: "var(--mem-text-tertiary)",
+                              }}
+                            >
+                              {chunk.chunk_type}
+                            </span>
+                          )}
+                          {chunk.language && (
+                            <span
+                              style={{
+                                fontFamily: "var(--mem-font-mono)",
+                                fontSize: "10px",
+                                letterSpacing: "0.02em",
+                                padding: "1px 6px",
+                                borderRadius: 4,
+                                background: "var(--mem-indigo-bg)",
+                                color: "var(--mem-accent-indigo)",
+                              }}
+                            >
+                              {chunk.language}
+                            </span>
+                          )}
+                        </div>
+                        <div
+                          className="whitespace-pre-wrap break-words"
+                          style={{
+                            fontFamily: "var(--mem-font-body)",
+                            fontSize: "12px",
+                            color: "var(--mem-text-secondary)",
+                            lineHeight: 1.5,
+                          }}
+                        >
+                          {chunk.content}
+                        </div>
                       </div>
+                    ))}
+                    {chunks.length > MAX_INLINE_CHUNKS && (
                       <div
-                        className="whitespace-pre-wrap"
                         style={{
-                          fontFamily: "var(--mem-font-body)",
-                          fontSize: "12px",
-                          color: "var(--mem-text-secondary)",
-                          lineHeight: 1.5,
+                          fontFamily: "var(--mem-font-mono)",
+                          fontSize: "11px",
+                          color: "var(--mem-text-tertiary)",
+                          marginTop: 4,
                         }}
                       >
-                        {chunk.content}
+                        Showing first {MAX_INLINE_CHUNKS} of {chunks.length} chunks
                       </div>
-                    </div>
-                  ))
+                    )}
+                  </>
                 )}
               </div>
             )}
@@ -813,10 +855,8 @@ function FolderDetail({ node }: { node: Extract<SourcesNode, { kind: "folder" }>
       <div className="px-8 pt-6 pb-4" style={{ borderBottom: "1px solid var(--mem-border)" }}>
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            {/* The tree already shows the bare name as its own row label —
-                the detail heading shows the full path (no breadcrumb drill
-                exists anymore, so this is the only place "where is this" is
-                answered). */}
+            {/* Name is the headline; the full path is demoted to a muted
+                caption below. */}
             <h2
               className="truncate"
               style={{
@@ -829,8 +869,20 @@ function FolderDetail({ node }: { node: Extract<SourcesNode, { kind: "folder" }>
               }}
               title={path}
             >
-              {path}
+              {name}
             </h2>
+            <div
+              className="truncate"
+              style={{
+                fontFamily: "var(--mem-font-mono)",
+                fontSize: "11px",
+                color: "var(--mem-text-tertiary)",
+                marginTop: 3,
+              }}
+              title={path}
+            >
+              {path}
+            </div>
             <div
               style={{
                 fontFamily: "var(--mem-font-mono)",
@@ -843,6 +895,18 @@ function FolderDetail({ node }: { node: Extract<SourcesNode, { kind: "folder" }>
               {isSourceRoot && ` · ${source.memory_count.toLocaleString()} memories`}
               {isSourceRoot && ` · ${label ?? relTime(source.last_sync)}`}
             </div>
+            {isSourceRoot && (source.last_sync_errors ?? 0) > 0 && (
+              <div
+                style={{
+                  fontFamily: "var(--mem-font-mono)",
+                  fontSize: "11px",
+                  color: "var(--mem-accent-amber)",
+                  marginTop: 2,
+                }}
+              >
+                {source.last_sync_errors} file{source.last_sync_errors === 1 ? "" : "s"} couldn't be indexed
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-2 shrink-0">

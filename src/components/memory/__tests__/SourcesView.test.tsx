@@ -94,9 +94,10 @@ describe("Sources left tree", () => {
   it("hides the managed sources dir and hoists its files as root peers", async () => {
     renderView();
 
-    // Folder-sources render as folder nodes.
+    // Folder-sources render as folder nodes. "vault" is also the default
+    // selection, so its bare name doubles as the detail-pane heading.
     expect(await screen.findByText("notes")).toBeInTheDocument();
-    expect(screen.getByText("vault")).toBeInTheDocument();
+    expect(screen.getAllByText("vault").length).toBeGreaterThan(0);
 
     // The managed dir's loose files are hoisted to the root as peers.
     expect(await screen.findByText("report.pdf")).toBeInTheDocument();
@@ -190,6 +191,16 @@ describe("detail pane", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Remove" }));
     await waitFor(() => expect(removeSource).toHaveBeenCalledWith("notes"));
   });
+
+  it("folder detail heading shows the bare name, not the full path", async () => {
+    const user = userEvent.setup();
+    renderView();
+    await user.click(await screen.findByText("notes"));
+    // The heading is the bare folder name…
+    expect(await screen.findByRole("heading", { name: "notes" })).toBeInTheDocument();
+    // …and the full path is demoted to a caption (still present, not the h2).
+    expect(screen.getByText("/Users/me/notes")).toBeInTheDocument();
+  });
 });
 
 describe("file detail: index internals", () => {
@@ -228,6 +239,29 @@ describe("file detail: index internals", () => {
     expect(vi.mocked(getChunks)).toHaveBeenCalledWith("directory", `managed::${MANAGED}/report.pdf`);
     expect(await screen.findByText("#0")).toBeInTheDocument();
     expect(screen.getByText(/First chunk of the report/)).toBeInTheDocument();
+  });
+
+  it("caps the inline chunk list and shows how many are hidden", async () => {
+    const many = Array.from({ length: 15 }, (_, i) => ({
+      id: `c${i}`, chunk_index: i, chunk_type: "prose", language: null, content: `chunk ${i} body`,
+    }));
+    vi.mocked(getChunks).mockResolvedValue(many);
+    const user = userEvent.setup();
+    renderView();
+    await user.click(await screen.findByText("report.pdf"));
+    await user.click(await screen.findByRole("button", { name: /chunks/i }));
+    expect(await screen.findByText(/showing first 12 of 15 chunks/i)).toBeInTheDocument();
+    expect(screen.queryByText("chunk 12 body")).toBeNull(); // 13th chunk (index 12) is hidden
+  });
+
+  it("shows the domain when the indexed file has one", async () => {
+    vi.mocked(listIndexedFiles).mockResolvedValue([
+      { ...indexed("managed", `${MANAGED}/report.pdf`), chunk_count: 3, summary: "A quarterly report.", domain: "finance" },
+    ]);
+    const user = userEvent.setup();
+    renderView();
+    await user.click(await screen.findByText("report.pdf"));
+    expect(await screen.findByText("finance")).toBeInTheDocument();
   });
 });
 
