@@ -82,10 +82,22 @@ export default function CitationPopover({
 
   function body() {
     if (citation.source_kind === "authored") {
-      return <p style={bodyText}>Written directly in this page.</p>;
+      return (
+        <p style={bodyText}>
+          Written by you in this page — kept unchanged when the page is
+          re-distilled from its sources.
+        </p>
+      );
     }
     if (citation.source_kind === "external_file") {
-      return <p style={mono}>{citation.locator}</p>;
+      return (
+        <>
+          <p style={{ ...mono, wordBreak: "break-all" }}>{citation.locator}</p>
+          <button style={actionStyle} onClick={() => void shellOpen(citation.locator)}>
+            Open file →
+          </button>
+        </>
+      );
     }
     if (citation.source_kind === "external_url") {
       return (
@@ -110,7 +122,10 @@ export default function CitationPopover({
       return (
         <>
           <p style={mono}>{citation.locator}</p>
-          <p style={{ ...bodyText, fontStyle: "italic" }}>source not available</p>
+          <p style={{ ...bodyText, fontStyle: "italic" }}>
+            This source memory no longer exists — it was deleted or merged
+            after distillation. Re-distill the page to refresh its citations.
+          </p>
         </>
       );
     }

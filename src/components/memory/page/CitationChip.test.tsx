@@ -119,10 +119,15 @@ describe("CitationChip", () => {
     expect(onOpenMemory).toHaveBeenCalledWith("mem-1");
   });
 
-  it("shows 'source not available' when the locator does not resolve", () => {
-    renderChip({ sourceMemory: null, sourcesLoading: false });
-    fireEvent.focus(screen.getByRole("button", { name: /mem-1/ }));
-    expect(screen.getByText(/source not available/i)).toBeInTheDocument();
+  it("explains a missing source and does not navigate on click", async () => {
+    const user = userEvent.setup();
+    const { onOpenMemory } = renderChip({ sourceMemory: null, sourcesLoading: false });
+    const chip = screen.getByRole("button", { name: /mem-1/ });
+    fireEvent.focus(chip);
+    expect(screen.getByText(/no longer exists/i)).toBeInTheDocument();
+    expect(screen.getByText(/re-distill/i)).toBeInTheDocument();
+    await user.click(chip);
+    expect(onOpenMemory).not.toHaveBeenCalled();
   });
 
   it("shows a skeleton while sources are loading", () => {
@@ -147,19 +152,21 @@ describe("CitationChip", () => {
     expect(vi.mocked(shellOpen)).toHaveBeenCalledWith("https://docs.rs/serde");
   });
 
-  it("shows the file path with no action for external_file", () => {
+  it("shows the file path and opens it from the popover action", async () => {
+    const user = userEvent.setup();
     renderChip({
       citation: cite({ source_kind: "external_file", locator: "/notes/design.md" }),
       sourceMemory: null,
     });
     fireEvent.focus(screen.getByRole("button", { name: /design\.md/ }));
     expect(screen.getByText("/notes/design.md")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Open/ })).toBeNull();
+    await user.click(screen.getByRole("button", { name: /Open file/ }));
+    expect(vi.mocked(shellOpen)).toHaveBeenCalledWith("/notes/design.md");
   });
 
-  it("labels authored citations as written directly", () => {
+  it("explains that authored content survives re-distillation", () => {
     renderChip({ citation: cite({ source_kind: "authored" }), sourceMemory: null });
     fireEvent.focus(screen.getByRole("button", { name: /authored/ }));
-    expect(screen.getByText(/written directly/i)).toBeInTheDocument();
+    expect(screen.getByText(/kept unchanged when the page is re-distilled/i)).toBeInTheDocument();
   });
 });

@@ -59,7 +59,7 @@ export default function RelatedPages({ outbound, onPageClick }: RelatedPagesProp
             return (
               <div
                 key={key}
-                className="rounded-lg px-3 py-2"
+                className="flex items-center gap-2 rounded-lg px-3 py-2"
                 style={{
                   backgroundColor: "var(--mem-surface)",
                   border: "1px solid var(--mem-border)",
@@ -68,6 +68,15 @@ export default function RelatedPages({ outbound, onPageClick }: RelatedPagesProp
                 title="No page exists for this link yet"
               >
                 {inner}
+                <span
+                  style={{
+                    fontFamily: "var(--mem-font-mono)",
+                    fontSize: "10px",
+                    color: "var(--mem-text-tertiary)",
+                  }}
+                >
+                  not distilled yet
+                </span>
               </div>
             );
           }

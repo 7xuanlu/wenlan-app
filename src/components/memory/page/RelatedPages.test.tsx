@@ -34,5 +34,6 @@ describe("RelatedPages", () => {
     const section = screen.getByLabelText("Related pages");
     expect(within(section).getByText("Missing Link")).toBeInTheDocument();
     expect(within(section).queryByRole("button", { name: /Missing Link/ })).toBeNull();
+    expect(within(section).getByText(/not distilled yet/i)).toBeInTheDocument();
   });
 });

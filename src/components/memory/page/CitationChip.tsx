@@ -43,6 +43,12 @@ export default function CitationChip({
       return;
     }
     if (citation.source_kind === "memory") {
+      // A deleted/merged source has no detail view to land on — explain in
+      // the popover instead of navigating to a blank page.
+      if (!sourceMemory && !sourcesLoading) {
+        setOpen((v) => !v);
+        return;
+      }
       onOpenMemory(citation.locator);
     } else if (citation.source_kind === "external_url") {
       void shellOpen(citation.locator);

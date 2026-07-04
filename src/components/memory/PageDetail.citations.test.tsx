@@ -135,11 +135,11 @@ describe("PageDetail citations", () => {
     expect(props.onMemoryClick).toHaveBeenCalledWith("mem-1");
   });
 
-  it("shows 'source not available' for a locator missing from page-sources", async () => {
+  it("explains a locator missing from page-sources", async () => {
     renderPage();
     const chip = await screen.findByRole("button", { name: /mem-2/ });
     fireEvent.focus(chip);
-    expect(await screen.findByText(/source not available/i)).toBeInTheDocument();
+    expect(await screen.findByText(/no longer exists/i)).toBeInTheDocument();
   });
 
   it("display-strips markers when citations were cleared by an edit", async () => {
