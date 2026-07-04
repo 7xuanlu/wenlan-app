@@ -34,6 +34,10 @@ const qs = (obj: Record<string, unknown>) => {
     .map(([k, v]) => `${k}=${enc(String(v))}`);
   return parts.length ? `?${parts.join("&")}` : "";
 };
+// Daemon config PUTs are sparse patches: an omitted key preserves its value,
+// so drop null/undefined rather than sending them (mirrors api.rs empty_update).
+const sparse = (obj: Record<string, unknown>) =>
+  Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined && v !== null));
 
 const HANDLERS: Record<string, (a: any) => Promise<unknown>> = {
   // --- pages (mirrors search.rs exactly) ---
@@ -159,16 +163,30 @@ const HANDLERS: Record<string, (a: any) => Promise<unknown>> = {
   get_pipeline_status: () => get("/api/debug/pipeline"),
   list_onboarding_milestones: () =>
     get("/api/onboarding/milestones").then((r) => r.milestones ?? r),
+
+  // --- model / setup / config (all daemon-backed; see api.rs) ---
+  get_on_device_model: () => get("/api/on-device-model"),
+  // Triggers download + hot-load on the SHARED daemon; long-running for uncached models.
+  download_on_device_model: (a) => post("/api/on-device-model/download", { model_id: a.modelId }),
+  get_setup_status: () => get("/api/setup/status"),
+  get_setup_completed: () => get("/api/setup/status").then((s) => !!s.setup_completed),
+  should_show_wizard: () => get("/api/setup/status").then((s) => !s.setup_completed),
+  set_setup_completed: (a) => put("/api/config", { setup_completed: !!a.completed }),
+  get_model_choice: () =>
+    get("/api/config").then((c) => [c.routine_model ?? null, c.synthesis_model ?? null]),
+  set_model_choice: (a) =>
+    put("/api/config", sparse({ routine_model: a.routineModel, synthesis_model: a.synthesisModel })),
+  get_external_llm: () =>
+    get("/api/config").then((c) => [c.external_llm_endpoint ?? null, c.external_llm_model ?? null]),
+  set_external_llm: (a) =>
+    put("/api/config", sparse({ external_llm_endpoint: a.endpoint, external_llm_model: a.model })),
+  test_external_llm: (a) => post("/api/llm/test", { endpoint: a.endpoint, model: a.model, prompt: null }),
 };
 
 // App-local commands (no daemon route) → static defaults that route the UI
 // to the main screen and render panels empty rather than crashing.
 const DEFAULTS: Record<string, unknown> = {
-  should_show_wizard: false,
-  get_setup_completed: true,
-  get_setup_status: { completed: true },
   set_traffic_lights_visible: null,
-  set_setup_completed: null,
   get_clipboard_enabled: false,
   get_screen_capture_enabled: false,
   check_screen_permission: true,
@@ -185,10 +203,10 @@ const DEFAULTS: Record<string, unknown> = {
     watched_paths: 0,
     last_indexed: null,
   },
+  // App-local (read/write the app's own config file via the Rust layer, no
+  // daemon route) — unavailable from a browser, so key config can't persist here.
   get_api_key: null,
-  get_model_choice: [null, null],
-  get_external_llm: [null, null],
-  get_on_device_model: null,
+  set_api_key: null,
   get_system_info: null,
   get_remote_access_status: null,
   get_wenlan_mcp_entry: null,
