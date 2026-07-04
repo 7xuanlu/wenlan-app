@@ -188,7 +188,6 @@ export default function SourcesView({ onManageSources }: SourcesViewProps) {
                 style={{
                   padding: "9px 10px",
                   background: active ? "var(--mem-indigo-bg)" : "transparent",
-                  borderLeft: `2px solid ${active ? "var(--mem-accent-indigo)" : "transparent"}`,
                   cursor: "pointer",
                 }}
                 onMouseEnter={(e) => {
@@ -318,7 +317,11 @@ interface FolderBrowserProps {
 function FolderBrowser({ source, subpath, onSubpath, filter, onFilter }: FolderBrowserProps) {
   const queryClient = useQueryClient();
   const [syncedFlash, setSyncedFlash] = useState(false);
+  // Single-click selects a file (safe — no accidental external open); double-click
+  // opens it. Reset when the folder changes so a name can't stay selected across dirs.
+  const [selectedName, setSelectedName] = useState<string | null>(null);
   const fullPath = [source.path, ...subpath].join("/");
+  useEffect(() => setSelectedName(null), [fullPath]);
 
   const {
     data: entries,
@@ -355,6 +358,10 @@ function FolderBrowser({ source, subpath, onSubpath, filter, onFilter }: FolderB
     return set;
   }, [indexedFiles, source.id]);
   const isIndexed = (name: string) => indexedPaths.has([fullPath, name].join("/"));
+  // Ground truth for "how many files are here" is the on-disk listing, not the
+  // daemon's source.file_count (whole-source, and known to miscount — it drops
+  // files it can't extract text from without adjusting the total).
+  const fileCount = (entries ?? []).filter((e) => !e.isDirectory).length;
   const notIndexedCount = indexReady
     ? (entries ?? []).filter(
         (e) => !e.isDirectory && SUPPORTED_EXTENSIONS.includes(ext(e.name)) && !isIndexed(e.name),
@@ -433,7 +440,7 @@ function FolderBrowser({ source, subpath, onSubpath, filter, onFilter }: FolderB
             >
               {source.source_type === "obsidian" ? "Obsidian vault" : "Folder"}
               {" · "}
-              {source.file_count.toLocaleString()} files
+              {fileCount.toLocaleString()} {fileCount === 1 ? "file" : "files"}
               {" · "}
               {source.memory_count.toLocaleString()} memories
               {notIndexedCount > 0 && (
@@ -566,14 +573,21 @@ function FolderBrowser({ source, subpath, onSubpath, filter, onFilter }: FolderB
               // no extractable text layer. Gated on indexReady so nothing is
               // wrongly flagged while the indexed-file list is still loading.
               const notIndexed = supported && indexReady && !isIndexed(e.name);
+              const selected = !isDir && selectedName === e.name;
               return (
                 <button
                   key={e.name}
+                  data-selected={selected ? "true" : undefined}
+                  // Folders navigate on single click. Files select on single
+                  // click and open on double click — no accidental external open.
                   onClick={() =>
-                    isDir ? onSubpath([...subpath, e.name]) : openFile([fullPath, e.name].join("/"))
+                    isDir ? onSubpath([...subpath, e.name]) : setSelectedName(e.name)
                   }
+                  onDoubleClick={() => {
+                    if (!isDir) openFile([fullPath, e.name].join("/"));
+                  }}
                   className="w-full flex items-center gap-3 rounded-md text-left transition-colors duration-150 hover:bg-[var(--mem-hover)]"
-                  style={{ padding: "8px 10px" }}
+                  style={{ padding: "8px 10px", background: selected ? "var(--mem-indigo-bg)" : undefined }}
                 >
                   <FileGlyph isDir={isDir} supported={supported} />
                   <span

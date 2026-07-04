@@ -51,6 +51,7 @@ function renderView() {
 
 describe("SourcesView", () => {
   beforeEach(() => {
+    vi.clearAllMocks(); // isolate call history — openFile is asserted not-called
     vi.mocked(listRegisteredSources).mockResolvedValue(SOURCES);
     // Path-aware: the vault root has a `research/` subfolder; drilling into it
     // yields a distinct listing (no duplicate "research" to confuse queries).
@@ -97,12 +98,22 @@ describe("SourcesView", () => {
     expect(await screen.findByRole("button", { name: "research" })).toBeInTheDocument();
   });
 
-  it("opens a file (not a folder) via openFile", async () => {
+  it("opens a file on double-click via openFile", async () => {
     const user = userEvent.setup();
     renderView();
 
-    await user.click(await screen.findByText("index.md"));
+    await user.dblClick(await screen.findByText("index.md"));
     expect(vi.mocked(openFile)).toHaveBeenCalledWith("/Users/me/vault/index.md");
+  });
+
+  it("single-clicking a file selects it without opening", async () => {
+    const user = userEvent.setup();
+    renderView();
+
+    const index = await screen.findByText("index.md");
+    await user.click(index);
+    expect(vi.mocked(openFile)).not.toHaveBeenCalled();
+    expect(index.closest("button")).toHaveAttribute("data-selected", "true");
   });
 
   it("switching sources on the shelf reads the other source's path", async () => {
@@ -181,6 +192,38 @@ describe("un-indexed files", () => {
 
     await screen.findByText("a.pdf");
     expect(screen.queryByText(/not indexed/i)).toBeNull();
+  });
+});
+
+describe("folder file count", () => {
+  it("shows the on-disk file count, not the daemon's stale file_count", async () => {
+    // Daemon claims 2 files; the folder actually holds 3 on disk. The header
+    // must reflect what's really there, not the daemon's miscount.
+    vi.mocked(listRegisteredSources).mockResolvedValue([
+      { id: "directory-books", source_type: "directory", path: "/x/Books", status: "Active", last_sync: 1, file_count: 2, memory_count: 2 },
+    ]);
+    vi.mocked(readSourceDir).mockResolvedValue([
+      { name: "a.pdf", isDirectory: false },
+      { name: "b.pdf", isDirectory: false },
+      { name: "c.pdf", isDirectory: false },
+    ]);
+    renderView();
+
+    expect(await screen.findByText(/3 files/i)).toBeInTheDocument();
+    expect(screen.queryByText(/2 files/i)).toBeNull();
+  });
+
+  it("counts only files, not subfolders", async () => {
+    vi.mocked(listRegisteredSources).mockResolvedValue([
+      { id: "directory-books", source_type: "directory", path: "/x/Books", status: "Active", last_sync: 1, file_count: 9, memory_count: 2 },
+    ]);
+    vi.mocked(readSourceDir).mockResolvedValue([
+      { name: "sub", isDirectory: true },
+      { name: "a.pdf", isDirectory: false },
+    ]);
+    renderView();
+
+    expect(await screen.findByText(/1 file/i)).toBeInTheDocument();
   });
 });
 
