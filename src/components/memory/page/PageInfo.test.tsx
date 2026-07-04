@@ -80,8 +80,54 @@ describe("PageInfo", () => {
   it("always renders, with zero counts in the summary line", () => {
     renderInfo();
     expect(
-      screen.getByText("0 sources · 0 backlinks · 0 revisions"),
+      screen.getByText("0 backlinks · 0 revisions · 0 sources"),
     ).toBeInTheDocument();
+  });
+
+  it("orders sections backlinks, revisions, sources — unique info first", async () => {
+    const { user } = renderInfo({
+      sourceCount: 1,
+      sources: [source("mem-a")],
+      inbound: [{ source_page_id: "page-uuid-42", label: "Inbound Mention" }],
+      revisions: [revision()],
+    });
+    await user.click(screen.getByText(/Page info/i));
+    const headings = screen.getAllByRole("heading", { level: 4 });
+    expect(headings.map((h) => h.textContent)).toEqual([
+      "Backlinks",
+      "Revisions",
+      "Sources",
+    ]);
+  });
+
+  it("caps sources at 5 with a show-all expander", async () => {
+    const ids = ["mem-1", "mem-2", "mem-3", "mem-4", "mem-5", "mem-6", "mem-7"];
+    const { user } = renderInfo({
+      sourceCount: ids.length,
+      sources: ids.map((id) => source(id)),
+    });
+    await user.click(screen.getByText(/Page info/i));
+    expect(screen.getAllByTestId("page-info-source-row")).toHaveLength(5);
+    await user.click(screen.getByRole("button", { name: "Show all 7 sources" }));
+    expect(screen.getAllByTestId("page-info-source-row")).toHaveLength(7);
+    expect(screen.queryByRole("button", { name: /Show all/ })).toBeNull();
+  });
+
+  it("caps revisions at 3 newest-first regardless of daemon order", async () => {
+    // Daemon returns ascending; the cap must keep the newest.
+    const { user } = renderInfo({
+      revisions: [1, 2, 3, 4, 5].map((v) =>
+        revision({ version: v, delta_summary: `Delta v${v}` }),
+      ),
+    });
+    await user.click(screen.getByText(/Page info/i));
+    expect(screen.getByText("Delta v5")).toBeInTheDocument();
+    expect(screen.getByText("Delta v3")).toBeInTheDocument();
+    expect(screen.queryByText("Delta v2")).toBeNull();
+    await user.click(
+      screen.getByRole("button", { name: "Show all 5 revisions" }),
+    );
+    expect(screen.getByText("Delta v1")).toBeInTheDocument();
   });
 
   it("is collapsed by default and expands on summary click", async () => {
