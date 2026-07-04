@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import {
   listAgentActivity,
   listAgents,
@@ -12,17 +14,17 @@ interface ActivityFeedProps {
   onNavigateMemory: (sourceId: string) => void;
 }
 
-function relativeTime(ts: number): string {
+function relativeTime(ts: number, t: TFunction, language: string): string {
   const now = Date.now() / 1000;
   const diff = now - ts;
-  if (diff < 60) return "just now";
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
-  return new Date(ts * 1000).toLocaleDateString();
+  if (diff < 60) return t("activity.relative.justNow");
+  if (diff < 3600) return t("activity.relative.minutesAgo", { count: Math.floor(diff / 60) });
+  if (diff < 86400) return t("activity.relative.hoursAgo", { count: Math.floor(diff / 3600) });
+  if (diff < 604800) return t("activity.relative.daysAgo", { count: Math.floor(diff / 86400) });
+  return new Date(ts * 1000).toLocaleDateString(language);
 }
 
-type TimeGroup = "Today" | "Yesterday" | "This Week" | "Older";
+type TimeGroup = "today" | "yesterday" | "thisWeek" | "older";
 
 function getTimeGroup(ts: number): TimeGroup {
   const now = new Date();
@@ -30,10 +32,10 @@ function getTimeGroup(ts: number): TimeGroup {
   const yesterdayStart = todayStart - 86400;
   const weekStart = todayStart - 6 * 86400;
 
-  if (ts >= todayStart) return "Today";
-  if (ts >= yesterdayStart) return "Yesterday";
-  if (ts >= weekStart) return "This Week";
-  return "Older";
+  if (ts >= todayStart) return "today";
+  if (ts >= yesterdayStart) return "yesterday";
+  if (ts >= weekStart) return "thisWeek";
+  return "older";
 }
 
 function accentColor(action: string): string {
@@ -59,51 +61,181 @@ function accentColor(action: string): string {
   }
 }
 
-function naturalLanguage(item: AgentActivityItem): string {
+function jsonRecord(value: string | null): Record<string, unknown> | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function stringField(record: Record<string, unknown> | null, field: string): string | null {
+  const value = record?.[field];
+  return typeof value === "string" ? value : null;
+}
+
+function refinementActionLabel(action: string | null, t: TFunction): string {
+  switch (action) {
+    case "entity_merge":
+      return t("activity.refinementActions.entityMerge");
+    case "relation_conflict":
+      return t("activity.refinementActions.relationConflict");
+    case "detect_contradiction":
+      return t("activity.refinementActions.detectContradiction");
+    case "suggest_entity":
+      return t("activity.refinementActions.suggestEntity");
+    case "dedup_merge":
+      return t("activity.refinementActions.dedupMerge");
+    default:
+      return t("activity.refinementActions.unknown");
+  }
+}
+
+function refinementStatusLabel(status: string | null, t: TFunction): string {
+  switch (status) {
+    case "dismissed":
+      return t("activity.refinementStatuses.dismissed");
+    case "resolved":
+      return t("activity.refinementStatuses.resolved");
+    case "awaiting_review":
+      return t("activity.refinementStatuses.awaitingReview");
+    case "auto_applied":
+      return t("activity.refinementStatuses.autoApplied");
+    default:
+      return t("activity.refinementStatuses.updated");
+  }
+}
+
+function localizedSteepHeadline(detail: string, t: TFunction, language: string): string {
+  let match = detail.match(/^Wenlan resolved a memory contradiction$/);
+  if (match) return t("activity.natural.steepResolvedContradictions", { count: 1 });
+
+  match = detail.match(/^Wenlan resolved (\d+) memory contradictions$/);
+  if (match) {
+    return t("activity.natural.steepResolvedContradictions", {
+      count: Number(match[1]),
+    });
+  }
+
+  match = detail.match(/^Wenlan refreshed a page with new information$/);
+  if (match) return t("activity.natural.steepRefreshPage");
+
+  const legacyPageUnit = "con" + "cept";
+
+  match = detail.match(
+    new RegExp(`^Wenlan refreshed (\\d+) ${legacyPageUnit}s with new information$`),
+  );
+  if (match) {
+    return t("activity.natural.steepRefreshPages", {
+      count: Number(match[1]),
+    });
+  }
+
+  match = detail.match(/^Wenlan steeped your memories into a new page$/);
+  if (match) return t("activity.natural.steepNewPage");
+
+  match = detail.match(
+    new RegExp(`^Wenlan steeped your memories into (\\d+) new ${legacyPageUnit}s$`),
+  );
+  if (match) {
+    return t("activity.natural.steepNewPages", {
+      count: Number(match[1]),
+    });
+  }
+
+  match = detail.match(/^Wenlan steeped a recent activity burst into a recap$/);
+  if (match) return t("activity.natural.steepRecap", { count: 1 });
+
+  match = detail.match(/^Wenlan steeped (\d+) recent activity bursts into recaps$/);
+  if (match) return t("activity.natural.steepRecap", { count: Number(match[1]) });
+
+  return language.startsWith("en") ? detail : t("activity.natural.steep");
+}
+
+function naturalLanguage(item: AgentActivityItem, t: TFunction, language: string): string {
   const count = item.memory_titles.length;
-  const memoryWord = count === 1 ? "memory" : "memories";
 
   switch (item.action) {
     case "read":
       if (count > 0) {
-        return `pulled ${count} ${memoryWord} into context`;
+        return t("activity.natural.readWithMemories", { count });
       }
-      return "loaded your context";
+      return t("activity.natural.read");
     case "search":
       if (item.query) {
         return count > 0
-          ? `recalled ${count} ${memoryWord}`
-          : "searched your memory";
+          ? t("activity.natural.searchWithMemories", { count })
+          : t("activity.natural.search");
       }
-      return "searched your memory";
+      return t("activity.natural.search");
     case "store":
       if (count > 0) {
-        return `remembered ${count} ${memoryWord}`;
+        return t("activity.natural.storeWithMemories", { count });
       }
-      return "stored a memory";
+      return t("activity.natural.store");
     case "refine":
       if (count > 0) {
-        return `refined your ${item.memory_titles[0] ? `"${truncate(item.memory_titles[0], 40)}"` : "memory"}`;
+        const subject = item.memory_titles[0]
+          ? `"${truncate(item.memory_titles[0], 40)}"`
+          : t("activity.memory", { count: 1 });
+        return t("activity.natural.refineTitle", { title: subject });
       }
-      return "updated a memory with new reasoning";
+      return t("activity.natural.refine");
     case "forget":
       // Memory is gone after delete, so memory_titles will be empty —
       // title is carried in `detail` instead (see handle_delete_memory).
-      return "forgot a memory";
+      return t("activity.natural.forget");
     case "page_grow":
       // Page title carried in `detail` (pages aren't in the memories table,
       // so the title lookup in list_agent_activity won't find them).
-      return "grew a page";
+      return t("activity.natural.pageGrow");
     case "page_create":
       return count > 0
-        ? `compiled ${count} ${memoryWord} into a new page`
-        : "created a new page";
+        ? t("activity.natural.pageCreateWithMemories", { count })
+        : t("activity.natural.pageCreate");
+    case "page_skip_user_edited":
+      return t("activity.natural.pageSkipUserEdited");
+    case "entity_create":
+      return t("activity.natural.entityCreate");
+    case "relation_create":
+      return t("activity.natural.relationCreate");
+    case "relation_supersede_auto":
+      return t("activity.natural.relationSupersedeAuto");
+    case "observation_add":
+      return t("activity.natural.observationAdd");
     case "steep":
       // The backend headline IS the natural language text for steep events.
       // Written by classify_* functions in refinery.rs.
-      return item.detail ?? "steeped your memories in the background";
+      return item.detail
+        ? localizedSteepHeadline(item.detail, t, language)
+        : t("activity.natural.steep");
+    case "refinement_resolve": {
+      const payload = jsonRecord(item.detail);
+      return t("activity.natural.refinementResolveWithStatus", {
+        action: refinementActionLabel(stringField(payload, "action"), t),
+        status: refinementStatusLabel(stringField(payload, "new_status"), t),
+      });
+    }
+    case "refinement_apply": {
+      const payload = jsonRecord(item.detail);
+      return t("activity.natural.refinementApply", {
+        action: refinementActionLabel(stringField(payload, "action"), t),
+      });
+    }
+    case "revision_accept":
+      return t("activity.natural.revisionAccept");
+    case "revision_dismiss":
+      return t("activity.natural.revisionDismiss");
+    case "contradiction_dismiss":
+      return t("activity.natural.contradictionDismiss");
     default:
-      return item.detail ?? "interacted with your memory";
+      return language.startsWith("en") && item.detail
+        ? item.detail
+        : t("activity.natural.fallback");
   }
 }
 
@@ -115,6 +247,10 @@ function truncate(s: string, max: number): string {
 function capitalize(s: string): string {
   if (!s) return s;
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function sentenceCaseForLocale(s: string, language: string): string {
+  return language.startsWith("en") ? capitalize(s) : s;
 }
 
 /// Extract the page title out of the activity `detail` field. Page
@@ -131,24 +267,44 @@ function extractPageTitle(detail: string | null): string | null {
 
 /// Short, human-readable label for the action — used in filter pills and as
 /// a prominent tag on each entry. Keep aligned with `naturalLanguage()` above.
-function actionLabel(action: string): string {
+function actionLabel(action: string, t: TFunction): string {
   switch (action) {
     case "store":
-      return "Remember";
+      return t("activity.actions.store");
     case "search":
-      return "Recall";
+      return t("activity.actions.search");
     case "read":
-      return "Context";
+      return t("activity.actions.read");
     case "refine":
-      return "Refine";
+      return t("activity.actions.refine");
     case "forget":
-      return "Forget";
+      return t("activity.actions.forget");
     case "page_create":
-      return "New page";
+      return t("activity.actions.pageCreate");
     case "page_grow":
-      return "Grow page";
+      return t("activity.actions.pageGrow");
+    case "page_skip_user_edited":
+      return t("activity.actions.pageSkipUserEdited");
+    case "entity_create":
+      return t("activity.actions.entityCreate");
+    case "relation_create":
+      return t("activity.actions.relationCreate");
+    case "relation_supersede_auto":
+      return t("activity.actions.relationSupersedeAuto");
+    case "observation_add":
+      return t("activity.actions.observationAdd");
     case "steep":
-      return "Steep";
+      return t("activity.actions.steep");
+    case "refinement_resolve":
+      return t("activity.actions.refinementResolve");
+    case "refinement_apply":
+      return t("activity.actions.refinementApply");
+    case "revision_accept":
+      return t("activity.actions.revisionAccept");
+    case "revision_dismiss":
+      return t("activity.actions.revisionDismiss");
+    case "contradiction_dismiss":
+      return t("activity.actions.contradictionDismiss");
     default:
       return action;
   }
@@ -156,7 +312,7 @@ function actionLabel(action: string): string {
 
 function groupActivities(items: AgentActivityItem[]): [TimeGroup, AgentActivityItem[]][] {
   const groups = new Map<TimeGroup, AgentActivityItem[]>();
-  const order: TimeGroup[] = ["Today", "Yesterday", "This Week", "Older"];
+  const order: TimeGroup[] = ["today", "yesterday", "thisWeek", "older"];
 
   for (const item of items) {
     const group = getTimeGroup(item.timestamp);
@@ -220,6 +376,7 @@ function FilterSelect({
 }
 
 export default function ActivityFeed({ onNavigateMemory }: ActivityFeedProps) {
+  const { t, i18n } = useTranslation();
   const { data: activities = [] } = useQuery({
     queryKey: ["agentActivity"],
     queryFn: () => listAgentActivity(100),
@@ -322,7 +479,7 @@ export default function ActivityFeed({ onNavigateMemory }: ActivityFeedProps) {
             lineHeight: 1.6,
           }}
         >
-          Your AI tools will appear here as they interact with your memory.
+          {t("activity.empty.noActivity")}
         </p>
       </div>
     );
@@ -334,11 +491,16 @@ export default function ActivityFeed({ onNavigateMemory }: ActivityFeedProps) {
     ? resolveAgentDisplayName(agentFilter, connectedAgents)
     : null;
   const emptyReason = actionFilter
-    ? `No ${actionLabel(actionFilter).toLowerCase()} activity${
-        agentLabelForMessage ? ` from ${agentLabelForMessage}` : ""
-      } in the last 100 events.`
+    ? agentLabelForMessage
+      ? t("activity.empty.noActionFrom", {
+          action: actionLabel(actionFilter, t).toLocaleLowerCase(i18n.language),
+          agent: agentLabelForMessage,
+        })
+      : t("activity.empty.noAction", {
+          action: actionLabel(actionFilter, t).toLocaleLowerCase(i18n.language),
+        })
     : agentLabelForMessage
-      ? `No activity from ${agentLabelForMessage} in the last 100 events.`
+      ? t("activity.empty.noAgent", { agent: agentLabelForMessage })
       : null;
 
   const hasActionFilter = actions.length > 1;
@@ -360,16 +522,16 @@ export default function ActivityFeed({ onNavigateMemory }: ActivityFeedProps) {
         >
           {hasActionFilter && (
             <FilterSelect
-              label="Action"
+              label={t("activity.filters.action")}
               items={actions}
               selected={actionFilter}
-              renderLabel={actionLabel}
+              renderLabel={(action) => actionLabel(action, t)}
               onSelect={setActionFilter}
             />
           )}
           {hasAgentFilter && (
             <FilterSelect
-              label="Agent"
+              label={t("activity.filters.agent")}
               items={agents}
               selected={agentFilter}
               renderLabel={(id) => resolveAgentDisplayName(id, connectedAgents)}
@@ -406,7 +568,7 @@ export default function ActivityFeed({ onNavigateMemory }: ActivityFeedProps) {
               cursor: "pointer",
             }}
           >
-            Clear filters
+            {t("activity.filters.clear")}
           </button>
         </div>
       ) : null}
@@ -424,7 +586,7 @@ export default function ActivityFeed({ onNavigateMemory }: ActivityFeedProps) {
               marginBottom: 16,
             }}
           >
-            {group}
+            {t(`activity.groups.${group}`)}
           </h3>
 
           <div className="flex flex-col" style={{ gap: 28 }}>
@@ -456,6 +618,7 @@ function ActivityEntry({
   connectedAgents: import("../../lib/tauri").AgentConnection[];
   onNavigateMemory: (sourceId: string) => void;
 }) {
+  const { t, i18n } = useTranslation();
   const color = accentColor(item.action);
   const memoryIds = parseMemoryIds(item.memory_ids);
   const isPageEvent =
@@ -493,7 +656,7 @@ function ActivityEntry({
               color: color,
             }}
           >
-            {actionLabel(item.action)}
+            {actionLabel(item.action, t)}
           </span>
           <span
             style={{
@@ -504,7 +667,7 @@ function ActivityEntry({
               whiteSpace: "nowrap",
             }}
           >
-            {relativeTime(item.timestamp)}
+            {relativeTime(item.timestamp, t, i18n.language)}
           </span>
         </div>
 
@@ -518,7 +681,7 @@ function ActivityEntry({
             lineHeight: 1.4,
           }}
         >
-          {capitalize(naturalLanguage(item))}
+          {sentenceCaseForLocale(naturalLanguage(item, t, i18n.language), i18n.language)}
         </span>
 
         {/* Agent attribution — secondary. Shows the friendly display name
@@ -531,7 +694,7 @@ function ActivityEntry({
             color: "var(--mem-text-tertiary)",
           }}
         >
-          by {agentDisplay}
+          {t("activity.byAgent", { agent: agentDisplay })}
         </span>
 
         {/* Search query */}
@@ -578,7 +741,7 @@ function ActivityEntry({
                   color: "var(--mem-accent-page)",
                 }}
               >
-                Page
+                {t("activity.pageTag")}
               </span>
               <span
                 style={{

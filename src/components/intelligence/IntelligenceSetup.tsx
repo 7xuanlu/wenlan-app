@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import {
   downloadOnDeviceModel,
   getApiKey,
@@ -10,11 +11,20 @@ import {
   setModelChoice,
 } from "../../lib/tauri";
 
+type AnthropicModelDescriptionKey =
+  | "intelligence.modelDescriptions.fastAffordable"
+  | "intelligence.modelDescriptions.balancedQuality"
+  | "intelligence.modelDescriptions.maximumQuality";
+
 export const ANTHROPIC_MODELS = [
-  { id: "claude-haiku-4-5-20251001", label: "Haiku 4.5", desc: "Fast, affordable" },
-  { id: "claude-sonnet-4-6", label: "Sonnet 4.6", desc: "Balanced quality" },
-  { id: "claude-opus-4-6", label: "Opus 4.6", desc: "Maximum quality" },
-];
+  { id: "claude-haiku-4-5-20251001", label: "Haiku 4.5", descKey: "intelligence.modelDescriptions.fastAffordable" },
+  { id: "claude-sonnet-4-6", label: "Sonnet 4.6", descKey: "intelligence.modelDescriptions.balancedQuality" },
+  { id: "claude-opus-4-6", label: "Opus 4.6", descKey: "intelligence.modelDescriptions.maximumQuality" },
+] satisfies Array<{
+  id: string;
+  label: string;
+  descKey: AnthropicModelDescriptionKey;
+}>;
 
 export function useApiKeyStatus() {
   const { data: maskedKey } = useQuery({
@@ -35,6 +45,7 @@ export function ApiKeyCard({
   showModelChoice?: boolean;
   showNoKeyGuidance?: boolean;
 }) {
+  const { t } = useTranslation();
   const [keyInput, setKeyInput] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -70,7 +81,7 @@ export function ApiKeyCard({
       <div className="px-5 py-4">
         <div className="flex items-center justify-between mb-1">
           <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "13px", color: "var(--mem-text)" }}>
-            Anthropic API Key
+            {t("intelligence.apiKeyTitle")}
           </span>
           <span
             className="px-1.5 py-0.5 rounded text-[10px] font-medium"
@@ -80,11 +91,11 @@ export function ApiKeyCard({
               color: isConfigured ? "rgb(34,197,94)" : "var(--mem-text-tertiary)",
             }}
           >
-            {isConfigured ? "Connected" : "Not configured"}
+            {isConfigured ? t("intelligence.connected") : t("intelligence.notConfigured")}
           </span>
         </div>
         <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)", marginBottom: "10px" }}>
-          Enables Claude Haiku for better memory titles and larger cluster distillation.
+          {t("intelligence.apiKeyDescription")}
         </p>
 
         {isConfigured ? (
@@ -106,7 +117,7 @@ export function ApiKeyCard({
               className="px-2.5 py-1.5 rounded-md text-xs transition-colors hover:bg-[var(--mem-hover-strong)]"
               style={{ fontFamily: "var(--mem-font-body)", color: "var(--mem-text-tertiary)" }}
             >
-              Clear
+              {t("intelligence.clear")}
             </button>
           </div>
         ) : (
@@ -134,7 +145,7 @@ export function ApiKeyCard({
                 color: keyInput ? "white" : "var(--mem-text-tertiary)",
               }}
             >
-              {saving ? "..." : "Save"}
+              {saving ? "..." : t("intelligence.save")}
             </button>
           </div>
         )}
@@ -157,10 +168,10 @@ export function ApiKeyCard({
             }}
           >
             <div style={{ fontWeight: 500, color: "var(--mem-text)", marginBottom: 2, fontSize: "12px" }}>
-              Page synthesis requires a cloud model
+              {t("intelligence.pageSynthesisRequiresCloud")}
             </div>
-            <div>Your memories are safe — search, recall, and entity linking work on-device.</div>
-            <div style={{ marginTop: 6 }}>Add an Anthropic API key above to enable page distillation.</div>
+            <div>{t("intelligence.memorySafe")}</div>
+            <div style={{ marginTop: 6 }}>{t("intelligence.addApiKey")}</div>
           </div>
         )}
 
@@ -171,6 +182,7 @@ export function ApiKeyCard({
 }
 
 export function ModelChoiceSection() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { data: modelChoice } = useQuery({
     queryKey: ["modelChoice"],
@@ -193,8 +205,8 @@ export function ModelChoiceSection() {
     <div className="mt-4 pt-3" style={{ borderTop: "1px solid var(--mem-border)" }}>
       <div className="flex items-center justify-between mb-3">
         <div>
-          <div style={{ fontSize: "13px", fontWeight: 500, color: "var(--mem-text)", fontFamily: "var(--mem-font-body)" }}>Routine model</div>
-          <div style={{ fontSize: "11px", color: "var(--mem-text-tertiary)", fontFamily: "var(--mem-font-body)" }}>Extraction, tagging, classification</div>
+          <div style={{ fontSize: "13px", fontWeight: 500, color: "var(--mem-text)", fontFamily: "var(--mem-font-body)" }}>{t("intelligence.routineModel")}</div>
+          <div style={{ fontSize: "11px", color: "var(--mem-text-tertiary)", fontFamily: "var(--mem-font-body)" }}>{t("intelligence.routineModelDescription")}</div>
         </div>
         <select
           value={routineModel ?? "claude-haiku-4-5-20251001"}
@@ -205,14 +217,14 @@ export function ModelChoiceSection() {
           style={selectStyle}
         >
           {ANTHROPIC_MODELS.map((m) => (
-            <option key={m.id} value={m.id}>{m.label} — {m.desc}</option>
+            <option key={m.id} value={m.id}>{m.label} - {t(m.descKey)}</option>
           ))}
         </select>
       </div>
       <div className="flex items-center justify-between">
         <div>
-          <div style={{ fontSize: "13px", fontWeight: 500, color: "var(--mem-text)", fontFamily: "var(--mem-font-body)" }}>Synthesis model</div>
-          <div style={{ fontSize: "11px", color: "var(--mem-text-tertiary)", fontFamily: "var(--mem-font-body)" }}>Distillation, pages, contradictions</div>
+          <div style={{ fontSize: "13px", fontWeight: 500, color: "var(--mem-text)", fontFamily: "var(--mem-font-body)" }}>{t("intelligence.synthesisModel")}</div>
+          <div style={{ fontSize: "11px", color: "var(--mem-text-tertiary)", fontFamily: "var(--mem-font-body)" }}>{t("intelligence.synthesisModelDescription")}</div>
         </div>
         <select
           value={synthesisModel ?? "claude-sonnet-4-6"}
@@ -223,7 +235,7 @@ export function ModelChoiceSection() {
           style={selectStyle}
         >
           {ANTHROPIC_MODELS.map((m) => (
-            <option key={m.id} value={m.id}>{m.label} — {m.desc}</option>
+            <option key={m.id} value={m.id}>{m.label} - {t(m.descKey)}</option>
           ))}
         </select>
       </div>
@@ -232,6 +244,7 @@ export function ModelChoiceSection() {
 }
 
 export function OnDeviceModelCard() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [pickedId, setPickedId] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
@@ -272,7 +285,7 @@ export function OnDeviceModelCard() {
     }
   };
 
-  const statusBadge = isLoaded ? "Running" : "Not loaded";
+  const statusBadge = isLoaded ? t("intelligence.running") : t("intelligence.notLoaded");
   const statusColor = isLoaded ? "rgb(34,197,94)" : "var(--mem-text-tertiary)";
   const statusBg = isLoaded ? "rgba(34,197,94,0.1)" : "rgba(156,163,175,0.1)";
 
@@ -281,7 +294,7 @@ export function OnDeviceModelCard() {
       <div className="px-5 py-4">
         <div className="flex items-center justify-between mb-1">
           <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "13px", color: "var(--mem-text)" }}>
-            On-Device Model
+            {t("intelligence.onDeviceModel")}
           </span>
           <span
             className="px-1.5 py-0.5 rounded text-[10px] font-medium"
@@ -302,12 +315,17 @@ export function OnDeviceModelCard() {
             marginBottom: "10px",
           }}
         >
-          Local LLM used for classification, entity extraction, and fallback distillation.
+          {t("intelligence.localModelDescription")}
           {systemInfo && (
             <>
-              {" "}Your system: {systemInfo.total_ram_gb.toFixed(0)}GB RAM
-              {systemInfo.has_metal && " · Metal GPU"}
-              {systemInfo.has_cuda && " · CUDA GPU"}.
+              {" "}
+              {t("intelligence.systemInfo", {
+                ram: systemInfo.total_ram_gb.toFixed(0),
+                accelerators: [
+                  systemInfo.has_metal ? " · Metal GPU" : "",
+                  systemInfo.has_cuda ? " · CUDA GPU" : "",
+                ].join(""),
+              })}
             </>
           )}
         </p>
@@ -322,10 +340,13 @@ export function OnDeviceModelCard() {
                 color: "var(--mem-text-secondary)",
               }}
             >
-              {current.param_count} params · {current.file_size_gb.toFixed(1)}GB download · needs{" "}
-              {current.ram_required_gb.toFixed(0)}GB RAM
-              {current.cached && !isLoaded && " · downloaded (not loaded)"}
-              {!current.cached && " · not downloaded"}
+              {t("intelligence.modelDetails", {
+                params: current.param_count,
+                downloadSize: current.file_size_gb.toFixed(1),
+                ram: current.ram_required_gb.toFixed(0),
+              })}
+              {current.cached && !isLoaded && t("intelligence.downloadedNotLoaded")}
+              {!current.cached && t("intelligence.notDownloaded")}
             </span>
           )}
 
@@ -362,9 +383,9 @@ export function OnDeviceModelCard() {
                 whiteSpace: "nowrap",
                 flexShrink: 0,
               }}
-              title={!ramOk ? "Your system doesn't have enough RAM for this model" : undefined}
+              title={!ramOk ? t("intelligence.notEnoughRamTitle") : undefined}
             >
-              {downloading ? "Downloading..." : `Download ${current?.file_size_gb.toFixed(1)}GB`}
+              {downloading ? t("intelligence.downloading") : t("intelligence.downloadSize", { size: current?.file_size_gb.toFixed(1) })}
             </button>
           )}
           {canLoad && (
@@ -380,7 +401,7 @@ export function OnDeviceModelCard() {
                 flexShrink: 0,
               }}
             >
-              {downloading ? "Loading..." : "Load"}
+              {downloading ? t("intelligence.loading") : t("intelligence.load")}
             </button>
           )}
         </div>
@@ -394,7 +415,7 @@ export function OnDeviceModelCard() {
               color: "var(--mem-text-tertiary)",
             }}
           >
-            This may take several minutes — the model is ~{current?.file_size_gb.toFixed(1)}GB.
+            {t("intelligence.downloadMayTake", { size: current?.file_size_gb.toFixed(1) })}
           </p>
         )}
         {error && (
@@ -410,8 +431,11 @@ export function OnDeviceModelCard() {
             className="mt-2"
             style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "rgb(234,179,8)" }}
           >
-            {current.display_name} needs {current.ram_required_gb.toFixed(0)}GB RAM, but your system has only{" "}
-            {systemInfo?.total_ram_gb.toFixed(0)}GB.
+            {t("intelligence.ramWarning", {
+              model: current.display_name,
+              required: current.ram_required_gb.toFixed(0),
+              available: systemInfo?.total_ram_gb.toFixed(0),
+            })}
           </p>
         )}
       </div>

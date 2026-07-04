@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
+import { initializeI18n } from '../i18n';
 
 // Mock @tauri-apps/api/core — all invoke() calls go through this
 vi.mock('@tauri-apps/api/core', () => ({
@@ -45,3 +46,5 @@ vi.mock('@tauri-apps/plugin-fs', () => ({
 vi.mock('@tauri-apps/plugin-shell', () => ({
   open: vi.fn(),
 }));
+
+await initializeI18n();

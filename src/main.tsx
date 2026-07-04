@@ -5,12 +5,14 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App";
 import ToastOverlay from "./components/ToastOverlay";
 import QuickCaptureWindow from "./components/QuickCaptureWindow";
+import { initializeI18n } from "./i18n";
 import { applyTheme } from "./lib/theme";
 import "./index.css";
 
 // Apply theme before first render to prevent flash
 applyTheme();
 
+await initializeI18n();
 
 const isToast = window.location.hash === "#toast";
 const isQuickCapture = window.location.hash === "#quick-capture";

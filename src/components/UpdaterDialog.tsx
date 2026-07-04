@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useEffect, useState } from "react";
 import { emit, listen } from "@tauri-apps/api/event";
+import { useTranslation } from "react-i18next";
 
 interface ProgressPayload {
   chunk?: number;
@@ -21,6 +22,7 @@ interface ProgressPayload {
  *   - `updater://action`     payload `"install"` | `"later"`
  */
 export default function UpdaterDialog() {
+  const { t } = useTranslation();
   const [visible, setVisible] = useState(false);
   const [version, setVersion] = useState("");
   const [installing, setInstalling] = useState(false);
@@ -99,7 +101,7 @@ export default function UpdaterDialog() {
           opacity: 0.85,
         }}
       >
-        {errorMsg ? "Update failed" : installing ? "Updating" : "Update available"}
+        {errorMsg ? t("updater.failed") : installing ? t("updater.updating") : t("updater.available")}
       </div>
 
       <div
@@ -112,7 +114,7 @@ export default function UpdaterDialog() {
           letterSpacing: "-0.005em",
         }}
       >
-        Wenlan v{version} is ready.
+        {t("updater.ready", { version })}
       </div>
 
       <div
@@ -127,9 +129,9 @@ export default function UpdaterDialog() {
           ? errorMsg
           : installing
             ? pct !== null
-              ? `Downloading… ${pct}%`
-              : "Preparing…"
-            : "Install will quit, update, and relaunch."}
+              ? t("updater.downloading", { pct })
+              : t("updater.preparing")
+            : t("updater.installBody")}
       </div>
 
       {installing && !errorMsg && (
@@ -169,7 +171,7 @@ export default function UpdaterDialog() {
               fontFamily: "var(--mem-font-body)",
             }}
           >
-            Later
+            {t("updater.later")}
           </button>
           <button
             onClick={handleInstall}
@@ -185,7 +187,7 @@ export default function UpdaterDialog() {
               fontFamily: "var(--mem-font-body)",
             }}
           >
-            Install
+            {t("updater.install")}
           </button>
         </div>
       )}

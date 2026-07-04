@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { useTranslation } from "react-i18next";
+
 export function GhostPagesRow() {
+  const { t } = useTranslation();
   return (
     <div>
       <p
@@ -10,7 +13,7 @@ export function GhostPagesRow() {
           margin: "0 0 10px 0",
         }}
       >
-        Pages will appear here as Wenlan finds patterns.
+        {t("onboarding.ghostPages")}
       </p>
       <div
         className="flex gap-3 pb-2"

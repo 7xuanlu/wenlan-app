@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import {
   getClipboardEnabled,
   setClipboardEnabled,
@@ -18,6 +19,11 @@ import {
   setRunAtLogin,
 } from "../../lib/tauri";
 import { type Theme, useTheme } from "../../lib/theme";
+import {
+  readStoredLocalePreference,
+  setLocalePreference,
+  type StoredLocale,
+} from "../../i18n";
 import { describeTrustLevel, resolveAgentDisplayName, TRUST_LEVELS } from "../../lib/agents";
 import SourcesSection from "./sources/SourcesSection";
 import { ImportFlow } from "../ChatImport/ImportFlow";
@@ -25,10 +31,15 @@ import { RemoteAccessPanel } from "./RemoteAccessPanel";
 import { ApiKeyCard, OnDeviceModelCard, useApiKeyStatus } from "../intelligence/IntelligenceSetup";
 import DiagnosticsSection from "./settings/DiagnosticsSection";
 
-const THEME_OPTIONS: { value: Theme; label: string; icon: React.ReactNode }[] = [
+type ThemeLabelKey =
+  | "settings.theme.auto"
+  | "settings.theme.light"
+  | "settings.theme.dark";
+
+const THEME_OPTIONS: { value: Theme; labelKey: ThemeLabelKey; icon: React.ReactNode }[] = [
   {
     value: "system",
-    label: "Auto",
+    labelKey: "settings.theme.auto",
     icon: (
       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
@@ -37,7 +48,7 @@ const THEME_OPTIONS: { value: Theme; label: string; icon: React.ReactNode }[] = 
   },
   {
     value: "light",
-    label: "Light",
+    labelKey: "settings.theme.light",
     icon: (
       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
@@ -46,7 +57,7 @@ const THEME_OPTIONS: { value: Theme; label: string; icon: React.ReactNode }[] = 
   },
   {
     value: "dark",
-    label: "Dark",
+    labelKey: "settings.theme.dark",
     icon: (
       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
@@ -154,10 +165,12 @@ export default function SettingsPage({
   onSetupAgent,
   onImport,
 }: SettingsPageProps) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [theme, setThemeValue] = useTheme();
-
-
+  const [languagePreference, setLanguagePreference] = useState<StoredLocale>(
+    () => readStoredLocalePreference(),
+  );
 
   // ── Source toggles ─────────────────────────────────────────────────
   const { data: clipboardEnabled = true } = useQuery({
@@ -250,10 +263,10 @@ export default function SettingsPage({
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
         </button>
         <h1 style={{ fontFamily: "var(--mem-font-heading)", fontSize: "20px", fontWeight: 500, color: "var(--mem-text)" }}>
-          {activeGroup?.label ?? "Settings"}
+          {activeGroup ? t(activeGroup.labelKey) : t("settings.title")}
         </h1>
         <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "13px", color: "var(--mem-text-secondary)", marginTop: "4px" }}>
-          {activeGroup?.hint ?? "Manage agents, sources, and preferences."}
+          {activeGroup ? t(activeGroup.hintKey) : t("settings.manageHint")}
         </p>
       </div>
 
@@ -262,13 +275,13 @@ export default function SettingsPage({
       {section === "general" && (
       <section className="mem-fade-up" style={{ animationDelay: "0ms" }}>
         <SectionHeader
-          label="General"
+          label={t("settings.groups.general.label")}
           icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" /></svg>}
         />
         <div className="bg-[var(--mem-surface)] rounded-xl overflow-hidden border border-[var(--mem-border)]">
           <SettingRow
-            title="Run Wenlan in background at login"
-            description="Keeps the daemon and tray icon running even when the app window is closed. Quit from the tray menu to stop everything."
+            title={t("settings.general.runAtLoginTitle")}
+            description={t("settings.general.runAtLoginDescription")}
             enabled={runAtLoginQuery.data ?? false}
             onToggle={() => runAtLoginMutation.mutate(!(runAtLoginQuery.data ?? false))}
           />
@@ -278,9 +291,9 @@ export default function SettingsPage({
           <div className="px-5 py-4">
             <div className="flex items-center justify-between gap-4">
               <div className="min-w-0">
-                <div style={{ fontFamily: "var(--mem-font-body)", fontSize: "14px", fontWeight: 500, color: "var(--mem-text)" }}>Theme</div>
+                <div style={{ fontFamily: "var(--mem-font-body)", fontSize: "14px", fontWeight: 500, color: "var(--mem-text)" }}>{t("settings.theme.label")}</div>
                 <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-secondary)", marginTop: "2px", lineHeight: "1.5" }}>
-                  Choose your preferred color scheme.
+                  {t("settings.theme.description")}
                 </p>
               </div>
               <div className="relative flex bg-[var(--mem-hover)] rounded-lg p-0.5 shrink-0">
@@ -305,10 +318,49 @@ export default function SettingsPage({
                     style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", fontWeight: 500 }}
                   >
                     {opt.icon}
-                    {opt.label}
+                    {t(opt.labelKey)}
                   </button>
                 ))}
               </div>
+            </div>
+          </div>
+        </div>
+        <div className="bg-[var(--mem-surface)] rounded-xl overflow-hidden border border-[var(--mem-border)] mt-4">
+          <div className="px-5 py-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <label
+                  htmlFor="settings-language"
+                  style={{ fontFamily: "var(--mem-font-body)", fontSize: "14px", fontWeight: 500, color: "var(--mem-text)" }}
+                >
+                  {t("settings.language.label")}
+                </label>
+                <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-secondary)", marginTop: "2px", lineHeight: "1.5" }}>
+                  {t("settings.language.description")}
+                </p>
+              </div>
+              <select
+                id="settings-language"
+                value={languagePreference}
+                onChange={(event) => {
+                  const nextPreference = event.currentTarget.value as StoredLocale;
+                  setLanguagePreference(nextPreference);
+                  void setLocalePreference(nextPreference);
+                }}
+                className="rounded-lg px-3 py-1.5 shrink-0"
+                style={{
+                  backgroundColor: "var(--mem-hover)",
+                  border: "1px solid var(--mem-border)",
+                  color: "var(--mem-text)",
+                  fontFamily: "var(--mem-font-body)",
+                  fontSize: "12px",
+                }}
+              >
+                <option value="system">{t("settings.language.system")}</option>
+                <option value="en">{t("settings.language.english")}</option>
+                <option value="zh-Hans">{t("settings.language.simplifiedChinese")}</option>
+                <option value="zh-Hant">{t("settings.language.traditionalChinese")}</option>
+              </select>
             </div>
           </div>
         </div>
@@ -318,7 +370,7 @@ export default function SettingsPage({
           <button
             onClick={async () => {
               const ok = window.confirm(
-                "Re-run setup? Your data is preserved — this only replays the wizard."
+                t("settings.general.rerunSetupConfirm")
               );
               if (!ok) return;
               await setSetupCompleted(false);
@@ -331,7 +383,7 @@ export default function SettingsPage({
               color: "var(--mem-text-secondary)",
             }}
           >
-            Re-run setup wizard
+            {t("settings.general.rerunSetup")}
           </button>
         </div>
       </section>
@@ -341,20 +393,20 @@ export default function SettingsPage({
       {section === "capture" && (
       <section className="mem-fade-up" style={{ animationDelay: "0ms" }}>
         <SectionHeader
-          label="Capture"
+          label={t("settings.capture.label")}
           icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>}
         />
         <div className="bg-[var(--mem-surface)] rounded-xl overflow-hidden border border-[var(--mem-border)]">
           {/* Clipboard Capture */}
           <SettingRow
-            title="Clipboard Capture"
-            description="Automatically index text you copy."
+            title={t("settings.capture.clipboardTitle")}
+            description={t("settings.capture.clipboardDescription")}
             enabled={clipboardEnabled}
             onToggle={() => clipboardToggleMutation.mutate(!clipboardEnabled)}
             statusLine={
               captureStats && captureStats.clipboard > 0 ? (
                 <span style={{ fontFamily: "var(--mem-font-mono)", fontSize: "11px", color: "var(--mem-text-tertiary)" }}>
-                  {captureStats.clipboard} item{captureStats.clipboard !== 1 ? "s" : ""} captured
+                  {t("settings.capture.itemsCaptured", { count: captureStats.clipboard })}
                 </span>
               ) : null
             }
@@ -367,10 +419,10 @@ export default function SettingsPage({
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <div style={{ fontFamily: "var(--mem-font-body)", fontSize: "14px", fontWeight: 500, color: "var(--mem-text)" }}>
-                  Screen Capture
+                  {t("settings.capture.screenTitle")}
                 </div>
                 <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-secondary)", marginTop: "2px", lineHeight: "1.5" }}>
-                  Read window text for context cards.
+                  {t("settings.capture.screenDescription")}
                 </p>
               </div>
               <div className="mt-0.5">
@@ -397,7 +449,7 @@ export default function SettingsPage({
                 style={{ background: screenPermission ? "var(--mem-accent-sage)" : "#ef4444" }}
               />
               <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)" }}>
-                Screen Recording {screenPermission ? "granted" : "not granted"}
+                {t("settings.capture.screenRecording")} {screenPermission ? t("settings.capture.granted") : t("settings.capture.notGranted")}
               </span>
               {!screenPermission && (
                 <button
@@ -412,7 +464,7 @@ export default function SettingsPage({
                     color: "var(--mem-text)",
                   }}
                 >
-                  Grant Access
+                  {t("settings.capture.grantAccess")}
                 </button>
               )}
             </div>
@@ -427,16 +479,16 @@ export default function SettingsPage({
       {/* ── Import Memories ────────────────────────────────────── */}
       <section className="mem-fade-up" style={{ animationDelay: "0ms" }}>
         <SectionHeader
-          label="Import Memories"
+          label={t("settings.sources.importMemoriesTitle")}
           icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>}
         />
         <div className="bg-[var(--mem-surface)] rounded-xl overflow-hidden border border-[var(--mem-border)]">
           <div className="px-5 py-4">
             <div className="flex items-center justify-between">
               <div className="min-w-0">
-                <div style={{ fontFamily: "var(--mem-font-body)", fontSize: "14px", fontWeight: 500, color: "var(--mem-text)" }}>Import Memories</div>
+                <div style={{ fontFamily: "var(--mem-font-body)", fontSize: "14px", fontWeight: 500, color: "var(--mem-text)" }}>{t("settings.sources.importMemoriesTitle")}</div>
                 <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-secondary)", marginTop: "2px", lineHeight: "1.5" }}>
-                  Bring in memories from ChatGPT, Claude, or other sources.
+                  {t("settings.sources.importMemoriesDescription")}
                 </p>
               </div>
               {onImport && (
@@ -445,7 +497,7 @@ export default function SettingsPage({
                   className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors duration-150 shrink-0"
                   style={{ fontFamily: "var(--mem-font-body)", backgroundColor: "var(--mem-accent-indigo)", color: "white" }}
                 >
-                  Import
+                  {t("settings.sources.import")}
                 </button>
               )}
             </div>
@@ -456,13 +508,13 @@ export default function SettingsPage({
       {/* ── Import Chat History ──────────────────────────────── */}
       <section className="mem-fade-up" style={{ animationDelay: "60ms" }}>
         <SectionHeader
-          label="Import chat history"
+          label={t("settings.sources.importChatHistoryTitle")}
           icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 4H6a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-2m-4 0v4m0-4L8 8m4-4l4 4" /></svg>}
         />
         <div className="bg-[var(--mem-surface)] rounded-xl overflow-hidden border border-[var(--mem-border)]">
           <div className="px-5 py-4">
             <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-secondary)", marginBottom: "12px", lineHeight: "1.5" }}>
-              Drop a ChatGPT or Claude export ZIP to import conversations. Previously imported conversations are automatically skipped.
+              {t("settings.sources.importChatHistoryDescription")}
             </p>
             <ImportFlow />
           </div>
@@ -472,7 +524,7 @@ export default function SettingsPage({
       {/* ── Sources ────────────────────────────────────────────── */}
       <section className="mem-fade-up" style={{ animationDelay: "30ms" }}>
         <SectionHeader
-          label="Sources"
+          label={t("settings.groups.sources.label")}
           icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" /></svg>}
         />
         <SourcesSection />
@@ -489,7 +541,7 @@ export default function SettingsPage({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
             </svg>
           }
-          label="Connected Agents"
+          label={t("settings.agents.connectedAgents")}
         />
         {/* Trust level explainer — makes it clear what the badges mean and how
             Wenlan gates context for each tier. */}
@@ -511,7 +563,7 @@ export default function SettingsPage({
               marginBottom: 8,
             }}
           >
-            Trust levels
+            {t("settings.agents.trustLevels")}
           </p>
           <div className="flex flex-col gap-1.5">
             {(Object.keys(TRUST_LEVELS) as Array<keyof typeof TRUST_LEVELS>).map((level) => {
@@ -552,10 +604,10 @@ export default function SettingsPage({
           {agents.length === 0 && pendingClients.length === 0 ? (
             <div className="px-5 py-6 text-center space-y-3">
               <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "13px", color: "var(--mem-text-tertiary)" }}>
-                No agents connected yet.
+                {t("settings.agents.noAgents")}
               </p>
               <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-tertiary)", opacity: 0.7, lineHeight: "1.5" }}>
-                Add Wenlan to your AI tool's MCP configuration, then restart the tool. Agents appear here once they write their first memory.
+                {t("settings.agents.noAgentsDescription")}
               </p>
               {onSetupAgent && (
                 <button
@@ -567,7 +619,7 @@ export default function SettingsPage({
                     color: "white",
                   }}
                 >
-                  Set up an AI tool
+                  {t("settings.agents.setupTool")}
                 </button>
               )}
             </div>
@@ -591,11 +643,11 @@ export default function SettingsPage({
                           className="px-1.5 py-0.5 rounded"
                           style={{ fontFamily: "var(--mem-font-mono)", fontSize: "10px", backgroundColor: "rgba(251, 191, 36, 0.1)", color: "var(--mem-accent-amber)" }}
                         >
-                          Configured
+                          {t("settings.agents.configured")}
                         </span>
                       </div>
                       <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)", marginTop: "2px" }}>
-                        Restart {client.name} to activate
+                        {t("settings.agents.restartToActivate", { name: client.name })}
                       </p>
                     </div>
                   </div>
@@ -631,7 +683,7 @@ export default function SettingsPage({
                         {/* Canonical technical ID (secondary, only if it differs from display) */}
                         {resolveAgentDisplayName(agent.name, agents) !== agent.name && (
                           <span
-                            title="Canonical technical ID (sent in x-agent-name header)"
+                            title={t("settings.agents.canonicalIdTitle")}
                             style={{
                               fontFamily: "var(--mem-font-mono)",
                               fontSize: "10px",
@@ -643,11 +695,13 @@ export default function SettingsPage({
                           </span>
                         )}
                         <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)" }}>
-                          {agent.memory_count} memories
+                          {t("settings.agents.memories", { count: agent.memory_count })}
                         </span>
                         {agent.last_seen_at && (
                           <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)" }}>
-                            Last seen {new Date(agent.last_seen_at * 1000).toLocaleDateString()}
+                            {t("settings.agents.lastSeen", {
+                              date: new Date(agent.last_seen_at * 1000).toLocaleDateString(),
+                            })}
                           </span>
                         )}
                       </div>
@@ -715,9 +769,9 @@ export default function SettingsPage({
                                   "transparent";
                               }}
                             >
-                              <option value="full">Full</option>
-                              <option value="review">Review</option>
-                              <option value="unknown">Unknown</option>
+                              <option value="full">{t("settings.agents.trust.full")}</option>
+                              <option value="review">{t("settings.agents.trust.review")}</option>
+                              <option value="unknown">{t("settings.agents.trust.unknown")}</option>
                             </select>
                             {/* Chevron — absolutely positioned, pointer-events:none
                                 so clicks pass through to the select. Color
@@ -765,14 +819,14 @@ export default function SettingsPage({
                             className="px-2 py-0.5 rounded text-xs bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors"
                             style={{ fontFamily: "var(--mem-font-body)" }}
                           >
-                            Confirm
+                            {t("settings.agents.confirm")}
                           </button>
                           <button
                             onClick={() => setDeletingAgent(null)}
                             className="px-2 py-0.5 rounded text-xs text-[var(--mem-text-tertiary)] hover:text-[var(--mem-text)] transition-colors"
                             style={{ fontFamily: "var(--mem-font-body)" }}
                           >
-                            Cancel
+                            {t("settings.agents.cancel")}
                           </button>
                         </div>
                       ) : (
@@ -796,7 +850,7 @@ export default function SettingsPage({
                     className="text-xs transition-colors"
                     style={{ fontFamily: "var(--mem-font-body)", color: "var(--mem-accent-indigo)" }}
                   >
-                    + Set up another tool
+                    {t("settings.agents.setupAnotherTool")}
                   </button>
                 </div>
               )}
@@ -813,7 +867,7 @@ export default function SettingsPage({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
           }
-          label="Remote Access"
+          label={t("settings.agents.remoteAccess")}
         />
         <RemoteAccessPanel mode="full" />
       </section>
@@ -840,7 +894,7 @@ export default function SettingsPage({
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
         </svg>
         <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)", opacity: 0.6, lineHeight: "1.5" }}>
-          Everything stays on your device. No data leaves your machine — no cloud sync, no API calls, no telemetry.
+          {t("settings.footer")}
         </p>
       </div>
 
@@ -849,12 +903,13 @@ export default function SettingsPage({
 }
 
 function IntelligenceSection({ delay }: { delay: number }) {
+  const { t } = useTranslation();
   const { isConfigured } = useApiKeyStatus();
 
   return (
     <section className="mem-fade-up" style={{ animationDelay: `${delay}ms` }}>
       <SectionHeader
-        label="Intelligence"
+        label={t("settings.groups.intelligence.label")}
         icon={
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />

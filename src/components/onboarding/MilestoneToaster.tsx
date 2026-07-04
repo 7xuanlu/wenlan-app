@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useState, useMemo } from "react";
+import type { TFunction } from "i18next";
+import { useTranslation } from "react-i18next";
 import { useMilestones } from "./useMilestones";
 import type { MilestoneId, MilestoneRecord } from "../../lib/tauri";
 
@@ -11,26 +13,6 @@ const TOAST_CHANNEL_IDS: Record<MilestoneId, boolean> = {
   "first-concept": false,
   "graph-alive": false,
   "second-agent": true,
-};
-
-/** Small uppercase mono eyebrow — mirrors the FirstConceptModal pattern
- *  ("FIRST CONCEPT COMPILED") so onboarding surfaces share one voice. */
-const EYEBROW: Record<MilestoneId, string> = {
-  "intelligence-ready": "Intelligence ready",
-  "first-memory": "First memory",
-  "first-recall": "Recall",
-  "first-concept": "",
-  "graph-alive": "",
-  "second-agent": "Second agent",
-};
-
-const TITLE: Record<MilestoneId, string> = {
-  "intelligence-ready": "On-device intelligence is ready.",
-  "first-memory": "First memory saved.",
-  "first-recall": "Wenlan just recalled for you.",
-  "first-concept": "", // celebrated via FirstConceptModal instead
-  "graph-alive": "", // no toast
-  "second-agent": "A second AI is writing too.",
 };
 
 const TWENTY_FOUR_HOURS_S = 24 * 60 * 60;
@@ -47,10 +29,42 @@ function accentFor(id: MilestoneId): string {
   }
 }
 
+function eyebrowFor(t: TFunction, id: MilestoneId): string {
+  switch (id) {
+    case "intelligence-ready":
+      return t("onboarding.milestone.eyebrow.intelligenceReady");
+    case "first-memory":
+      return t("onboarding.milestone.eyebrow.firstMemory");
+    case "first-recall":
+      return t("onboarding.milestone.eyebrow.firstRecall");
+    case "second-agent":
+      return t("onboarding.milestone.eyebrow.secondAgent");
+    case "first-concept":
+    case "graph-alive":
+      return "";
+  }
+}
+
+function titleFor(t: TFunction, id: MilestoneId): string {
+  switch (id) {
+    case "intelligence-ready":
+      return t("onboarding.milestone.title.intelligenceReady");
+    case "first-memory":
+      return t("onboarding.milestone.title.firstMemory");
+    case "first-recall":
+      return t("onboarding.milestone.title.firstRecall");
+    case "second-agent":
+      return t("onboarding.milestone.title.secondAgent");
+    case "first-concept":
+    case "graph-alive":
+      return "";
+  }
+}
+
 /** Shapes a secondary line from the payload, or returns null when the
  *  milestone has no useful subtitle. Each branch treats missing/empty
  *  fields as "don't render" rather than inventing placeholder copy. */
-function subtitleFor(record: MilestoneRecord): {
+function subtitleFor(t: TFunction, record: MilestoneRecord): {
   kind: "quote" | "plain";
   source?: string;
   text: string;
@@ -63,7 +77,7 @@ function subtitleFor(record: MilestoneRecord): {
     case "intelligence-ready":
       return {
         kind: "plain",
-        text: "Classification and search now run locally.",
+        text: t("onboarding.milestone.classificationLocal"),
       };
     case "first-memory": {
       const preview = nonEmpty(p.preview);
@@ -85,14 +99,14 @@ function subtitleFor(record: MilestoneRecord): {
           text: preview,
         };
       }
-      return agent ? { kind: "plain", text: `Called by ${agent}.` } : null;
+      return agent ? { kind: "plain", text: t("onboarding.milestone.calledBy", { agent }) } : null;
     }
     case "second-agent": {
       const agent = nonEmpty(p.agent);
       return agent
         ? {
             kind: "plain",
-            text: `${agent} joined. Your memories follow you across tools.`,
+            text: t("onboarding.milestone.agentJoined", { agent }),
           }
         : null;
     }
@@ -165,11 +179,12 @@ function Toast({
   index: number;
   onClick: () => void;
 }) {
+  const { t } = useTranslation();
   const id = record.id as MilestoneId;
   const accent = accentFor(id);
-  const eyebrow = EYEBROW[id];
-  const title = TITLE[id];
-  const sub = subtitleFor(record);
+  const eyebrow = eyebrowFor(t, id);
+  const title = titleFor(t, id);
+  const sub = subtitleFor(t, record);
 
   return (
     <button

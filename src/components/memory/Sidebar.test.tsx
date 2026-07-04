@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { i18n } from "../../i18n";
 import Sidebar from "./Sidebar";
 
 const listAgentsMock = vi.hoisted(() => vi.fn().mockResolvedValue([]));
@@ -34,8 +35,9 @@ function renderSidebar(extraProps: Record<string, unknown> = {}) {
 }
 
 describe("Sidebar", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     listAgentsMock.mockResolvedValue([]);
+    await i18n.changeLanguage("en");
   });
 
   it("places Home in the primary nav and routes it through onNavigateHome", async () => {
@@ -100,6 +102,14 @@ describe("Sidebar", () => {
     const brand = screen.getByRole("button", { name: "Wenlan" });
 
     expect(spaces.compareDocumentPosition(brand) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("localizes the sidebar footer brand", async () => {
+    await i18n.changeLanguage("zh-Hant");
+    renderSidebar();
+
+    expect(screen.getByRole("button", { name: "Wenlan 文瀾" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Wenlan" })).not.toBeInTheDocument();
   });
 
   it("does not show agent connection status in the footer", async () => {
