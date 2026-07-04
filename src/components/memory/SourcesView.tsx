@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   listRegisteredSources,
@@ -42,6 +42,12 @@ const STATUS_COLORS: Record<string, string> = {
   Unavailable: "var(--mem-text-tertiary)",
 };
 
+/** Spine height in px: 12px floor, up to 30px for the largest source. The
+ *  rail reads as a shelf of book-spines — height = share of ingested memory. */
+function spineHeight(memoryCount: number, maxMemories: number): number {
+  return 12 + Math.round(18 * (memoryCount / maxMemories));
+}
+
 export type SpineVisual = "ghost" | "indexing" | "settled";
 
 /** Ingest state for the spine (§Signature). Determinate percent is impossible
@@ -75,12 +81,12 @@ interface SourcesViewProps {
 }
 
 export default function SourcesView({ onManageSources }: SourcesViewProps) {
-  // null = the Sources root (no auto-select — the design's whole point is
-  // that opening the screen doesn't bury the drill-in tree one level down).
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [subpath, setSubpath] = useState<string[]>([]);
   const [filter, setFilter] = useState("");
   const [adding, setAdding] = useState(false);
+
+  const prevCounts = useRef<Record<string, number>>({});
 
   const { data: fetchedSources = [] } = useQuery({
     queryKey: ["registeredSources"],
@@ -93,32 +99,25 @@ export default function SourcesView({ onManageSources }: SourcesViewProps) {
   });
   const sources: RegisteredSource[] = fetchedSources;
 
-  // The app-managed uploads dir (`upload_source_file` stages loose files
-  // there and registers the whole dir as a directory source). It never
-  // appears as a folder row — its contents surface as peer file rows instead.
-  const managed = useMemo(
-    () => sources.find((s) => /\.wenlan\/sources\/?$/.test(s.path)),
+  useEffect(() => {
+    const next: Record<string, number> = {};
+    for (const s of fetchedSources) next[s.id] = s.memory_count;
+    prevCounts.current = next;
+  }, [fetchedSources]);
+
+  // Tallest spine first — the shelf reads as a clear silhouette, the
+  // source with the most memories on top.
+  const shelf = useMemo(
+    () => [...sources].sort((a, b) => b.memory_count - a.memory_count),
     [sources],
   );
-  // Tallest first — most-memoried source on top, same as the old shelf order.
-  const folderSources = useMemo(
-    () =>
-      sources
-        .filter((s) => s.id !== managed?.id)
-        .sort((a, b) => b.memory_count - a.memory_count),
-    [sources, managed],
-  );
+  const maxMemories = Math.max(...sources.map((s) => s.memory_count), 1);
 
-  const selected: RegisteredSource | undefined = sources.find((s) => s.id === selectedId);
+  const selected: RegisteredSource | undefined =
+    shelf.find((s) => s.id === selectedId) ?? shelf[0];
 
   function selectSource(id: string) {
     setSelectedId(id);
-    setSubpath([]);
-    setFilter("");
-  }
-
-  function goToRoot() {
-    setSelectedId(null);
     setSubpath([]);
     setFilter("");
   }
@@ -134,7 +133,164 @@ export default function SourcesView({ onManageSources }: SourcesViewProps) {
 
   return (
     <div className="flex h-full w-full overflow-hidden">
-      {selected ? (
+      {/* ── The shelf: source picker ── */}
+      <aside
+        className="flex-shrink-0 flex flex-col"
+        style={{ width: 260, borderRight: "1px solid var(--mem-border)" }}
+      >
+        <div className="px-5 pt-6 pb-3">
+          <div
+            style={{
+              fontFamily: "var(--mem-font-heading)",
+              fontSize: "15px",
+              fontWeight: 500,
+              color: "var(--mem-text)",
+              letterSpacing: "-0.01em",
+            }}
+          >
+            Sources
+          </div>
+          <div
+            style={{
+              fontFamily: "var(--mem-font-mono)",
+              fontSize: "11px",
+              color: "var(--mem-text-tertiary)",
+              marginTop: 4,
+            }}
+          >
+            {sources.length} {sources.length === 1 ? "source" : "sources"}
+          </div>
+          {sources.some((s) => s.source_type === "directory") && (
+            <div
+              style={{
+                fontFamily: "var(--mem-font-body)",
+                fontSize: "11px",
+                color: "var(--mem-text-tertiary)",
+                marginTop: 8,
+                lineHeight: 1.4,
+              }}
+            >
+              Syncs in the background, even when Wenlan is closed.
+            </div>
+          )}
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-3 pb-3 flex flex-col gap-0.5">
+          {shelf.map((s) => {
+            const label = statusLabel(s.status);
+            const active = selected?.id === s.id;
+            return (
+              <button
+                key={s.id}
+                onClick={() => selectSource(s.id)}
+                title={label ? `${s.path} · ${label}` : s.path}
+                className="w-full flex items-center gap-3 rounded-md text-left transition-colors duration-150"
+                style={{
+                  padding: "9px 10px",
+                  background: active ? "var(--mem-indigo-bg)" : "transparent",
+                  cursor: "pointer",
+                }}
+                onMouseEnter={(e) => {
+                  if (!active) e.currentTarget.style.background = "var(--mem-hover)";
+                }}
+                onMouseLeave={(e) => {
+                  if (!active) e.currentTarget.style.background = "transparent";
+                }}
+              >
+                {/* Book spine: height = memory share, color = sync status,
+                    fill/shimmer = ingest state (ghost/indexing/settled). */}
+                {(() => {
+                  const visual = spineVisual(s, prevCounts.current[s.id]);
+                  const h = spineHeight(s.memory_count, maxMemories);
+                  return (
+                    <span className="shrink-0 w-1.5 flex items-end justify-center" style={{ height: 30 }}>
+                      <span
+                        data-testid="source-spine"
+                        data-visual={visual}
+                        className={visual === "indexing" ? "spine-indexing" : undefined}
+                        style={{
+                          width: 3,
+                          borderRadius: 1.5,
+                          height: visual === "ghost" ? 30 : h,
+                          backgroundColor: label ? STATUS_COLORS[label] : "var(--mem-accent-indigo)",
+                          border: visual === "ghost" ? "1px solid var(--mem-accent-indigo)" : undefined,
+                          background: visual === "ghost" ? "transparent" : undefined,
+                          opacity: visual === "ghost" ? 0.5 : label ? 0.9 : active ? 0.85 : 0.5,
+                        }}
+                      />
+                    </span>
+                  );
+                })()}
+                <span className="flex-1 min-w-0">
+                  <span
+                    className="block truncate"
+                    style={{
+                      fontFamily: "var(--mem-font-heading)",
+                      fontSize: "14px",
+                      fontWeight: 500,
+                      color: active ? "var(--mem-text)" : "var(--mem-text-secondary)",
+                      letterSpacing: "-0.005em",
+                    }}
+                  >
+                    {folderName(s.path)}
+                  </span>
+                  <span
+                    className="block truncate"
+                    style={{
+                      fontFamily: "var(--mem-font-mono)",
+                      fontSize: "10.5px",
+                      color: label ? STATUS_COLORS[label] : "var(--mem-text-tertiary)",
+                      marginTop: 1,
+                    }}
+                  >
+                    {label ?? spineCaption(s)}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div
+          className="px-3 py-3 flex flex-col gap-1"
+          style={{ borderTop: "1px solid var(--mem-border)" }}
+        >
+          <button
+            onClick={() => setAdding(true)}
+            className="w-full rounded-md border border-dashed px-3 py-2 text-left transition-colors duration-150"
+            style={{
+              borderColor: "var(--mem-border)",
+              fontFamily: "var(--mem-font-body)",
+              fontSize: "12px",
+              color: "var(--mem-text-tertiary)",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = "var(--mem-accent-indigo)";
+              e.currentTarget.style.color = "var(--mem-accent-indigo)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = "var(--mem-border)";
+              e.currentTarget.style.color = "var(--mem-text-tertiary)";
+            }}
+          >
+            + Add source
+          </button>
+          <button
+            onClick={onManageSources}
+            className="w-full rounded-md px-3 py-1.5 text-left transition-colors duration-150 hover:bg-[var(--mem-hover)]"
+            style={{
+              fontFamily: "var(--mem-font-body)",
+              fontSize: "11.5px",
+              color: "var(--mem-text-tertiary)",
+            }}
+          >
+            Manage sources ⚙
+          </button>
+        </div>
+      </aside>
+
+      {/* ── The open folder ── */}
+      {selected && (
         <FolderBrowser
           key={selected.id}
           source={selected}
@@ -142,216 +298,11 @@ export default function SourcesView({ onManageSources }: SourcesViewProps) {
           onSubpath={setSubpath}
           filter={filter}
           onFilter={setFilter}
-          onRoot={goToRoot}
-        />
-      ) : (
-        <RootBrowser
-          folderSources={folderSources}
-          managed={managed}
-          onSelectSource={selectSource}
-          onAdd={() => setAdding(true)}
-          onManageSources={onManageSources}
         />
       )}
 
       {adding && <AddSourceMenu onClose={() => setAdding(false)} />}
     </div>
-  );
-}
-
-interface RootBrowserProps {
-  /** Non-managed sources (directory + obsidian), sorted by memory_count desc. */
-  folderSources: RegisteredSource[];
-  /** The app-managed uploads dir, if registered. Its loose files render as
-   *  peer file rows; the dir itself is never a folder row. */
-  managed: RegisteredSource | undefined;
-  onSelectSource: (id: string) => void;
-  onAdd: () => void;
-  onManageSources: () => void;
-}
-
-/** The Sources root: a single list of folder rows (one per non-managed
- *  source) followed by file rows for loose uploads sitting directly in the
- *  managed dir — folders and files as peers, per the drill-in tree design. */
-function RootBrowser({
-  folderSources,
-  managed,
-  onSelectSource,
-  onAdd,
-  onManageSources,
-}: RootBrowserProps) {
-  // Single-click selects a loose file, double-click opens it — same rule as
-  // FolderBrowser's file rows.
-  const [selectedName, setSelectedName] = useState<string | null>(null);
-
-  const { data: managedEntries } = useQuery({
-    queryKey: ["sourceDir", managed?.path],
-    queryFn: () => readSourceDir(managed!.path),
-    enabled: managed !== undefined,
-  });
-  const looseFiles = useMemo(
-    () =>
-      (managedEntries ?? [])
-        .filter((e) => !e.isDirectory)
-        .sort((a, b) => a.name.localeCompare(b.name)),
-    [managedEntries],
-  );
-
-  // Same cross-ref FolderBrowser uses, so loose uploads get the same
-  // "Indexing…" badge as files inside a drilled-in folder.
-  const { data: indexedFiles } = useQuery({
-    queryKey: ["indexedFiles"],
-    queryFn: listIndexedFiles,
-  });
-  const indexReady = indexedFiles !== undefined;
-  const indexedPaths = useMemo(() => {
-    const set = new Set<string>();
-    if (!managed) return set;
-    const prefix = `${managed.id}::`;
-    for (const f of indexedFiles ?? []) {
-      if (f.source_id.startsWith(prefix)) set.add(f.source_id.slice(prefix.length));
-    }
-    return set;
-  }, [indexedFiles, managed]);
-
-  // Rendered outside the JSX so `m` (unlike `managed`) is a definite
-  // RegisteredSource inside the nested .map callback closures.
-  let looseFileRows: React.ReactNode[] = [];
-  if (managed) {
-    const m = managed;
-    looseFileRows = looseFiles.map((f) => {
-      const supported = SUPPORTED_EXTENSIONS.includes(ext(f.name));
-      const indexing = supported && indexReady && !indexedPaths.has([m.path, f.name].join("/"));
-      const selected = selectedName === f.name;
-      return (
-        <FileRow
-          key={f.name}
-          name={f.name}
-          selected={selected}
-          indexing={indexing}
-          supported={supported}
-          onSelect={() => setSelectedName(f.name)}
-          onOpen={() => openFile([m.path, f.name].join("/"))}
-        />
-      );
-    });
-  }
-
-  return (
-    <section className="flex-1 flex flex-col overflow-hidden">
-      {/* Header: title, count, add / manage — moved here from the old shelf footer. */}
-      <div className="px-8 pt-6 pb-4" style={{ borderBottom: "1px solid var(--mem-border)" }}>
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <div
-              style={{
-                fontFamily: "var(--mem-font-heading)",
-                fontSize: "18px",
-                fontWeight: 500,
-                color: "var(--mem-text)",
-                letterSpacing: "-0.01em",
-              }}
-            >
-              Sources
-            </div>
-            <div
-              style={{
-                fontFamily: "var(--mem-font-mono)",
-                fontSize: "11px",
-                color: "var(--mem-text-tertiary)",
-                marginTop: 6,
-              }}
-            >
-              {folderSources.length} {folderSources.length === 1 ? "source" : "sources"}
-            </div>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              onClick={onAdd}
-              className="rounded-md border border-dashed transition-colors duration-150"
-              style={{
-                padding: "6px 13px",
-                fontFamily: "var(--mem-font-body)",
-                fontSize: "12px",
-                color: "var(--mem-text-tertiary)",
-                borderColor: "var(--mem-border)",
-                background: "transparent",
-                cursor: "pointer",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = "var(--mem-accent-indigo)";
-                e.currentTarget.style.color = "var(--mem-accent-indigo)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = "var(--mem-border)";
-                e.currentTarget.style.color = "var(--mem-text-tertiary)";
-              }}
-            >
-              + Add source
-            </button>
-            <button
-              onClick={onManageSources}
-              className="rounded-md transition-colors duration-150 hover:bg-[var(--mem-hover)]"
-              style={{
-                padding: "6px 11px",
-                fontFamily: "var(--mem-font-body)",
-                fontSize: "11.5px",
-                color: "var(--mem-text-tertiary)",
-                background: "transparent",
-                border: "1px solid var(--mem-border)",
-                cursor: "pointer",
-              }}
-            >
-              Manage sources ⚙
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Entries: folder sources first, then loose uploads as peers. */}
-      <div className="flex-1 overflow-y-auto px-8 pb-8">
-        <div className="flex flex-col">
-          {folderSources.map((s) => {
-            const label = statusLabel(s.status);
-            return (
-              <button
-                key={s.id}
-                onClick={() => onSelectSource(s.id)}
-                title={label ? `${s.path} · ${label}` : s.path}
-                className="w-full flex items-center gap-3 rounded-md text-left transition-colors duration-150 hover:bg-[var(--mem-hover)]"
-                style={{ padding: "8px 10px" }}
-              >
-                <FileGlyph isDir supported={false} />
-                <span
-                  className="flex-1 min-w-0 truncate"
-                  style={{
-                    fontFamily: "var(--mem-font-body)",
-                    fontSize: "13.5px",
-                    color: "var(--mem-text)",
-                  }}
-                >
-                  {folderName(s.path)}
-                </span>
-                <span
-                  style={{
-                    fontFamily: "var(--mem-font-mono)",
-                    fontSize: "10.5px",
-                    color: label ? STATUS_COLORS[label] : "var(--mem-text-tertiary)",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {label ?? spineCaption(s)}
-                </span>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--mem-text-tertiary)" }}>
-                  <polyline points="9 18 15 12 9 6" />
-                </svg>
-              </button>
-            );
-          })}
-          {looseFileRows}
-        </div>
-      </div>
-    </section>
   );
 }
 
@@ -361,11 +312,9 @@ interface FolderBrowserProps {
   onSubpath: (p: string[]) => void;
   filter: string;
   onFilter: (v: string) => void;
-  /** Back to the Sources root (drill-in tree's top level). */
-  onRoot: () => void;
 }
 
-function FolderBrowser({ source, subpath, onSubpath, filter, onFilter, onRoot }: FolderBrowserProps) {
+function FolderBrowser({ source, subpath, onSubpath, filter, onFilter }: FolderBrowserProps) {
   const queryClient = useQueryClient();
   const [syncedFlash, setSyncedFlash] = useState(false);
   // Single-click selects a file (safe — no accidental external open); double-click
@@ -447,22 +396,6 @@ function FolderBrowser({ source, subpath, onSubpath, filter, onFilter, onRoot }:
           <div className="min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap" style={{ minHeight: 22 }}>
               <button
-                onClick={onRoot}
-                className="transition-colors duration-150 hover:text-[var(--mem-text)]"
-                style={{
-                  fontFamily: "var(--mem-font-body)",
-                  fontSize: "14px",
-                  color: "var(--mem-text-secondary)",
-                  background: "none",
-                  border: "none",
-                  cursor: "pointer",
-                  padding: 0,
-                }}
-              >
-                Sources
-              </button>
-              <span style={{ color: "var(--mem-text-tertiary)", fontSize: 13 }}>/</span>
-              <button
                 onClick={() => onSubpath([])}
                 className="transition-colors duration-150 hover:text-[var(--mem-text)]"
                 style={{
@@ -542,11 +475,6 @@ function FolderBrowser({ source, subpath, onSubpath, filter, onFilter, onRoot }:
                 removeSource(source.id)
                   .then(() => {
                     queryClient.invalidateQueries({ queryKey: ["registeredSources"] });
-                    // Source ids are deterministic (e.g. `directory-books`) —
-                    // leaving `selectedId` pointed at the removed source would
-                    // let a same-path re-add later in the session silently
-                    // re-match it and auto-drill back in unbidden.
-                    onRoot();
                   })
                   .catch((e) => {
                     toast("Couldn't remove source", { description: String(e) });
@@ -601,30 +529,15 @@ function FolderBrowser({ source, subpath, onSubpath, filter, onFilter, onRoot }:
                 {syncedFlash ? "✓ Synced" : syncMutation.isPending ? "Syncing…" : "Sync"}
               </button>
             ) : (
-              <div className="flex flex-col items-end" style={{ maxWidth: 200 }}>
-                <span
-                  style={{
-                    fontFamily: "var(--mem-font-mono)",
-                    fontSize: "11px",
-                    color: "var(--mem-text-tertiary)",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  Auto-synced{source.last_sync ? ` · updated ${relTime(source.last_sync).replace(/^synced /, "")}` : ""}
-                </span>
-                <span
-                  style={{
-                    fontFamily: "var(--mem-font-body)",
-                    fontSize: "11px",
-                    color: "var(--mem-text-tertiary)",
-                    marginTop: 4,
-                    lineHeight: 1.4,
-                    textAlign: "right",
-                  }}
-                >
-                  Syncs in the background, even when Wenlan is closed.
-                </span>
-              </div>
+              <span
+                style={{
+                  fontFamily: "var(--mem-font-mono)",
+                  fontSize: "11px",
+                  color: "var(--mem-text-tertiary)",
+                }}
+              >
+                Auto-synced{source.last_sync ? ` · updated ${relTime(source.last_sync).replace(/^synced /, "")}` : ""}
+              </span>
             )}
           </div>
         </div>
@@ -660,119 +573,85 @@ function FolderBrowser({ source, subpath, onSubpath, filter, onFilter, onRoot }:
         ) : (
           <div className="flex flex-col">
             {shown.map((e) => {
-              if (e.isDirectory) {
-                return (
-                  <button
-                    key={e.name}
-                    onClick={() => onSubpath([...subpath, e.name])}
-                    className="w-full flex items-center gap-3 rounded-md text-left transition-colors duration-150 hover:bg-[var(--mem-hover)]"
-                    style={{ padding: "8px 10px" }}
-                  >
-                    <FileGlyph isDir supported={false} />
-                    <span
-                      className="flex-1 min-w-0 truncate"
-                      style={{ fontFamily: "var(--mem-font-body)", fontSize: "13.5px", color: "var(--mem-text)" }}
-                    >
-                      {e.name}
-                    </span>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--mem-text-tertiary)" }}>
-                      <polyline points="9 18 15 12 9 6" />
-                    </svg>
-                  </button>
-                );
-              }
-              const supported = SUPPORTED_EXTENSIONS.includes(ext(e.name));
+              const isDir = e.isDirectory;
+              const supported = !isDir && SUPPORTED_EXTENSIONS.includes(ext(e.name));
               // A supported file not yet in the index — on an auto-syncing
               // directory source this means the daemon hasn't reached it yet.
               // Gated on indexReady so nothing is flagged while the indexed-file
               // list is still loading.
               const indexing = supported && indexReady && !isIndexed(e.name);
-              const selected = selectedName === e.name;
+              const selected = !isDir && selectedName === e.name;
               return (
-                <FileRow
+                <button
                   key={e.name}
-                  name={e.name}
-                  selected={selected}
-                  indexing={indexing}
-                  supported={supported}
-                  onSelect={() => setSelectedName(e.name)}
-                  onOpen={() => openFile([fullPath, e.name].join("/"))}
-                />
+                  data-selected={selected ? "true" : undefined}
+                  // Folders navigate on single click. Files select on single
+                  // click and open on double click — no accidental external open.
+                  onClick={() =>
+                    isDir ? onSubpath([...subpath, e.name]) : setSelectedName(e.name)
+                  }
+                  onDoubleClick={() => {
+                    if (!isDir) openFile([fullPath, e.name].join("/"));
+                  }}
+                  className="w-full flex items-center gap-3 rounded-md text-left transition-colors duration-150 hover:bg-[var(--mem-hover)]"
+                  style={{ padding: "8px 10px", background: selected ? "var(--mem-indigo-bg)" : undefined }}
+                >
+                  <FileGlyph isDir={isDir} supported={supported} />
+                  <span
+                    className="flex-1 min-w-0 truncate"
+                    style={{
+                      fontFamily: "var(--mem-font-body)",
+                      fontSize: "13.5px",
+                      color: indexing
+                        ? "var(--mem-text-tertiary)"
+                        : isDir
+                          ? "var(--mem-text)"
+                          : supported
+                            ? "var(--mem-text-secondary)"
+                            : "var(--mem-text-tertiary)",
+                    }}
+                  >
+                    {e.name}
+                  </span>
+                  {indexing && (
+                    <span
+                      title="Indexing… — not in your library yet."
+                      style={{
+                        fontFamily: "var(--mem-font-mono)",
+                        fontSize: "10px",
+                        letterSpacing: "0.02em",
+                        color: "var(--mem-text-tertiary)",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      Indexing…
+                    </span>
+                  )}
+                  {!isDir && ext(e.name) && (
+                    <span
+                      style={{
+                        fontFamily: "var(--mem-font-mono)",
+                        fontSize: "10px",
+                        letterSpacing: "0.04em",
+                        color: supported ? "var(--mem-accent-indigo)" : "var(--mem-text-tertiary)",
+                        opacity: supported ? 0.9 : 0.5,
+                      }}
+                    >
+                      {ext(e.name)}
+                    </span>
+                  )}
+                  {isDir && (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--mem-text-tertiary)" }}>
+                      <polyline points="9 18 15 12 9 6" />
+                    </svg>
+                  )}
+                </button>
               );
             })}
           </div>
         )}
       </div>
     </section>
-  );
-}
-
-interface FileRowProps {
-  name: string;
-  selected: boolean;
-  /** Supported, not yet in the daemon's index — shows the calm "Indexing…" badge. */
-  indexing: boolean;
-  supported: boolean;
-  onSelect: () => void;
-  onOpen: () => void;
-}
-
-/** A single file row: single-click selects, double-click opens via `openFile`.
- *  Shared between FolderBrowser (files inside a drilled-in source) and
- *  RootBrowser (loose uploads sitting directly in the managed dir) so both
- *  stay visually and behaviorally identical. */
-function FileRow({ name, selected, indexing, supported, onSelect, onOpen }: FileRowProps) {
-  return (
-    <button
-      data-selected={selected ? "true" : undefined}
-      onClick={onSelect}
-      onDoubleClick={onOpen}
-      className="w-full flex items-center gap-3 rounded-md text-left transition-colors duration-150 hover:bg-[var(--mem-hover)]"
-      style={{ padding: "8px 10px", background: selected ? "var(--mem-indigo-bg)" : undefined }}
-    >
-      <FileGlyph isDir={false} supported={supported} />
-      <span
-        className="flex-1 min-w-0 truncate"
-        style={{
-          fontFamily: "var(--mem-font-body)",
-          fontSize: "13.5px",
-          color: indexing
-            ? "var(--mem-text-tertiary)"
-            : supported
-              ? "var(--mem-text-secondary)"
-              : "var(--mem-text-tertiary)",
-        }}
-      >
-        {name}
-      </span>
-      {indexing && (
-        <span
-          title="Indexing… — not in your library yet."
-          style={{
-            fontFamily: "var(--mem-font-mono)",
-            fontSize: "10px",
-            letterSpacing: "0.02em",
-            color: "var(--mem-text-tertiary)",
-            whiteSpace: "nowrap",
-          }}
-        >
-          Indexing…
-        </span>
-      )}
-      {ext(name) && (
-        <span
-          style={{
-            fontFamily: "var(--mem-font-mono)",
-            fontSize: "10px",
-            letterSpacing: "0.04em",
-            color: supported ? "var(--mem-accent-indigo)" : "var(--mem-text-tertiary)",
-            opacity: supported ? 0.9 : 0.5,
-          }}
-        >
-          {ext(name)}
-        </span>
-      )}
-    </button>
   );
 }
 
