@@ -8,7 +8,6 @@ import {
   readSourceDir,
   removeSource,
   listIndexedFiles,
-  getChunks,
   type RegisteredSource,
   type SourceDirEntry,
   type SyncStatusStr,
@@ -517,8 +516,6 @@ function DetailPane({ node, isIndexed, indexReady, indexedFiles }: DetailPanePro
   );
 }
 
-const MAX_INLINE_CHUNKS = 12;
-
 function FileDetail({
   node,
   isIndexed,
@@ -534,7 +531,6 @@ function FileDetail({
   const supported = SUPPORTED_EXTENSIONS.includes(e);
   const indexed = indexReady && isIndexed(node.source, node.path);
   const info = indexedFiles?.find((f) => f.source_id === `${node.source.id}::${node.path}`);
-  const [chunksExpanded, setChunksExpanded] = useState(false);
 
   // Gate on indexReady before deciding indexed-vs-indexing; never claim
   // "not indexed" — an auto-syncing source is almost always mid-flight.
@@ -542,15 +538,6 @@ function FileDetail({
   if (!supported) statusText = "Unsupported type";
   else if (indexReady && indexed) statusText = "In your library";
   else statusText = "Indexing…";
-
-  // The daemon's own index record for this file, keyed on the same source +
-  // source_id as getChunks below — kept enabled only once expanded so a file
-  // with hundreds of chunks doesn't fetch them just to show the count.
-  const { data: chunks = [], isLoading: chunksLoading } = useQuery({
-    queryKey: ["chunks", info?.source ?? "", info?.source_id ?? ""],
-    queryFn: () => getChunks(info!.source, info!.source_id),
-    enabled: chunksExpanded && info !== undefined,
-  });
 
   return (
     <section className="flex-1 flex flex-col overflow-hidden">
@@ -601,7 +588,7 @@ function FileDetail({
                 color: "var(--mem-text-tertiary)",
               }}
             >
-              {info.chunk_count} {info.chunk_count === 1 ? "chunk" : "chunks"}
+              Indexed as {info.chunk_count} {info.chunk_count === 1 ? "passage" : "passages"}
               {info.last_modified
                 ? ` · updated ${relTime(info.last_modified).replace(/^synced /, "")}`
                 : ""}
@@ -674,131 +661,6 @@ function FileDetail({
           </p>
         )}
 
-        {info && info.chunk_count > 0 && (
-          <div>
-            <button
-              onClick={() => setChunksExpanded((v) => !v)}
-              className="flex items-center gap-1.5 rounded-md transition-colors duration-150 hover:bg-[var(--mem-hover)]"
-              style={{
-                padding: "5px 8px",
-                marginLeft: -8,
-                fontFamily: "var(--mem-font-mono)",
-                fontSize: "11px",
-                color: "var(--mem-text-secondary)",
-                background: "transparent",
-                border: "none",
-                cursor: "pointer",
-              }}
-            >
-              <Chevron expanded={chunksExpanded} />
-              Chunks ({info.chunk_count})
-            </button>
-
-            {chunksExpanded && (
-              <div className="flex flex-col gap-2 min-w-0" style={{ marginTop: 8 }}>
-                {chunksLoading ? (
-                  <div
-                    style={{
-                      fontFamily: "var(--mem-font-body)",
-                      fontSize: "12px",
-                      color: "var(--mem-text-tertiary)",
-                    }}
-                  >
-                    Loading…
-                  </div>
-                ) : chunks.length === 0 ? (
-                  <div
-                    style={{
-                      fontFamily: "var(--mem-font-mono)",
-                      fontSize: "11px",
-                      color: "var(--mem-text-tertiary)",
-                    }}
-                  >
-                    No chunk text available.
-                  </div>
-                ) : (
-                  <>
-                    {chunks.slice(0, MAX_INLINE_CHUNKS).map((chunk) => (
-                      <div
-                        key={chunk.id}
-                        className="rounded-md overflow-hidden"
-                        style={{ border: "1px solid var(--mem-border)", padding: "8px 10px", minWidth: 0 }}
-                      >
-                        <div
-                          className="flex items-center gap-2 flex-wrap"
-                          style={{ marginBottom: 4 }}
-                        >
-                          <span
-                            style={{
-                              fontFamily: "var(--mem-font-mono)",
-                              fontSize: "10px",
-                              color: "var(--mem-text-tertiary)",
-                            }}
-                          >
-                            #{chunk.chunk_index}
-                          </span>
-                          {chunk.chunk_type && (
-                            <span
-                              style={{
-                                fontFamily: "var(--mem-font-mono)",
-                                fontSize: "10px",
-                                letterSpacing: "0.02em",
-                                padding: "1px 6px",
-                                borderRadius: 4,
-                                background: "var(--mem-hover)",
-                                color: "var(--mem-text-tertiary)",
-                              }}
-                            >
-                              {chunk.chunk_type}
-                            </span>
-                          )}
-                          {chunk.language && (
-                            <span
-                              style={{
-                                fontFamily: "var(--mem-font-mono)",
-                                fontSize: "10px",
-                                letterSpacing: "0.02em",
-                                padding: "1px 6px",
-                                borderRadius: 4,
-                                background: "var(--mem-indigo-bg)",
-                                color: "var(--mem-accent-indigo)",
-                              }}
-                            >
-                              {chunk.language}
-                            </span>
-                          )}
-                        </div>
-                        <div
-                          className="whitespace-pre-wrap break-words"
-                          style={{
-                            fontFamily: "var(--mem-font-body)",
-                            fontSize: "12px",
-                            color: "var(--mem-text-secondary)",
-                            lineHeight: 1.5,
-                          }}
-                        >
-                          {chunk.content}
-                        </div>
-                      </div>
-                    ))}
-                    {chunks.length > MAX_INLINE_CHUNKS && (
-                      <div
-                        style={{
-                          fontFamily: "var(--mem-font-mono)",
-                          fontSize: "11px",
-                          color: "var(--mem-text-tertiary)",
-                          marginTop: 4,
-                        }}
-                      >
-                        Showing first {MAX_INLINE_CHUNKS} of {chunks.length} chunks
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-        )}
       </div>
     </section>
   );
