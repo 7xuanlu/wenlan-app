@@ -5,6 +5,8 @@ target/
 node_modules/
 dist/
 *.log
+playwright-report/
+test-results/
 
 # Tauri
 app/binaries/

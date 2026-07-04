@@ -27,6 +27,8 @@
     "tauri": "TAURI_DIR=app tauri",
     "postinstall": "git config core.hooksPath .githooks 2>/dev/null && chmod +x .githooks/* 2>/dev/null || true",
     "test": "vitest run",
+    "test:e2e": "playwright test",
+    "test:i18n": "vitest run src/i18n/locales.test.ts src/i18n/resources.test.ts src/i18n/index.test.ts src/i18n/hardcodedCopyGuard.test.ts",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:all": "pnpm test && cd app && cargo test",
@@ -54,11 +56,13 @@
     "tauri-plugin-clipboard-x-api": "^2.0.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@tailwindcss/vite": "^4.0.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
     "@types/d3-force": "^3.0.10",
+    "@types/node": "^26.1.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.0.0",
