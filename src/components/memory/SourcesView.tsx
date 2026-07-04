@@ -8,9 +8,11 @@ import {
   readSourceDir,
   removeSource,
   listIndexedFiles,
+  getChunks,
   type RegisteredSource,
   type SourceDirEntry,
   type SyncStatusStr,
+  type IndexedFileInfo,
 } from "../../lib/tauri";
 import AddSourceMenu from "./sources/AddSourceMenu";
 import { toast } from "sonner";
@@ -292,7 +294,12 @@ export default function SourcesView({ onManageSources }: SourcesViewProps) {
       </aside>
 
       {/* ── RIGHT: details of the selected node ── */}
-      <DetailPane node={liveSelectedNode} isIndexed={isIndexed} indexReady={indexReady} />
+      <DetailPane
+        node={liveSelectedNode}
+        isIndexed={isIndexed}
+        indexReady={indexReady}
+        indexedFiles={indexedFiles}
+      />
 
       {adding && <AddSourceMenu onClose={() => setAdding(false)} />}
     </div>
@@ -492,12 +499,18 @@ interface DetailPaneProps {
   node: SourcesNode | null;
   isIndexed: (source: RegisteredSource, absPath: string) => boolean;
   indexReady: boolean;
+  indexedFiles?: IndexedFileInfo[];
 }
 
-function DetailPane({ node, isIndexed, indexReady }: DetailPaneProps) {
+function DetailPane({ node, isIndexed, indexReady, indexedFiles }: DetailPaneProps) {
   if (!node) return <section className="flex-1 flex flex-col overflow-hidden" />;
   return node.kind === "file" ? (
-    <FileDetail node={node} isIndexed={isIndexed} indexReady={indexReady} />
+    <FileDetail
+      node={node}
+      isIndexed={isIndexed}
+      indexReady={indexReady}
+      indexedFiles={indexedFiles}
+    />
   ) : (
     <FolderDetail node={node} />
   );
@@ -507,14 +520,18 @@ function FileDetail({
   node,
   isIndexed,
   indexReady,
+  indexedFiles,
 }: {
   node: Extract<SourcesNode, { kind: "file" }>;
   isIndexed: (source: RegisteredSource, absPath: string) => boolean;
   indexReady: boolean;
+  indexedFiles?: IndexedFileInfo[];
 }) {
   const e = ext(node.name);
   const supported = SUPPORTED_EXTENSIONS.includes(e);
   const indexed = indexReady && isIndexed(node.source, node.path);
+  const info = indexedFiles?.find((f) => f.source_id === `${node.source.id}::${node.path}`);
+  const [chunksExpanded, setChunksExpanded] = useState(false);
 
   // Gate on indexReady before deciding indexed-vs-indexing; never claim
   // "not indexed" — an auto-syncing source is almost always mid-flight.
@@ -522,6 +539,15 @@ function FileDetail({
   if (!supported) statusText = "Unsupported type";
   else if (indexReady && indexed) statusText = "In your library";
   else statusText = "Indexing…";
+
+  // The daemon's own index record for this file, keyed on the same source +
+  // source_id as getChunks below — kept enabled only once expanded so a file
+  // with hundreds of chunks doesn't fetch them just to show the count.
+  const { data: chunks = [], isLoading: chunksLoading } = useQuery({
+    queryKey: ["chunks", info?.source ?? "", info?.source_id ?? ""],
+    queryFn: () => getChunks(info!.source, info!.source_id),
+    enabled: chunksExpanded && info !== undefined,
+  });
 
   return (
     <section className="flex-1 flex flex-col overflow-hidden">
@@ -563,24 +589,174 @@ function FileDetail({
         >
           {statusText}
         </div>
+        {info && (
+          <div className="flex items-center gap-2 flex-wrap" style={{ marginTop: 4 }}>
+            <span
+              style={{
+                fontFamily: "var(--mem-font-mono)",
+                fontSize: "11px",
+                color: "var(--mem-text-tertiary)",
+              }}
+            >
+              {info.chunk_count} {info.chunk_count === 1 ? "chunk" : "chunks"}
+              {info.last_modified
+                ? ` · updated ${relTime(info.last_modified).replace(/^synced /, "")}`
+                : ""}
+            </span>
+            {info.memory_type && (
+              <span
+                style={{
+                  fontFamily: "var(--mem-font-mono)",
+                  fontSize: "10px",
+                  letterSpacing: "0.02em",
+                  padding: "1px 6px",
+                  borderRadius: 4,
+                  background: "var(--mem-indigo-bg)",
+                  color: "var(--mem-accent-indigo)",
+                }}
+              >
+                {info.memory_type}
+              </span>
+            )}
+          </div>
+        )}
       </div>
-      <div className="px-8 pt-4">
-        <button
-          onClick={() => openFile(node.path)}
-          className="rounded-md transition-colors duration-150 hover:bg-[var(--mem-hover)]"
-          style={{
-            padding: "6px 13px",
-            fontFamily: "var(--mem-font-body)",
-            fontSize: "12px",
-            fontWeight: 500,
-            color: "white",
-            background: "var(--mem-accent-indigo)",
-            border: "none",
-            cursor: "pointer",
-          }}
-        >
-          Open
-        </button>
+      <div className="flex-1 overflow-y-auto px-8 pt-4 pb-8 flex flex-col gap-4">
+        <div>
+          <button
+            onClick={() => openFile(node.path)}
+            className="rounded-md transition-colors duration-150 hover:bg-[var(--mem-hover)]"
+            style={{
+              padding: "6px 13px",
+              fontFamily: "var(--mem-font-body)",
+              fontSize: "12px",
+              fontWeight: 500,
+              color: "white",
+              background: "var(--mem-accent-indigo)",
+              border: "none",
+              cursor: "pointer",
+            }}
+          >
+            Open
+          </button>
+        </div>
+
+        {info?.summary && (
+          <p
+            style={{
+              fontFamily: "var(--mem-font-body)",
+              fontSize: "13px",
+              color: "var(--mem-text-secondary)",
+              lineHeight: 1.6,
+              margin: 0,
+              maxWidth: 560,
+            }}
+          >
+            {info.summary}
+          </p>
+        )}
+
+        {info && info.chunk_count > 0 && (
+          <div>
+            <button
+              onClick={() => setChunksExpanded((v) => !v)}
+              className="flex items-center gap-1.5 rounded-md transition-colors duration-150 hover:bg-[var(--mem-hover)]"
+              style={{
+                padding: "5px 8px",
+                marginLeft: -8,
+                fontFamily: "var(--mem-font-mono)",
+                fontSize: "11px",
+                color: "var(--mem-text-secondary)",
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+              }}
+            >
+              <Chevron expanded={chunksExpanded} />
+              Chunks ({info.chunk_count})
+            </button>
+
+            {chunksExpanded && (
+              <div className="flex flex-col gap-2" style={{ marginTop: 8 }}>
+                {chunksLoading ? (
+                  <div
+                    style={{
+                      fontFamily: "var(--mem-font-body)",
+                      fontSize: "12px",
+                      color: "var(--mem-text-tertiary)",
+                    }}
+                  >
+                    Loading…
+                  </div>
+                ) : (
+                  chunks.map((chunk) => (
+                    <div
+                      key={chunk.id}
+                      className="rounded-md"
+                      style={{ border: "1px solid var(--mem-border)", padding: "8px 10px" }}
+                    >
+                      <div
+                        className="flex items-center gap-2 flex-wrap"
+                        style={{ marginBottom: 4 }}
+                      >
+                        <span
+                          style={{
+                            fontFamily: "var(--mem-font-mono)",
+                            fontSize: "10px",
+                            color: "var(--mem-text-tertiary)",
+                          }}
+                        >
+                          #{chunk.chunk_index}
+                        </span>
+                        {chunk.chunk_type && (
+                          <span
+                            style={{
+                              fontFamily: "var(--mem-font-mono)",
+                              fontSize: "10px",
+                              letterSpacing: "0.02em",
+                              padding: "1px 6px",
+                              borderRadius: 4,
+                              background: "var(--mem-hover)",
+                              color: "var(--mem-text-tertiary)",
+                            }}
+                          >
+                            {chunk.chunk_type}
+                          </span>
+                        )}
+                        {chunk.language && (
+                          <span
+                            style={{
+                              fontFamily: "var(--mem-font-mono)",
+                              fontSize: "10px",
+                              letterSpacing: "0.02em",
+                              padding: "1px 6px",
+                              borderRadius: 4,
+                              background: "var(--mem-indigo-bg)",
+                              color: "var(--mem-accent-indigo)",
+                            }}
+                          >
+                            {chunk.language}
+                          </span>
+                        )}
+                      </div>
+                      <div
+                        className="whitespace-pre-wrap"
+                        style={{
+                          fontFamily: "var(--mem-font-body)",
+                          fontSize: "12px",
+                          color: "var(--mem-text-secondary)",
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        {chunk.content}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </section>
   );

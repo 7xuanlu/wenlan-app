@@ -10,6 +10,7 @@ import {
   readSourceDir,
   removeSource,
   listIndexedFiles,
+  getChunks,
   type RegisteredSource,
   type IndexedFileInfo,
 } from "../../../lib/tauri";
@@ -22,6 +23,7 @@ vi.mock("../../../lib/tauri", () => ({
   addSource: vi.fn(),
   removeSource: vi.fn(),
   listIndexedFiles: vi.fn(),
+  getChunks: vi.fn(),
 }));
 
 /** Minimal IndexedFileInfo for a given source id + absolute file path. */
@@ -80,6 +82,7 @@ beforeEach(() => {
   vi.mocked(listRegisteredSources).mockResolvedValue(SOURCES);
   vi.mocked(readSourceDir).mockImplementation(fakeReadDir);
   vi.mocked(openFile).mockResolvedValue(undefined);
+  vi.mocked(getChunks).mockResolvedValue([]);
   // report.pdf (loose) and notes/index.md are in the library; notes.md is not.
   vi.mocked(listIndexedFiles).mockResolvedValue([
     indexed("managed", `${MANAGED}/report.pdf`),
@@ -186,6 +189,45 @@ describe("detail pane", () => {
     await user.click(await screen.findByText("notes"));
     fireEvent.click(await screen.findByRole("button", { name: "Remove" }));
     await waitFor(() => expect(removeSource).toHaveBeenCalledWith("notes"));
+  });
+});
+
+describe("file detail: index internals", () => {
+  const CHUNKS = [
+    { id: "c0", chunk_index: 0, chunk_type: "prose", language: null, content: "First chunk of the report." },
+    { id: "c1", chunk_index: 1, chunk_type: "prose", language: null, content: "Second chunk." },
+    { id: "c2", chunk_index: 2, chunk_type: "table", language: null, content: "A quarterly table." },
+  ];
+
+  beforeEach(() => {
+    // report.pdf carries a chunk count and an AI summary; the rest is default.
+    vi.mocked(listIndexedFiles).mockResolvedValue([
+      { ...indexed("managed", `${MANAGED}/report.pdf`), chunk_count: 3, summary: "A quarterly report." },
+    ]);
+    vi.mocked(getChunks).mockResolvedValue(CHUNKS);
+  });
+
+  it("shows the chunk count and AI summary for an indexed file", async () => {
+    const user = userEvent.setup();
+    renderView();
+
+    await user.click(await screen.findByText("report.pdf"));
+
+    expect(await screen.findByText(/\b3 chunks\b/i)).toBeInTheDocument();
+    expect(screen.getByText("A quarterly report.")).toBeInTheDocument();
+  });
+
+  it("lists each chunk's index and content when the chunk list is expanded", async () => {
+    const user = userEvent.setup();
+    renderView();
+
+    await user.click(await screen.findByText("report.pdf"));
+    await user.click(await screen.findByRole("button", { name: /chunks/i }));
+
+    // The daemon is queried with the indexed file's own source + source_id.
+    expect(vi.mocked(getChunks)).toHaveBeenCalledWith("directory", `managed::${MANAGED}/report.pdf`);
+    expect(await screen.findByText("#0")).toBeInTheDocument();
+    expect(screen.getByText(/First chunk of the report/)).toBeInTheDocument();
   });
 });
 
