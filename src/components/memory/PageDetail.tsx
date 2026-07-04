@@ -16,6 +16,8 @@ import {
 import ContentRenderer from "./ContentRenderer";
 import RelatedPages from "./page/RelatedPages";
 import PageInfo from "./page/PageInfo";
+import { processCitations, stripCitationLinks } from "../../lib/pageCitations";
+import CitationChip from "./page/CitationChip";
 
 interface PageDetailProps {
   pageId: string;
@@ -258,9 +260,13 @@ export default function PageDetail({ pageId, onBack, onMemoryClick, onPageClick 
 
   const sourceCount = pageSources?.length ?? page.source_memory_ids.length;
 
-  // Strip ## Sources (shown as MemoryCard UI below)
+  // Citations first (occurrence counting mirrors the backend and runs over the
+  // raw stored body), then the existing display transforms.
+  const processed = processCitations(page.content, page.citations);
+
+  // Strip ## Sources (shown in Page info below)
   // Convert [[wikilinks]] to markdown links if they resolve to pages, else plain text
-  const cleanedContent = page.content
+  const cleanedContent = processed.content
     .replace(/^#\s+.*\n+/, "") // Strip title heading (displayed separately by UI)
     .replace(/## Sources\n[\s\S]*?(?=\n## |\s*$)/, "")
     .replace(/\[\[([^\]]+)\]\]/g, (_match, inner) => {
@@ -271,11 +277,17 @@ export default function PageDetail({ pageId, onBack, onMemoryClick, onPageClick 
     })
     .trim();
 
+  const sourceMemoryByLocator = new Map(
+    (pageSources ?? [])
+      .filter((cs) => cs.memory !== null)
+      .map((cs) => [cs.source.memory_source_id, cs.memory!]),
+  );
+
   // Extract TLDR (first sentence) for native rendering under title.
   // Match first sentence ending with ". " or ".\n" — but not inside [[wikilinks]] or after abbreviations.
   const sentenceEnd = cleanedContent.search(/\.\s/);
   const tldr = sentenceEnd > 0 && sentenceEnd < 400
-    ? cleanedContent.slice(0, sentenceEnd + 1).trim()
+    ? stripCitationLinks(cleanedContent.slice(0, sentenceEnd + 1).trim())
     : "";
   const displayContent = tldr
     ? cleanedContent.slice(sentenceEnd + 1).trim()
@@ -565,7 +577,23 @@ export default function PageDetail({ pageId, onBack, onMemoryClick, onPageClick 
               </p>
             </div>
           )}
-          <ContentRenderer content={displayContent} variant="detail" />
+          <ContentRenderer
+            content={displayContent}
+            variant="detail"
+            renderCitation={(k) => {
+              const c = processed.byOccurrence.get(k);
+              if (!c) return null;
+              return (
+                <CitationChip
+                  occurrence={k}
+                  citation={c}
+                  sourceMemory={sourceMemoryByLocator.get(c.locator) ?? null}
+                  sourcesLoading={pageSources === undefined}
+                  onOpenMemory={onMemoryClick}
+                />
+              );
+            }}
+          />
         </div>
       )}
 
@@ -577,8 +605,8 @@ export default function PageDetail({ pageId, onBack, onMemoryClick, onPageClick 
           sources={pageSources}
           inbound={inboundLinks}
           revisions={pageRevisionEntries}
-          citations={undefined}
-          citationState="none"
+          citations={page.citations}
+          citationState={processed.state}
           onMemoryClick={onMemoryClick}
           onPageClick={onPageClick}
         />
