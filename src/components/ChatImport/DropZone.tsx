@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
+import { useTranslation } from "react-i18next";
 
 interface DropZoneProps {
   /** Called when a file is drag-dropped (receives a File object). */
@@ -9,6 +10,7 @@ interface DropZoneProps {
 }
 
 export function DropZone({ onFileSelected, onPathSelected }: DropZoneProps) {
+  const { t } = useTranslation();
   const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -29,19 +31,19 @@ export function DropZone({ onFileSelected, onPathSelected }: DropZoneProps) {
       const file = e.dataTransfer.files[0];
       if (!file) return;
       if (!file.name.toLowerCase().endsWith(".zip")) {
-        setError("Must be a .zip file exported from ChatGPT or Claude.");
+        setError(t("chatImport.dropZone.zipError"));
         return;
       }
       onFileSelected(file);
     },
-    [onFileSelected],
+    [onFileSelected, t],
   );
 
   const handlePickFile = useCallback(async () => {
     try {
       const selected = await open({
         multiple: false,
-        filters: [{ name: "ZIP Archives", extensions: ["zip"] }],
+        filters: [{ name: t("chatImport.dropZone.zipFilter"), extensions: ["zip"] }],
       });
       if (!selected || typeof selected !== "string") return; // user cancelled
       const path = selected;
@@ -50,12 +52,12 @@ export function DropZone({ onFileSelected, onPathSelected }: DropZoneProps) {
         onPathSelected(path);
       } else {
         // Fallback: no onPathSelected handler — report as error
-        setError("File picker returned a path but no handler is available.");
+        setError(t("chatImport.dropZone.noPathHandler"));
       }
     } catch (e) {
-      setError(`Failed to open file picker: ${e}`);
+      setError(t("chatImport.dropZone.pickerFailed", { error: String(e) }));
     }
-  }, [onPathSelected]);
+  }, [onPathSelected, t]);
 
   return (
     <div
@@ -102,7 +104,7 @@ export function DropZone({ onFileSelected, onPathSelected }: DropZoneProps) {
           marginBottom: 4,
         }}
       >
-        Drop export ZIP here
+        {t("chatImport.dropZone.title")}
       </div>
 
       <div
@@ -113,7 +115,7 @@ export function DropZone({ onFileSelected, onPathSelected }: DropZoneProps) {
           marginBottom: 14,
         }}
       >
-        .zip file from ChatGPT or Claude export
+        {t("chatImport.dropZone.subtitle")}
       </div>
 
       <button
@@ -133,7 +135,7 @@ export function DropZone({ onFileSelected, onPathSelected }: DropZoneProps) {
         onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.85")}
         onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
       >
-        Choose file
+        {t("chatImport.dropZone.chooseFile")}
       </button>
 
       {error && (

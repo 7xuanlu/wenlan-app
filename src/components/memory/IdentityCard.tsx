@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { listEntities, getProfile } from "../../lib/tauri";
 import ProfileAvatar from "./ProfileAvatar";
 
@@ -15,6 +16,7 @@ export default function IdentityCard({
   onOpenSettings,
   onOpenAbout,
 }: IdentityCardProps) {
+  const { t } = useTranslation();
   const [menuOpen, setMenuOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -32,8 +34,10 @@ export default function IdentityCard({
   const selfEntity = entities[0];
   // Profile name is canonical — entity name may be partial (e.g. "Lu" vs "Qi-Xuan Lu")
   const displayName = profile?.display_name || profile?.name || selfEntity?.name || "";
-  const labelText = displayName || "Account";
-  const triggerLabel = displayName ? `${displayName} account menu` : "Account menu";
+  const labelText = displayName || t("identityCard.account");
+  const triggerLabel = displayName
+    ? t("identityCard.namedAccountMenu", { name: displayName })
+    : t("identityCard.accountMenu");
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -169,7 +173,7 @@ export default function IdentityCard({
               <circle cx="12" cy="12" r="3" />
               <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06A2 2 0 014.35 17l.06-.06A1.65 1.65 0 004.74 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.23A1.65 1.65 0 004.74 9a1.65 1.65 0 00-.33-1.94l-.06-.06A2 2 0 017.17 4.17l.06.06A1.65 1.65 0 009 4.56a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.05a1.65 1.65 0 001 1.51 1.65 1.65 0 001.77-.33l.06-.06A2 2 0 0119.65 7l-.06.06A1.65 1.65 0 0019.26 9c.2.61.75 1 1.4 1H21a2 2 0 010 4h-.34a1.65 1.65 0 00-1.26 1z" />
             </svg>
-            Settings
+            {t("identityCard.settings")}
           </button>
           <button
             type="button"
@@ -187,7 +191,7 @@ export default function IdentityCard({
               <path d="M12 11v5" />
               <path d="M12 8h.01" />
             </svg>
-            About Wenlan
+            {t("identityCard.aboutWenlan")}
           </button>
         </div>
       )}

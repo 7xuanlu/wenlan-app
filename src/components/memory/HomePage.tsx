@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import type { TFunction } from "i18next";
+import { useTranslation } from "react-i18next";
 import {
   getMemoryStats,
   listPages,
@@ -54,6 +56,7 @@ export default function HomePage({
   onSelectPage,
   onOpenDistillReview,
 }: HomePageProps) {
+  const { t } = useTranslation();
   const { data: retrievals = [] } = useQuery({
     queryKey: ["recentRetrievals"],
     queryFn: () => listRecentRetrievals(12),
@@ -170,7 +173,7 @@ export default function HomePage({
           cursor: "pointer",
         }}
       >
-        Review page changes
+        {t("home.reviewPageChanges")}
       </button>
     </div>
   ) : null;
@@ -296,10 +299,10 @@ function pageUpdatesFromPages(pages: Page[]): Page[] {
     .slice(0, 3);
 }
 
-function pageUpdateReason(page: Page): string {
-  if (page.stale_reason === "source_conflict") return "Source conflict";
-  if (page.stale_reason === "source_updated") return "New sources waiting";
-  return "Needs page refresh";
+function pageUpdateReason(t: TFunction, page: Page): string {
+  if (page.stale_reason === "source_conflict") return t("home.reasons.sourceConflict");
+  if (page.stale_reason === "source_updated") return t("home.reasons.sourceUpdated");
+  return t("home.reasons.needsRefresh");
 }
 
 function formatPagePath(page: Page): string {
@@ -308,12 +311,12 @@ function formatPagePath(page: Page): string {
   return `[[${domain ? `${domain}/` : ""}${title}]]`;
 }
 
-function formatSourceCount(count: number): string {
-  return `${count} ${count === 1 ? "source" : "sources"}`;
+function formatSourceCount(t: TFunction, count: number): string {
+  return t("home.counts.source", { count });
 }
 
-function formatPageCount(count: number): string {
-  return `${count} ${count === 1 ? "page" : "pages"}`;
+function formatPageCount(t: TFunction, count: number): string {
+  return t("home.counts.page", { count });
 }
 
 function uniqueSourceCount(pages: Page[]): number {
@@ -326,24 +329,24 @@ function uniqueSourceCount(pages: Page[]): number {
   return sourceIds.size;
 }
 
-function latestPageUpdate(pages: Page[]): string {
+function latestPageUpdate(t: TFunction, pages: Page[]): string {
   const latest = pages.reduce<string | null>((current, page) => {
     if (!current) return page.last_modified;
     return Date.parse(page.last_modified) > Date.parse(current) ? page.last_modified : current;
   }, null);
-  return latest ? relativePageDate(latest) : "no updates yet";
+  return latest ? relativePageDate(t, latest) : t("home.relative.noUpdates");
 }
 
-function relativePageDate(value: string): string {
+function relativePageDate(t: TFunction, value: string): string {
   const ms = Date.parse(value);
-  if (Number.isNaN(ms)) return "updated recently";
+  if (Number.isNaN(ms)) return t("home.relative.updatedRecently");
   const delta = Date.now() - ms;
   const days = Math.floor(delta / 86_400_000);
-  if (days <= 0) return "updated today";
-  if (days === 1) return "updated yesterday";
-  if (days < 7) return `updated ${days}d ago`;
+  if (days <= 0) return t("home.relative.today");
+  if (days === 1) return t("home.relative.yesterday");
+  if (days < 7) return t("home.relative.daysAgo", { count: days });
   const weeks = Math.floor(days / 7);
-  return weeks === 1 ? "updated 1w ago" : `updated ${weeks}w ago`;
+  return weeks === 1 ? t("home.relative.weekAgo") : t("home.relative.weeksAgo", { count: weeks });
 }
 
 function useElementMinWidth<T extends HTMLElement>(minWidth: number) {
@@ -483,11 +486,12 @@ function TodayPages({
   onSelectPage?: (pageId: string) => void;
   isWideLayout: boolean;
 }) {
+  const { t } = useTranslation();
   if (!pages.length) return null;
   return (
     <section style={{ marginBottom: 32 }}>
       <SectionHeading
-        title="Today in Wenlan"
+        title={t("home.todayInWenlan")}
         action={
           <span
             style={{
@@ -496,7 +500,7 @@ function TodayPages({
               color: "var(--mem-text-tertiary)",
             }}
           >
-            {formatPageCount(pageCount)}
+            {formatPageCount(t, pageCount)}
           </span>
         }
       />
@@ -518,6 +522,7 @@ function PageList({
   onSelectPage?: (pageId: string) => void;
   isWideLayout: boolean;
 }) {
+  const { t } = useTranslation();
   if (!pages.length) return null;
   return (
     <div style={{ marginBottom: 32 }}>
@@ -533,7 +538,7 @@ function PageList({
           <button
             key={page.id}
             type="button"
-            aria-label={`Open ${page.title}`}
+            aria-label={t("home.openPage", { title: page.title })}
             className="transition-colors duration-150 hover:bg-[var(--mem-hover)]"
             style={{
               display: "grid",
@@ -617,8 +622,8 @@ function PageList({
                 textAlign: isWideLayout ? "right" : "left",
               }}
             >
-              <span>{formatSourceCount(page.source_memory_ids.length)}</span>
-              <span>{relativePageDate(page.last_modified)}</span>
+              <span>{formatSourceCount(t, page.source_memory_ids.length)}</span>
+              <span>{relativePageDate(t, page.last_modified)}</span>
             </div>
           </button>
         ))}
@@ -640,6 +645,7 @@ function HomeContextRail({
   onSelectPage?: (pageId: string) => void;
   onOpenDistillReview?: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div
       data-testid="wiki-context-rail"
@@ -656,7 +662,7 @@ function HomeContextRail({
           padding: "12px 0",
         }}
       >
-        <SectionHeading title="Index" size="compact" />
+        <SectionHeading title={t("home.index")} size="compact" />
         <div
           style={{
             display: "grid",
@@ -664,10 +670,10 @@ function HomeContextRail({
             gap: 10,
           }}
         >
-          <ContextMetric label="Pages" value={formatPageCount(pages.length)} />
-          <ContextMetric label="Sources" value={formatSourceCount(uniqueSourceCount(pages))} />
-          <ContextMetric label="Spaces" value={String(directoryItems.length)} />
-          <ContextMetric label="Latest" value={latestPageUpdate(pages)} />
+          <ContextMetric testId="pages" label={t("home.pages")} value={formatPageCount(t, pages.length)} />
+          <ContextMetric testId="sources" label={t("home.sources")} value={formatSourceCount(t, uniqueSourceCount(pages))} />
+          <ContextMetric testId="spaces" label={t("home.spaces")} value={String(directoryItems.length)} />
+          <ContextMetric testId="latest" label={t("home.latest")} value={latestPageUpdate(t, pages)} />
         </div>
       </section>
 
@@ -680,9 +686,9 @@ function HomeContextRail({
   );
 }
 
-function ContextMetric({ label, value }: { label: string; value: string }) {
+function ContextMetric({ testId, label, value }: { testId: string; label: string; value: string }) {
   return (
-    <div data-testid={`wiki-context-${label.toLowerCase()}`}>
+    <div data-testid={`wiki-context-${testId}`}>
       <p
         style={{
           fontFamily: "var(--mem-font-mono)",
@@ -722,6 +728,7 @@ function PageUpdatesRail({
   onSelectPage?: (pageId: string) => void;
   onOpenDistillReview?: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <section
       data-testid="wiki-page-updates"
@@ -735,7 +742,7 @@ function PageUpdatesRail({
       }}
     >
       <SectionHeading
-        title="Page updates"
+        title={t("home.pageUpdates")}
         size="compact"
       />
       <div data-testid="worth-a-glance" style={{ display: "grid", gap: 7 }}>
@@ -749,7 +756,7 @@ function PageUpdatesRail({
               margin: 0,
             }}
           >
-            Pages are current.
+            {t("home.pagesCurrent")}
           </p>
         ) : (
           pages.map((page) => (
@@ -780,7 +787,7 @@ function PageUpdatesRail({
             fontSize: 11,
           }}
         >
-          Review page changes
+          {t("home.reviewPageChanges")}
         </button>
       )}
     </section>
@@ -794,10 +801,11 @@ function PageUpdateRailItem({
   page: Page;
   onSelectPage?: (pageId: string) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <button
       type="button"
-      aria-label={`Open ${page.title} page update`}
+      aria-label={t("home.openPageUpdate", { title: page.title })}
       onClick={() => onSelectPage?.(page.id)}
       style={{
         display: "grid",
@@ -837,7 +845,7 @@ function PageUpdateRailItem({
           margin: 0,
         }}
       >
-        {formatSourceCount(page.source_memory_ids.length)} · {pageUpdateReason(page)}
+        {formatSourceCount(t, page.source_memory_ids.length)} · {pageUpdateReason(t, page)}
       </p>
     </button>
   );

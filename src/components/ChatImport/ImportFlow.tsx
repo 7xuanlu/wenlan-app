@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import type { TFunction } from "i18next";
+import { useTranslation } from "react-i18next";
 import { DropZone } from "./DropZone";
 import {
   importChatExport,
   saveTempFile,
   listPendingImports,
-  importStageLabel,
   type ImportChatExportResponse,
   type PendingImport,
 } from "../../lib/tauri";
@@ -36,6 +37,7 @@ async function maybeNotify(title: string, body: string) {
 }
 
 export function ImportFlow() {
+  const { t } = useTranslation();
   const [localAction, setLocalAction] = useState<LocalAction>(null);
   const [pending, setPending] = useState<PendingImport | null>(null);
   const [dismissed, setDismissed] = useState(false);
@@ -55,7 +57,7 @@ export function ImportFlow() {
           } else if (prevPendingRef.current) {
             // Was pending, now done
             setPending(null);
-            maybeNotify("Wenlan", "Import refinement complete");
+            maybeNotify("Wenlan", t("chatImport.importFlow.refinementComplete"));
           } else {
             setPending(null);
           }
@@ -66,7 +68,7 @@ export function ImportFlow() {
     poll();
     const id = setInterval(poll, POLL_INTERVAL_MS);
     return () => { alive = false; clearInterval(id); };
-  }, []);
+  }, [t]);
 
   const runImport = useCallback(async (path: string) => {
     setLocalAction({ kind: "reading" });
@@ -75,13 +77,19 @@ export function ImportFlow() {
       const result = await importChatExport(path);
       setLocalAction({ kind: "done", result });
       const msg = result.conversations_new > 0
-        ? `Imported ${result.conversations_new} conversations (${result.memories_stored} memories) from ${result.vendor}`
-        : `All ${result.conversations_total} conversations already imported`;
+        ? t("chatImport.importFlow.notificationImported", {
+            conversations: result.conversations_new,
+            memories: result.memories_stored,
+            vendor: result.vendor,
+          })
+        : t("chatImport.importFlow.notificationAlreadyImported", {
+            count: result.conversations_total,
+          });
       maybeNotify("Wenlan", msg);
     } catch (e: any) {
       setLocalAction({ kind: "error", message: String(e) });
     }
-  }, []);
+  }, [t]);
 
   const handleFileSelected = useCallback(async (file: File) => {
     const bytes = new Uint8Array(await file.arrayBuffer());
@@ -139,10 +147,10 @@ export function ImportFlow() {
             flex: 1,
             color: localAction?.kind === "error" ? "#ef4444" : "var(--mem-text-secondary)",
           }}>
-            {localAction?.kind === "reading" && "Importing conversations..."}
-            {localAction?.kind === "done" && formatDoneMessage(localAction.result, isRefining, pending)}
+            {localAction?.kind === "reading" && t("chatImport.importFlow.importing")}
+            {localAction?.kind === "done" && formatDoneMessage(t, localAction.result, isRefining, pending)}
             {localAction?.kind === "error" && localAction.message}
-            {!localAction && isRefining && formatRefiningMessage(pending)}
+            {!localAction && isRefining && formatRefiningMessage(t, pending)}
           </span>
 
           {localAction?.kind !== "reading" && (
@@ -157,7 +165,7 @@ export function ImportFlow() {
                 lineHeight: 0,
                 flexShrink: 0,
               }}
-              aria-label="Dismiss"
+              aria-label={t("chatImport.importFlow.dismiss")}
             >
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
                 <path d="M3 3L9 9M9 3L3 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
@@ -204,19 +212,53 @@ function StatusIcon({ reading, error, refining }: { reading?: boolean; error?: b
   );
 }
 
-function formatDoneMessage(r: ImportChatExportResponse, refining: boolean, pending: PendingImport | null): string {
-  const stageSuffix = refining && pending
-    ? ` \u00B7 ${importStageLabel(pending.stage).toLowerCase()} in background`
-    : "";
-  if (r.conversations_new > 0) {
-    return `${r.conversations_new} conversations imported from ${r.vendor}${stageSuffix}`;
+function importStageText(t: TFunction, stage: string): string {
+  switch (stage) {
+    case "parsing":
+      return t("chatImport.stage.parsing");
+    case "stage_a":
+      return t("chatImport.stage.stageA");
+    case "stage_b":
+      return t("chatImport.stage.stageB");
+    case "done":
+      return t("chatImport.stage.done");
+    case "error":
+      return t("chatImport.stage.error");
+    default:
+      return stage;
   }
-  return `All ${r.conversations_total} conversations already imported${stageSuffix}`;
 }
 
-function formatRefiningMessage(p: PendingImport | null): string {
+function formatDoneMessage(
+  t: TFunction,
+  r: ImportChatExportResponse,
+  refining: boolean,
+  pending: PendingImport | null,
+): string {
+  const stageSuffix = refining && pending
+    ? t("chatImport.importFlow.stageInBackground", {
+        stage: importStageText(t, pending.stage),
+      })
+    : "";
+  if (r.conversations_new > 0) {
+    return t("chatImport.importFlow.conversationsImported", {
+      count: r.conversations_new,
+      vendor: r.vendor,
+      stageSuffix,
+    });
+  }
+  return t("chatImport.importFlow.allAlreadyImported", {
+    count: r.conversations_total,
+    stageSuffix,
+  });
+}
+
+function formatRefiningMessage(t: TFunction, p: PendingImport | null): string {
   if (!p) return "";
   const count = p.total_conversations ?? 0;
-  const label = importStageLabel(p.stage).toLowerCase();
-  return `${count} ${p.vendor} conversations \u00B7 ${label}`;
+  return t("chatImport.importFlow.refining", {
+    count,
+    vendor: p.vendor,
+    stage: importStageText(t, p.stage),
+  });
 }

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { i18n } from "../../i18n";
 import Sidebar from "./Sidebar";
 
 const listAgentsMock = vi.hoisted(() => vi.fn().mockResolvedValue([]));
@@ -34,8 +35,9 @@ function renderSidebar(extraProps: Record<string, unknown> = {}) {
 }
 
 describe("Sidebar", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     listAgentsMock.mockResolvedValue([]);
+    await i18n.changeLanguage("en");
   });
 
   it("places Home in the primary nav and routes it through onNavigateHome", async () => {
@@ -100,6 +102,15 @@ describe("Sidebar", () => {
     const account = screen.getByTestId("identity-card");
 
     expect(spaces.compareDocumentPosition(account) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Wenlan" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the account card as the footer after locale changes", async () => {
+    await i18n.changeLanguage("zh-Hant");
+    renderSidebar();
+
+    expect(screen.getByTestId("identity-card")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Wenlan 文瀾" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Wenlan" })).not.toBeInTheDocument();
   });
 

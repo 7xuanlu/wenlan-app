@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import type { TFunction } from "i18next";
+import { useTranslation } from "react-i18next";
+
 export type HomePageState = "seed" | "listening" | "gathering" | "alive";
 
 interface Props {
@@ -7,27 +10,32 @@ interface Props {
   daysInListening: number;
 }
 
-function copyFor(state: HomePageState, memoryCount: number, daysInListening: number): string | null {
+function copyFor(
+  t: TFunction,
+  state: HomePageState,
+  memoryCount: number,
+  daysInListening: number,
+): string | null {
   if (state === "alive") return null;
   if (state === "seed") {
-    return "Wenlan is loading its on-device intelligence. Once it's ready, memories from your agents will start arriving here and compile into pages.";
+    return t("onboarding.next.seed");
   }
   if (state === "listening") {
     if (daysInListening > 3) {
-      return "Still quiet here. You can connect more AI tools from Settings.";
+      return t("onboarding.next.listeningQuiet");
     }
-    return "Keep using your AI tools. Memories will appear here as agents save what they learn. Pages usually start compiling within a day.";
+    return t("onboarding.next.listening");
   }
   // gathering
   if (memoryCount < 5) {
-    const plural = memoryCount === 1 ? "memory" : "memories";
-    return `${memoryCount} ${plural} saved. Pages are compiled automatically — usually within a day of regular use.`;
+    return t("onboarding.next.gatheringFew", { count: memoryCount });
   }
-  return `${memoryCount} memories saved. Pages are compiled when patterns emerge — you should see the first ones soon.`;
+  return t("onboarding.next.gatheringMany", { count: memoryCount });
 }
 
 export function WhatHappensNextCard({ state, memoryCount, daysInListening }: Props) {
-  const text = copyFor(state, memoryCount, daysInListening);
+  const { t } = useTranslation();
+  const text = copyFor(t, state, memoryCount, daysInListening);
   if (!text) return null;
   return (
     <section

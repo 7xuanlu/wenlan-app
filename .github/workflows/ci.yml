@@ -70,8 +70,17 @@ jobs:
       - name: TypeScript check
         run: pnpm exec tsc -b
 
+      - name: Run i18n gates
+        run: pnpm test:i18n
+
       - name: Run frontend tests
         run: pnpm test
+
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install chromium
+
+      - name: Run frontend e2e tests
+        run: pnpm test:e2e
 
   download-smoke:
     name: Download Smoke

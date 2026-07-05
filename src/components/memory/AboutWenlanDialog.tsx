@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { useTranslation } from "react-i18next";
 
 interface AboutWenlanDialogProps {
   open: boolean;
@@ -6,6 +7,8 @@ interface AboutWenlanDialogProps {
 }
 
 export default function AboutWenlanDialog({ open, onClose }: AboutWenlanDialogProps) {
+  const { t } = useTranslation();
+
   if (!open) return null;
 
   return (
@@ -38,7 +41,7 @@ export default function AboutWenlanDialog({ open, onClose }: AboutWenlanDialogPr
                 color: "var(--mem-text)",
               }}
             >
-              About Wenlan
+              {t("aboutWenlan.title")}
             </h2>
             <p
               style={{
@@ -49,12 +52,12 @@ export default function AboutWenlanDialog({ open, onClose }: AboutWenlanDialogPr
                 marginTop: 8,
               }}
             >
-              Memory and wiki for AI tools.
+              {t("aboutWenlan.description")}
             </p>
           </div>
           <button
             type="button"
-            aria-label="Close"
+            aria-label={t("common.close")}
             onClick={onClose}
             className="rounded-md p-1 transition-colors duration-150 hover:bg-[var(--mem-hover)]"
             style={{

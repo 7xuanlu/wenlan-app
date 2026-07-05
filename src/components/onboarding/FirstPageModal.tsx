@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 
 interface Page {
   id: string;
@@ -19,6 +20,7 @@ const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 export function FirstPageModal({ page, onOpen, onDismiss }: Props) {
+  const { t } = useTranslation();
   const dialogRef = useRef<HTMLDivElement | null>(null);
 
   // Focus trap: on mount focus the first focusable element inside the dialog,
@@ -98,7 +100,7 @@ export function FirstPageModal({ page, onOpen, onDismiss }: Props) {
             margin: "0 0 8px 0",
           }}
         >
-          First page compiled
+          {t("onboarding.firstPage.eyebrow")}
         </p>
         <h2
           id="first-page-title"
@@ -133,7 +135,9 @@ export function FirstPageModal({ page, onOpen, onDismiss }: Props) {
             margin: "0 0 24px 0",
           }}
         >
-          Compiled from {page.source_memory_ids.length} memories
+          {t("onboarding.firstPage.compiledFrom", {
+            count: page.source_memory_ids.length,
+          })}
         </p>
         <div className="flex gap-3 justify-end">
           <button
@@ -148,7 +152,7 @@ export function FirstPageModal({ page, onOpen, onDismiss }: Props) {
               cursor: "pointer",
             }}
           >
-            Dismiss
+            {t("onboarding.firstPage.dismiss")}
           </button>
           <button
             onClick={() => onOpen(page.id)}
@@ -163,7 +167,7 @@ export function FirstPageModal({ page, onOpen, onDismiss }: Props) {
               cursor: "pointer",
             }}
           >
-            Open page
+            {t("onboarding.firstPage.openPage")}
           </button>
         </div>
       </div>

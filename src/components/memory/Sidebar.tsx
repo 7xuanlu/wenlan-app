@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useQuery } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { getMemoryStats } from "../../lib/tauri";
 import IdentityCard from "./IdentityCard";
 import SpaceList from "./SpaceList";
@@ -29,6 +30,7 @@ export default function Sidebar({
   onNavigateSettings,
   onOpenAbout,
 }: SidebarProps) {
+  const { t } = useTranslation();
   const { data: _stats } = useQuery({
     queryKey: ["memoryStats"],
     queryFn: getMemoryStats,
@@ -70,7 +72,7 @@ export default function Sidebar({
                   <path d="M9.5 21v-6h5v6" />
                 </svg>
                 <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-secondary)" }}>
-                  Home
+                  {t("sidebar.home")}
                 </span>
               </button>
             )}
@@ -88,7 +90,7 @@ export default function Sidebar({
                   <polyline points="10 9 9 9 8 9" />
                 </svg>
                 <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-secondary)" }}>
-                  Memories
+                  {t("sidebar.memories")}
                 </span>
               </button>
             )}
@@ -107,7 +109,7 @@ export default function Sidebar({
                   <line x1="18" y1="8" x2="13" y2="16" />
                 </svg>
                 <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-secondary)" }}>
-                  Graph
+                  {t("sidebar.graph")}
                 </span>
               </button>
             )}
@@ -124,7 +126,7 @@ export default function Sidebar({
                   <path d="M3 16 12 21 21 16" />
                 </svg>
                 <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-secondary)" }}>
-                  Sources
+                  {t("sidebar.sources")}
                 </span>
               </button>
             )}
@@ -147,6 +149,7 @@ export default function Sidebar({
 
 /** Sidebar toggle button for use in the header */
 export function SidebarToggleButton({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
+  const { t } = useTranslation();
   return (
     <button
       onClick={onToggle}
@@ -156,7 +159,7 @@ export function SidebarToggleButton({ collapsed, onToggle }: { collapsed: boolea
         height: 28,
         color: "var(--mem-text-tertiary)",
       }}
-      title={collapsed ? "Show sidebar" : "Hide sidebar"}
+      title={collapsed ? t("sidebar.show") : t("sidebar.hide")}
     >
       <svg
         width="14"

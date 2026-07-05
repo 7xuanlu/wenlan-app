@@ -3,6 +3,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { i18n } from "../../../i18n";
 import IdentityCard from "../IdentityCard";
 
 vi.mock("../../../lib/tauri", () => ({
@@ -28,7 +29,8 @@ function renderIdentityCard() {
   );
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  await i18n.changeLanguage("en");
   vi.mocked(tauri.getProfile).mockResolvedValue({
     id: "p1",
     name: "Lucian",
@@ -103,5 +105,18 @@ describe("IdentityCard", () => {
     await user.click(screen.getByRole("menuitem", { name: "Settings" }));
     expect(onOpenSettings).toHaveBeenCalledTimes(1);
     expect(onOpenAbout).not.toHaveBeenCalled();
+  });
+
+  it("localizes the empty account menu state", async () => {
+    await i18n.changeLanguage("zh-Hant");
+    vi.mocked(tauri.getProfile).mockResolvedValue(null);
+    vi.mocked(tauri.listEntities).mockResolvedValue([]);
+
+    renderIdentityCard();
+
+    expect(await screen.findByRole("button", { name: "帳戶選單" })).toBeInTheDocument();
+    expect(screen.getByText("帳戶")).toBeInTheDocument();
+    expect(screen.queryByText("設定你的個人資料")).not.toBeInTheDocument();
+    expect(screen.queryByText("Set up your profile")).not.toBeInTheDocument();
   });
 });

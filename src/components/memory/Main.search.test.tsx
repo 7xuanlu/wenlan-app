@@ -1,13 +1,21 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps } from "react";
+import { i18n } from "../../i18n";
 import Main from "./Main";
 
+const eventListeners = vi.hoisted(
+  () => new Map<string, (payload?: unknown) => void>(),
+);
+
 vi.mock("@tauri-apps/api/event", () => ({
-  listen: vi.fn(() => Promise.resolve(() => {})),
+  listen: vi.fn((event: string, handler: (payload?: unknown) => void) => {
+    eventListeners.set(event, handler);
+    return Promise.resolve(() => eventListeners.delete(event));
+  }),
 }));
 
 vi.mock("../../hooks/useSearch", () => ({
@@ -65,6 +73,11 @@ function renderMain(props: ComponentProps<typeof Main> = {}) {
 }
 
 describe("Main search", () => {
+  beforeEach(async () => {
+    eventListeners.clear();
+    await i18n.changeLanguage("en");
+  });
+
   it("keeps the Wenlan brand out of the top chrome", () => {
     renderMain();
 
@@ -92,5 +105,17 @@ describe("Main search", () => {
 
     expect(await screen.findByTestId("settings-page")).toBeInTheDocument();
     expect(screen.queryByTestId("profile-page")).not.toBeInTheDocument();
+  });
+
+  it("focuses search from the Tauri event when the placeholder is translated", async () => {
+    await i18n.changeLanguage("zh-Hant");
+    renderMain();
+
+    const searchInput = screen.getByPlaceholderText(
+      "搜尋頁面、實體、來源...",
+    );
+    eventListeners.get("focus-search")?.();
+
+    expect(searchInput).toHaveFocus();
   });
 });

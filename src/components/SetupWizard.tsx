@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Trans, useTranslation } from "react-i18next";
 import {
   detectMcpClients,
   writeMcpConfig,
@@ -67,6 +68,8 @@ function StepIndicator({ currentStep }: { currentStep: WizardStep }) {
 // ── Welcome Step ────────────────────────────────────────────────────────
 
 function WelcomeStep({ onNext }: { onNext: () => void }) {
+  const { t } = useTranslation();
+
   return (
     <div
       className="flex flex-col items-center text-center"
@@ -82,7 +85,7 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
             letterSpacing: "-0.02em",
           }}
         >
-          Welcome to Wenlan
+          {t("setup.welcomeTitle")}
         </h1>
         <p
           style={{
@@ -92,7 +95,7 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
             lineHeight: "1.5",
           }}
         >
-          Wenlan. Where understanding compounds.
+          {t("setup.tagline")}
         </p>
       </div>
 
@@ -126,7 +129,7 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
             color: "var(--mem-text-secondary)",
           }}
         >
-          Everything stays on your device
+          {t("setup.privacyTitle")}
         </span>
       </div>
 
@@ -140,7 +143,7 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
           fontSize: "14px",
         }}
       >
-        Get started
+        {t("setup.getStarted")}
       </button>
     </div>
   );
@@ -153,6 +156,7 @@ function IntelligenceChoiceStep({
   onNext: () => void;
   onBack: () => void;
 }) {
+  const { t } = useTranslation();
   const [mode, setMode] = useState<"device" | "api">("device");
 
   const choiceButtonStyle = (active: boolean): React.CSSProperties => ({
@@ -185,7 +189,7 @@ function IntelligenceChoiceStep({
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <path d="M19 12H5M12 19l-7-7 7-7" />
         </svg>
-        Back
+        {t("setup.back")}
       </button>
 
       <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
@@ -197,7 +201,7 @@ function IntelligenceChoiceStep({
             color: "var(--mem-text)",
           }}
         >
-          Choose how Wenlan thinks
+          {t("setup.intelligence.title")}
         </h1>
         <p
           style={{
@@ -207,13 +211,13 @@ function IntelligenceChoiceStep({
             lineHeight: "1.5",
           }}
         >
-          Download an on-device model for local intelligence, or bring your own API key for cloud synthesis. You can change this later in Settings.
+          {t("setup.intelligence.description")}
         </p>
       </div>
 
       <div className="flex gap-3">
-        <button onClick={() => setMode("device")} style={choiceButtonStyle(mode === "device")}>On-device model</button>
-        <button onClick={() => setMode("api")} style={choiceButtonStyle(mode === "api")}>Use my API key</button>
+        <button onClick={() => setMode("device")} style={choiceButtonStyle(mode === "device")}>{t("setup.intelligence.deviceOption")}</button>
+        <button onClick={() => setMode("api")} style={choiceButtonStyle(mode === "api")}>{t("setup.intelligence.apiOption")}</button>
       </div>
 
       {mode === "device" ? (
@@ -230,7 +234,7 @@ function IntelligenceChoiceStep({
               lineHeight: 1.6,
             }}
           >
-            Local models keep inference on your Mac. If you skip this now, Wenlan can still store memories and you can download a model later from Settings.
+            {t("setup.intelligence.deviceNote")}
           </div>
         </div>
       ) : (
@@ -247,7 +251,7 @@ function IntelligenceChoiceStep({
               lineHeight: 1.6,
             }}
           >
-            An API key unlocks stronger cloud synthesis. Wenlan still keeps your stored memories local; this only changes which model handles reasoning tasks.
+            {t("setup.intelligence.apiNote")}
           </div>
         </div>
       )}
@@ -271,7 +275,7 @@ function IntelligenceChoiceStep({
             cursor: "pointer",
           }}
         >
-          Skip
+          {t("setup.skip")}
         </button>
         <button
           onClick={onNext}
@@ -282,7 +286,7 @@ function IntelligenceChoiceStep({
             color: "white",
           }}
         >
-          Continue
+          {t("setup.continue")}
         </button>
       </div>
     </div>
@@ -320,6 +324,7 @@ function ConnectStep({
   onBack: () => void;
   onConnected: (agents: string[]) => void;
 }) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [connectedClients, setConnectedClients] = useState<Record<string, boolean>>({});
   const [connectErrors, setConnectErrors] = useState<Record<string, string>>({});
@@ -495,7 +500,7 @@ function ConnectStep({
                       color: "rgb(34,197,94)",
                     }}
                   >
-                    Configured
+                    {t("setup.connect.configured")}
                   </span>
                 )}
               </div>
@@ -510,8 +515,8 @@ function ConnectStep({
                 }}
               >
                 {client.detected
-                  ? "Wenlan can add its MCP server for this tool now."
-                  : "Safe one-click setup is supported once this tool is installed on your Mac."}
+                  ? t("setup.connect.detectedDescription")
+                  : t("setup.connect.supportedDescription")}
               </p>
 
               {error && (
@@ -550,7 +555,7 @@ function ConnectStep({
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <path d="M19 12H5M12 19l-7-7 7-7" />
         </svg>
-        Back
+        {t("setup.back")}
       </button>
 
       <div>
@@ -562,7 +567,7 @@ function ConnectStep({
             color: "var(--mem-text)",
           }}
         >
-          Choose tools to connect
+          {t("setup.connect.title")}
         </h1>
         <p
           style={{
@@ -573,13 +578,13 @@ function ConnectStep({
             lineHeight: "1.5",
           }}
         >
-          Pick which tools should share memory with Wenlan. We only offer one-click setup for tools whose MCP config we can write safely today.
+          {t("setup.connect.description")}
         </p>
       </div>
 
       {(isLoading || isError || detectedClients.length > 0) && (
         <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-          <SectionLabel>Detected on your Mac</SectionLabel>
+          <SectionLabel>{t("setup.connect.detectedOnMac")}</SectionLabel>
 
           {isLoading && (
             <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
@@ -608,28 +613,28 @@ function ConnectStep({
                 lineHeight: 1.5,
               }}
             >
-              Couldn't detect AI tools automatically. Use the manual setup below, or set up a web-based tool with Remote Access.
+              {t("setup.connect.detectionFailed")}
             </p>
           )}
 
-          {detectedClients.length > 0 && renderClientList(detectedClients, "Detected", true)}
+          {detectedClients.length > 0 && renderClientList(detectedClients, t("setup.connect.detected"), true)}
         </div>
       )}
 
       {supportedClients.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-          <SectionLabel>Supported tools</SectionLabel>
-          {renderClientList(supportedClients, "Install first", false)}
+          <SectionLabel>{t("setup.connect.supportedTools")}</SectionLabel>
+          {renderClientList(supportedClients, t("setup.connect.installFirst"), false)}
         </div>
       )}
 
       <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-        <SectionLabel>Claude.ai & ChatGPT (web)</SectionLabel>
+        <SectionLabel>{t("setup.connect.webTools")}</SectionLabel>
         <RemoteAccessPanel mode="compact" />
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-        <SectionLabel>Manual setup</SectionLabel>
+        <SectionLabel>{t("setup.connect.manualSetup")}</SectionLabel>
         <button
           onClick={() => setManualExpanded((prev) => !prev)}
           className="flex items-center gap-1.5 transition-colors duration-150 self-start"
@@ -655,7 +660,7 @@ function ConnectStep({
           >
             <polyline points="9 18 15 12 9 6" />
           </svg>
-          Show MCP config snippet
+          {t("setup.connect.showConfigSnippet")}
         </button>
 
         {manualExpanded && (
@@ -669,7 +674,7 @@ function ConnectStep({
                 lineHeight: "1.5",
               }}
             >
-              Add this to your MCP client's configuration file:
+              {t("setup.connect.addConfigSnippet")}
             </p>
             <pre
               className="rounded-lg px-4 py-3"
@@ -695,8 +700,8 @@ function ConnectStep({
               }}
             >
               {wenlanMcpEntry?.command === "npx"
-                ? "Production default — resolves wenlan-mcp from npm at runtime."
-                : "Development path (local build). Shipped installs use npx -y wenlan-mcp."}
+                ? t("setup.connect.productionDefault")
+                : t("setup.connect.developmentPath")}
             </p>
           </div>
         )}
@@ -721,7 +726,7 @@ function ConnectStep({
             cursor: "pointer",
           }}
         >
-          Skip
+          {t("setup.skip")}
         </button>
         <button
           onClick={handleContinue}
@@ -734,7 +739,7 @@ function ConnectStep({
             opacity: isConnectingAll ? 0.7 : 1,
           }}
         >
-          {isConnectingAll ? "Connecting..." : "Continue"}
+          {isConnectingAll ? t("setup.connect.connecting") : t("setup.continue")}
         </button>
       </div>
     </div>
@@ -754,6 +759,7 @@ function VerifyStep({
   onConnected: (agents: string[]) => void;
   wizardEnteredAt: number;
 }) {
+  const { t } = useTranslation();
   const [elapsed, setElapsed] = useState(0);
   const [advanced, setAdvanced] = useState(false);
 
@@ -836,7 +842,7 @@ function VerifyStep({
         >
           <path d="M19 12H5M12 19l-7-7 7-7" />
         </svg>
-        Back
+        {t("setup.back")}
       </button>
 
       {/* Centered pulse + heading group */}
@@ -876,7 +882,7 @@ function VerifyStep({
             color: "var(--mem-text)",
           }}
         >
-          Waiting for your first agent...
+          {t("setup.verify.title")}
         </h1>
         <p
           style={{
@@ -886,7 +892,7 @@ function VerifyStep({
             lineHeight: "1.5",
           }}
         >
-          Restart your AI tool so it picks up the new configuration. Then ask it to remember something — like your name, what you're working on, or a preference you have.
+          {t("setup.verify.description")}
         </p>
       </div>
 
@@ -900,7 +906,7 @@ function VerifyStep({
             lineHeight: "1.5",
           }}
         >
-          Make sure you fully restart your AI tool after setting up Wenlan.
+          {t("setup.verify.restartHint")}
         </p>
       )}
 
@@ -922,7 +928,7 @@ function VerifyStep({
               marginBottom: "8px",
             }}
           >
-            Troubleshooting
+            {t("setup.verify.troubleshootingTitle")}
           </p>
           <ul
             style={{
@@ -934,9 +940,9 @@ function VerifyStep({
               margin: 0,
             }}
           >
-            <li>Ensure Wenlan is running and the MCP server is active</li>
-            <li>Check that your AI tool has the Wenlan MCP config</li>
-            <li>Fully restart (not just reload) your AI tool</li>
+            <li>{t("setup.verify.troubleshootingServer")}</li>
+            <li>{t("setup.verify.troubleshootingConfig")}</li>
+            <li>{t("setup.verify.troubleshootingRestart")}</li>
           </ul>
         </div>
       )}
@@ -954,7 +960,7 @@ function VerifyStep({
           cursor: "pointer",
         }}
       >
-        Skip
+        {t("setup.skip")}
       </button>
       </div>
 
@@ -1016,6 +1022,7 @@ function DoneStep({
   connectedAgents: string[];
   onComplete: () => void;
 }) {
+  const { t } = useTranslation();
   const hasImportData = importResult && importResult.imported > 0;
   const hasConnectedAgents = connectedAgents.length > 0;
   const isSkipPath = !hasImportData && !hasConnectedAgents;
@@ -1042,7 +1049,7 @@ function DoneStep({
             color: "var(--mem-text)",
           }}
         >
-          Wenlan is ready.
+          {t("setup.done.readyTitle")}
         </h1>
         <p
           style={{
@@ -1052,9 +1059,7 @@ function DoneStep({
             lineHeight: 1.6,
           }}
         >
-          Use your AI tools normally. Memories will appear in Wenlan as agents
-          save what they learn. You can always return to Settings to connect
-          more tools.
+          {t("setup.done.readyBody1")}
         </p>
         <p
           style={{
@@ -1064,8 +1069,7 @@ function DoneStep({
             lineHeight: 1.6,
           }}
         >
-          Wenlan notices patterns, distills them into pages, and links what
-          you know across tools.
+          {t("setup.done.readyBody2")}
         </p>
         <button
           onClick={onComplete}
@@ -1077,7 +1081,7 @@ function DoneStep({
             fontSize: "14px",
           }}
         >
-          Open Wenlan
+          {t("setup.done.openWenlan")}
         </button>
       </div>
     );
@@ -1132,7 +1136,7 @@ function DoneStep({
             margin: 0,
           }}
         >
-          You're all set.
+          {t("setup.done.allSetTitle")}
         </p>
         <p
           style={{
@@ -1143,7 +1147,7 @@ function DoneStep({
             margin: 0,
           }}
         >
-          Keep using your AI tools normally. Wenlan watches and learns.
+          {t("setup.done.allSetBody1")}
         </p>
         <p
           style={{
@@ -1154,8 +1158,7 @@ function DoneStep({
             margin: 0,
           }}
         >
-          Wenlan notices patterns, distills them into pages, and links what
-          you know across tools.
+          {t("setup.done.allSetBody2")}
         </p>
       </div>
 
@@ -1185,7 +1188,7 @@ function DoneStep({
                 margin: 0,
               }}
             >
-              {importResult.imported} memories imported
+              {t("setup.done.memoriesImported", { count: importResult.imported })}
             </p>
 
             {/* Type breakdown badges */}
@@ -1224,12 +1227,12 @@ function DoneStep({
               }}
             >
               <Stat
-                label="Topics"
+                label={t("setup.done.topics")}
                 value={importResult.entities_created}
               />
               <div style={{ width: "1px", backgroundColor: "var(--mem-border)" }} />
               <Stat
-                label="Connections"
+                label={t("setup.done.connections")}
                 value={
                   importResult.observations_added +
                   importResult.relations_created
@@ -1250,7 +1253,7 @@ function DoneStep({
               margin: 0,
             }}
           >
-            Pages will distill from these as Wenlan connects the dots.
+            {t("setup.done.pagesWillDistill")}
           </p>
         </div>
       )}
@@ -1268,7 +1271,7 @@ function DoneStep({
               color: "var(--mem-text-secondary)",
             }}
           >
-            Connected:
+            {t("setup.done.connected")}
           </span>
           {connectedAgents.map((name) => (
             <span
@@ -1297,7 +1300,7 @@ function DoneStep({
           fontSize: "14px",
         }}
       >
-        Get started
+        {t("setup.getStarted")}
       </button>
     </div>
   );
@@ -1367,9 +1370,10 @@ export function SetupWizard({ onComplete, initialStep }: SetupWizardProps) {
             onBack={() => setStep("intelligence-choice")}
             wizardMode
             wizardHint={(
-              <>
-                You can import ChatGPT or Claude chat history later from <strong>Settings &gt; Sources</strong>.
-              </>
+              <Trans
+                i18nKey="setup.import.laterHint"
+                components={{ strong: <strong /> }}
+              />
             )}
             onPhaseChange={setImportPhase}
             onSkip={() => setStep("connect")}

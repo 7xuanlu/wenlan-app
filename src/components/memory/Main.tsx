@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
+import { useTranslation } from "react-i18next";
 import {
   listMemoriesRich,
   getMemoryStats,
@@ -47,10 +48,11 @@ type View = { kind: "home" } | { kind: "stream" } | { kind: "activity" } | { kin
 
 const SIDEBAR_KEY = "wenlan-sidebar-collapsed";
 const LEGACY_SIDEBAR_KEY = "origin-sidebar-collapsed";
-const SEARCH_PLACEHOLDER = "Search pages, entities, sources...";
 
 export default function Main({ initialMemoryId, initialPageId, initialView, onBackFromDetail }: MainProps) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [view, setView] = useState<View>(
     initialMemoryId ? { kind: "memory", sourceId: initialMemoryId }
     : initialPageId ? { kind: "page", pageId: initialPageId }
@@ -169,11 +171,8 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
   // Cmd+K global shortcut (fired from App.tsx) — focus the header search input.
   useEffect(() => {
     const unlisten = listen("focus-search", () => {
-      const searchInput = document.querySelector<HTMLInputElement>(
-        `input[placeholder="${SEARCH_PLACEHOLDER}"]`,
-      );
-      searchInput?.focus();
-      searchInput?.select();
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
     });
     return () => { unlisten.then((f) => f()); };
   }, []);
@@ -185,10 +184,7 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
         const active = document.activeElement;
         if (active?.tagName === "INPUT" || active?.tagName === "TEXTAREA") return;
         e.preventDefault();
-        const searchInput = document.querySelector<HTMLInputElement>(
-          `input[placeholder="${SEARCH_PLACEHOLDER}"]`,
-        );
-        searchInput?.focus();
+        searchInputRef.current?.focus();
       }
       if (e.key === "Escape") {
         if (query) {
@@ -265,7 +261,7 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
               }}
               className="p-1.5 rounded-md transition-colors duration-150 hover:bg-[var(--mem-hover-strong)]"
               style={{ color: "var(--mem-text-secondary)" }}
-              title="Quick Capture (⌘⇧N)"
+              title={t("main.quickCaptureTitle")}
             >
               <svg className="w-[16px] h-[16px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
@@ -291,9 +287,11 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
             <input
+              ref={searchInputRef}
+              data-wenlan-search-input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder={SEARCH_PLACEHOLDER}
+              placeholder={t("main.searchPlaceholder")}
               className="flex-1 bg-transparent outline-none"
               style={{
                 fontFamily: "var(--mem-font-body)",
@@ -362,7 +360,7 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
                         color: "var(--mem-text-tertiary)",
                       }}
                     >
-                      Pages
+                      {t("main.search.pages")}
                     </p>
                     {conceptResults.map((c) => (
                       <div
@@ -410,7 +408,7 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
                         marginTop: conceptResults.length > 0 ? 12 : 0,
                       }}
                     >
-                      {results.length} memor{results.length !== 1 ? "ies" : "y"} for &ldquo;{query}&rdquo;
+                      {t("main.search.memories", { count: results.length, query })}
                     </p>
                     {results.map((r) => (
                       <MemorySearchResult key={r.id} result={r} query={query} onClick={() => openSearchResult(r)} />
@@ -427,7 +425,7 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
                         marginTop: (results.length > 0 || conceptResults.length > 0) ? 12 : 0,
                       }}
                     >
-                      Entities
+                      {t("main.search.entities")}
                     </p>
                     {entityResults.map((r) => (
                       <div
@@ -465,7 +463,7 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
                   color: "var(--mem-text-tertiary)",
                 }}
               >
-                0 results for &ldquo;{query}&rdquo;
+                {t("main.search.noResults", { query })}
               </p>
             )
           ) : view.kind === "import" ? (
@@ -561,7 +559,7 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
                 }}
               >
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-                Back
+                {t("main.back")}
               </button>
             </div>
           ) : (
@@ -569,7 +567,7 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
               <button onClick={() => navigateTo({ kind: "home" })} className="p-1.5 -ml-1.5 rounded-md transition-colors duration-150 hover:bg-[var(--mem-hover)] mb-3" style={{ color: "var(--mem-text-tertiary)", background: "none", border: "none", cursor: "pointer", lineHeight: 0 }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
               </button>
-              <h2 style={{ fontFamily: "var(--mem-font-heading)", fontSize: "24px", fontWeight: 500, color: "var(--mem-text)", margin: "0 0 12px 0" }}>Memories</h2>
+              <h2 style={{ fontFamily: "var(--mem-font-heading)", fontSize: "24px", fontWeight: 500, color: "var(--mem-text)", margin: "0 0 12px 0" }}>{t("main.memories")}</h2>
               <MemoryStream
                 memories={memories}
                 selectedDomain={null}
@@ -593,6 +591,7 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
 }
 
 function RecapsList({ onBack, onNavigateMemory }: { onBack: () => void; onNavigateMemory: (sid: string) => void }) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { data: recaps = [] } = useQuery({
     queryKey: ["all-recaps"],
@@ -612,12 +611,12 @@ function RecapsList({ onBack, onNavigateMemory }: { onBack: () => void; onNaviga
       <button onClick={onBack} className="p-1.5 -ml-1.5 rounded-md transition-colors duration-150 hover:bg-[var(--mem-hover)] mb-3" style={{ color: "var(--mem-text-tertiary)", background: "none", border: "none", cursor: "pointer", lineHeight: 0 }}>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
       </button>
-      <h2 style={{ fontFamily: "var(--mem-font-heading)", fontSize: "20px", fontWeight: 400, color: "var(--mem-text)", margin: "0 0 16px 0" }}>Recaps</h2>
+      <h2 style={{ fontFamily: "var(--mem-font-heading)", fontSize: "20px", fontWeight: 400, color: "var(--mem-text)", margin: "0 0 16px 0" }}>{t("main.recaps")}</h2>
       <h2
         className="mb-4"
         style={{ fontFamily: "var(--mem-font-mono)", fontSize: "12px", fontWeight: 600, letterSpacing: "0.05em", textTransform: "uppercase" as const, color: "var(--mem-accent-indigo)" }}
       >
-        All Recaps ({recaps.length})
+        {t("main.allRecaps", { count: recaps.length })}
       </h2>
       <div className="flex flex-col">
         {recaps.map((recap) => (
