@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import IdentityCard from "../IdentityCard";
 
@@ -14,9 +15,15 @@ import * as tauri from "../../../lib/tauri";
 
 function renderIdentityCard() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const onOpenSettings = vi.fn();
+  const onOpenAbout = vi.fn();
   return render(
     <QueryClientProvider client={qc}>
-      <IdentityCard onOpenDetail={() => {}} />
+      <IdentityCard
+        onOpenDetail={() => {}}
+        onOpenSettings={onOpenSettings}
+        onOpenAbout={onOpenAbout}
+      />
     </QueryClientProvider>,
   );
 }
@@ -49,17 +56,52 @@ describe("IdentityCard", () => {
     expect(screen.getByText("L")).toBeInTheDocument();
   });
 
-  it("shows only avatar and display name without observation text", async () => {
+  it("renders a horizontal mini account card without observation text", async () => {
     vi.mocked(tauri.getEntityDetail).mockResolvedValue({
       observations: [{ content: "The user is a senior engineer working on Wenlan." }],
     } as any);
 
     renderIdentityCard();
 
-    await screen.findByText("Lucian");
+    const trigger = await screen.findByRole("button", { name: /Lucian account menu/ });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(tauri.getEntityDetail).not.toHaveBeenCalled();
+    expect(trigger).toHaveClass("flex", "items-center", "gap-3");
+    expect(trigger).toHaveStyle({ backgroundColor: "var(--mem-account-card)" });
+    expect(trigger.getAttribute("style")).toContain("--mem-account-card-border");
+    expect(screen.getByText("Lucian")).toBeInTheDocument();
     expect(screen.queryByText(/senior engineer/i)).not.toBeInTheDocument();
+    expect(screen.queryByText("Set up your profile")).not.toBeInTheDocument();
+  });
+
+  it("opens a minimal avatar menu without profile-specific or tool-connection shortcuts", async () => {
+    const user = userEvent.setup();
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const onOpenSettings = vi.fn();
+    const onOpenAbout = vi.fn();
+
+    render(
+      <QueryClientProvider client={qc}>
+        <IdentityCard
+          onOpenDetail={() => {}}
+          onOpenSettings={onOpenSettings}
+          onOpenAbout={onOpenAbout}
+        />
+      </QueryClientProvider>,
+    );
+
+    await user.click(await screen.findByRole("button", { name: /Lucian account menu/ }));
+
+    expect(screen.getByRole("menu")).toHaveStyle({ backgroundColor: "var(--mem-popover)" });
+    expect(screen.getByRole("menuitem", { name: "Settings" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "About Wenlan" })).toBeInTheDocument();
+    expect(screen.queryByText("Profile settings")).not.toBeInTheDocument();
+    expect(screen.queryByText("Connect tools")).not.toBeInTheDocument();
+    expect(screen.queryByText("Local account")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("menuitem", { name: "Settings" }));
+    expect(onOpenSettings).toHaveBeenCalledTimes(1);
+    expect(onOpenAbout).not.toHaveBeenCalled();
   });
 });

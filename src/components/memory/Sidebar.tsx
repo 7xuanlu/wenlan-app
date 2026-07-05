@@ -13,6 +13,8 @@ interface SidebarProps {
   onNavigateHome?: () => void;
   onNavigateGraph?: () => void;
   onNavigateSources?: () => void;
+  onNavigateSettings?: () => void;
+  onOpenAbout?: () => void;
 }
 
 
@@ -24,6 +26,8 @@ export default function Sidebar({
   onNavigateHome,
   onNavigateGraph,
   onNavigateSources,
+  onNavigateSettings,
+  onOpenAbout,
 }: SidebarProps) {
   const { data: _stats } = useQuery({
     queryKey: ["memoryStats"],
@@ -50,8 +54,6 @@ export default function Sidebar({
         }}
       >
         <div className="flex flex-col gap-6 px-4 pt-2 pb-2">
-          <IdentityCard onOpenDetail={onEntityClick} />
-
           <EntitySuggestions />
         </div>
 
@@ -131,40 +133,12 @@ export default function Sidebar({
           <SpaceList onSelectSpace={onSelectSpace} />
         </div>
 
-        <div
-          className="px-4 pt-2 pb-3 flex-shrink-0"
-        >
-          {onNavigateHome ? (
-            <button
-              type="button"
-              onClick={onNavigateHome}
-              className="rounded-sm transition-colors duration-150 hover:text-[var(--mem-text-secondary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--mem-accent-sage)]"
-              style={{
-                border: "none",
-                background: "transparent",
-                color: "var(--mem-text-tertiary)",
-                cursor: "pointer",
-                fontFamily: "var(--mem-font-body)",
-                fontSize: "11px",
-                fontWeight: 600,
-                lineHeight: 1,
-                padding: 0,
-              }}
-            >
-              Wenlan
-            </button>
-          ) : (
-            <span
-              style={{
-                fontFamily: "var(--mem-font-body)",
-                fontSize: "11px",
-                fontWeight: 600,
-                color: "var(--mem-text-tertiary)",
-              }}
-            >
-              Wenlan
-            </span>
-          )}
+        <div className="px-4 pt-2 pb-3 flex-shrink-0">
+          <IdentityCard
+            onOpenDetail={onEntityClick}
+            onOpenSettings={onNavigateSettings}
+            onOpenAbout={onOpenAbout}
+          />
         </div>
       </div>
     </aside>

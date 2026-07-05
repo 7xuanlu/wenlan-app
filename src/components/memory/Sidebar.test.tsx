@@ -93,13 +93,14 @@ describe("Sidebar", () => {
     expect(screen.queryByRole("button", { name: "Sources" })).not.toBeInTheDocument();
   });
 
-  it("keeps the Wenlan brand in the sidebar footer", () => {
+  it("uses the account card as the only sidebar footer item", () => {
     renderSidebar();
 
     const spaces = screen.getByTestId("space-list");
-    const brand = screen.getByRole("button", { name: "Wenlan" });
+    const account = screen.getByTestId("identity-card");
 
-    expect(spaces.compareDocumentPosition(brand) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(spaces.compareDocumentPosition(account) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Wenlan" })).not.toBeInTheDocument();
   });
 
   it("does not show agent connection status in the footer", async () => {
@@ -110,7 +111,7 @@ describe("Sidebar", () => {
 
     renderSidebar();
 
-    expect(await screen.findByRole("button", { name: "Wenlan" })).toBeInTheDocument();
+    expect(await screen.findByTestId("identity-card")).toBeInTheDocument();
     expect(screen.queryByText(/agents? connected/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/No agents connected/i)).not.toBeInTheDocument();
   });

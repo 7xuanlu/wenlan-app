@@ -38,7 +38,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
   {
     id: "general",
     label: "General",
-    hint: "Startup and background behavior",
+    hint: "Profile, startup, and appearance",
     icon: (
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="12" r="3" />
