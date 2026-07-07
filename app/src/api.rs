@@ -17,6 +17,10 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 /// Generous total backstop: a single ingest of a book-sized document
 /// legitimately chunks + embeds synchronously before responding.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(600);
+/// The startup health loop polls a daemon that may accept connections but
+/// never respond (wedged, or bound-but-still-initializing); the probe must
+/// not inherit the ingest-sized backstop above.
+const HEALTH_TIMEOUT: Duration = Duration::from_secs(5);
 
 fn build_http_client(connect_timeout: Duration, request_timeout: Duration) -> Client {
     Client::builder()
@@ -323,7 +327,20 @@ impl WenlanClient {
     // ── Health ──────────────────────────────────────────────────────
 
     pub async fn health(&self) -> Result<HealthResponse, String> {
-        self.get_json("/api/health").await
+        let path = "/api/health";
+        let resp = self
+            .client
+            .get(self.url(path))
+            .timeout(HEALTH_TIMEOUT)
+            .send()
+            .await
+            .map_err(|e| format!("HTTP GET {}: {}", path, e))?;
+        if !resp.status().is_success() {
+            return Err(format!("HTTP GET {} returned {}", path, resp.status()));
+        }
+        resp.json()
+            .await
+            .map_err(|e| format!("Parse {}: {}", path, e))
     }
 
     pub async fn status(&self) -> Result<wenlan_types::responses::StatusResponse, String> {
@@ -963,6 +980,28 @@ mod tests {
         assert!(
             started.elapsed() < std::time::Duration::from_secs(5),
             "request did not fail fast: {:?}",
+            started.elapsed()
+        );
+        assert!(
+            err.contains("HTTP GET /api/health"),
+            "unexpected error shape: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn health_probe_fails_fast_even_with_production_timeouts() {
+        let base_url = serve_hang_once().await;
+        let client = WenlanClient {
+            client: build_http_client(CONNECT_TIMEOUT, REQUEST_TIMEOUT),
+            base_url,
+        };
+
+        let started = std::time::Instant::now();
+        let err = client.health().await.unwrap_err();
+
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(10),
+            "health probe waited on the ingest-sized backstop: {:?}",
             started.elapsed()
         );
         assert!(
