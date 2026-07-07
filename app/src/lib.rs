@@ -705,8 +705,19 @@ pub fn run() {
                 };
                 for i in 0..10u32 {
                     match client.health().await {
-                        Ok(_) => {
-                            log::info!("[init] Daemon healthy");
+                        Ok(health) => {
+                            log::info!("[init] Daemon healthy (v{})", health.version);
+                            // The daemon binary comes from a separate install
+                            // path (LaunchAgent, sidecar, or dev checkout) —
+                            // a stale one can hold the port and answer health
+                            // while breaking newer API calls.
+                            if health.version != env!("CARGO_PKG_VERSION") {
+                                log::warn!(
+                                    "[init] Daemon version mismatch: daemon v{}, app v{} — a stale daemon may be holding port 7878; restart it (e.g. `wenlan restart`)",
+                                    health.version,
+                                    env!("CARGO_PKG_VERSION")
+                                );
+                            }
                             break;
                         }
                         Err(e) => {

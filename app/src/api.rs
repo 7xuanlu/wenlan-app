@@ -8,7 +8,23 @@ use reqwest::Client;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
+use std::time::Duration;
 use wenlan_types::responses::HealthResponse;
+
+/// A wedged daemon (accept backlog full) otherwise leaves connects hanging;
+/// reqwest's default client has no timeouts at all.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+/// Generous total backstop: a single ingest of a book-sized document
+/// legitimately chunks + embeds synchronously before responding.
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(600);
+
+fn build_http_client(connect_timeout: Duration, request_timeout: Duration) -> Client {
+    Client::builder()
+        .connect_timeout(connect_timeout)
+        .timeout(request_timeout)
+        .build()
+        .expect("static reqwest client config cannot fail")
+}
 
 /// HTTP client that proxies requests to the Wenlan daemon.
 #[derive(Clone)]
@@ -159,7 +175,7 @@ impl WenlanClient {
     pub fn new() -> Self {
         let port = daemon_port();
         Self {
-            client: Client::new(),
+            client: build_http_client(CONNECT_TIMEOUT, REQUEST_TIMEOUT),
             base_url: format!("http://127.0.0.1:{}", port),
         }
     }
@@ -913,6 +929,46 @@ mod tests {
             request
         });
         (format!("http://{}", addr), handle)
+    }
+
+    /// Accepts one connection, reads the request, then never responds.
+    async fn serve_hang_once() -> String {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut buf = [0_u8; 2048];
+            let _ = stream.read(&mut buf).await;
+            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+            drop(stream);
+        });
+        format!("http://{}", addr)
+    }
+
+    #[tokio::test]
+    async fn requests_error_instead_of_hanging_when_daemon_never_responds() {
+        let base_url = serve_hang_once().await;
+        let client = WenlanClient {
+            client: build_http_client(
+                std::time::Duration::from_millis(200),
+                std::time::Duration::from_millis(300),
+            ),
+            base_url,
+        };
+
+        let started = std::time::Instant::now();
+        let result: Result<HealthResponse, String> = client.get_json("/api/health").await;
+
+        let err = result.unwrap_err();
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(5),
+            "request did not fail fast: {:?}",
+            started.elapsed()
+        );
+        assert!(
+            err.contains("HTTP GET /api/health"),
+            "unexpected error shape: {err}"
+        );
     }
 
     #[test]
