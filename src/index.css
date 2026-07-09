@@ -353,13 +353,23 @@ html[data-theme="light"] {
   color: var(--mem-text);
 }
 
+/* Dateline row: provenance left, record actions right — one full-frame header line. */
+.memory-detail-eyebrow-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  width: min(100%, 1120px);
+  margin-inline: auto;
+}
+
 /* Dateline above the record: classification stamp + provenance. */
 .memory-detail-eyebrow {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 10px;
-  margin-bottom: 22px;
   font-family: var(--mem-font-mono);
   font-size: 11px;
   letter-spacing: 0.08em;
@@ -747,9 +757,6 @@ html[data-theme="light"] {
   min-width: 0;
   border-left: 1px solid var(--mem-border);
   padding-left: 26px;
-  /* Marginalia aligns with the body it annotates: dateline row (22px) + its
-     22px margin, so the rail (and its hairline) starts level with the hero text. */
-  margin-top: 44px;
 }
 
 .memory-detail-rail-heading {
@@ -1273,7 +1280,6 @@ html[data-theme="light"] {
     border-top: 1px solid var(--mem-border);
     padding-left: 0;
     padding-top: 20px;
-    margin-top: 0;
   }
 }
 
