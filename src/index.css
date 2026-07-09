@@ -353,6 +353,46 @@ html[data-theme="light"] {
   color: var(--mem-text);
 }
 
+/* Dateline above the record: classification stamp + provenance. */
+.memory-detail-eyebrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  margin-bottom: 22px;
+  font-family: var(--mem-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mem-text-tertiary);
+}
+
+.memory-detail-eyebrow-button {
+  font-family: var(--mem-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mem-text-secondary);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.memory-detail-eyebrow-button:hover {
+  color: var(--mem-text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.memory-detail-eyebrow-button.is-empty {
+  color: var(--mem-text-tertiary);
+}
+
+.memory-detail-eyebrow-sep {
+  opacity: 0.6;
+}
+
 /* Hero scales with content length: short = statement, long = article body. */
 .memory-detail-hero-text {
   min-width: 0;
@@ -439,13 +479,6 @@ html[data-theme="light"] {
   display: grid;
   gap: 4px;
   margin-top: 26px;
-}
-
-.memory-detail-updated {
-  margin: 18px 0 0;
-  color: var(--mem-text-tertiary);
-  font-family: var(--mem-font-mono);
-  font-size: 11px;
 }
 
 .memory-detail-icon-button {

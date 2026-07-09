@@ -491,6 +491,96 @@ export default function MemoryDetail({
       <section className="memory-detail-reading" aria-label={t("memoryDetail.readingLabel")}>
         <h2 className="sr-only">{title}</h2>
 
+        {/* Dateline: classification stamp + provenance, so the record reads as a document, not a title */}
+        <div className="memory-detail-eyebrow">
+          <div className="relative" ref={dropdownRef}>
+            <button
+              onClick={() => setReclassifyOpen(!reclassifyOpen)}
+              className={`memory-detail-facet-button ${FACET_COLORS[facetType]}`}
+            >
+              {facetType}
+              <span className="ml-1 opacity-50">&#x25BE;</span>
+            </button>
+            {reclassifyOpen && (
+              <div
+                className="absolute left-0 top-7 z-50 rounded-lg shadow-xl py-1 min-w-[140px]"
+                style={{
+                  backgroundColor: "var(--mem-surface)",
+                  border: "1px solid var(--mem-border)",
+                }}
+              >
+                {MEMORY_FACETS.map((facet) => (
+                  <button
+                    key={facet.type}
+                    className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 hover:bg-[var(--mem-hover)]"
+                    style={{
+                      fontFamily: "var(--mem-font-body)",
+                      color: facetType === facet.type ? "var(--mem-text)" : "var(--mem-text-secondary)",
+                    }}
+                    onClick={() => reclassifyMutation.mutate(facet.type)}
+                  >
+                    <span className={`memory-detail-facet-dot ${FACET_COLORS[facet.type].split(" ")[0]}`} />
+                    {facet.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="relative" ref={spaceDropdownRef}>
+            <button
+              onClick={() => setSpacePickerOpen(!spacePickerOpen)}
+              className={`memory-detail-eyebrow-button ${memory.domain ? "" : "is-empty"}`}
+            >
+              {memory.domain ?? t("memoryDetail.assignSpace")}
+            </button>
+            {spacePickerOpen && (
+              <div
+                className="absolute left-0 top-8 z-50 rounded-lg shadow-xl py-1 min-w-[140px]"
+                style={{
+                  backgroundColor: "var(--mem-surface)",
+                  border: "1px solid var(--mem-border)",
+                }}
+              >
+                {memory.domain && (
+                  <>
+                    <button
+                      onClick={() => changeSpaceMutation.mutate(undefined)}
+                      className="w-full text-left px-3 py-1.5 text-xs hover:bg-[var(--mem-hover)]"
+                      style={{ fontFamily: "var(--mem-font-body)", color: "var(--mem-text-tertiary)" }}
+                    >
+                      {t("memoryDetail.removeFromSpace")}
+                    </button>
+                    <div style={{ height: "1px", backgroundColor: "var(--mem-border)", margin: "2px 0" }} />
+                  </>
+                )}
+                {spaces.filter((s) => s.name !== memory.domain).map((s) => (
+                  <button
+                    key={s.id}
+                    onClick={() => changeSpaceMutation.mutate(s.name)}
+                    className="w-full text-left px-3 py-1.5 text-xs hover:bg-[var(--mem-hover)]"
+                    style={{ fontFamily: "var(--mem-font-body)", color: "var(--mem-text-secondary)" }}
+                  >
+                    <span className="capitalize">{s.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {memory.source_agent && (
+            <>
+              <span className="memory-detail-eyebrow-sep">·</span>
+              <span>{agentDisplayName(memory.source_agent)}</span>
+            </>
+          )}
+
+          <span className="memory-detail-eyebrow-sep">·</span>
+          <time title={absoluteDate(memory.last_modified)}>
+            {formatTimeAgo(memory.last_modified)}
+          </time>
+        </div>
+
         {/* The hero IS the memory — no card, no truncation */}
         {editing ? (
           <div className="memory-detail-editing-surface">
@@ -533,96 +623,9 @@ export default function MemoryDetail({
           </div>
         )}
 
-        {/* Dossier strip: type · space · agent · entity · quality · enrichment */}
+        {/* Dossier strip: entity · quality · enrichment */}
+        {(memory.entity_id || memory.quality === "low" || !!enrichmentStatus) && (
         <div className="memory-detail-strip">
-          <div className="relative" ref={dropdownRef}>
-            <button
-              onClick={() => setReclassifyOpen(!reclassifyOpen)}
-              className={`memory-detail-facet-button ${FACET_COLORS[facetType]}`}
-            >
-              {facetType}
-              <span className="ml-1 opacity-50">&#x25BE;</span>
-            </button>
-            {reclassifyOpen && (
-              <div
-                className="absolute left-0 top-7 z-50 rounded-lg shadow-xl py-1 min-w-[140px]"
-                style={{
-                  backgroundColor: "var(--mem-surface)",
-                  border: "1px solid var(--mem-border)",
-                }}
-              >
-                {MEMORY_FACETS.map((facet) => (
-                  <button
-                    key={facet.type}
-                    className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 hover:bg-[var(--mem-hover)]"
-                    style={{
-                      fontFamily: "var(--mem-font-body)",
-                      color: facetType === facet.type ? "var(--mem-text)" : "var(--mem-text-secondary)",
-                    }}
-                    onClick={() => reclassifyMutation.mutate(facet.type)}
-                  >
-                    <span className={`memory-detail-facet-dot ${FACET_COLORS[facet.type].split(" ")[0]}`} />
-                    {facet.label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <span className="memory-detail-strip-item">
-            <span className="memory-detail-strip-label">{t("memoryDetail.space")}</span>
-            <div className="relative" ref={spaceDropdownRef}>
-              <button
-                onClick={() => setSpacePickerOpen(!spacePickerOpen)}
-                className={`memory-detail-field-button ${memory.domain ? "" : "is-empty"}`}
-              >
-                {memory.domain ? (
-                  <span className="capitalize">{memory.domain}</span>
-                ) : (
-                  <span>{t("memoryDetail.assignSpace")}</span>
-                )}
-              </button>
-              {spacePickerOpen && (
-                <div
-                  className="absolute left-0 top-8 z-50 rounded-lg shadow-xl py-1 min-w-[140px]"
-                  style={{
-                    backgroundColor: "var(--mem-surface)",
-                    border: "1px solid var(--mem-border)",
-                  }}
-                >
-                  {memory.domain && (
-                    <>
-                      <button
-                        onClick={() => changeSpaceMutation.mutate(undefined)}
-                        className="w-full text-left px-3 py-1.5 text-xs hover:bg-[var(--mem-hover)]"
-                        style={{ fontFamily: "var(--mem-font-body)", color: "var(--mem-text-tertiary)" }}
-                      >
-                        {t("memoryDetail.removeFromSpace")}
-                      </button>
-                      <div style={{ height: "1px", backgroundColor: "var(--mem-border)", margin: "2px 0" }} />
-                    </>
-                  )}
-                  {spaces.filter((s) => s.name !== memory.domain).map((s) => (
-                    <button
-                      key={s.id}
-                      onClick={() => changeSpaceMutation.mutate(s.name)}
-                      className="w-full text-left px-3 py-1.5 text-xs hover:bg-[var(--mem-hover)]"
-                      style={{ fontFamily: "var(--mem-font-body)", color: "var(--mem-text-secondary)" }}
-                    >
-                      <span className="capitalize">{s.name}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </span>
-
-          {memory.source_agent && (
-            <span className="memory-chip indigo">
-              {agentDisplayName(memory.source_agent)}
-            </span>
-          )}
-
           {memory.entity_id && (
             <span className="memory-detail-strip-item">
               <span className="memory-detail-strip-label">{t("memoryDetail.entity")}</span>
@@ -655,6 +658,7 @@ export default function MemoryDetail({
             </span>
           )}
         </div>
+        )}
 
         {/* Tags: own wrapping line, "+" anchored */}
         <div className="memory-detail-tagline">
@@ -908,9 +912,6 @@ export default function MemoryDetail({
         </div>
       )}
 
-      <p className="memory-detail-updated" title={absoluteDate(memory.last_modified)}>
-        {formatTimeAgo(memory.last_modified)}
-      </p>
       </section>
 
       {/* Marginalia rail: connections only */}
