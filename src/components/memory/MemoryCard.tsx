@@ -1,15 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useState, useEffect } from "react";
-import { FACET_COLORS, STABILITY_TIERS, type MemoryItem, type MemoryVersionItem, type PendingRevision, getPendingRevision, acceptPendingRevision, dismissPendingRevision } from "../../lib/tauri";
+import { FACET_COLORS, STABILITY_TIERS, agentDisplayName, type MemoryItem, type MemoryVersionItem, type PendingRevision, getPendingRevision, acceptPendingRevision, dismissPendingRevision } from "../../lib/tauri";
 import ContentRenderer from "./ContentRenderer";
 import MemoryListRow from "./MemoryListRow";
-
-const AGENT_DISPLAY: Record<string, string> = {
-  "claude-code": "Claude Code",
-  "claude": "Claude",
-  "chatgpt": "ChatGPT",
-  "cursor": "Cursor",
-};
 
 interface MemoryCardProps {
   memory: MemoryItem;
@@ -210,7 +203,7 @@ export default function MemoryCard({
               </span>
             )}
             {memory.source_agent && (
-              <span>via {memory.source_agent}</span>
+              <span>via {agentDisplayName(memory.source_agent)}</span>
             )}
             {/* Extract memory count from content header */}
             {memory.content?.match(/(\d+) memories/)?.[0] && (
@@ -341,7 +334,7 @@ export default function MemoryCard({
                 }}
               >
                 <span>
-                  From {AGENT_DISPLAY[memory.source_agent ?? ""] ?? "Manual"}
+                  From {agentDisplayName(memory.source_agent) ?? "Manual"}
                 </span>
                 {isConfirmed && (
                   <>
@@ -386,7 +379,7 @@ export default function MemoryCard({
                     distilled
                   </span>
                 ) : (
-                  <span className={`px-1 py-px rounded text-[9px] font-medium border ${FACET_COLORS[facetType]}`}>
+                  <span className={`memory-facet-pill ${FACET_COLORS[facetType]}`}>
                     {facetType}
                   </span>
                 )}

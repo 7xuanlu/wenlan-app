@@ -98,7 +98,7 @@ test("opens a memory from the parent list and returns with Escape", async ({ pag
   await expect(row).toBeVisible();
   await expect(row.getByText("Type")).toBeVisible();
   await expect(row.getByText("Space")).toBeVisible();
-  await expect(row.getByText("Source")).toBeVisible();
+  await expect(row.getByText("Agent")).toBeVisible();
   await expect(row.getByText("Status")).toBeVisible();
   await expect(row.getByText("Updated")).toBeVisible();
   await capture(page, "memory-list-desktop");

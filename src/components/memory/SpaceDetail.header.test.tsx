@@ -23,6 +23,7 @@ vi.mock("../../lib/tauri", () => ({
   dismissPendingRevision: vi.fn(),
   pinMemory: vi.fn().mockResolvedValue(undefined),
   unpinMemory: vi.fn().mockResolvedValue(undefined),
+  agentDisplayName: (slug: string | null) => slug,
 }));
 
 import {

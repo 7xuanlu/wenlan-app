@@ -13,6 +13,8 @@ vi.mock("../../lib/tauri", () => ({
     preference: "bg-purple-500/20 text-purple-700 border-purple-500/30",
   },
   STABILITY_TIERS: { fact: "standard", preference: "protected" },
+  agentDisplayName: (slug: string | null) =>
+    slug ? (({ "claude-code": "Claude Code" }) as Record<string, string>)[slug] ?? slug : null,
   getPendingRevision: vi.fn().mockResolvedValue(null),
   acceptPendingRevision: vi.fn(),
   dismissPendingRevision: vi.fn(),
@@ -100,9 +102,12 @@ describe("MemoryStream", () => {
     expect(row).toHaveAttribute("tabindex", "0");
     expect(within(row).getByText("Type")).toBeVisible();
     expect(within(row).getByText("Space")).toBeVisible();
-    expect(within(row).getByText("Source")).toBeVisible();
+    expect(within(row).getByText("Agent")).toBeVisible();
     expect(within(row).getByText("Status")).toBeVisible();
     expect(within(row).getByText("Updated")).toBeVisible();
+    // Same presentation primitives as the detail page metadata rail
+    expect(within(row).getByText("decision")).toHaveClass("memory-facet-pill");
+    expect(within(row).getByText("Claude Code")).toHaveClass("memory-chip");
     expect(within(row).getByRole("button", { name: "Open memory" })).toBeVisible();
     expect(within(row).getByRole("button", { name: "Unconfirm memory" })).toBeVisible();
     expect(within(row).getByRole("button", { name: "Delete memory" })).toBeVisible();

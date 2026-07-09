@@ -21,6 +21,8 @@ vi.mock("../../lib/tauri", () => ({
   getPendingRevision: vi.fn().mockResolvedValue(null),
   acceptPendingRevision: vi.fn(),
   dismissPendingRevision: vi.fn(),
+  agentDisplayName: (slug: string | null) =>
+    slug ? (({ "claude-code": "Claude Code" }) as Record<string, string>)[slug] ?? slug : null,
 }));
 
 import MemoryCard from "./MemoryCard";

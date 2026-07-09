@@ -20,6 +20,7 @@ import {
   acceptPendingRevision,
   dismissPendingRevision,
   listSpaces,
+  agentDisplayName,
   MEMORY_FACETS,
   FACET_COLORS,
   STABILITY_TIERS,
@@ -687,7 +688,7 @@ export default function MemoryDetail({
           {memory.quality && memory.quality === "low" && (
             <MetadataRow label={t("memoryDetail.quality")}>
               <span
-                className="memory-detail-chip warning"
+                className="memory-chip warning"
               >
                 {t("memoryDetail.lowQuality")}
               </span>
@@ -698,7 +699,7 @@ export default function MemoryDetail({
           {enrichmentStatus && (
             <MetadataRow label={t("memoryDetail.enrichment")}>
               <span
-                className="memory-detail-chip indigo"
+                className="memory-chip indigo"
                 title={enrichmentStatus.steps.map((s) => `${s.step}: ${s.status}`).join("\n")}
               >
                 {enrichmentStatus.summary}
@@ -709,8 +710,8 @@ export default function MemoryDetail({
           {/* Source agent */}
           {memory.source_agent && (
             <MetadataRow label={t("memoryDetail.agent")}>
-              <span className="memory-detail-chip indigo">
-                {memory.source_agent}
+              <span className="memory-chip indigo">
+                {agentDisplayName(memory.source_agent)}
               </span>
             </MetadataRow>
           )}
@@ -751,7 +752,7 @@ export default function MemoryDetail({
                 {currentTags.map((tag) => (
                   <span
                     key={tag}
-                    className="memory-detail-chip indigo"
+                    className="memory-chip indigo"
                   >
                     {tag}
                   </span>

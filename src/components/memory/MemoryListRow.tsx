@@ -2,21 +2,16 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  FACET_COLORS,
   STABILITY_TIERS,
   acceptPendingRevision,
+  agentDisplayName,
   dismissPendingRevision,
   getPendingRevision,
   type MemoryItem,
   type PendingRevision,
 } from "../../lib/tauri";
 import ContentRenderer from "./ContentRenderer";
-
-const AGENT_DISPLAY: Record<string, string> = {
-  "claude-code": "Claude Code",
-  claude: "Claude",
-  chatgpt: "ChatGPT",
-  cursor: "Cursor",
-};
 
 interface MemoryListRowProps {
   memory: MemoryItem;
@@ -57,9 +52,7 @@ export default function MemoryListRow({
   const stability = memory.stability ?? (memory.confirmed ? "confirmed" : "new");
   const displayText = memory.source_text || memory.summary || memory.content;
   const rowTitle = memory.title || displayText || t("memoryList.untitledMemory");
-  const sourceLabel = memory.source_agent
-    ? (AGENT_DISPLAY[memory.source_agent] ?? memory.source_agent)
-    : t("memoryList.manual");
+  const agentLabel = agentDisplayName(memory.source_agent);
   const statusLabel = (() => {
     if (isConfirmed) return t("memoryList.statusConfirmed");
     switch (stability) {
@@ -132,20 +125,26 @@ export default function MemoryListRow({
         <dl className="memory-list-row-metadata">
           <div>
             <dt>{t("memoryList.type")}</dt>
-            <dd>{facetType}</dd>
+            <dd>
+              <span className={`memory-facet-pill ${FACET_COLORS[facetType] ?? FACET_COLORS.fact}`}>
+                {facetType}
+              </span>
+            </dd>
           </div>
-          {memory.domain && (
-            <div>
-              <dt>{t("memoryList.space")}</dt>
-              <dd>{memory.domain}</dd>
-            </div>
-          )}
-          {memory.source_agent && (
-            <div>
-              <dt>{t("memoryList.source")}</dt>
-              <dd>{sourceLabel}</dd>
-            </div>
-          )}
+          <div>
+            <dt>{t("memoryList.space")}</dt>
+            <dd className="capitalize">{memory.domain ?? "—"}</dd>
+          </div>
+          <div>
+            <dt>{t("memoryList.agent")}</dt>
+            <dd>
+              {agentLabel ? (
+                <span className="memory-chip indigo">{agentLabel}</span>
+              ) : (
+                t("memoryList.manual")
+              )}
+            </dd>
+          </div>
           <div>
             <dt>{t("memoryList.status")}</dt>
             <dd>{statusLabel}</dd>
