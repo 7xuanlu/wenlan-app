@@ -384,8 +384,10 @@ export default function MemoryDetail({
   const hasLegacyVersionHistory = !hasDaemonRevisionHistory && Boolean(memory.supersedes) && versionChain.length > 0;
   // Hero type scales with content length so short memories read as a statement
   // and long ones as an article body (keeps left/right visual balance).
+  // Display serif holds up for ~4 lines max; past ~280 chars it reads as a
+  // bloated headline, so longer content drops to body text with a lede.
   const contentLength = memory.content.trim().length;
-  const heroScale = contentLength <= 220 ? "is-xl" : contentLength <= 600 ? "is-lg" : "is-body";
+  const heroScale = contentLength <= 160 ? "is-xl" : contentLength <= 280 ? "is-lg" : "is-body";
   const sourceText = memory.source_text?.trim() ?? "";
   const hasSourceExcerpt = sourceText.length > 0 && sourceText !== memory.content.trim();
   const sourceClipped = sourceText.length > 360;

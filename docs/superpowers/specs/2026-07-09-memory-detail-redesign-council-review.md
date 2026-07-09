@@ -50,6 +50,10 @@ Implementation lands in `MemoryDetail.tsx` on branch `memory-ui-consistency`.
 - Source excerpt block (when `source_text` differs from `content`) fills the
   reading column's lower half so short memories don't trail into void.
 - Length-adaptive hero (user requirement: "memory content might be long or
-  short"): ≤220 chars → 24px serif; ≤600 → 19px serif; longer → 15px body.
+  short"): ≤160 chars → 24px serif; ≤280 → 19px serif; longer → 15px body
+  with a 17px lede first paragraph. Thresholds tightened 2026-07-08 after
+  user feedback ("every words squeezed into title… not impressive and ugly"):
+  display serif only holds ~4 lines, so a 400–600-char technical memory must
+  render as body + lede, never whole-block serif.
   Grid `minmax(0,1fr) 300px`, gap 48px, frame 1120px, reading column ≤720px;
   single column below 980px.

@@ -363,19 +363,27 @@ html[data-theme="light"] {
   font-size: 24px !important;
   font-weight: 500;
   line-height: 1.45 !important;
+  text-wrap: pretty;
 }
 
 .memory-detail-hero-text.is-lg p {
   font-family: var(--mem-font-heading) !important;
   font-size: 19px !important;
   font-weight: 500;
-  line-height: 1.52 !important;
+  line-height: 1.55 !important;
+  text-wrap: pretty;
 }
 
 .memory-detail-hero-text.is-body p,
 .memory-detail-hero-text.is-body li {
   font-size: 15px !important;
   line-height: 1.7 !important;
+}
+
+/* Lede: the first paragraph of a long memory carries the visual anchor. */
+.memory-detail-hero-text.is-body .content-renderer > p:first-of-type {
+  font-size: 17px !important;
+  line-height: 1.6 !important;
 }
 
 .memory-detail-strip {
