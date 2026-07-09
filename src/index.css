@@ -757,6 +757,8 @@ html[data-theme="light"] {
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
+  /* Match the dateline's 22px row (facet stamp height) so both columns share one optical line. */
+  line-height: 22px;
 }
 
 .memory-detail-rail-section {
