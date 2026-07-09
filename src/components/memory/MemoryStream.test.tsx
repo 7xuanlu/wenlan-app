@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { MemoryItem } from "../../lib/tauri";
 
@@ -16,6 +16,8 @@ vi.mock("../../lib/tauri", () => ({
   getPendingRevision: vi.fn().mockResolvedValue(null),
   acceptPendingRevision: vi.fn(),
   dismissPendingRevision: vi.fn(),
+  pinMemory: vi.fn().mockResolvedValue(undefined),
+  unpinMemory: vi.fn().mockResolvedValue(undefined),
 }));
 
 import { setStability } from "../../lib/tauri";
@@ -64,6 +66,53 @@ describe("MemoryStream", () => {
     renderWithQuery(<MemoryStream memories={memories} selectedDomain={null} />);
     expect(screen.getByText("First")).toBeInTheDocument();
     expect(screen.getByText("Second")).toBeInTheDocument();
+  });
+
+  it("renders parent-list rows with metadata labels and keyboard activation", () => {
+    const onSelectMemory = vi.fn();
+    const memories = [
+      makeMemory({
+        source_id: "decision-1",
+        title: "Local-first decision",
+        memory_type: "decision",
+        domain: "Wenlan",
+        source_agent: "claude-code",
+        stability: "confirmed",
+        confirmed: true,
+        pinned: true,
+        last_modified: 1_700_000_000,
+      }),
+    ];
+
+    renderWithQuery(
+      <MemoryStream
+        memories={memories}
+        selectedDomain={null}
+        sortMode="curated"
+        onSelectMemory={onSelectMemory}
+        presentation="parent-list"
+      />,
+    );
+
+    const list = screen.getByRole("region", { name: "Memory list" });
+    const row = within(list).getByRole("article", { name: /Local-first decision/i });
+
+    expect(row).toHaveAttribute("tabindex", "0");
+    expect(within(row).getByText("Type")).toBeVisible();
+    expect(within(row).getByText("Space")).toBeVisible();
+    expect(within(row).getByText("Source")).toBeVisible();
+    expect(within(row).getByText("Status")).toBeVisible();
+    expect(within(row).getByText("Updated")).toBeVisible();
+    expect(within(row).getByRole("button", { name: "Open memory" })).toBeVisible();
+    expect(within(row).getByRole("button", { name: "Unconfirm memory" })).toBeVisible();
+    expect(within(row).getByRole("button", { name: "Delete memory" })).toBeVisible();
+    expect(within(row).getByRole("button", { name: "Unpin memory" })).toBeVisible();
+
+    fireEvent.keyDown(row, { key: "Enter" });
+    expect(onSelectMemory).toHaveBeenCalledWith("decision-1");
+
+    fireEvent.keyDown(row, { key: " " });
+    expect(onSelectMemory).toHaveBeenCalledTimes(2);
   });
 
   it("imports the legacy Origin view-mode preference into the Wenlan key", () => {

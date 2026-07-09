@@ -74,7 +74,8 @@ const HANDLERS: Record<string, (a: any) => Promise<unknown>> = {
     get(`/api/memory/recent${qs({ limit: a?.limit, since_ms: a?.sinceMs })}`).then(
       (r) => r.memories ?? r,
     ),
-  get_memory_detail: (a) => get(`/api/memory/${enc(a.sourceId)}/detail`),
+  get_memory_detail: (a) =>
+    get(`/api/memory/${enc(a.sourceId)}/detail`).then((r) => r?.memory ?? null),
   list_memories_by_ids: (a) =>
     get(`/api/memory/by-ids?ids=${(a.ids as string[]).map(enc).join(",")}`).then(
       (r) => r.memories ?? r,

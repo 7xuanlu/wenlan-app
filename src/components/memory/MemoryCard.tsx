@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { FACET_COLORS, STABILITY_TIERS, type MemoryItem, type MemoryVersionItem, type PendingRevision, getPendingRevision, acceptPendingRevision, dismissPendingRevision } from "../../lib/tauri";
 import ContentRenderer from "./ContentRenderer";
+import MemoryListRow from "./MemoryListRow";
 
 const AGENT_DISPLAY: Record<string, string> = {
   "claude-code": "Claude Code",
@@ -24,6 +25,7 @@ interface MemoryCardProps {
   variant?: "full" | "insight";
   lineClamp?: number;
   hideBorderBottom?: boolean;
+  presentation?: "card" | "parent-list";
 }
 
 function timeAgo(ts: number): string {
@@ -50,6 +52,7 @@ export default function MemoryCard({
   variant = "full",
   lineClamp,
   hideBorderBottom,
+  presentation = "card",
 }: MemoryCardProps) {
   const [deleting, setDeleting] = useState(false);
   const [pendingRevision, setPendingRevision] = useState<PendingRevision | null>(null);
@@ -64,10 +67,10 @@ export default function MemoryCard({
 
   // Fetch pending revision for Protected confirmed memories
   useEffect(() => {
-    if (tier === "protected" && isConfirmed) {
+    if (presentation !== "parent-list" && tier === "protected" && isConfirmed) {
       getPendingRevision(memory.source_id).then(setPendingRevision).catch(() => {});
     }
-  }, [tier, isConfirmed, memory.source_id]);
+  }, [presentation, tier, isConfirmed, memory.source_id]);
 
   const handleAcceptRevision = async () => {
     if (!pendingRevision) return;
@@ -110,6 +113,20 @@ export default function MemoryCard({
           : "transparent";
 
   if (deleting) return null;
+
+  if (presentation === "parent-list") {
+    return (
+      <MemoryListRow
+        memory={memory}
+        onConfirm={onConfirm}
+        onDelete={onDelete}
+        onPin={onPin}
+        onUnpin={onUnpin}
+        onClick={onClick}
+        style={style}
+      />
+    );
+  }
 
   // ── Recap card: editorial digest treatment ──
   if (isRecap) {
