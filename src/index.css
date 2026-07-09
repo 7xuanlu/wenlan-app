@@ -747,6 +747,9 @@ html[data-theme="light"] {
   min-width: 0;
   border-left: 1px solid var(--mem-border);
   padding-left: 26px;
+  /* Marginalia aligns with the body it annotates: dateline row (22px) + its
+     22px margin, so the rail (and its hairline) starts level with the hero text. */
+  margin-top: 44px;
 }
 
 .memory-detail-rail-heading {
@@ -1270,6 +1273,7 @@ html[data-theme="light"] {
     border-top: 1px solid var(--mem-border);
     padding-left: 0;
     padding-top: 20px;
+    margin-top: 0;
   }
 }
 
