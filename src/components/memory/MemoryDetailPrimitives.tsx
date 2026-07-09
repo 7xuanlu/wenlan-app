@@ -10,12 +10,6 @@ interface RailPanelTitleProps {
   readonly children: ReactNode;
 }
 
-interface MetadataRowProps {
-  readonly align?: "center" | "start";
-  readonly children: ReactNode;
-  readonly label: string;
-}
-
 interface DisclosureButtonProps {
   readonly ariaLabel: string;
   readonly children: ReactNode;
@@ -43,15 +37,6 @@ export function PinIcon({ filled, size = 16 }: PinIconProps) {
 
 export function RailPanelTitle({ children }: RailPanelTitleProps) {
   return <h3 className="memory-detail-rail-title">{children}</h3>;
-}
-
-export function MetadataRow({ align = "center", children, label }: MetadataRowProps) {
-  return (
-    <div className={`memory-detail-metadata-row ${align === "start" ? "is-start" : ""}`}>
-      <span className="memory-detail-metadata-label">{label}</span>
-      <div className="memory-detail-metadata-value">{children}</div>
-    </div>
-  );
 }
 
 export function DisclosureButton({ ariaLabel, children, count, onClick }: DisclosureButtonProps) {

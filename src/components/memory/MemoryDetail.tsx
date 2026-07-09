@@ -29,7 +29,7 @@ import {
 } from "../../lib/tauri";
 import TagEditor from "../TagEditor";
 import ContentRenderer from "./ContentRenderer";
-import { DisclosureButton, MetadataRow, PinIcon, RailPanelTitle } from "./MemoryDetailPrimitives";
+import { DisclosureButton, PinIcon, RailPanelTitle } from "./MemoryDetailPrimitives";
 
 interface MemoryDetailProps {
   sourceId: string;
@@ -137,6 +137,7 @@ export default function MemoryDetail({
   const [pendingRevision, setPendingRevision] = useState<PendingRevision | null>(null);
   const [copied, setCopied] = useState(false);
   const [editingTags, setEditingTags] = useState(false);
+  const [sourceExpanded, setSourceExpanded] = useState(false);
   const [revisionHistoryExpanded, setRevisionHistoryExpanded] = useState(false);
   const [versionHistoryExpanded, setVersionHistoryExpanded] = useState(false);
   const [relatedEntitiesExpanded, setRelatedEntitiesExpanded] = useState(false);
@@ -381,15 +382,19 @@ export default function MemoryDetail({
   const title = displayTitle(memory.content, memory.title, t("memoryDetail.untitledMemory"));
   const structuredEntries = parseStructuredEntries(memory.structured_fields);
   const hasLegacyVersionHistory = !hasDaemonRevisionHistory && Boolean(memory.supersedes) && versionChain.length > 0;
-  const hasContextDock =
-    hasDaemonRevisionHistory ||
-    hasLegacyVersionHistory ||
-    relatedEntities.length > 0 ||
-    relatedMemories.length > 0;
+  // Hero type scales with content length so short memories read as a statement
+  // and long ones as an article body (keeps left/right visual balance).
+  const contentLength = memory.content.trim().length;
+  const heroScale = contentLength <= 220 ? "is-xl" : contentLength <= 600 ? "is-lg" : "is-body";
+  const sourceText = memory.source_text?.trim() ?? "";
+  const hasSourceExcerpt = sourceText.length > 0 && sourceText !== memory.content.trim();
+  const sourceClipped = sourceText.length > 360;
+  const visibleSourceText = sourceExpanded || !sourceClipped ? sourceText : `${sourceText.slice(0, 360)}…`;
+  const hasConnections = relatedEntities.length > 0 || relatedMemories.length > 0;
 
   return (
     <main className="memory-detail-dossier" aria-label={t("memoryDetail.dossierLabel")}>
-      {/* Back + Header */}
+      {/* Topbar: back + state toggles + edit + delete */}
       <header className="memory-detail-header">
         <button
           type="button"
@@ -400,18 +405,7 @@ export default function MemoryDetail({
         >
           <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
         </button>
-        <div className="memory-detail-hero">
-          <div className="memory-detail-hero-row">
-            <div className="flex-1 min-w-0">
-              <h2 className="memory-detail-title">
-                {title}
-              </h2>
-              <span className="memory-detail-timestamp" title={absoluteDate(memory.last_modified)}>
-                {formatTimeAgo(memory.last_modified)}
-              </span>
-            </div>
-
-            <div className="memory-detail-actions">
+        <div className="memory-detail-actions">
           {/* Copy as context — recap only */}
           {memory.is_recap && (
             <button
@@ -443,15 +437,39 @@ export default function MemoryDetail({
             </button>
           )}
 
+          {/* Confirmed toggle */}
+          <button
+            onClick={() => confirmMutation.mutate(!isConfirmed)}
+            className={`memory-detail-toggle ${isConfirmed ? "is-on" : ""}`}
+            aria-label={t("memoryDetail.confirmedState", { state: isConfirmed ? t("memoryDetail.yes") : t("memoryDetail.no") })}
+          >
+            <span className={`memory-detail-state-dot ${isConfirmed ? "is-on" : ""}`} />
+            {t("memoryDetail.confirmed")}
+          </button>
+
           {/* Pin toggle */}
           <button
             onClick={() => pinMutation.mutate()}
-            className={`memory-detail-icon-button ${memory.pinned ? "is-active" : ""}`}
-            aria-label={memory.pinned ? t("memoryDetail.unpinMemory") : t("memoryDetail.pinMemory")}
+            className={`memory-detail-toggle ${memory.pinned ? "is-on" : ""}`}
+            aria-label={t("memoryDetail.pinnedState", { state: memory.pinned ? t("memoryDetail.yes") : t("memoryDetail.no") })}
             title={memory.pinned ? t("memoryDetail.unpin") : t("memoryDetail.pin")}
           >
-            <PinIcon filled={memory.pinned} />
+            <span className={`memory-detail-state-icon ${memory.pinned ? "is-on" : ""}`}>
+              <PinIcon filled={memory.pinned} size={12} />
+            </span>
+            {t("memoryDetail.pinned")}
           </button>
+
+          {/* Edit */}
+          {!editing && memory.memory_type !== "recap" && (
+            <button
+              onClick={() => { setEditContent(memory.content); setEditing(true); }}
+              className="memory-detail-text-button"
+              aria-label={t("memoryDetail.editMemory")}
+            >
+              {t("memoryDetail.edit")}
+            </button>
+          )}
 
           {/* Delete */}
           <button
@@ -464,72 +482,204 @@ export default function MemoryDetail({
               <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14" />
             </svg>
           </button>
-            </div>
-          </div>
         </div>
       </header>
 
       <div className="memory-detail-grid">
-      <section className="memory-detail-reading space-y-4" aria-label={t("memoryDetail.readingLabel")}>
-        {/* Summary (recap) or Content (regular) */}
-        <div className={`memory-detail-card ${memory.is_recap ? "is-recap" : ""} ${editing ? "is-editing" : ""}`}>
-          <div className="memory-detail-card-header">
-            <div>
-              <h3 className="memory-detail-section-title">
-                {t("memoryDetail.contentTitle")}
-              </h3>
-              {editing && (
-                <span className="memory-detail-editing-label">
-                  {t("memoryDetail.editing")}
-                </span>
-              )}
-            </div>
-            {!editing && memory.memory_type !== "recap" && (
+      <section className="memory-detail-reading" aria-label={t("memoryDetail.readingLabel")}>
+        <h2 className="sr-only">{title}</h2>
+
+        {/* The hero IS the memory — no card, no truncation */}
+        {editing ? (
+          <div className="memory-detail-editing-surface">
+            <span className="memory-detail-editing-label">
+              {t("memoryDetail.editing")}
+            </span>
+            <textarea
+              ref={textareaRef}
+              value={editContent}
+              onChange={(e) => setEditContent(e.target.value)}
+              onKeyDown={handleKeyDown}
+              className="memory-detail-editor"
+              rows={Math.max(3, editContent.split("\n").length)}
+            />
+            <div className="memory-detail-editor-actions">
               <button
-                onClick={() => { setEditContent(memory.content); setEditing(true); }}
-                className="memory-detail-text-button"
-                aria-label={t("memoryDetail.editMemory")}
+                onClick={handleSave}
+                className="memory-detail-text-button primary"
               >
-                {t("memoryDetail.edit")}
+                {t("memoryDetail.save")}
               </button>
+              <button
+                onClick={() => { setEditContent(memory.content); setEditing(false); }}
+                className="memory-detail-text-button"
+              >
+                {t("memoryDetail.cancel")}
+              </button>
+              <span className="memory-detail-shortcut">
+                {t("memoryDetail.saveShortcut")}
+              </span>
+            </div>
+          </div>
+        ) : (
+          <div className={`memory-detail-hero-text ${heroScale}`}>
+            <ContentRenderer
+              content={memory.content}
+              structuredFields={memory.structured_fields}
+              variant="detail"
+            />
+          </div>
+        )}
+
+        {/* Dossier strip: type · space · agent · entity · quality · enrichment */}
+        <div className="memory-detail-strip">
+          <div className="relative" ref={dropdownRef}>
+            <button
+              onClick={() => setReclassifyOpen(!reclassifyOpen)}
+              className={`memory-detail-facet-button ${FACET_COLORS[facetType]}`}
+            >
+              {facetType}
+              <span className="ml-1 opacity-50">&#x25BE;</span>
+            </button>
+            {reclassifyOpen && (
+              <div
+                className="absolute left-0 top-7 z-50 rounded-lg shadow-xl py-1 min-w-[140px]"
+                style={{
+                  backgroundColor: "var(--mem-surface)",
+                  border: "1px solid var(--mem-border)",
+                }}
+              >
+                {MEMORY_FACETS.map((facet) => (
+                  <button
+                    key={facet.type}
+                    className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 hover:bg-[var(--mem-hover)]"
+                    style={{
+                      fontFamily: "var(--mem-font-body)",
+                      color: facetType === facet.type ? "var(--mem-text)" : "var(--mem-text-secondary)",
+                    }}
+                    onClick={() => reclassifyMutation.mutate(facet.type)}
+                  >
+                    <span className={`memory-detail-facet-dot ${FACET_COLORS[facet.type].split(" ")[0]}`} />
+                    {facet.label}
+                  </button>
+                ))}
+              </div>
             )}
           </div>
-          <div
-            className="memory-detail-card-body"
-          >
-            {editing ? (
-              <div className="memory-detail-editing-surface">
-                <textarea
-                  ref={textareaRef}
-                  value={editContent}
-                  onChange={(e) => setEditContent(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  className="memory-detail-editor"
-                  rows={Math.max(3, editContent.split("\n").length)}
-                />
-                <div className="memory-detail-editor-actions">
-                  <button
-                    onClick={handleSave}
-                    className="memory-detail-text-button primary"
-                  >
-                    {t("memoryDetail.save")}
-                  </button>
-                  <button
-                    onClick={() => { setEditContent(memory.content); setEditing(false); }}
-                    className="memory-detail-text-button"
-                  >
-                    {t("memoryDetail.cancel")}
-                  </button>
-                  <span className="memory-detail-shortcut">
-                    {t("memoryDetail.saveShortcut")}
-                  </span>
+
+          <span className="memory-detail-strip-item">
+            <span className="memory-detail-strip-label">{t("memoryDetail.space")}</span>
+            <div className="relative" ref={spaceDropdownRef}>
+              <button
+                onClick={() => setSpacePickerOpen(!spacePickerOpen)}
+                className={`memory-detail-field-button ${memory.domain ? "" : "is-empty"}`}
+              >
+                {memory.domain ? (
+                  <span className="capitalize">{memory.domain}</span>
+                ) : (
+                  <span>{t("memoryDetail.assignSpace")}</span>
+                )}
+              </button>
+              {spacePickerOpen && (
+                <div
+                  className="absolute left-0 top-8 z-50 rounded-lg shadow-xl py-1 min-w-[140px]"
+                  style={{
+                    backgroundColor: "var(--mem-surface)",
+                    border: "1px solid var(--mem-border)",
+                  }}
+                >
+                  {memory.domain && (
+                    <>
+                      <button
+                        onClick={() => changeSpaceMutation.mutate(undefined)}
+                        className="w-full text-left px-3 py-1.5 text-xs hover:bg-[var(--mem-hover)]"
+                        style={{ fontFamily: "var(--mem-font-body)", color: "var(--mem-text-tertiary)" }}
+                      >
+                        {t("memoryDetail.removeFromSpace")}
+                      </button>
+                      <div style={{ height: "1px", backgroundColor: "var(--mem-border)", margin: "2px 0" }} />
+                    </>
+                  )}
+                  {spaces.filter((s) => s.name !== memory.domain).map((s) => (
+                    <button
+                      key={s.id}
+                      onClick={() => changeSpaceMutation.mutate(s.name)}
+                      className="w-full text-left px-3 py-1.5 text-xs hover:bg-[var(--mem-hover)]"
+                      style={{ fontFamily: "var(--mem-font-body)", color: "var(--mem-text-secondary)" }}
+                    >
+                      <span className="capitalize">{s.name}</span>
+                    </button>
+                  ))}
                 </div>
-              </div>
-            ) : (
-              <ContentRenderer
-                content={memory.source_text || memory.content}
-                structuredFields={memory.structured_fields}
-                variant="detail"
+              )}
+            </div>
+          </span>
+
+          {memory.source_agent && (
+            <span className="memory-chip indigo">
+              {agentDisplayName(memory.source_agent)}
+            </span>
+          )}
+
+          {memory.entity_id && (
+            <span className="memory-detail-strip-item">
+              <span className="memory-detail-strip-label">{t("memoryDetail.entity")}</span>
+              <button
+                onClick={() => {
+                  if (memory.entity_id) onNavigateEntity(memory.entity_id);
+                }}
+                className="memory-detail-link-button"
+              >
+                {t("memoryDetail.linked")}
+              </button>
+            </span>
+          )}
+
+          {memory.quality && memory.quality === "low" && (
+            <span className="memory-chip warning">
+              {t("memoryDetail.lowQuality")}
+            </span>
+          )}
+
+          {enrichmentStatus && (
+            <span className="memory-detail-strip-item">
+              <span className="memory-detail-strip-label">{t("memoryDetail.enrichment")}</span>
+              <span
+                className="memory-chip indigo"
+                title={enrichmentStatus.steps.map((s) => `${s.step}: ${s.status}`).join("\n")}
+              >
+                {enrichmentStatus.summary}
+              </span>
+            </span>
+          )}
+        </div>
+
+        {/* Tags: own wrapping line, "+" anchored */}
+        <div className="memory-detail-tagline">
+          <span className="memory-detail-strip-label">{t("memoryDetail.tags")}</span>
+          {currentTags.map((tag) => (
+            <span key={tag} className="memory-chip indigo">
+              {tag}
+            </span>
+          ))}
+          <div className="relative">
+            <button
+              onClick={() => setEditingTags(!editingTags)}
+              className="memory-detail-tag-edit"
+              aria-label={t("memoryDetail.editTags")}
+              title={t("memoryDetail.editTags")}
+            >
+              {editingTags ? t("memoryDetail.done") : "+"}
+            </button>
+            {editingTags && (
+              <TagEditor
+                source="memory"
+                sourceId={sourceId}
+                lastModified={memory.last_modified}
+                currentTags={currentTags}
+                allTags={allTags}
+                onClose={() => setEditingTags(false)}
+                onTagsChanged={() => queryClient.invalidateQueries({ queryKey: ["tags"] })}
               />
             )}
           </div>
@@ -576,214 +726,27 @@ export default function MemoryDetail({
         </div>
       )}
 
-      </section>
-
-      <aside className="memory-detail-context" aria-label={t("memoryDetail.contextLabel")}>
-      <section
-        className="memory-detail-rail-panel memory-detail-metadata-panel"
-        data-testid="memory-detail-metadata-panel"
-      >
-        <RailPanelTitle>{t("memoryDetail.metadata")}</RailPanelTitle>
-        <div className="memory-detail-metadata-list">
-          {/* Facet type */}
-          <MetadataRow label={t("memoryDetail.type")}>
-            <div className="relative" ref={dropdownRef}>
-              <button
-                onClick={() => setReclassifyOpen(!reclassifyOpen)}
-                className={`memory-detail-facet-button ${FACET_COLORS[facetType]}`}
-              >
-                {facetType}
-                <span className="ml-1 opacity-50">&#x25BE;</span>
-              </button>
-              {reclassifyOpen && (
-                <div
-                  className="absolute left-0 top-7 z-50 rounded-lg shadow-xl py-1 min-w-[140px]"
-                  style={{
-                    backgroundColor: "var(--mem-surface)",
-                    border: "1px solid var(--mem-border)",
-                  }}
-                >
-                  {MEMORY_FACETS.map((facet) => (
-                    <button
-                      key={facet.type}
-                      className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 hover:bg-[var(--mem-hover)]"
-                      style={{
-                        fontFamily: "var(--mem-font-body)",
-                        color: facetType === facet.type ? "var(--mem-text)" : "var(--mem-text-secondary)",
-                      }}
-                      onClick={() => reclassifyMutation.mutate(facet.type)}
-                    >
-                      <span className={`memory-detail-facet-dot ${FACET_COLORS[facet.type].split(" ")[0]}`} />
-                      {facet.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </MetadataRow>
-
-          {/* Space */}
-          <MetadataRow label={t("memoryDetail.space")}>
-            <div className="relative" ref={spaceDropdownRef}>
-              <button
-                onClick={() => setSpacePickerOpen(!spacePickerOpen)}
-                className={`memory-detail-field-button ${memory.domain ? "" : "is-empty"}`}
-              >
-                {memory.domain ? (
-                  <span className="capitalize">{memory.domain}</span>
-                ) : (
-                  <span>{t("memoryDetail.assignSpace")}</span>
-                )}
-              </button>
-              {spacePickerOpen && (
-                <div
-                  className="absolute left-0 top-8 z-50 rounded-lg shadow-xl py-1 min-w-[140px]"
-                  style={{
-                    backgroundColor: "var(--mem-surface)",
-                    border: "1px solid var(--mem-border)",
-                  }}
-                >
-                  {memory.domain && (
-                    <>
-                      <button
-                        onClick={() => changeSpaceMutation.mutate(undefined)}
-                        className="w-full text-left px-3 py-1.5 text-xs hover:bg-[var(--mem-hover)]"
-                        style={{ fontFamily: "var(--mem-font-body)", color: "var(--mem-text-tertiary)" }}
-                      >
-                        {t("memoryDetail.removeFromSpace")}
-                      </button>
-                      <div style={{ height: "1px", backgroundColor: "var(--mem-border)", margin: "2px 0" }} />
-                    </>
-                  )}
-                  {spaces.filter((s) => s.name !== memory.domain).map((s) => (
-                    <button
-                      key={s.id}
-                      onClick={() => changeSpaceMutation.mutate(s.name)}
-                      className="w-full text-left px-3 py-1.5 text-xs hover:bg-[var(--mem-hover)]"
-                      style={{ fontFamily: "var(--mem-font-body)", color: "var(--mem-text-secondary)" }}
-                    >
-                      <span className="capitalize">{s.name}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </MetadataRow>
-
-          {/* Entity link */}
-          {memory.entity_id && (
-            <MetadataRow label={t("memoryDetail.entity")}>
-              <button
-                onClick={() => {
-                  if (memory.entity_id) onNavigateEntity(memory.entity_id);
-                }}
-                className="memory-detail-link-button"
-              >
-                {t("memoryDetail.linked")}
-              </button>
-            </MetadataRow>
-          )}
-
-          {/* Quality */}
-          {memory.quality && memory.quality === "low" && (
-            <MetadataRow label={t("memoryDetail.quality")}>
-              <span
-                className="memory-chip warning"
-              >
-                {t("memoryDetail.lowQuality")}
-              </span>
-            </MetadataRow>
-          )}
-
-          {/* Enrichment status */}
-          {enrichmentStatus && (
-            <MetadataRow label={t("memoryDetail.enrichment")}>
-              <span
-                className="memory-chip indigo"
-                title={enrichmentStatus.steps.map((s) => `${s.step}: ${s.status}`).join("\n")}
-              >
-                {enrichmentStatus.summary}
-              </span>
-            </MetadataRow>
-          )}
-
-          {/* Source agent */}
-          {memory.source_agent && (
-            <MetadataRow label={t("memoryDetail.agent")}>
-              <span className="memory-chip indigo">
-                {agentDisplayName(memory.source_agent)}
-              </span>
-            </MetadataRow>
-          )}
-
-          {/* Confirmed toggle */}
-          <MetadataRow label={t("memoryDetail.confirmed")}>
-            <button
-              onClick={() => confirmMutation.mutate(!isConfirmed)}
-              className="memory-detail-state-button"
+      {/* Source excerpt: the captured text behind this memory */}
+      {hasSourceExcerpt && (
+        <section className="memory-detail-source">
+          <h3 className="memory-detail-subsection">{t("memoryDetail.sourceTitle")}</h3>
+          <blockquote className="memory-detail-source-quote">
+            {visibleSourceText}
+          </blockquote>
+          {sourceClipped && (
+            <DisclosureButton
+              ariaLabel={sourceExpanded ? t("memoryDetail.showLess") : t("memoryDetail.showFullSource")}
+              onClick={() => setSourceExpanded(!sourceExpanded)}
             >
-              <span className={`memory-detail-state-dot ${isConfirmed ? "is-on" : ""}`} />
-              <span className={isConfirmed ? "memory-detail-state-text is-on" : "memory-detail-state-text"}>
-                {isConfirmed ? t("memoryDetail.yes") : t("memoryDetail.no")}
-              </span>
-            </button>
-          </MetadataRow>
+              {sourceExpanded ? t("memoryDetail.showLessCompact") : t("memoryDetail.showFullSource")}
+            </DisclosureButton>
+          )}
+        </section>
+      )}
 
-          {/* Pinned */}
-          <MetadataRow label={t("memoryDetail.pinned")}>
-              <button
-                onClick={() => pinMutation.mutate()}
-                className="memory-detail-state-button"
-                aria-label={t("memoryDetail.pinnedState", { state: memory.pinned ? t("memoryDetail.yes") : t("memoryDetail.no") })}
-              >
-              <span className={`memory-detail-state-icon ${memory.pinned ? "is-on" : ""}`}>
-                <PinIcon filled={memory.pinned} size={12} />
-              </span>
-              <span className={memory.pinned ? "memory-detail-state-text is-on" : "memory-detail-state-text"}>
-                {memory.pinned ? t("memoryDetail.yes") : t("memoryDetail.no")}
-              </span>
-            </button>
-          </MetadataRow>
-
-          {/* Tags */}
-          <MetadataRow label={t("memoryDetail.tags")} align="start">
-            <div className="relative flex-1">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                {currentTags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="memory-chip indigo"
-                  >
-                    {tag}
-                  </span>
-                ))}
-                <button
-                  onClick={() => setEditingTags(!editingTags)}
-                  className="memory-detail-tag-edit"
-                  aria-label={t("memoryDetail.editTags")}
-                  title={t("memoryDetail.editTags")}
-                >
-                  {editingTags ? t("memoryDetail.done") : "+"}
-                </button>
-              </div>
-              {editingTags && (
-                <TagEditor
-                  source="memory"
-                  sourceId={sourceId}
-                  lastModified={memory.last_modified}
-                  currentTags={currentTags}
-                  allTags={allTags}
-                  onClose={() => setEditingTags(false)}
-                  onTagsChanged={() => queryClient.invalidateQueries({ queryKey: ["tags"] })}
-                />
-              )}
-            </div>
-          </MetadataRow>
-        </div>
-      </section>
-
-      {hasContextDock && (
-        <div className="memory-detail-context-dock" data-testid="memory-detail-context-dock">
+      {/* Provenance: revision + legacy version history, quiet at the bottom */}
+      {(hasDaemonRevisionHistory || hasLegacyVersionHistory) && (
+        <div className="memory-detail-provenance-group">
           {/* Revision history from daemon supersession chain */}
           {hasDaemonRevisionHistory && (
             <section className="memory-detail-rail-panel memory-detail-secondary-panel">
@@ -940,51 +903,22 @@ export default function MemoryDetail({
             </section>
           )}
 
-          {/* Related entities */}
-          {relatedEntities.length > 0 && (
-            <section className="memory-detail-rail-panel memory-detail-secondary-panel">
-              <div className="memory-detail-panel-heading">
-                <RailPanelTitle>{t("memoryDetail.relatedEntities")}</RailPanelTitle>
-                {relatedEntities.length > visibleRelatedEntities.length && (
-                  <DisclosureButton
-                    ariaLabel={t("memoryDetail.showAll", { count: relatedEntities.length })}
-                    count={relatedEntities.length}
-                    onClick={() => setRelatedEntitiesExpanded(true)}
-                  >
-                    {t("memoryDetail.showAllCompact")}
-                  </DisclosureButton>
-                )}
-                {relatedEntitiesExpanded && relatedEntities.length > 4 && (
-                  <DisclosureButton
-                    ariaLabel={t("memoryDetail.showLess")}
-                    onClick={() => setRelatedEntitiesExpanded(false)}
-                  >
-                    {t("memoryDetail.showLessCompact")}
-                  </DisclosureButton>
-                )}
-              </div>
-              <div className="memory-detail-entity-chip-list">
-                {visibleRelatedEntities.map((entity) => (
-                  <button
-                    key={entity.id}
-                    onClick={() => onNavigateEntity(entity.id)}
-                    className="memory-detail-entity-chip"
-                  >
-                    <span className="memory-detail-entity-name">
-                      {entity.name}
-                    </span>
-                    <span className="memory-detail-entity-type">
-                      {entity.entity_type}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </section>
-          )}
+        </div>
+      )}
+
+      <p className="memory-detail-updated" title={absoluteDate(memory.last_modified)}>
+        {formatTimeAgo(memory.last_modified)}
+      </p>
+      </section>
+
+      {/* Marginalia rail: connections only */}
+      {hasConnections && (
+        <aside className="memory-detail-rail" aria-label={t("memoryDetail.contextLabel")}>
+          <h3 className="memory-detail-rail-heading">{t("memoryDetail.connections")}</h3>
 
           {/* Related / Source memories */}
           {relatedMemories.length > 0 && (
-            <section className="memory-detail-rail-panel memory-detail-secondary-panel">
+            <section className="memory-detail-rail-section">
               <div className="memory-detail-panel-heading">
                 <RailPanelTitle>
                   {memory.is_recap ? t("memoryDetail.sourceMemories") : t("memoryDetail.relatedMemories")}
@@ -1030,25 +964,56 @@ export default function MemoryDetail({
                           <span>{formatTimeAgo(r.last_modified)}</span>
                         </div>
                       </div>
-                      <svg
-                        width="12" height="12"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        className="memory-detail-related-chevron"
-                      >
-                        <path d="M9 18l6-6-6-6" />
-                      </svg>
                     </button>
                   );
                 })}
               </div>
             </section>
           )}
-        </div>
+
+          {/* Related entities */}
+          {relatedEntities.length > 0 && (
+            <section className="memory-detail-rail-section">
+              <div className="memory-detail-panel-heading">
+                <RailPanelTitle>{t("memoryDetail.relatedEntities")}</RailPanelTitle>
+                {relatedEntities.length > visibleRelatedEntities.length && (
+                  <DisclosureButton
+                    ariaLabel={t("memoryDetail.showAll", { count: relatedEntities.length })}
+                    count={relatedEntities.length}
+                    onClick={() => setRelatedEntitiesExpanded(true)}
+                  >
+                    {t("memoryDetail.showAllCompact")}
+                  </DisclosureButton>
+                )}
+                {relatedEntitiesExpanded && relatedEntities.length > 4 && (
+                  <DisclosureButton
+                    ariaLabel={t("memoryDetail.showLess")}
+                    onClick={() => setRelatedEntitiesExpanded(false)}
+                  >
+                    {t("memoryDetail.showLessCompact")}
+                  </DisclosureButton>
+                )}
+              </div>
+              <div className="memory-detail-entity-chip-list">
+                {visibleRelatedEntities.map((entity) => (
+                  <button
+                    key={entity.id}
+                    onClick={() => onNavigateEntity(entity.id)}
+                    className="memory-detail-entity-chip"
+                  >
+                    <span className="memory-detail-entity-name">
+                      {entity.name}
+                    </span>
+                    <span className="memory-detail-entity-type">
+                      {entity.entity_type}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+        </aside>
       )}
-      </aside>
       </div>
     </main>
   );

@@ -184,21 +184,20 @@ describe("MemoryDetail enrichment status", () => {
     const dossier = screen.getByRole("main", { name: /memory dossier/i });
     const backButton = within(dossier).getByRole("button", { name: /back to memories/i });
     const reading = within(dossier).getByRole("region", { name: /memory reading/i });
-    const context = within(dossier).getByRole("complementary", { name: /memory context/i });
-    const metadataPanel = within(context).getByTestId("memory-detail-metadata-panel");
-    const contextDock = within(context).getByTestId("memory-detail-context-dock");
+    const rail = within(dossier).getByRole("complementary", { name: /memory context/i });
 
     expect(backButton.textContent).toBe("");
     expect(backButton.querySelector("svg")).not.toBeNull();
     expect(within(reading).getByText("Primary reading content")).toBeInTheDocument();
-    expect(within(reading).getByRole("button", { name: /edit memory/i })).toBeInTheDocument();
-    expect(within(metadataPanel).getByRole("button", { name: /edit tags/i })).toBeInTheDocument();
-    expect(within(metadataPanel).getByRole("button", { name: /pinned yes/i })).toBeInTheDocument();
-    expect(within(metadataPanel).getByText(/complete/i)).toBeInTheDocument();
-    expect(within(contextDock).getByText(/current dossier copy/i)).toBeInTheDocument();
-    expect(metadataPanel).not.toContainElement(contextDock);
-    await userEvent.click(await within(contextDock).findByRole("button", { name: /wenlan/i }));
-    await userEvent.click(await within(contextDock).findByRole("button", { name: /related context appears here/i }));
+    expect(within(dossier).getByRole("button", { name: /edit memory/i })).toBeInTheDocument();
+    expect(within(reading).getByRole("button", { name: /edit tags/i })).toBeInTheDocument();
+    expect(within(dossier).getByRole("button", { name: /pinned yes/i })).toBeInTheDocument();
+    expect(within(dossier).getByRole("button", { name: /confirmed yes/i })).toBeInTheDocument();
+    expect(within(reading).getByText(/complete/i)).toBeInTheDocument();
+    expect(within(reading).getByText(/current dossier copy/i)).toBeInTheDocument();
+    expect(reading).not.toContainElement(rail);
+    await userEvent.click(await within(rail).findByRole("button", { name: /wenlan/i }));
+    await userEvent.click(await within(rail).findByRole("button", { name: /related context appears here/i }));
 
     expect(onNavigateEntity).toHaveBeenCalledWith("entity-1");
     expect(onNavigateMemory).toHaveBeenCalledWith("mem-2");
@@ -223,7 +222,7 @@ describe("MemoryDetail enrichment status", () => {
     await user.click(screen.getByRole("button", { name: /edit memory/i }));
     const editor = screen.getByRole("textbox");
     expect(screen.getByText("Editing")).toBeInTheDocument();
-    expect(editor.closest(".memory-detail-card")).toHaveClass("is-editing");
+    expect(editor.closest(".memory-detail-editing-surface")).not.toBeNull();
     await user.clear(editor);
     await user.type(editor, "Updated reading content");
     await user.click(screen.getByRole("button", { name: /^save$/i }));
