@@ -650,79 +650,138 @@ function NeedsReviewRail({
       data-testid="wiki-page-updates"
       style={leadsColumn ? { order: -1 } : undefined}
     >
-      <SectionHeading
-        title={t("home.pageUpdates")}
-        size="compact"
-        action={
-          items.length > 0 ? (
-            <span
-              style={{
-                fontFamily: "var(--mem-font-mono)",
-                fontSize: 11,
-                fontWeight: 600,
-                color: "var(--mem-accent-warm)",
-              }}
-            >
-              {items.length}
-            </span>
-          ) : undefined
-        }
-      />
-      <div data-testid="worth-a-glance" style={{ display: "grid", gap: 7 }}>
-        {items.length === 0 ? (
-          !isLoading && (
-            <p
-              style={{
-                fontFamily: "var(--mem-font-body)",
-                fontSize: 12,
-                color: "var(--mem-text-tertiary)",
-                lineHeight: 1.5,
-                margin: 0,
-              }}
-            >
-              {t("review.allCaughtUp")}
-            </p>
-          )
-        ) : (
-          items.slice(0, 3).map((item) => (
-            <ReviewRailItem key={reviewItemId(item)} item={item} onOpenItem={onOpenItem} />
-          ))
+      <h2
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          fontFamily: "var(--mem-font-body)",
+          fontSize: 11,
+          fontWeight: 500,
+          letterSpacing: "0.08em",
+          textTransform: "uppercase",
+          color: "var(--mem-text-tertiary)",
+          margin: "0 0 8px",
+        }}
+      >
+        {t("home.pageUpdates")}
+        {items.length > 0 && (
+          <span
+            style={{
+              fontFamily: "var(--mem-font-mono)",
+              fontVariantNumeric: "tabular-nums",
+              fontSize: 11,
+              fontWeight: 400,
+              letterSpacing: 0,
+              color: "var(--mem-accent-indigo)",
+              backgroundColor: "var(--mem-indigo-bg)",
+              borderRadius: 999,
+              padding: "1px 8px",
+            }}
+          >
+            {items.length}
+          </span>
+        )}
+      </h2>
+      <div
+        style={{
+          border: "1px solid var(--mem-border)",
+          borderRadius: 10,
+          padding: "11px 13px 8px",
+          backgroundColor: "var(--mem-detail-surface-raised)",
+        }}
+      >
+        <div data-testid="worth-a-glance" style={{ display: "grid" }}>
+          {items.length === 0 ? (
+            !isLoading && (
+              <p
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 7,
+                  fontFamily: "var(--mem-font-body)",
+                  fontSize: 12.5,
+                  color: "var(--mem-accent-sage)",
+                  lineHeight: 1.5,
+                  margin: "4px 0 6px",
+                }}
+              >
+                ✓ {t("review.allCaughtUp")}
+              </p>
+            )
+          ) : (
+            items.slice(0, 3).map((item, itemIndex, shown) => (
+              <ReviewRailItem
+                key={reviewItemId(item)}
+                item={item}
+                onOpenItem={onOpenItem}
+                isLast={itemIndex === shown.length - 1}
+              />
+            ))
+          )}
+        </div>
+
+        {onOpenDistillReview && (
+          <button
+            type="button"
+            onClick={onOpenDistillReview}
+            style={{
+              display: "block",
+              width: "100%",
+              marginTop: 2,
+              padding: "7px 2px",
+              textAlign: "left",
+              border: "0",
+              backgroundColor: "transparent",
+              color: "var(--mem-accent-indigo)",
+              cursor: "pointer",
+              fontFamily: "var(--mem-font-body)",
+              fontSize: 12,
+            }}
+          >
+            {items.length > 0
+              ? t("review.reviewAllCount", { count: items.length })
+              : t("home.reviewPageChanges")}
+          </button>
         )}
       </div>
-
-      {onOpenDistillReview && (
-        <button
-          type="button"
-          onClick={onOpenDistillReview}
-          style={{
-            width: "100%",
-            marginTop: 12,
-            borderRadius: 6,
-            padding: "6px 0",
-            textAlign: "left",
-            border: "0",
-            backgroundColor: "transparent",
-            color: "var(--mem-accent-sage)",
-            cursor: "pointer",
-            fontFamily: "var(--mem-font-body)",
-            fontSize: 11,
-          }}
-        >
-          {items.length > 0
-            ? t("review.reviewAllCount", { count: items.length })
-            : t("home.reviewPageChanges")}
-        </button>
-      )}
     </section>
   );
+}
+
+function reviewItemAge(ms: number): string {
+  const diff = (Date.now() - ms) / 1000;
+  if (diff < 60) return "just now";
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
+  return new Date(ms).toLocaleDateString();
+}
+
+/** Mockup kind-dot palette: revision indigo, capture warm, merges amber,
+ * conflicts the diff-deletion red, entity suggestions sage. */
+function reviewDotColor(item: ReviewItem): string {
+  if (item.kind === "revision") return "var(--mem-accent-indigo)";
+  if (item.kind === "capture") return "var(--mem-accent-warm)";
+  switch (item.action) {
+    case "detect_contradiction":
+    case "relation_conflict":
+      return "rgb(205, 92, 74)";
+    case "suggest_entity":
+      return "var(--mem-accent-sage)";
+    default:
+      return "var(--mem-accent-amber)";
+  }
 }
 
 function ReviewRailItem({
   item,
   onOpenItem,
+  isLast = false,
 }: {
   item: ReviewItem;
   onOpenItem: (id: string) => void;
+  isLast?: boolean;
 }) {
   const { t } = useTranslation();
   const kind = reviewKindLabel(t, item);
@@ -732,14 +791,15 @@ function ReviewRailItem({
       : item.kind === "capture"
         ? truncateReviewText(item.title, 72)
         : kind;
-  const meta =
-    item.kind === "revision"
-      ? t("review.proposedBy", { agent: item.agent })
-      : item.kind === "capture"
-        ? item.snippet
-          ? truncateReviewText(item.snippet, 64)
-          : ""
-        : t("review.confidence", { percent: Math.round(item.confidence * 100) });
+  const meta = [
+    kind,
+    item.kind === "refinement"
+      ? `${Math.round(item.confidence * 100)}%`
+      : null,
+    item.timestampMs != null ? reviewItemAge(item.timestampMs) : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   return (
     <button
       type="button"
@@ -747,45 +807,64 @@ function ReviewRailItem({
       onClick={() => onOpenItem(reviewItemId(item))}
       style={{
         display: "grid",
-        gap: 6,
+        gap: 3,
         width: "100%",
         textAlign: "left",
         border: "0",
-        borderBottom: "1px solid color-mix(in srgb, var(--mem-border) 68%, transparent)",
-        borderRadius: 0,
-        padding: "8px 0 9px",
+        borderBottom: isLast
+          ? "none"
+          : "1px solid color-mix(in srgb, var(--mem-border) 68%, transparent)",
+        borderRadius: 6,
+        padding: "8px 2px 9px",
         backgroundColor: "transparent",
         color: "inherit",
         cursor: "pointer",
       }}
     >
-      <p
+      <span
         style={{
-          display: "-webkit-box",
-          WebkitLineClamp: 2,
-          WebkitBoxOrient: "vertical",
-          overflow: "hidden",
-          fontFamily: "var(--mem-font-heading)",
-          fontSize: 13,
-          fontWeight: 500,
-          color: "var(--mem-text)",
-          lineHeight: 1.25,
-          margin: 0,
+          display: "flex",
+          alignItems: "center",
+          gap: 7,
+          minWidth: 0,
         }}
       >
-        {title}
-      </p>
-      <p
+        <span
+          aria-hidden="true"
+          style={{
+            width: 7,
+            height: 7,
+            borderRadius: "50%",
+            flex: "none",
+            backgroundColor: reviewDotColor(item),
+          }}
+        />
+        <span
+          style={{
+            overflow: "hidden",
+            whiteSpace: "nowrap",
+            textOverflow: "ellipsis",
+            fontFamily: "var(--mem-font-heading)",
+            fontSize: 13,
+            fontWeight: 500,
+            color: "var(--mem-text)",
+            lineHeight: 1.25,
+          }}
+        >
+          {title}
+        </span>
+      </span>
+      <span
         style={{
           fontFamily: "var(--mem-font-body)",
-          fontSize: 11,
+          fontSize: 11.5,
           color: "var(--mem-text-tertiary)",
           lineHeight: 1.35,
-          margin: 0,
+          paddingLeft: 14,
         }}
       >
-        {kind} · {meta}
-      </p>
+        {meta}
+      </span>
     </button>
   );
 }

@@ -1442,7 +1442,8 @@ export type ProposalAction =
   | "relation_conflict"
   | "detect_contradiction"
   | "suggest_entity"
-  | "dedup_merge";
+  | "dedup_merge"
+  | "page_merge";
 
 export type RefinementPayload =
   | {
@@ -1462,7 +1463,14 @@ export type RefinementPayload =
     }
   | { action: "detect_contradiction" }
   | { action: "suggest_entity"; name_hint?: string | null }
-  | { action: "dedup_merge" };
+  | { action: "dedup_merge" }
+  | {
+      action: "page_merge";
+      left_page_id: string;
+      right_page_id: string;
+      source_overlap: number;
+      source_overlap_ratio: number;
+    };
 
 export interface RefinementProposalSummary {
   id: string;

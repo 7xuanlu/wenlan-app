@@ -40,6 +40,7 @@ vi.mock("../../lib/tauri", async () => {
     rejectRefinement: vi.fn(),
     getMemoryDetail: vi.fn(),
     getEntityDetail: vi.fn(),
+    getPage: vi.fn(),
   };
 });
 
@@ -366,7 +367,7 @@ describe("HomePage redesign", () => {
     await screen.findByRole("heading", { name: "Today in Wenlan" });
 
     // The rail's list slices to 3 items; the metric must still count all 4.
-    await screen.findByText("Review all 4");
+    await screen.findByText("Review all 4 →");
     expect(screen.getByTestId("wiki-context-needs-review")).toHaveTextContent("4");
     expect(screen.getByTestId("wiki-context-updated-today")).toHaveTextContent("3");
     expect(screen.getByText("Third proposed wording")).toBeInTheDocument();
@@ -438,7 +439,9 @@ describe("HomePage redesign", () => {
     expect(pageUpdates).toHaveTextContent("Needs review");
     await within(pageUpdates).findByText(/The durable updated wording/);
     expect(pageUpdates).toHaveTextContent("Memory revision");
-    expect(pageUpdates).toHaveTextContent("proposed by claude-code");
+    // The rail meta is now "kind · age" per the mockup; the proposing agent
+    // stays in the review dialog, not the rail row.
+    expect(pageUpdates).not.toHaveTextContent("proposed by");
     expect(pageUpdates).not.toHaveTextContent("Current page");
     expect(pageUpdates).toHaveTextContent("Review all 1");
 
@@ -552,7 +555,7 @@ describe("HomePage redesign", () => {
     ] as any);
     renderHome();
     const strip = await screen.findByTestId("worth-a-glance");
-    await within(strip).findByText("All caught up");
+    await within(strip).findByText(/All caught up/);
     expect(strip.textContent).not.toContain("Flagged concept");
     expect(strip.textContent).not.toContain("Fresh concept");
     expect(strip.textContent).not.toContain("Refined memory");
@@ -689,6 +692,56 @@ describe("HomePage redesign", () => {
     expect(tauri.rejectRefinement).not.toHaveBeenCalled();
   });
 
+  it("opens the page-merge dialog with keep/folds-in panes and approves it", async () => {
+    const user = userEvent.setup();
+    vi.mocked(tauri.listRefinements).mockResolvedValue({
+      proposals: [
+        {
+          id: "ref-page-merge",
+          action: "page_merge",
+          source_ids: ["page-keep", "page-absorb"],
+          payload: {
+            action: "page_merge",
+            left_page_id: "page-keep",
+            right_page_id: "page-absorb",
+            source_overlap: 5,
+            source_overlap_ratio: 1.0,
+          },
+          confidence: 1.0,
+          created_at: nowIso,
+        },
+      ],
+    } as any);
+    vi.mocked(tauri.listPages).mockResolvedValue([
+      page({ id: "page-current", title: "Current page" }),
+    ]);
+    vi.mocked(tauri.getPage).mockImplementation(
+      async (id: string) =>
+        page({
+          id,
+          title: id === "page-keep" ? "Surviving page" : "Absorbed page",
+        }) as any,
+    );
+
+    renderHome();
+
+    await user.click(
+      await screen.findByRole("button", { name: "Review Page merge" }),
+    );
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Keeps")).toBeInTheDocument();
+    expect(within(dialog).getByText("Folds in")).toBeInTheDocument();
+    await within(dialog).findByText("Surviving page");
+    await within(dialog).findByText("Absorbed page");
+    expect(within(dialog).getByText("5 shared sources")).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: "Approve" }));
+    await waitFor(() =>
+      expect(tauri.acceptRefinement).toHaveBeenCalledWith("ref-page-merge"),
+    );
+  });
+
   it("surfaces refinement proposals in the needs-review rail", async () => {
     vi.mocked(tauri.listRefinements).mockResolvedValue({
       proposals: [
@@ -714,7 +767,7 @@ describe("HomePage redesign", () => {
     renderHome();
 
     const strip = await screen.findByTestId("worth-a-glance");
-    await within(strip).findByText(/Entity merge · 86% confidence/);
+    await within(strip).findByText(/Entity merge · 86%/);
   });
 
   it("does not render inline approval actions in the needs-review rail", async () => {

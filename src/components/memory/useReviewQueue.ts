@@ -26,6 +26,7 @@ export type ReviewItem =
       revisionSourceId: string;
       content: string;
       agent: string | null;
+      timestampMs: number | null;
     }
   | {
       kind: "refinement";
@@ -34,12 +35,14 @@ export type ReviewItem =
       sourceIds: string[];
       payload: RefinementPayload | null;
       confidence: number;
+      timestampMs: number | null;
     }
   | {
       kind: "capture";
       id: string;
       title: string;
       snippet: string | null;
+      timestampMs: number | null;
     };
 
 export function reviewItemId(item: ReviewItem): string {
@@ -87,6 +90,7 @@ export function useReviewQueue(enabled: boolean = true) {
           revisionSourceId: item.revision_source_id,
           content: item.revision_content,
           agent: item.source_agent,
+          timestampMs: item.last_modified ? item.last_modified * 1000 : null,
         }),
       ),
       ...(refinements.data?.proposals ?? []).map(
@@ -97,6 +101,12 @@ export function useReviewQueue(enabled: boolean = true) {
           sourceIds: proposal.source_ids,
           payload: proposal.payload ?? null,
           confidence: proposal.confidence,
+          // The daemon emits "YYYY-MM-DD HH:MM:SS"; Date.parse needs the "T".
+          timestampMs: proposal.created_at
+            ? (Number.isNaN(Date.parse(proposal.created_at.replace(" ", "T")))
+                ? null
+                : Date.parse(proposal.created_at.replace(" ", "T")))
+            : null,
         }),
       ),
       ...(captures.data ?? []).map(
@@ -105,6 +115,7 @@ export function useReviewQueue(enabled: boolean = true) {
           id: entry.id,
           title: entry.title,
           snippet: entry.snippet,
+          timestampMs: entry.timestamp_ms ?? null,
         }),
       ),
     ],

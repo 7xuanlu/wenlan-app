@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
-import { getEntityDetail, getMemoryDetail } from "../../lib/tauri";
+import { getEntityDetail, getMemoryDetail, getPage } from "../../lib/tauri";
 import { diffWords, diffWordCounts, type DiffSegment } from "../../lib/wordDiff";
 import { reviewItemId, type ReviewItem } from "./useReviewQueue";
 
@@ -21,6 +21,8 @@ export function reviewKindLabel(t: TFunction, item: ReviewItem): string {
       return t("review.kindRelationConflict");
     case "suggest_entity":
       return t("review.kindEntitySuggestion");
+    case "page_merge":
+      return t("review.kindPageMerge");
   }
 }
 
@@ -138,7 +140,9 @@ export default function ReviewDialog({
   });
 
   const memoryPaneIds =
-    item?.kind === "refinement" && item.action !== "entity_merge"
+    item?.kind === "refinement" &&
+    item.action !== "entity_merge" &&
+    item.action !== "page_merge"
       ? item.sourceIds.slice(0, 2)
       : [];
   const memoryPaneA = useQuery({
@@ -150,6 +154,22 @@ export default function ReviewDialog({
     queryKey: ["memory-detail", memoryPaneIds[1] ?? null],
     queryFn: () => getMemoryDetail(memoryPaneIds[1]),
     enabled: memoryPaneIds.length > 1,
+  });
+
+  // Daemon page_merge order: source_ids[0] survives, source_ids[1] is absorbed.
+  const pageMergeIds =
+    item?.kind === "refinement" && item.action === "page_merge"
+      ? item.sourceIds.slice(0, 2)
+      : [];
+  const pageKeep = useQuery({
+    queryKey: ["page", pageMergeIds[0] ?? null],
+    queryFn: () => getPage(pageMergeIds[0]),
+    enabled: pageMergeIds.length > 0,
+  });
+  const pageAbsorb = useQuery({
+    queryKey: ["page", pageMergeIds[1] ?? null],
+    queryFn: () => getPage(pageMergeIds[1]),
+    enabled: pageMergeIds.length > 1,
   });
 
   const mergePayload =
@@ -657,8 +677,44 @@ export default function ReviewDialog({
                   </div>
                 )}
 
+              {item.kind === "refinement" && item.action === "page_merge" && (
+                <div style={{ display: "grid", gap: 12 }}>
+                  <div>
+                    <p style={paneLabelStyle}>{t("review.mergeKeep")}</p>
+                    <div style={paneStyle}>
+                      {pageKeep.isLoading
+                        ? t("review.loadingCurrent")
+                        : (pageKeep.data?.title ?? item.sourceIds[0])}
+                    </div>
+                  </div>
+                  <div>
+                    <p style={paneLabelStyle}>{t("review.mergeFoldsIn")}</p>
+                    <div style={paneStyle}>
+                      {pageAbsorb.isLoading
+                        ? t("review.loadingCurrent")
+                        : (pageAbsorb.data?.title ?? item.sourceIds[1])}
+                    </div>
+                  </div>
+                  {item.payload?.action === "page_merge" && (
+                    <p
+                      style={{
+                        fontFamily: "var(--mem-font-body)",
+                        color: "var(--mem-text-tertiary)",
+                        fontSize: 12,
+                        margin: 0,
+                      }}
+                    >
+                      {t("review.sharedSources", {
+                        count: item.payload.source_overlap,
+                      })}
+                    </p>
+                  )}
+                </div>
+              )}
+
               {item.kind === "refinement" &&
                 item.action !== "entity_merge" &&
+                item.action !== "page_merge" &&
                 item.action !== "detect_contradiction" && (
                   <div style={{ display: "grid", gap: 12 }}>
                     {item.action === "suggest_entity" &&

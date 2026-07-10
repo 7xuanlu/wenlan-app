@@ -262,6 +262,21 @@ const reviewProposals = (): RefinementProposalSummary[] => [
     confidence: 0.78,
     created_at: "2026-07-09T09:05:00Z",
   },
+  {
+    id: "prop-page-merge-arch",
+    action: "page_merge",
+    // Daemon order: source_ids[0] survives, source_ids[1] is absorbed.
+    source_ids: ["page-cited", "page-plain"],
+    payload: {
+      action: "page_merge",
+      left_page_id: "page-cited",
+      right_page_id: "page-plain",
+      source_overlap: 5,
+      source_overlap_ratio: 1.0,
+    } as RefinementProposalSummary["payload"],
+    confidence: 1.0,
+    created_at: "2026-07-10T08:26:41Z",
+  },
 ];
 
 const reviewCaptures = (): RecentActivityItem[] => [
