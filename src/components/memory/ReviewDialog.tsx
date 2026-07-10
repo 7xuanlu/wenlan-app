@@ -177,6 +177,18 @@ export default function ReviewDialog({
   );
   const wordCounts = useMemo(() => diffWordCounts(segments), [segments]);
 
+  const isContradiction =
+    item?.kind === "refinement" && item.action === "detect_contradiction";
+  // Daemon order: source_ids[0] is the new memory, source_ids[1] the existing
+  // one — so pane A holds "after" and pane B holds "before".
+  const contradictionSegments = useMemo(
+    () =>
+      isContradiction && memoryPaneA.data && memoryPaneB.data
+        ? diffWords(memoryPaneB.data.content, memoryPaneA.data.content)
+        : [],
+    [isContradiction, memoryPaneA.data, memoryPaneB.data],
+  );
+
   useEffect(() => {
     if (open) dialogRef.current?.focus();
   }, [open, openId]);
@@ -184,12 +196,26 @@ export default function ReviewDialog({
   const resolveCurrent = async (approve: boolean) => {
     if (!item || isResolving) return;
     const isCapture = item.kind === "capture";
+    const isConflict =
+      item.kind === "refinement" && item.action === "detect_contradiction";
     const next = items[index + 1] ?? (index > 0 ? items[index - 1] : null);
     await onResolve({ item, approve });
     setFlash(
       approve
-        ? t(isCapture ? "review.confirmed" : "review.approved")
-        : t(isCapture ? "review.forgotten" : "review.dismissed"),
+        ? t(
+            isCapture
+              ? "review.confirmed"
+              : isConflict
+                ? "review.resolved"
+                : "review.approved",
+          )
+        : t(
+            isCapture
+              ? "review.forgotten"
+              : isConflict
+                ? "review.keptBoth"
+                : "review.dismissed",
+          ),
     );
     window.setTimeout(() => setFlash(null), 450);
     if (next) onOpenChange(reviewItemId(next));
@@ -448,9 +474,11 @@ export default function ReviewDialog({
                     : ""
                   : item.kind === "capture"
                     ? t("review.captureHint")
-                    : t("review.confidence", {
-                        percent: Math.round(item.confidence * 100),
-                      })}
+                    : isContradiction
+                      ? t("review.contradictionHint")
+                      : t("review.confidence", {
+                          percent: Math.round(item.confidence * 100),
+                        })}
               </p>
 
               {item.kind === "revision" && (
@@ -585,7 +613,53 @@ export default function ReviewDialog({
                 )}
 
               {item.kind === "refinement" &&
-                item.action !== "entity_merge" && (
+                item.action === "detect_contradiction" && (
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns:
+                        "repeat(auto-fit, minmax(240px, 1fr))",
+                      gap: 12,
+                    }}
+                  >
+                    <div>
+                      <p style={paneLabelStyle}>{t("review.existingMemory")}</p>
+                      <div style={paneStyle}>
+                        {memoryPaneB.isLoading ? (
+                          t("review.loadingCurrent")
+                        ) : contradictionSegments.length > 0 ? (
+                          <DiffText
+                            segments={contradictionSegments.filter(
+                              (segment) => segment.kind !== "ins",
+                            )}
+                          />
+                        ) : (
+                          (memoryPaneB.data?.content ?? "")
+                        )}
+                      </div>
+                    </div>
+                    <div>
+                      <p style={paneLabelStyle}>{t("review.newMemoryNewer")}</p>
+                      <div style={paneStyle}>
+                        {memoryPaneA.isLoading ? (
+                          t("review.loadingCurrent")
+                        ) : contradictionSegments.length > 0 ? (
+                          <DiffText
+                            segments={contradictionSegments.filter(
+                              (segment) => segment.kind !== "del",
+                            )}
+                          />
+                        ) : (
+                          (memoryPaneA.data?.content ?? "")
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+              {item.kind === "refinement" &&
+                item.action !== "entity_merge" &&
+                item.action !== "detect_contradiction" && (
                   <div style={{ display: "grid", gap: 12 }}>
                     {item.action === "suggest_entity" &&
                       item.payload?.action === "suggest_entity" &&
@@ -627,7 +701,11 @@ export default function ReviewDialog({
                 onClick={() => void resolveCurrent(false)}
                 style={{ ...actionButtonStyle, color: "var(--mem-accent-warm)" }}
               >
-                {item.kind === "capture" ? t("review.forget") : t("review.dismiss")}
+                {item.kind === "capture"
+                  ? t("review.forget")
+                  : isContradiction
+                    ? t("review.keepBoth")
+                    : t("review.dismiss")}
               </button>
               {(item.kind === "revision" || item.kind === "capture") &&
                 onOpenMemory && (
@@ -664,7 +742,11 @@ export default function ReviewDialog({
                   fontWeight: 600,
                 }}
               >
-                {item.kind === "capture" ? t("review.confirm") : t("review.approve")}
+                {item.kind === "capture"
+                  ? t("review.confirm")
+                  : isContradiction
+                    ? t("review.resolve")
+                    : t("review.approve")}
               </button>
             </div>
           </>

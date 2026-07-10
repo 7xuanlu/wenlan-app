@@ -627,6 +627,68 @@ describe("HomePage redesign", () => {
     expect(tauri.deleteMemory).not.toHaveBeenCalled();
   });
 
+  it("opens the contradiction dialog with before/after panes and resolves it", async () => {
+    const user = userEvent.setup();
+    vi.mocked(tauri.listRefinements).mockResolvedValue({
+      proposals: [
+        {
+          id: "ref-contra",
+          action: "detect_contradiction",
+          source_ids: ["mem-new", "mem-old"],
+          payload: { action: "detect_contradiction" },
+          confidence: 0.78,
+          created_at: nowIso,
+        },
+      ],
+    } as any);
+    vi.mocked(tauri.listPages).mockResolvedValue([
+      page({ id: "page-current", title: "Current page" }),
+    ]);
+    vi.mocked(tauri.getMemoryDetail).mockImplementation(
+      async (sourceId: string) =>
+        ({
+          source_id: sourceId,
+          title: sourceId === "mem-new" ? "New memory" : "Old memory",
+          content:
+            sourceId === "mem-new"
+              ? "The project stores data in redb."
+              : "The project stores data in SQLite.",
+          summary: null,
+          memory_type: null,
+          domain: null,
+          source_agent: null,
+          confidence: null,
+          confirmed: true,
+          pinned: false,
+          supersedes: null,
+          last_modified: 1_782_365_000,
+          chunk_count: 1,
+        }) as any,
+    );
+
+    renderHome();
+
+    await user.click(
+      await screen.findByRole("button", { name: "Review Contradiction" }),
+    );
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Existing memory")).toBeInTheDocument();
+    expect(within(dialog).getByText("New memory — newer")).toBeInTheDocument();
+    // Existing pane keeps the old wording; the new pane shows the replacement.
+    await within(dialog).findByText(/SQLite/);
+    await within(dialog).findByText(/redb/);
+    expect(
+      within(dialog).getByRole("button", { name: "Keep both" }),
+    ).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: "Resolve" }));
+    await waitFor(() =>
+      expect(tauri.acceptRefinement).toHaveBeenCalledWith("ref-contra"),
+    );
+    expect(tauri.rejectRefinement).not.toHaveBeenCalled();
+  });
+
   it("surfaces refinement proposals in the needs-review rail", async () => {
     vi.mocked(tauri.listRefinements).mockResolvedValue({
       proposals: [
