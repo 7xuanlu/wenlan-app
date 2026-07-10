@@ -121,6 +121,15 @@ const en = {
     anthropicPrecedence:
       "Anthropic takes precedence while its key is set — this provider serves only when the Anthropic key is removed.",
   },
+  intelligenceStrip: {
+    chain: "Priority: Anthropic → external endpoint → on-device → basic memory",
+    servingAnthropic: "Serving: Anthropic",
+    servingExternal: "Serving: external endpoint",
+    servingOnDevice: "Serving: on-device model",
+    servingBasic: "Basic memory — no model configured",
+    externalRestartPending: "External endpoint configured — restart pending",
+    externalUnverified: "External endpoint configured (unverified)",
+  },
   main: {
     home: "Home",
     activity: "Activity",
@@ -1043,6 +1052,15 @@ const zhHans = {
     anthropicPrecedence:
       "设置了 Anthropic 密钥时优先使用 Anthropic — 移除该密钥后此服务商才会生效。",
   },
+  intelligenceStrip: {
+    chain: "优先级：Anthropic → 外部端点 → 本机模型 → 基础记忆",
+    servingAnthropic: "当前使用：Anthropic",
+    servingExternal: "当前使用：外部端点",
+    servingOnDevice: "当前使用：本机模型",
+    servingBasic: "基础记忆 — 未配置模型",
+    externalRestartPending: "外部端点已配置 — 等待重启",
+    externalUnverified: "外部端点已配置（未验证）",
+  },
   main: {
     home: "首页",
     activity: "活动",
@@ -1947,6 +1965,15 @@ const zhHant = {
     savedRestart: "已儲存。重新啟動 Wenlan 後生效。",
     anthropicPrecedence:
       "設定了 Anthropic 金鑰時優先使用 Anthropic — 移除該金鑰後此服務商才會生效。",
+  },
+  intelligenceStrip: {
+    chain: "優先順序:Anthropic → 外部端點 → 本機模型 → 基礎記憶",
+    servingAnthropic: "目前使用:Anthropic",
+    servingExternal: "目前使用:外部端點",
+    servingOnDevice: "目前使用:本機模型",
+    servingBasic: "基礎記憶 — 未設定模型",
+    externalRestartPending: "外部端點已設定 — 等待重新啟動",
+    externalUnverified: "外部端點已設定(未驗證)",
   },
   main: {
     home: "首頁",
