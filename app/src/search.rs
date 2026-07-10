@@ -3768,13 +3768,14 @@ pub async fn set_external_llm(
     state: tauri::State<'_, State>,
     endpoint: Option<String>,
     model: Option<String>,
+    api_key: Option<String>,
 ) -> Result<(), String> {
     let client = {
         let s = state.read().await;
         s.client.clone()
     };
-    client.set_external_llm(endpoint, model).await?;
-    log::info!("[settings] External LLM config updated — restart daemon to apply");
+    client.set_external_llm(endpoint, model, api_key).await?;
+    log::info!("[settings] External LLM config updated");
     Ok(())
 }
 
@@ -3783,12 +3784,24 @@ pub async fn test_external_llm(
     state: tauri::State<'_, State>,
     endpoint: String,
     model: String,
+    api_key: Option<String>,
 ) -> Result<requests::TestLlmResponse, String> {
     let client = {
         let s = state.read().await;
         s.client.clone()
     };
-    client.test_llm(endpoint, model).await
+    client.test_llm(endpoint, model, api_key).await
+}
+
+#[tauri::command]
+pub async fn get_external_llm_key_configured(
+    state: tauri::State<'_, State>,
+) -> Result<bool, String> {
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+    client.external_llm_key_configured().await
 }
 
 /// Parse an OpenAI-compatible `GET {endpoint}/models` body into model IDs.
@@ -3837,11 +3850,16 @@ mod external_llm_command_type_tests {
     #[allow(dead_code)]
     async fn test_external_llm_uses_daemon_response_envelope(state: tauri::State<'_, State>) {
         let _: Result<requests::TestLlmResponse, String> =
-            test_external_llm(state, String::new(), String::new()).await;
+            test_external_llm(state, String::new(), String::new(), None).await;
     }
 
     #[test]
     fn test_external_llm_response_type_is_checked() {}
+
+    #[allow(dead_code)]
+    async fn get_external_llm_key_configured_uses_typed_response(state: tauri::State<'_, State>) {
+        let _: Result<bool, String> = get_external_llm_key_configured(state).await;
+    }
 }
 
 /// Proxy for `GET /api/on-device-model` — returns per-model cache/load state.

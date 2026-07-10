@@ -1007,6 +1007,7 @@ pub fn run() {
             search::set_external_llm,
             search::test_external_llm,
             search::list_external_models,
+            search::get_external_llm_key_configured,
             // On-device model commands
             search::get_on_device_model,
             search::download_on_device_model,
