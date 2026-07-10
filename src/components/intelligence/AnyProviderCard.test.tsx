@@ -88,6 +88,46 @@ describe("AnyProviderCard", () => {
     expect(await screen.findByText(/Applied/)).toBeInTheDocument();
   });
 
+  it("clears the API key when switching presets on 0.13 (no cross-vendor key leak)", async () => {
+    mocks.getDaemonVersion.mockResolvedValue("0.13.0");
+    renderCard();
+    await userEvent.selectOptions(await screen.findByLabelText("Provider"), "openai");
+    const keyField = await screen.findByLabelText("API key");
+    await userEvent.type(keyField, "sk-openai-secret");
+    await waitFor(() =>
+      expect(mocks.listExternalModels).toHaveBeenCalledWith(
+        "https://api.openai.com/v1", "sk-openai-secret"
+      )
+    );
+    mocks.listExternalModels.mockClear();
+
+    await userEvent.selectOptions(screen.getByLabelText("Provider"), "groq");
+
+    expect(screen.getByLabelText("API key")).toHaveValue("");
+    await waitFor(() =>
+      expect(mocks.listExternalModels).toHaveBeenCalledWith(
+        "https://api.groq.com/openai/v1", null
+      )
+    );
+    expect(mocks.listExternalModels).not.toHaveBeenCalledWith(
+      "https://api.groq.com/openai/v1", "sk-openai-secret"
+    );
+  });
+
+  it("preserves the stored key on 0.13 when the field is left empty for an already-configured provider", async () => {
+    mocks.getDaemonVersion.mockResolvedValue("0.13.0");
+    mocks.getExternalLlmKeyConfigured.mockResolvedValue(true);
+    renderCard();
+    await userEvent.selectOptions(await screen.findByLabelText("Provider"), "openai");
+    await userEvent.type(screen.getByLabelText("Model"), "gpt-4o-mini");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(mocks.setExternalLlm).toHaveBeenCalledWith(
+        "https://api.openai.com/v1", "gpt-4o-mini", undefined
+      )
+    );
+  });
+
   it("keyless save on 0.12 omits the key and shows restart note", async () => {
     renderCard();
     await userEvent.selectOptions(await screen.findByLabelText("Provider"), "ollama");

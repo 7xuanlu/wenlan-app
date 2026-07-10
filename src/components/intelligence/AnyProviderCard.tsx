@@ -110,6 +110,7 @@ export default function AnyProviderCard({ groups, initialPresetId, hidePresetPic
     if (next && next.endpoint) setEndpoint(next.endpoint);
     if (next && !next.endpoint) setEndpoint("");
     setModel("");
+    setApiKey("");
     setTestState({ kind: "idle" });
     setSaveState("idle");
   };
