@@ -532,6 +532,9 @@ pub async fn detect_mcp_clients_cmd() -> Result<Vec<crate::mcp_config::McpClient
 pub async fn write_mcp_config(client_type: String) -> Result<(), String> {
     let config_path = crate::mcp_config::client_config_path(&client_type)
         .ok_or(format!("Unknown client type: {}", client_type))?;
+    if client_type == "codex_cli" {
+        return crate::mcp_config::write_wenlan_entry_toml(&config_path).map_err(|e| e.to_string());
+    }
     let is_claude_code = client_type == "claude_code";
     crate::mcp_config::write_wenlan_entry(&config_path, is_claude_code).map_err(|e| e.to_string())
 }
