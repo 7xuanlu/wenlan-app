@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SetupWizard } from "./SetupWizard";
 import { i18n } from "../i18n";
@@ -47,6 +48,13 @@ vi.mock("../lib/tauri", () => ({
     arch: "arm64",
     recommended_builtin: "qwen3-4b-instruct-2507",
   }),
+  getDaemonVersion: vi.fn().mockResolvedValue("0.12.0"),
+  daemonMeetsFloor: vi.fn().mockReturnValue(false),
+  getExternalLlm: vi.fn().mockResolvedValue([null, null]),
+  setExternalLlm: vi.fn().mockResolvedValue(undefined),
+  testExternalLlm: vi.fn().mockResolvedValue({ response: "pong" }),
+  listExternalModels: vi.fn().mockResolvedValue([]),
+  getExternalLlmKeyConfigured: vi.fn().mockResolvedValue(false),
 }));
 
 import {
@@ -112,7 +120,7 @@ describe("SetupWizard", () => {
   it("lets users save an API key from the intelligence step", async () => {
     renderWizard();
     fireEvent.click(screen.getByText("Get started"));
-    fireEvent.click(screen.getByText("Use my API key"));
+    fireEvent.click(screen.getByText("Cloud API"));
 
     fireEvent.change(screen.getByPlaceholderText("sk-ant-..."), {
       target: { value: "sk-ant-test-key" },
@@ -122,6 +130,37 @@ describe("SetupWizard", () => {
     await waitFor(() => {
       expect(setApiKey).toHaveBeenCalledWith("sk-ant-test-key");
     });
+  });
+
+  it("intelligence step offers device, cloud, and local server", async () => {
+    renderWizard();
+    fireEvent.click(screen.getByText("Get started"));
+
+    expect(screen.getByText("On this device")).toBeInTheDocument();
+    expect(screen.getByText("Cloud API")).toBeInTheDocument();
+    expect(screen.getByText("Local server")).toBeInTheDocument();
+  });
+
+  it("cloud pane lists Anthropic first and routes non-Anthropic vendors to the external card", async () => {
+    renderWizard();
+    fireEvent.click(screen.getByText("Get started"));
+    fireEvent.click(screen.getByText("Cloud API"));
+
+    // Anthropic pill renders the native key card by default.
+    expect(screen.getByText("Anthropic")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("sk-ant-...")).toBeInTheDocument();
+
+    // pick OpenAI → AnyProviderCard appears (its title)
+    await userEvent.click(screen.getByText("OpenAI"));
+    expect(await screen.findByText("Any provider")).toBeInTheDocument();
+  });
+
+  it("local pane offers the external card scoped to local presets", async () => {
+    renderWizard();
+    fireEvent.click(screen.getByText("Get started"));
+    fireEvent.click(screen.getByText("Local server"));
+
+    expect(await screen.findByText("Any provider")).toBeInTheDocument();
   });
 
   it("shows chat-history guidance in the import step and routes directly to connect", async () => {

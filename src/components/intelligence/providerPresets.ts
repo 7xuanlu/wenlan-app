@@ -2,6 +2,11 @@
 
 export type PresetGroup = "cloud" | "local" | "custom";
 
+/** Anthropic isn't an AnyProviderCard preset — it has native handling via
+ *  ApiKeyCard — but the wizard's cloud-pane vendor pill still needs this
+ *  untranslated proper noun (same convention as ProviderPreset.name below). */
+export const ANTHROPIC_VENDOR_NAME = "Anthropic";
+
 export interface ProviderPreset {
   id: string;
   /** Vendor names are proper nouns — not translated. */

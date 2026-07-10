@@ -16,12 +16,15 @@ const en = {
       title: "Choose how Wenlan thinks",
       description:
         "Download an on-device model for local intelligence, or bring your own API key for cloud synthesis. You can change this later in Settings.",
-      deviceOption: "On-device model",
-      apiOption: "Use my API key",
+      deviceOption: "On this device",
+      cloudOption: "Cloud API",
+      localOption: "Local server",
       deviceNote:
         "Local models keep inference on your Mac. If you skip this now, Wenlan can still store memories and you can download a model later from Settings.",
-      apiNote:
-        "An API key unlocks stronger cloud synthesis. Wenlan still keeps your stored memories local; this only changes which model handles reasoning tasks.",
+      cloudNote:
+        "Bring a key from any provider. Anthropic connects natively; every other vendor runs through the OpenAI-compatible endpoint.",
+      localNote:
+        "Point Wenlan at a local server like Ollama or LM Studio. No key, no cloud — inference stays on your machine.",
     },
     import: {
       laterHint:
@@ -953,12 +956,15 @@ const zhHans = {
       title: "选择文澜的智能方式",
       description:
         "下载本地模型以获得本地智能，或使用自己的 API key 进行云端综合。稍后可在设置中更改。",
-      deviceOption: "本地模型",
-      apiOption: "使用我的 API key",
+      deviceOption: "在本机运行",
+      cloudOption: "云端 API",
+      localOption: "本地服务器",
       deviceNote:
         "本地模型会在你的 Mac 上完成推理。现在跳过也没关系，文澜仍可存储记忆，稍后可在设置中下载模型。",
-      apiNote:
-        "API key 可启用更强的云端综合。文澜仍会把已存储的记忆留在本地，这只会改变处理推理任务的模型。",
+      cloudNote:
+        "使用任意服务商的密钥。Anthropic 原生接入；其他服务商通过 OpenAI 兼容端点运行。",
+      localNote:
+        "将 Wenlan 指向 Ollama 或 LM Studio 等本地服务器。无需密钥、不上云 — 推理保留在你的设备上。",
     },
     import: {
       laterHint:
@@ -1867,12 +1873,15 @@ const zhHant = {
       title: "選擇文瀾的智慧方式",
       description:
         "下載本機模型以取得本機智慧，或使用自己的 API key 進行雲端綜合。稍後可在設定中更改。",
-      deviceOption: "本機模型",
-      apiOption: "使用我的 API key",
+      deviceOption: "在本機執行",
+      cloudOption: "雲端 API",
+      localOption: "本機伺服器",
       deviceNote:
         "本機模型會在你的 Mac 上完成推理。現在略過也沒關係，文瀾仍可儲存記憶，稍後可在設定中下載模型。",
-      apiNote:
-        "API key 可啟用更強的雲端綜合。文瀾仍會把已儲存的記憶留在本機，這只會改變處理推理任務的模型。",
+      cloudNote:
+        "使用任意服務商的金鑰。Anthropic 原生接入;其他服務商透過 OpenAI 相容端點執行。",
+      localNote:
+        "將 Wenlan 指向 Ollama 或 LM Studio 等本機伺服器。無需金鑰、不上雲 — 推理保留在你的裝置上。",
     },
     import: {
       laterHint:

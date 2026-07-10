@@ -11,6 +11,8 @@ import {
 import { ImportView } from "./memory/ImportView";
 import { RemoteAccessPanel } from "./memory/RemoteAccessPanel";
 import { ApiKeyCard, OnDeviceModelCard } from "./intelligence/IntelligenceSetup";
+import AnyProviderCard from "./intelligence/AnyProviderCard";
+import { PROVIDER_PRESETS, ANTHROPIC_VENDOR_NAME } from "./intelligence/providerPresets";
 
 export type WizardStep = "welcome" | "intelligence-choice" | "import" | "connect" | "verify" | "done";
 
@@ -157,7 +159,11 @@ function IntelligenceChoiceStep({
   onBack: () => void;
 }) {
   const { t } = useTranslation();
-  const [mode, setMode] = useState<"device" | "api">("device");
+  const [mode, setMode] = useState<"device" | "cloud" | "local">("device");
+  // Cloud vendor pills: Anthropic (native slot) first, then cloud presets
+  // (external slot) — spec §2.
+  const [cloudVendor, setCloudVendor] = useState<string>("anthropic");
+  const cloudPresets = PROVIDER_PRESETS.filter((p) => p.group === "cloud");
 
   const choiceButtonStyle = (active: boolean): React.CSSProperties => ({
     flex: 1,
@@ -171,6 +177,38 @@ function IntelligenceChoiceStep({
     fontWeight: 500,
     textAlign: "left",
   });
+
+  const pillStyle = (active: boolean): React.CSSProperties => ({
+    padding: "6px 12px",
+    borderRadius: "999px",
+    border: "1px solid var(--mem-border)",
+    backgroundColor: active ? "rgba(99, 102, 241, 0.12)" : "var(--mem-surface)",
+    color: active ? "var(--mem-accent-indigo)" : "var(--mem-text-secondary)",
+    fontFamily: "var(--mem-font-body)",
+    fontSize: "12px",
+    fontWeight: 500,
+  });
+
+  const note = (
+    key:
+      | "setup.intelligence.deviceNote"
+      | "setup.intelligence.cloudNote"
+      | "setup.intelligence.localNote",
+  ) => (
+    <div
+      className="rounded-xl px-4 py-3"
+      style={{
+        backgroundColor: "var(--mem-hover)",
+        border: "1px solid var(--mem-border)",
+        fontFamily: "var(--mem-font-body)",
+        fontSize: "12px",
+        color: "var(--mem-text-secondary)",
+        lineHeight: 1.6,
+      }}
+    >
+      {t(key)}
+    </div>
+  );
 
   return (
     <div
@@ -216,43 +254,54 @@ function IntelligenceChoiceStep({
       </div>
 
       <div className="flex gap-3">
-        <button onClick={() => setMode("device")} style={choiceButtonStyle(mode === "device")}>{t("setup.intelligence.deviceOption")}</button>
-        <button onClick={() => setMode("api")} style={choiceButtonStyle(mode === "api")}>{t("setup.intelligence.apiOption")}</button>
+        <button onClick={() => setMode("device")} style={choiceButtonStyle(mode === "device")}>
+          {t("setup.intelligence.deviceOption")}
+        </button>
+        <button onClick={() => setMode("cloud")} style={choiceButtonStyle(mode === "cloud")}>
+          {t("setup.intelligence.cloudOption")}
+        </button>
+        <button onClick={() => setMode("local")} style={choiceButtonStyle(mode === "local")}>
+          {t("setup.intelligence.localOption")}
+        </button>
       </div>
 
-      {mode === "device" ? (
+      {mode === "device" && (
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           <OnDeviceModelCard />
-          <div
-            className="rounded-xl px-4 py-3"
-            style={{
-              backgroundColor: "var(--mem-hover)",
-              border: "1px solid var(--mem-border)",
-              fontFamily: "var(--mem-font-body)",
-              fontSize: "12px",
-              color: "var(--mem-text-secondary)",
-              lineHeight: 1.6,
-            }}
-          >
-            {t("setup.intelligence.deviceNote")}
-          </div>
+          {note("setup.intelligence.deviceNote")}
         </div>
-      ) : (
+      )}
+
+      {mode === "cloud" && (
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-          <ApiKeyCard showNoKeyGuidance={false} />
-          <div
-            className="rounded-xl px-4 py-3"
-            style={{
-              backgroundColor: "var(--mem-hover)",
-              border: "1px solid var(--mem-border)",
-              fontFamily: "var(--mem-font-body)",
-              fontSize: "12px",
-              color: "var(--mem-text-secondary)",
-              lineHeight: 1.6,
-            }}
-          >
-            {t("setup.intelligence.apiNote")}
+          <div className="flex flex-wrap gap-2">
+            <button onClick={() => setCloudVendor("anthropic")} style={pillStyle(cloudVendor === "anthropic")}>
+              {ANTHROPIC_VENDOR_NAME}
+            </button>
+            {cloudPresets.map((p) => (
+              <button key={p.id} onClick={() => setCloudVendor(p.id)} style={pillStyle(cloudVendor === p.id)}>
+                {p.name}
+              </button>
+            ))}
           </div>
+          {cloudVendor === "anthropic" ? (
+            <ApiKeyCard showNoKeyGuidance={false} />
+          ) : (
+            <AnyProviderCard
+              key={cloudVendor}
+              groups={["cloud"]}
+              initialPresetId={cloudVendor}
+              hidePresetPicker
+            />
+          )}
+          {note("setup.intelligence.cloudNote")}
+        </div>
+      )}
+
+      {mode === "local" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          <AnyProviderCard groups={["local"]} />
+          {note("setup.intelligence.localNote")}
         </div>
       )}
 
