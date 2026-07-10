@@ -163,10 +163,24 @@ describe("SetupWizard", () => {
     expect(await screen.findByText("Any provider")).toBeInTheDocument();
   });
 
-  it("shows chat-history guidance in the import step and routes directly to connect", async () => {
+  it("import step offers chat history and vault side by side", async () => {
     renderWizard();
     fireEvent.click(screen.getByText("Get started"));
     fireEvent.click(screen.getByText("Continue"));
+
+    expect(screen.getByText("Bring what you already know")).toBeInTheDocument();
+    expect(screen.getByText("Chat history")).toBeInTheDocument();
+    expect(screen.getByText("Import chat history")).toBeInTheDocument();
+    // VaultConnectCard (Task 6), rendered inline as the second path.
+    expect(screen.getByText("Connect a notes folder")).toBeInTheDocument();
+  });
+
+  it("shows chat-history guidance after choosing the chat path and routes directly to connect", async () => {
+    renderWizard();
+    fireEvent.click(screen.getByText("Get started"));
+    fireEvent.click(screen.getByText("Continue"));
+
+    fireEvent.click(screen.getByText("Import chat history"));
 
     expect(screen.getByText("Import Memories")).toBeInTheDocument();
     expect(screen.getByText(/Settings > Sources/i)).toBeInTheDocument();

@@ -29,6 +29,12 @@ const en = {
     import: {
       laterHint:
         "You can import ChatGPT or Claude chat history later from <strong>Settings > Sources</strong>.",
+      title: "Bring what you already know",
+      description: "Import past AI conversations, connect your notes, or both.",
+      chatPathTitle: "Chat history",
+      chatPathDescription: "Import ChatGPT or Claude conversation exports.",
+      chatPathCta: "Import chat history",
+      vaultPathTitle: "Obsidian vault / notes folder",
     },
     connect: {
       title: "Choose tools to connect",
@@ -969,6 +975,12 @@ const zhHans = {
     import: {
       laterHint:
         "稍后也可以从 <strong>设置 > 来源</strong> 导入 ChatGPT 或 Claude 聊天记录。",
+      title: "带上你已有的知识",
+      description: "导入过去的 AI 对话、连接你的笔记，或两者都做。",
+      chatPathTitle: "聊天记录",
+      chatPathDescription: "导入 ChatGPT 或 Claude 的对话导出文件。",
+      chatPathCta: "导入聊天记录",
+      vaultPathTitle: "Obsidian 仓库 / 笔记文件夹",
     },
     connect: {
       title: "选择要连接的工具",
@@ -1886,6 +1898,12 @@ const zhHant = {
     import: {
       laterHint:
         "稍後也可以從 <strong>設定 > 來源</strong> 匯入 ChatGPT 或 Claude 聊天記錄。",
+      title: "帶上你已有的知識",
+      description: "匯入過去的 AI 對話、連接你的筆記,或兩者都做。",
+      chatPathTitle: "聊天記錄",
+      chatPathDescription: "匯入 ChatGPT 或 Claude 的對話匯出檔案。",
+      chatPathCta: "匯入聊天記錄",
+      vaultPathTitle: "Obsidian 儲存庫 / 筆記資料夾",
     },
     connect: {
       title: "選擇要連接的工具",

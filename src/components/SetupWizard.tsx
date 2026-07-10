@@ -9,6 +9,7 @@ import {
   type ImportResult,
 } from "../lib/tauri";
 import { ImportView } from "./memory/ImportView";
+import VaultConnectCard from "./memory/sources/VaultConnectCard";
 import { RemoteAccessPanel } from "./memory/RemoteAccessPanel";
 import { ApiKeyCard, OnDeviceModelCard } from "./intelligence/IntelligenceSetup";
 import AnyProviderCard from "./intelligence/AnyProviderCard";
@@ -334,6 +335,102 @@ function IntelligenceChoiceStep({
             backgroundColor: "var(--mem-accent-indigo)",
             color: "white",
           }}
+        >
+          {t("setup.continue")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Import Step (dual path: chat history | vault) ───────────────────────
+
+function ImportStep({
+  onBack,
+  onSkip,
+  onComplete,
+  onPhaseChange,
+  importHint,
+}: {
+  onBack: () => void;
+  onSkip: () => void;
+  onComplete: (source: string, result: ImportResult) => void;
+  onPhaseChange: (phase: string) => void;
+  importHint: React.ReactNode;
+}) {
+  const { t } = useTranslation();
+  const [pathChoice, setPathChoice] = useState<"none" | "chat">("none");
+
+  if (pathChoice === "chat") {
+    return (
+      <ImportView
+        onBack={() => setPathChoice("none")}
+        wizardMode
+        wizardHint={importHint}
+        onPhaseChange={onPhaseChange}
+        onSkip={onSkip}
+        onComplete={onComplete}
+      />
+    );
+  }
+
+  return (
+    <div className="flex flex-col max-w-xl mx-auto" style={{ gap: "24px", paddingTop: "24px" }}>
+      <button
+        onClick={onBack}
+        className="flex items-center gap-1.5 self-start transition-colors duration-150"
+        style={{ fontFamily: "var(--mem-font-body)", fontSize: "13px", color: "var(--mem-text-secondary)" }}
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M19 12H5M12 19l-7-7 7-7" />
+        </svg>
+        {t("setup.back")}
+      </button>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+        <h1 style={{ fontFamily: "var(--mem-font-heading)", fontSize: "20px", fontWeight: 500, color: "var(--mem-text)" }}>
+          {t("setup.import.title")}
+        </h1>
+        <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "13px", color: "var(--mem-text-secondary)", lineHeight: "1.5" }}>
+          {t("setup.import.description")}
+        </p>
+      </div>
+
+      <div
+        className="rounded-xl p-4 flex items-center justify-between"
+        style={{ border: "1px solid var(--mem-border)", backgroundColor: "var(--mem-surface)", gap: "12px" }}
+      >
+        <div>
+          <h3 style={{ fontFamily: "var(--mem-font-heading)", fontSize: "15px", fontWeight: 500, color: "var(--mem-text)" }}>
+            {t("setup.import.chatPathTitle")}
+          </h3>
+          <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-secondary)", marginTop: "4px" }}>
+            {t("setup.import.chatPathDescription")}
+          </p>
+        </div>
+        <button
+          onClick={() => setPathChoice("chat")}
+          className="rounded-md px-4 py-2 text-sm font-medium shrink-0"
+          style={{ backgroundColor: "var(--mem-accent-indigo)", color: "white", fontFamily: "var(--mem-font-body)" }}
+        >
+          {t("setup.import.chatPathCta")}
+        </button>
+      </div>
+
+      <VaultConnectCard variant="wizard" />
+
+      <div className="flex items-center" style={{ paddingTop: "16px", borderTop: "1px solid var(--mem-border)" }}>
+        <button
+          onClick={onSkip}
+          className="ml-auto transition-colors duration-150"
+          style={{ fontFamily: "var(--mem-font-body)", fontSize: "13px", color: "var(--mem-text-tertiary)", background: "none", border: "none", cursor: "pointer" }}
+        >
+          {t("setup.skip")}
+        </button>
+        <button
+          onClick={onSkip}
+          className="px-5 py-2 rounded-lg text-sm font-medium transition-colors duration-150 ml-3"
+          style={{ fontFamily: "var(--mem-font-body)", backgroundColor: "var(--mem-accent-indigo)", color: "white" }}
         >
           {t("setup.continue")}
         </button>
@@ -1415,10 +1512,9 @@ export function SetupWizard({ onComplete, initialStep }: SetupWizardProps) {
         )}
 
         {step === "import" && (
-          <ImportView
+          <ImportStep
             onBack={() => setStep("intelligence-choice")}
-            wizardMode
-            wizardHint={(
+            importHint={(
               <Trans
                 i18nKey="setup.import.laterHint"
                 components={{ strong: <strong /> }}
