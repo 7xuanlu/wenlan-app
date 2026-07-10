@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { getRemoteAccessStatus, listAgents } from "../../lib/tauri";
+import { clipboardWrite, getRemoteAccessStatus, listAgents } from "../../lib/tauri";
 
 /** Per-platform web connect cards (spec §2a group 1). Verification is the
  *  existing listAgents delta poll — best-effort attribution: a new agent in
@@ -19,7 +19,7 @@ export default function WebPlatformCards() {
     refetchInterval: 3000,
   });
   const url =
-    remote?.status === "connected" ? (remote.relay_url ?? remote.tunnel_url) : null;
+    remote?.status === "connected" ? (remote.relay_url ?? `${remote.tunnel_url}/mcp`) : null;
 
   const { data: agents } = useQuery({
     queryKey: ["web-connect-agents"],
@@ -39,7 +39,11 @@ export default function WebPlatformCards() {
 
   const copy = async (platform: string) => {
     if (!url) return;
-    await navigator.clipboard.writeText(url);
+    try {
+      await clipboardWrite(url);
+    } catch {
+      return;
+    }
     baselineCount.current = agents?.length ?? baselineCount.current;
     setCopiedPlatform(platform);
   };
