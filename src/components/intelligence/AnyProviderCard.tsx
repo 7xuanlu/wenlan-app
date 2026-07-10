@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
   getExternalLlm,
@@ -46,6 +46,7 @@ export default function AnyProviderCard({ groups, initialPresetId, hidePresetPic
   const { t } = useTranslation();
   const { supportsExternalKey, supportsHotSwap } = useDaemonVersion();
   const anthropic = useApiKeyStatus();
+  const queryClient = useQueryClient();
 
   const presets = useMemo(
     () =>
@@ -134,6 +135,12 @@ export default function AnyProviderCard({ groups, initialPresetId, hidePresetPic
     try {
       await setExternalLlm(trimmedEndpoint, model, keyToSend());
       setSaveState(supportsHotSwap ? "applied" : "restart");
+      // The daemon may hot-load this config immediately (spec §7.6), so the
+      // strip's status queries must refresh alongside our own prefill query —
+      // otherwise ActiveIntelligenceStrip keeps showing stale state.
+      queryClient.invalidateQueries({ queryKey: ["setup-status"] });
+      queryClient.invalidateQueries({ queryKey: ["external-llm"] });
+      queryClient.invalidateQueries({ queryKey: ["external-llm-key-configured"] });
     } catch (err) {
       setSaveState(`error:${err instanceof Error ? err.message : String(err)}`);
     }

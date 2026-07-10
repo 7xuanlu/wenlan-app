@@ -418,7 +418,12 @@ function ImportStep({
         </button>
       </div>
 
-      <VaultConnectCard variant="wizard" />
+      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+        <h3 style={{ fontFamily: "var(--mem-font-heading)", fontSize: "15px", fontWeight: 500, color: "var(--mem-text)" }}>
+          {t("setup.import.vaultPathTitle")}
+        </h3>
+        <VaultConnectCard variant="wizard" />
+      </div>
 
       <div className="flex items-center" style={{ paddingTop: "16px", borderTop: "1px solid var(--mem-border)" }}>
         <button

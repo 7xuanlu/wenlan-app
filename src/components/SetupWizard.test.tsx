@@ -171,7 +171,9 @@ describe("SetupWizard", () => {
     expect(screen.getByText("Bring what you already know")).toBeInTheDocument();
     expect(screen.getByText("Chat history")).toBeInTheDocument();
     expect(screen.getByText("Import chat history")).toBeInTheDocument();
-    // VaultConnectCard (Task 6), rendered inline as the second path.
+    // VaultConnectCard (Task 6), rendered inline as the second path, with its
+    // own side-by-side section label (spec §2) above the card.
+    expect(screen.getByText("Obsidian vault / notes folder")).toBeInTheDocument();
     expect(screen.getByText("Connect a notes folder")).toBeInTheDocument();
   });
 

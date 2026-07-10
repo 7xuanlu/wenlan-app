@@ -22,13 +22,16 @@ vi.mock("../../lib/tauri", async (importOriginal) => {
 
 import AnyProviderCard from "./AnyProviderCard";
 
-function renderCard(props: Partial<ComponentProps<typeof AnyProviderCard>> = {}) {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+function renderCard(
+  props: Partial<ComponentProps<typeof AnyProviderCard>> = {},
+  qc: QueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+) {
+  render(
     <QueryClientProvider client={qc}>
       <AnyProviderCard {...props} />
     </QueryClientProvider>
   );
+  return qc;
 }
 
 describe("AnyProviderCard", () => {
@@ -162,5 +165,21 @@ describe("AnyProviderCard", () => {
     mocks.getApiKey.mockResolvedValue("sk-ant-configured");
     renderCard();
     expect(await screen.findByText(/Anthropic takes precedence/)).toBeInTheDocument();
+  });
+
+  it("invalidates setup-status, external-llm, and external-llm-key-configured after a successful save (strip staleness fix)", async () => {
+    mocks.getDaemonVersion.mockResolvedValue("0.13.0");
+    const qc = renderCard();
+    const invalidateSpy = vi.spyOn(qc, "invalidateQueries");
+    await userEvent.selectOptions(await screen.findByLabelText("Provider"), "openai");
+    const keyField = await screen.findByLabelText("API key");
+    await userEvent.type(keyField, "sk-test");
+    await userEvent.type(screen.getByLabelText("Model"), "gpt-4o-mini");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(mocks.setExternalLlm).toHaveBeenCalled());
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["setup-status"] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["external-llm"] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["external-llm-key-configured"] });
   });
 });

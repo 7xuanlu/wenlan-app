@@ -52,13 +52,24 @@ export function ApiKeyCard({
   const queryClient = useQueryClient();
   const { maskedKey, isConfigured } = useApiKeyStatus();
 
+  // A save/clear here changes what the daemon is actually serving (the
+  // Anthropic key is hot-loaded even on 0.12), so the strip's status
+  // queries must be invalidated alongside the key itself — otherwise
+  // ActiveIntelligenceStrip keeps showing stale state until remount.
+  const invalidateIntelligenceQueries = () => {
+    queryClient.invalidateQueries({ queryKey: ["apiKey"] });
+    queryClient.invalidateQueries({ queryKey: ["setup-status"] });
+    queryClient.invalidateQueries({ queryKey: ["external-llm"] });
+    queryClient.invalidateQueries({ queryKey: ["external-llm-key-configured"] });
+  };
+
   const handleSave = async () => {
     setSaving(true);
     setError(null);
     try {
       await setApiKey(keyInput);
       setKeyInput("");
-      queryClient.invalidateQueries({ queryKey: ["apiKey"] });
+      invalidateIntelligenceQueries();
     } catch (e) {
       setError(String(e));
     } finally {
@@ -70,7 +81,7 @@ export function ApiKeyCard({
     setSaving(true);
     try {
       await setApiKey("");
-      queryClient.invalidateQueries({ queryKey: ["apiKey"] });
+      invalidateIntelligenceQueries();
     } finally {
       setSaving(false);
     }
