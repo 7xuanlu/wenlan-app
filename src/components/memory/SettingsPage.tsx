@@ -1,17 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useTranslation } from "react-i18next";
-import { ApiKeyCard, OnDeviceModelCard, useApiKeyStatus } from "../intelligence/IntelligenceSetup";
-import DiagnosticsSection from "./settings/DiagnosticsSection";
+import type { SettingsSection } from "./settings/SettingsSidebar";
+import { SETTINGS_GROUPS } from "./settings/SettingsSidebar";
 import GeneralSection from "./settings/sections/GeneralSection";
 import CaptureSection from "./settings/sections/CaptureSection";
 import SourcesSection from "./settings/sections/SourcesSection";
 import AgentsSection from "./settings/sections/AgentsSection";
-import { SectionHeader } from "./settings/primitives";
-
-// ── Main component ─────────────────────────────────────────────────────
-
-import type { SettingsSection } from "./settings/SettingsSidebar";
-import { SETTINGS_GROUPS } from "./settings/SettingsSidebar";
+import IntelligenceSection from "./settings/sections/IntelligenceSection";
+import DiagnosticsSection from "./settings/sections/DiagnosticsSection";
 
 interface SettingsPageProps {
   /** Which group to display. Driven by the Settings sidebar in Main.tsx. */
@@ -28,11 +24,6 @@ export default function SettingsPage({
   onImport,
 }: SettingsPageProps) {
   const { t } = useTranslation();
-
-  // Filters removed — legacy ambient capture, hidden from UI
-
-  // (old `sections` array deleted — replaced by the SettingsSidebar driving
-  // a single active group via the `section` prop.)
 
   const activeGroup = SETTINGS_GROUPS.find((g) => g.id === section);
 
@@ -52,28 +43,12 @@ export default function SettingsPage({
         </p>
       </div>
 
-      {/* ── Appearance ───────────────────────────────────────────── */}
-      {/* ── General ─────────────────────────────────────────────── */}
       {section === "general" && <GeneralSection />}
-
-      {/* ── Capture ─────────────────────────────────────────────── */}
       {section === "capture" && <CaptureSection />}
-
-      {/* ── Sources (group: sources) ────────────────────────────── */}
       {section === "sources" && <SourcesSection onImport={onImport} />}
-
-      {/* ── Agents (group: agents) ─────────────────────────────── */}
       {section === "agents" && <AgentsSection onSetupAgent={onSetupAgent} />}
-
-      {/* ── Intelligence (group: intelligence) ──────────────────── */}
-      {section === "intelligence" && (
-      <IntelligenceSection delay={0} />
-      )}
-
-      {/* Diagnostics (group: diagnostics) */}
+      {section === "intelligence" && <IntelligenceSection delay={0} />}
       {section === "diagnostics" && <DiagnosticsSection />}
-
-      {/* Filters section hidden — legacy ambient capture, not relevant with memory-layer pivot */}
 
       {/* ── Privacy note — persistent footer on all groups. The settings
           sidebar also carries a shorter version in its bottom strip; this
@@ -91,31 +66,5 @@ export default function SettingsPage({
       </div>
 
     </div>
-  );
-}
-
-function IntelligenceSection({ delay }: { delay: number }) {
-  const { t } = useTranslation();
-  const { isConfigured } = useApiKeyStatus();
-
-  return (
-    <section className="mem-fade-up" style={{ animationDelay: `${delay}ms` }}>
-      <SectionHeader
-        label={t("settings.groups.intelligence.label")}
-        icon={
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-          </svg>
-        }
-      />
-      <div className="flex flex-col gap-3">
-        <ApiKeyCard />
-        {!isConfigured && (
-          <div className="mem-fade-up" style={{ animationDelay: `${delay + 30}ms` }}>
-            <OnDeviceModelCard />
-          </div>
-        )}
-      </div>
-    </section>
   );
 }

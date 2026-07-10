@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useQuery } from "@tanstack/react-query";
-import { getPipelineStatus, type PipelineStatusResponse } from "../../../lib/tauri";
+import { getPipelineStatus, type PipelineStatusResponse } from "../../../../lib/tauri";
 
 function sortedEntries(values: Record<string, number>): [string, number][] {
   return Object.entries(values).sort(([leftKey, leftValue], [rightKey, rightValue]) => {
