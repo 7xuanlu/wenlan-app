@@ -1,16 +1,42 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import DistillReviewPanel from "./DistillReviewPanel";
-import type { DistillReviewResponse } from "../../lib/tauri";
+import type {
+  DistillReviewResponse,
+  MemoryItem,
+  PendingRevisionItem,
+} from "../../lib/tauri";
 
-vi.mock("../../lib/tauri", () => ({
-  distillReview: vi.fn(),
-}));
+vi.mock("../../lib/tauri", async () => {
+  const actual = await vi.importActual<typeof import("../../lib/tauri")>("../../lib/tauri");
+  return {
+    ...actual,
+    distillReview: vi.fn(),
+    listPendingRevisions: vi.fn(),
+    acceptPendingRevision: vi.fn(),
+    dismissPendingRevision: vi.fn(),
+    listRefinements: vi.fn(),
+    acceptRefinement: vi.fn(),
+    rejectRefinement: vi.fn(),
+    getMemoryDetail: vi.fn(),
+    getEntityDetail: vi.fn(),
+  };
+});
 
-import { distillReview } from "../../lib/tauri";
+import {
+  distillReview,
+  listPendingRevisions,
+  acceptPendingRevision,
+  dismissPendingRevision,
+  listRefinements,
+  acceptRefinement,
+  rejectRefinement,
+  getMemoryDetail,
+  getEntityDetail,
+} from "../../lib/tauri";
 
 function renderPanel(props: Partial<React.ComponentProps<typeof DistillReviewPanel>> = {}) {
   const client = new QueryClient({
@@ -18,13 +44,14 @@ function renderPanel(props: Partial<React.ComponentProps<typeof DistillReviewPan
   });
   const onBack = props.onBack ?? vi.fn();
   const onPageClick = props.onPageClick ?? vi.fn();
+  const onMemoryClick = props.onMemoryClick ?? vi.fn();
   const user = userEvent.setup();
   render(
     <QueryClientProvider client={client}>
-      <DistillReviewPanel onBack={onBack} onPageClick={onPageClick} />
+      <DistillReviewPanel onBack={onBack} onPageClick={onPageClick} onMemoryClick={onMemoryClick} />
     </QueryClientProvider>,
   );
-  return { user, onBack, onPageClick };
+  return { user, onBack, onPageClick, onMemoryClick };
 }
 
 function truncateForTest(value: string, max: number): string {
@@ -32,6 +59,33 @@ function truncateForTest(value: string, max: number): string {
   if (value.length <= max) return value;
   if (max <= 3) return ".".repeat(max);
   return `${value.slice(0, max - 3).trimEnd()}...`;
+}
+
+function memory(overrides: Partial<MemoryItem> & Pick<MemoryItem, "source_id" | "title" | "content">): MemoryItem {
+  return {
+    summary: null,
+    memory_type: null,
+    domain: null,
+    source_agent: null,
+    confidence: null,
+    confirmed: true,
+    pinned: false,
+    supersedes: null,
+    last_modified: 1_760_000_000,
+    chunk_count: 1,
+    ...overrides,
+  };
+}
+
+function revision(
+  overrides: Partial<PendingRevisionItem> & Pick<PendingRevisionItem, "target_source_id" | "revision_content">,
+): PendingRevisionItem {
+  return {
+    revision_source_id: `${overrides.target_source_id}_rev`,
+    source_agent: "claude-code",
+    last_modified: 1_760_000_000,
+    ...overrides,
+  };
 }
 
 const fallbackSource =
@@ -82,23 +136,52 @@ const reviewPayload: DistillReviewResponse = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(distillReview).mockResolvedValue(reviewPayload);
+  vi.mocked(listPendingRevisions).mockResolvedValue([]);
+  vi.mocked(listRefinements).mockResolvedValue({ proposals: [] });
+  vi.mocked(acceptPendingRevision).mockResolvedValue({
+    target_source_id: "mem_target",
+    revision_source_id: "mem_target_rev",
+    wrote: true,
+  });
+  vi.mocked(dismissPendingRevision).mockResolvedValue({
+    target_source_id: "mem_target",
+    wrote: true,
+  });
+  vi.mocked(acceptRefinement).mockResolvedValue({ id: "prop_1", action_applied: "entity_merge" });
+  vi.mocked(rejectRefinement).mockResolvedValue({ id: "prop_1" });
+  vi.mocked(getMemoryDetail).mockResolvedValue(
+    memory({ source_id: "mem_target", title: "Target memory", content: "Prefers npm for installs" }),
+  );
+  vi.mocked(getEntityDetail).mockResolvedValue({
+    entity: {
+      id: "ent_1",
+      name: "Visual Studio Code",
+      entity_type: "tool",
+      domain: null,
+      source_agent: null,
+      confidence: null,
+      confirmed: true,
+      created_at: 0,
+      updated_at: 0,
+    },
+    observations: [],
+    relations: [],
+  });
 });
 
 describe("DistillReviewPanel", () => {
   it("loads the page review once on mount", async () => {
-    vi.mocked(distillReview).mockResolvedValue(reviewPayload);
-
     renderPanel();
 
     await waitFor(() => {
       expect(distillReview).toHaveBeenCalledTimes(1);
     });
-    expect(await screen.findByRole("heading", { name: "Page review" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Review" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^refresh$/i })).toBeInTheDocument();
   });
 
   it("renders page review sections after loading", async () => {
-    vi.mocked(distillReview).mockResolvedValue(reviewPayload);
     renderPanel();
 
     expect(await screen.findByText("Temporal page refresh")).toBeInTheDocument();
@@ -114,7 +197,6 @@ describe("DistillReviewPanel", () => {
   });
 
   it("renders source previews even when a fallback label comes from the first source", async () => {
-    vi.mocked(distillReview).mockResolvedValue(reviewPayload);
     renderPanel();
 
     expect(await screen.findByText(truncateForTest(fallbackSource, 72))).toBeInTheDocument();
@@ -123,7 +205,6 @@ describe("DistillReviewPanel", () => {
   });
 
   it("navigates stale pages without exposing rebuild controls", async () => {
-    vi.mocked(distillReview).mockResolvedValue(reviewPayload);
     const { user, onPageClick } = renderPanel();
 
     await user.click(await screen.findByRole("button", { name: /open Retrieval Pipeline/i }));
@@ -149,12 +230,137 @@ describe("DistillReviewPanel", () => {
   });
 
   it("keeps manual refresh available after the initial load", async () => {
-    vi.mocked(distillReview).mockResolvedValue(reviewPayload);
     const { user } = renderPanel();
 
     await screen.findByText("Temporal page refresh");
     await user.click(screen.getByRole("button", { name: /^refresh$/i }));
 
     expect(distillReview).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("DistillReviewPanel review queue", () => {
+  it("shows the all-caught-up state when the queue is empty", async () => {
+    renderPanel();
+
+    expect(await screen.findByRole("heading", { name: "All caught up" })).toBeInTheDocument();
+  });
+
+  it("renders revision cards with a pending count", async () => {
+    vi.mocked(listPendingRevisions).mockResolvedValue([
+      revision({ target_source_id: "mem_target", revision_content: "Prefers pnpm for installs" }),
+    ]);
+    renderPanel();
+
+    expect(await screen.findByRole("heading", { name: "Memory revisions" })).toBeInTheDocument();
+    expect(screen.getByText("1 pending")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Review Prefers pnpm for installs/ })).toBeInTheDocument();
+  });
+
+  it("opens the diff dialog from a card and shows stripped and added words", async () => {
+    vi.mocked(listPendingRevisions).mockResolvedValue([
+      revision({ target_source_id: "mem_target", revision_content: "Prefers pnpm for installs" }),
+    ]);
+    const { user } = renderPanel();
+
+    await user.click(await screen.findByRole("button", { name: /Review Prefers pnpm/ }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByRole("heading", { name: "Target memory" })).toBeInTheDocument();
+    await waitFor(() => {
+      const dels = dialog.querySelectorAll("del");
+      const inss = dialog.querySelectorAll("ins");
+      expect([...dels].some((el) => el.textContent?.includes("npm"))).toBe(true);
+      expect([...inss].some((el) => el.textContent?.includes("pnpm"))).toBe(true);
+    });
+    expect(within(dialog).getByText("1 of 1")).toBeInTheDocument();
+  });
+
+  it("approves a revision and shows the caught-up pane when the queue empties", async () => {
+    vi.mocked(listPendingRevisions)
+      .mockResolvedValueOnce([
+        revision({ target_source_id: "mem_target", revision_content: "Prefers pnpm for installs" }),
+      ])
+      .mockResolvedValue([]);
+    const { user } = renderPanel();
+
+    await user.click(await screen.findByRole("button", { name: /Review Prefers pnpm/ }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Approve" }));
+
+    await waitFor(() => {
+      expect(acceptPendingRevision).toHaveBeenCalledWith("mem_target");
+    });
+    expect(await within(dialog).findByText("Every pending change has been reviewed.")).toBeInTheDocument();
+  });
+
+  it("dismisses a revision through the dialog", async () => {
+    vi.mocked(listPendingRevisions)
+      .mockResolvedValueOnce([
+        revision({ target_source_id: "mem_target", revision_content: "Prefers pnpm for installs" }),
+      ])
+      .mockResolvedValue([]);
+    const { user } = renderPanel();
+
+    await user.click(await screen.findByRole("button", { name: /Review Prefers pnpm/ }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Dismiss" }));
+
+    await waitFor(() => {
+      expect(dismissPendingRevision).toHaveBeenCalledWith("mem_target");
+    });
+  });
+
+  it("advances to the next item after approving", async () => {
+    const first = revision({ target_source_id: "mem_a", revision_content: "First revision content" });
+    const second = revision({ target_source_id: "mem_b", revision_content: "Second revision content" });
+    vi.mocked(listPendingRevisions)
+      .mockResolvedValueOnce([first, second])
+      .mockResolvedValue([second]);
+    vi.mocked(getMemoryDetail).mockImplementation(async (sourceId: string) =>
+      memory({ source_id: sourceId, title: `Title ${sourceId}`, content: "old content" }),
+    );
+    const { user } = renderPanel();
+
+    await user.click(await screen.findByRole("button", { name: /Review First revision/ }));
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByRole("heading", { name: "Title mem_a" })).toBeInTheDocument();
+    expect(within(dialog).getByText("1 of 2")).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: "Approve" }));
+
+    expect(await within(dialog).findByRole("heading", { name: "Title mem_b" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(acceptPendingRevision).toHaveBeenCalledWith("mem_a");
+    });
+  });
+
+  it("renders refinement proposals and approves through the daemon verb", async () => {
+    vi.mocked(listRefinements)
+      .mockResolvedValueOnce({
+        proposals: [
+          {
+            id: "prop_1",
+            action: "entity_merge",
+            source_ids: ["ent_1", "ent_2"],
+            payload: { action: "entity_merge", existing_id: "ent_1", new_id: "ent_2", similarity: 0.94 },
+            confidence: 0.94,
+            created_at: "2026-07-09T00:00:00Z",
+          },
+        ],
+      })
+      .mockResolvedValue({ proposals: [] });
+    const { user } = renderPanel();
+
+    expect(await screen.findByRole("heading", { name: "Merges & conflicts" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Review Entity merge/ }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByText("94% confidence")).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Approve" }));
+
+    await waitFor(() => {
+      expect(acceptRefinement).toHaveBeenCalledWith("prop_1");
+    });
   });
 });

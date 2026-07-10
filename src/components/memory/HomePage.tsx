@@ -11,6 +11,8 @@ import {
   type Page,
 } from "../../lib/tauri";
 import { Greeting } from "./Greeting";
+import { useReviewQueue, reviewItemId, type ReviewItem } from "./useReviewQueue";
+import ReviewDialog, { reviewKindLabel, truncateReviewText } from "./ReviewDialog";
 import { RefiningList } from "./RefiningList";
 import { ConnectionsList } from "./ConnectionsList";
 import { RetrievalsList } from "./RetrievalsList";
@@ -48,7 +50,7 @@ function deriveHomePageState(params: {
 }
 
 export default function HomePage({
-  onNavigateMemory: _onNavigateMemory,
+  onNavigateMemory,
   onNavigateStream: _onNavigateStream,
   onNavigateLog: _onNavigateLog,
   onNavigateGraph: _onNavigateGraph,
@@ -88,10 +90,6 @@ export default function HomePage({
       [...recentConcepts]
         .sort((a, b) => Date.parse(b.last_modified) - Date.parse(a.last_modified))
         .slice(0, 6),
-    [recentConcepts],
-  );
-  const pageUpdateItems = useMemo(
-    () => pageUpdatesFromPages(recentConcepts),
     [recentConcepts],
   );
 
@@ -179,9 +177,9 @@ export default function HomePage({
         <WikiHome
           allPages={recentConcepts}
           pages={recentlyRefinedPages}
-          pageUpdates={pageUpdateItems}
           onSelectPage={onSelectPage}
           onOpenDistillReview={onOpenDistillReview}
+          onOpenMemory={onNavigateMemory}
         />
 
         {shouldShowFirstConceptModal && firstConcept && (
@@ -262,24 +260,6 @@ export default function HomePage({
   );
 }
 
-function pageUpdatesFromPages(pages: Page[]): Page[] {
-  return [...pages]
-    .filter((page) => page.stale_reason?.trim())
-    .sort((a, b) => {
-      const aPriority = a.stale_reason === "source_conflict" ? 0 : 1;
-      const bPriority = b.stale_reason === "source_conflict" ? 0 : 1;
-      if (aPriority !== bPriority) return aPriority - bPriority;
-      return Date.parse(b.last_modified) - Date.parse(a.last_modified);
-    })
-    .slice(0, 3);
-}
-
-function pageUpdateReason(t: TFunction, page: Page): string {
-  if (page.stale_reason === "source_conflict") return t("home.reasons.sourceConflict");
-  if (page.stale_reason === "source_updated") return t("home.reasons.sourceUpdated");
-  return t("home.reasons.needsRefresh");
-}
-
 function formatPagePath(page: Page): string {
   const domain = page.domain?.trim() || page.space?.trim();
   const title = page.title.replace(/\s+/g, "-");
@@ -288,11 +268,6 @@ function formatPagePath(page: Page): string {
 
 function formatSourceCount(t: TFunction, count: number): string {
   return t("home.counts.source", { count });
-}
-
-// The rail's list slices to 3, so the metric counts stale pages itself.
-function needsReviewCount(pages: Page[]): number {
-  return pages.filter((page) => page.stale_reason?.trim()).length;
 }
 
 function updatedTodayCount(pages: Page[]): number {
@@ -354,17 +329,19 @@ function useElementMinWidth<T extends HTMLElement>(minWidth: number) {
 function WikiHome({
   allPages,
   pages,
-  pageUpdates,
   onSelectPage,
   onOpenDistillReview,
+  onOpenMemory,
 }: {
   allPages: Page[];
   pages: Page[];
-  pageUpdates: Page[];
   onSelectPage?: (pageId: string) => void;
   onOpenDistillReview?: () => void;
+  onOpenMemory?: (sourceId: string) => void;
 }) {
   const [containerRef, isWideLayout] = useElementMinWidth<HTMLDivElement>(820);
+  const { items: reviewItems, isLoading: reviewLoading, resolve, isResolving } = useReviewQueue();
+  const [openReviewId, setOpenReviewId] = useState<string | null>(null);
   return (
     <div
       data-testid="wiki-home"
@@ -387,7 +364,7 @@ function WikiHome({
       >
         <TodayHeader />
 
-        <HomeContextRail pages={allPages} />
+        <HomeContextRail pages={allPages} reviewCount={reviewItems.length} />
       </section>
 
       <div
@@ -407,13 +384,22 @@ function WikiHome({
           onSelectPage={onSelectPage}
           isWideLayout={isWideLayout}
         />
-        <PageUpdatesRail
-          embedded
-          pages={pageUpdates}
-          onSelectPage={onSelectPage}
+        <NeedsReviewRail
+          items={reviewItems}
+          isLoading={reviewLoading}
+          onOpenItem={setOpenReviewId}
           onOpenDistillReview={onOpenDistillReview}
         />
       </div>
+
+      <ReviewDialog
+        items={reviewItems}
+        openId={openReviewId}
+        onOpenChange={setOpenReviewId}
+        onResolve={resolve}
+        isResolving={isResolving}
+        onOpenMemory={onOpenMemory}
+      />
     </div>
   );
 }
@@ -584,7 +570,7 @@ function PageList({
   );
 }
 
-function HomeContextRail({ pages }: { pages: Page[] }) {
+function HomeContextRail({ pages, reviewCount }: { pages: Page[]; reviewCount: number }) {
   const { t } = useTranslation();
   return (
     <div
@@ -602,7 +588,7 @@ function HomeContextRail({ pages }: { pages: Page[] }) {
         >
           <ContextMetric testId="pages" label={t("home.pages")} value={String(pages.length)} />
           <ContextMetric testId="updated-today" label={t("home.relative.today")} value={String(updatedTodayCount(pages))} />
-          <ContextMetric testId="needs-review" label={t("home.pageUpdates")} value={String(needsReviewCount(pages))} />
+          <ContextMetric testId="needs-review" label={t("home.pageUpdates")} value={String(reviewCount)} />
           <ContextMetric testId="latest" label={t("home.latest")} value={latestPageUpdate(t, pages)} />
         </div>
       </section>
@@ -643,54 +629,56 @@ function ContextMetric({ testId, label, value }: { testId: string; label: string
   );
 }
 
-function PageUpdatesRail({
-  embedded = false,
-  pages,
-  onSelectPage,
+function NeedsReviewRail({
+  items,
+  isLoading,
+  onOpenItem,
   onOpenDistillReview,
 }: {
-  embedded?: boolean;
-  pages: Page[];
-  onSelectPage?: (pageId: string) => void;
+  items: ReviewItem[];
+  isLoading: boolean;
+  onOpenItem: (id: string) => void;
   onOpenDistillReview?: () => void;
 }) {
   const { t } = useTranslation();
   return (
-    <section
-      data-testid="wiki-page-updates"
-      style={{
-        border: embedded ? "none" : "1px solid var(--mem-border)",
-        borderRadius: embedded ? 0 : 8,
-        padding: embedded ? 0 : 12,
-        backgroundColor: embedded ? "transparent" : "color-mix(in srgb, var(--mem-surface) 76%, transparent)",
-        maxHeight: embedded ? "none" : "min(420px, calc(100vh - 180px))",
-        overflowY: embedded ? "visible" : "auto",
-      }}
-    >
+    <section data-testid="wiki-page-updates">
       <SectionHeading
         title={t("home.pageUpdates")}
         size="compact"
+        action={
+          items.length > 0 ? (
+            <span
+              style={{
+                fontFamily: "var(--mem-font-mono)",
+                fontSize: 11,
+                fontWeight: 600,
+                color: "var(--mem-accent-warm)",
+              }}
+            >
+              {items.length}
+            </span>
+          ) : undefined
+        }
       />
       <div data-testid="worth-a-glance" style={{ display: "grid", gap: 7 }}>
-        {pages.length === 0 ? (
-          <p
-            style={{
-              fontFamily: "var(--mem-font-body)",
-              fontSize: 12,
-              color: "var(--mem-text-tertiary)",
-              lineHeight: 1.5,
-              margin: 0,
-            }}
-          >
-            {t("home.pagesCurrent")}
-          </p>
+        {items.length === 0 ? (
+          !isLoading && (
+            <p
+              style={{
+                fontFamily: "var(--mem-font-body)",
+                fontSize: 12,
+                color: "var(--mem-text-tertiary)",
+                lineHeight: 1.5,
+                margin: 0,
+              }}
+            >
+              {t("review.allCaughtUp")}
+            </p>
+          )
         ) : (
-          pages.map((page) => (
-            <PageUpdateRailItem
-              key={page.id}
-              page={page}
-              onSelectPage={onSelectPage}
-            />
+          items.slice(0, 3).map((item) => (
+            <ReviewRailItem key={reviewItemId(item)} item={item} onOpenItem={onOpenItem} />
           ))
         )}
       </div>
@@ -713,26 +701,34 @@ function PageUpdatesRail({
             fontSize: 11,
           }}
         >
-          {t("home.reviewPageChanges")}
+          {items.length > 0
+            ? t("review.reviewAllCount", { count: items.length })
+            : t("home.reviewPageChanges")}
         </button>
       )}
     </section>
   );
 }
 
-function PageUpdateRailItem({
-  page,
-  onSelectPage,
+function ReviewRailItem({
+  item,
+  onOpenItem,
 }: {
-  page: Page;
-  onSelectPage?: (pageId: string) => void;
+  item: ReviewItem;
+  onOpenItem: (id: string) => void;
 }) {
   const { t } = useTranslation();
+  const kind = reviewKindLabel(t, item);
+  const title = item.kind === "revision" ? truncateReviewText(item.content, 72) : kind;
+  const meta =
+    item.kind === "revision"
+      ? t("review.proposedBy", { agent: item.agent })
+      : t("review.confidence", { percent: Math.round(item.confidence * 100) });
   return (
     <button
       type="button"
-      aria-label={t("home.openPageUpdate", { title: page.title })}
-      onClick={() => onSelectPage?.(page.id)}
+      aria-label={t("review.openItem", { title })}
+      onClick={() => onOpenItem(reviewItemId(item))}
       style={{
         display: "grid",
         gap: 6,
@@ -744,24 +740,24 @@ function PageUpdateRailItem({
         padding: "8px 0 9px",
         backgroundColor: "transparent",
         color: "inherit",
-        cursor: onSelectPage ? "pointer" : "default",
+        cursor: "pointer",
       }}
     >
       <p
         style={{
           display: "-webkit-box",
-          WebkitLineClamp: 1,
+          WebkitLineClamp: 2,
           WebkitBoxOrient: "vertical",
           overflow: "hidden",
           fontFamily: "var(--mem-font-heading)",
           fontSize: 13,
           fontWeight: 500,
           color: "var(--mem-text)",
-          lineHeight: 1.2,
+          lineHeight: 1.25,
           margin: 0,
         }}
       >
-        {page.title}
+        {title}
       </p>
       <p
         style={{
@@ -772,7 +768,7 @@ function PageUpdateRailItem({
           margin: 0,
         }}
       >
-        {formatSourceCount(t, page.source_memory_ids.length)} · {pageUpdateReason(t, page)}
+        {kind} · {meta}
       </p>
     </button>
   );
