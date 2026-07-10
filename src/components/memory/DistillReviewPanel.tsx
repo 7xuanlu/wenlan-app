@@ -177,11 +177,17 @@ export default function DistillReviewPanel({
       ? String(review.error)
       : null;
 
+  // Deferred past StrictMode's setup→cleanup→setup cycle: mutating inside the
+  // first effect setup detaches the mutation observer on cleanup, leaving the
+  // hook stuck reporting pending after the mutation has already succeeded.
   useEffect(() => {
-    if (didLoadInitialReview.current) return;
-    didLoadInitialReview.current = true;
-    review.mutate();
-  }, [review]);
+    const id = setTimeout(() => {
+      if (didLoadInitialReview.current) return;
+      didLoadInitialReview.current = true;
+      review.mutate();
+    }, 0);
+    return () => clearTimeout(id);
+  }, [review.mutate]);
 
   const revisionItems = queue.items.filter((item) => item.kind === "revision");
   const refinementItems = queue.items.filter(

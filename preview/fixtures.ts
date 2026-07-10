@@ -8,6 +8,11 @@ import type {
   PageLinksResponse,
   PageSourceWithMemory,
   ListPageRevisionsResponse,
+  PendingRevisionItem,
+  RefinementProposalSummary,
+  MemoryItem,
+  EntityDetail,
+  DistillReviewResponse,
 } from "../src/lib/tauri";
 
 const cite = (
@@ -149,6 +154,214 @@ export const LINKS: PageLinksResponse = {
     { label: "LibSQL Storage", target_page_id: null },
   ],
   inbound: [{ source_page_id: "page-plain", label: "Wenlan Daemon Architecture" }],
+};
+
+// --- review queue fixtures (DistillReviewPanel + ReviewDialog preview) ---
+
+const reviewMemory = (
+  id: string,
+  title: string,
+  content: string,
+  lastModified: number,
+): MemoryItem => ({
+  source_id: id,
+  title,
+  content,
+  summary: null,
+  memory_type: "memory",
+  domain: null,
+  source_agent: "claude-code",
+  confidence: 0.9,
+  confirmed: true,
+  pinned: false,
+  supersedes: null,
+  last_modified: lastModified,
+  chunk_count: 1,
+});
+
+export const REVIEW_MEMORIES: Record<string, MemoryItem> = {
+  "mem-pkg": reviewMemory(
+    "mem-pkg",
+    "JS package manager preference",
+    "Lucian prefers npm for JavaScript package management across projects.",
+    1_751_300_000,
+  ),
+  "mem-daemon-port": reviewMemory(
+    "mem-daemon-port",
+    "Daemon port convention",
+    "The wenlan daemon listens on port 7878 and the dev server runs on 1420. Restarting the daemon requires killing the old process first before the port frees up.",
+    1_751_100_000,
+  ),
+  "mem-review-flow": reviewMemory(
+    "mem-review-flow",
+    "Review workflow",
+    "Review happens through the plugin /curate command, one item at a time in the terminal.",
+    1_750_900_000,
+  ),
+  "mem-editor-a": reviewMemory(
+    "mem-editor-a",
+    "Editor choice",
+    "Uses Visual Studio Code as the main editor.",
+    1_750_800_000,
+  ),
+  "mem-editor-b": reviewMemory(
+    "mem-editor-b",
+    "Editor note",
+    "Recently switched to Zed for Rust work.",
+    1_751_200_000,
+  ),
+};
+
+const reviewRevisions = (): PendingRevisionItem[] => [
+  {
+    target_source_id: "mem-pkg",
+    revision_source_id: "mem-pkg-rev",
+    revision_content:
+      "Lucian prefers pnpm for JavaScript package management across projects, keeping npm only for one-off npx invocations.",
+    source_agent: "claude-code",
+    last_modified: 1_752_000_000,
+  },
+  {
+    target_source_id: "mem-daemon-port",
+    revision_source_id: "mem-daemon-port-rev",
+    revision_content:
+      "The wenlan daemon listens on port 7878 and the dev server runs on 1420. The preview harness uses 1421.",
+    source_agent: "codex",
+    last_modified: 1_752_000_100,
+  },
+  {
+    target_source_id: "mem-review-flow",
+    revision_source_id: "mem-review-flow-rev",
+    revision_content:
+      "Review happens in the desktop app: a queue page with a before/after diff dialog, approve or dismiss per item.",
+    source_agent: "claude-code",
+    last_modified: 1_752_000_200,
+  },
+];
+
+const reviewProposals = (): RefinementProposalSummary[] => [
+  {
+    id: "prop-merge-vscode",
+    action: "entity_merge",
+    source_ids: ["ent-vscode", "ent-vs-code"],
+    payload: {
+      action: "entity_merge",
+      existing_id: "ent-vscode",
+      new_id: "ent-vs-code",
+      similarity: 0.93,
+    } as RefinementProposalSummary["payload"],
+    confidence: 0.93,
+    created_at: "2026-07-08T14:20:00Z",
+  },
+  {
+    id: "prop-contra-editor",
+    action: "detect_contradiction",
+    source_ids: ["mem-editor-a", "mem-editor-b"],
+    payload: { action: "detect_contradiction" } as RefinementProposalSummary["payload"],
+    confidence: 0.78,
+    created_at: "2026-07-09T09:05:00Z",
+  },
+];
+
+export const REVIEW_STATE: {
+  revisions: PendingRevisionItem[];
+  proposals: RefinementProposalSummary[];
+} = {
+  revisions: reviewRevisions(),
+  proposals: reviewProposals(),
+};
+
+export function resetReviewFixtures(): void {
+  REVIEW_STATE.revisions = reviewRevisions();
+  REVIEW_STATE.proposals = reviewProposals();
+}
+
+export const REVIEW_ENTITIES: Record<string, EntityDetail> = {
+  "ent-vscode": {
+    entity: {
+      id: "ent-vscode",
+      name: "Visual Studio Code",
+      entity_type: "tool",
+      domain: "tools",
+      source_agent: "claude-code",
+      confidence: 0.95,
+      confirmed: true,
+      created_at: 1_749_000_000,
+      updated_at: 1_751_500_000,
+    },
+    observations: [
+      {
+        id: "obs-1",
+        entity_id: "ent-vscode",
+        content: "Primary editor for TypeScript work.",
+        source_agent: "claude-code",
+        confidence: 0.9,
+        confirmed: true,
+        created_at: 1_749_100_000,
+      },
+    ],
+    relations: [],
+  },
+  "ent-vs-code": {
+    entity: {
+      id: "ent-vs-code",
+      name: "VS Code",
+      entity_type: "tool",
+      domain: "tools",
+      source_agent: "codex",
+      confidence: 0.8,
+      confirmed: false,
+      created_at: 1_751_900_000,
+      updated_at: 1_751_900_000,
+    },
+    observations: [
+      {
+        id: "obs-2",
+        entity_id: "ent-vs-code",
+        content: "Mentioned as the editor used for the wenlan-app repo.",
+        source_agent: "codex",
+        confidence: 0.8,
+        confirmed: false,
+        created_at: 1_751_900_000,
+      },
+    ],
+    relations: [],
+  },
+};
+
+export const REVIEW_DISTILL: DistillReviewResponse = {
+  pages_created: 0,
+  scoped: false,
+  created_ids: [],
+  pending: [
+    {
+      source_ids: ["mem-pkg", "mem-daemon-port"],
+      contents: [
+        "Lucian prefers npm for JavaScript package management across projects.",
+        "The wenlan daemon listens on port 7878 and the dev server runs on 1420.",
+      ],
+      entity_id: "ent-tooling",
+      entity_name: "Project tooling",
+      space: "Engineering",
+      estimated_tokens: 160,
+      existing_page_id: "page-cited",
+      existing_page_title: "Wenlan Daemon Architecture",
+      new_memory_count: 2,
+    },
+  ],
+  stale_pages: [
+    {
+      page_id: "page-cited",
+      title: "Wenlan Daemon Architecture",
+      summary: "Source memories changed after the page compiled.",
+      source_memory_ids: ["mem-1", "mem-2"],
+      sources_updated_count: 2,
+      stale_reason: "source_updated",
+      user_edited: false,
+    },
+  ],
+  stale_truncated: false,
+  orphan_topics: [{ label: "Preview harness", count: 3 }],
 };
 
 export const REVISIONS: ListPageRevisionsResponse = {
