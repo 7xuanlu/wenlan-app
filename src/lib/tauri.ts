@@ -1944,6 +1944,8 @@ export interface SetupStatus {
   local_model_selected: string | null;
   local_model_loaded: string | null;
   local_model_cached: boolean;
+  /** Daemon ≥ 0.13 only (additive, spec §7.6); absent on 0.12. */
+  external_llm?: { configured: boolean; loaded: boolean } | null;
 }
 
 export async function getSetupStatus(): Promise<SetupStatus> {
