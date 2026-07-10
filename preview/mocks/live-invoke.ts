@@ -151,6 +151,12 @@ const HANDLERS: Record<string, (a: any) => Promise<unknown>> = {
     get("/api/memory/contradictions").then((r) => r.contradictions ?? r),
   get_nurture_cards_cmd: () => get("/api/memory/nurture").then((r) => r.cards ?? r),
   list_refinements: () => get("/api/refinery/queue"),
+  // Review-only pass: POST /api/distill with an empty body never creates pages.
+  distill_review: () => post("/api/distill", {}),
+  accept_pending_revision: (a) => post(`/api/memory/revision/${enc(a.sourceId)}/accept`),
+  dismiss_pending_revision: (a) => post(`/api/memory/revision/${enc(a.sourceId)}/dismiss`),
+  accept_refinement: (a) => post(`/api/refinery/queue/${enc(a.id)}/accept`),
+  reject_refinement: (a) => post(`/api/refinery/queue/${enc(a.id)}/reject`),
   list_decisions_cmd: () => get("/api/decisions?limit=200").then((r) => r.decisions ?? r),
   list_decision_domains_cmd: () => get("/api/decisions/domains").then((r) => r.domains ?? r),
   get_working_memory: () => get("/api/memory/working").then((r) => r ?? null),
