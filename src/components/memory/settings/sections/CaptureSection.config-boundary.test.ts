@@ -6,13 +6,13 @@ import { describe, expect, it } from "vitest";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-function readSettingsPage(): string {
-  return readFileSync(resolve(here, "SettingsPage.tsx"), "utf8");
+function readCaptureSection(): string {
+  return readFileSync(resolve(here, "CaptureSection.tsx"), "utf8");
 }
 
-describe("SettingsPage config boundary", () => {
+describe("CaptureSection config boundary", () => {
   it("routes screen-capture settings through the shared Tauri client boundary", () => {
-    const page = readSettingsPage();
+    const page = readCaptureSection();
 
     expect(page).not.toContain("@tauri-apps/api/core");
     expect(page).toContain("getScreenCaptureEnabled");
