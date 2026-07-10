@@ -1426,6 +1426,11 @@ export async function confirmMemory(sourceId: string, confirmed: boolean = true)
   return invoke("confirm_memory", { sourceId, confirmed });
 }
 
+/** Permanently deletes the memory — the "forget" half of the curate flow. */
+export async function deleteMemory(sourceId: string): Promise<void> {
+  return invoke("delete_memory", { sourceId });
+}
+
 export async function getPendingRevision(sourceId: string): Promise<PendingRevision | null> {
   return invoke("get_pending_revision", { sourceId });
 }

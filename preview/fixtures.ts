@@ -9,6 +9,7 @@ import type {
   PageSourceWithMemory,
   ListPageRevisionsResponse,
   PendingRevisionItem,
+  RecentActivityItem,
   RefinementProposalSummary,
   MemoryItem,
   EntityDetail,
@@ -263,17 +264,39 @@ const reviewProposals = (): RefinementProposalSummary[] => [
   },
 ];
 
+const reviewCaptures = (): RecentActivityItem[] => [
+  {
+    kind: "memory",
+    id: "mem-capture-shortcuts",
+    title: "Prefers keyboard-first review: Enter approves, D dismisses",
+    snippet: "Observed while walking the review queue during the redesign session.",
+    timestamp_ms: 1_752_000_300_000,
+    badge: { kind: "needs_review" },
+  },
+  {
+    kind: "memory",
+    id: "mem-capture-worktree",
+    title: "Feature work happens in git worktrees, never directly on main",
+    snippet: "Stated as a standing rule for all wenlan-app development.",
+    timestamp_ms: 1_752_000_400_000,
+    badge: { kind: "needs_review" },
+  },
+];
+
 export const REVIEW_STATE: {
   revisions: PendingRevisionItem[];
   proposals: RefinementProposalSummary[];
+  captures: RecentActivityItem[];
 } = {
   revisions: reviewRevisions(),
   proposals: reviewProposals(),
+  captures: reviewCaptures(),
 };
 
 export function resetReviewFixtures(): void {
   REVIEW_STATE.revisions = reviewRevisions();
   REVIEW_STATE.proposals = reviewProposals();
+  REVIEW_STATE.captures = reviewCaptures();
 }
 
 export const REVIEW_ENTITIES: Record<string, EntityDetail> = {

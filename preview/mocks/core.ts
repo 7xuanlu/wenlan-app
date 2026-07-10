@@ -64,6 +64,14 @@ export async function invoke(
     }
     case "list_refinements":
       return { proposals: REVIEW_STATE.proposals };
+    case "list_unconfirmed_memories":
+      return REVIEW_STATE.captures;
+    case "confirm_memory":
+    case "delete_memory": {
+      const id = args?.sourceId as string;
+      REVIEW_STATE.captures = REVIEW_STATE.captures.filter((c) => c.id !== id);
+      return null;
+    }
     case "accept_refinement":
     case "reject_refinement": {
       const id = args?.id as string;

@@ -9,6 +9,7 @@ import { reviewItemId, type ReviewItem } from "./useReviewQueue";
 
 export function reviewKindLabel(t: TFunction, item: ReviewItem): string {
   if (item.kind === "revision") return t("review.kindRevision");
+  if (item.kind === "capture") return t("review.kindCapture");
   switch (item.action) {
     case "entity_merge":
       return t("review.kindEntityMerge");
@@ -124,12 +125,16 @@ export default function ReviewDialog({
   const item = showDone ? null : index >= 0 ? items[index] : null;
   const done = open && (showDone || items.length === 0);
 
-  const revisionTargetId =
-    item?.kind === "revision" ? item.targetSourceId : null;
+  const detailSourceId =
+    item?.kind === "revision"
+      ? item.targetSourceId
+      : item?.kind === "capture"
+        ? item.id
+        : null;
   const target = useQuery({
-    queryKey: ["memory-detail", revisionTargetId],
-    queryFn: () => getMemoryDetail(revisionTargetId as string),
-    enabled: revisionTargetId != null,
+    queryKey: ["memory-detail", detailSourceId],
+    queryFn: () => getMemoryDetail(detailSourceId as string),
+    enabled: detailSourceId != null,
   });
 
   const memoryPaneIds =
@@ -178,9 +183,14 @@ export default function ReviewDialog({
 
   const resolveCurrent = async (approve: boolean) => {
     if (!item || isResolving) return;
+    const isCapture = item.kind === "capture";
     const next = items[index + 1] ?? (index > 0 ? items[index - 1] : null);
     await onResolve({ item, approve });
-    setFlash(approve ? t("review.approved") : t("review.dismissed"));
+    setFlash(
+      approve
+        ? t(isCapture ? "review.confirmed" : "review.approved")
+        : t(isCapture ? "review.forgotten" : "review.dismissed"),
+    );
     window.setTimeout(() => setFlash(null), 450);
     if (next) onOpenChange(reviewItemId(next));
     else setShowDone(true);
@@ -235,9 +245,11 @@ export default function ReviewDialog({
     : item?.kind === "revision"
       ? (target.data?.title?.trim() ||
         truncateReviewText(item.content, 72))
-      : item
-        ? reviewKindLabel(t, item)
-        : "";
+      : item?.kind === "capture"
+        ? truncateReviewText(item.title, 72)
+        : item
+          ? reviewKindLabel(t, item)
+          : "";
 
   return (
     <div
@@ -434,9 +446,11 @@ export default function ReviewDialog({
                   ? item.agent
                     ? t("review.proposedBy", { agent: item.agent })
                     : ""
-                  : t("review.confidence", {
-                      percent: Math.round(item.confidence * 100),
-                    })}
+                  : item.kind === "capture"
+                    ? t("review.captureHint")
+                    : t("review.confidence", {
+                        percent: Math.round(item.confidence * 100),
+                      })}
               </p>
 
               {item.kind === "revision" && (
@@ -542,6 +556,14 @@ export default function ReviewDialog({
                 </>
               )}
 
+              {item.kind === "capture" && (
+                <div style={paneStyle}>
+                  {target.isLoading
+                    ? t("review.loadingCurrent")
+                    : (target.data?.content ?? item.snippet ?? "")}
+                </div>
+              )}
+
               {item.kind === "refinement" &&
                 item.action === "entity_merge" && (
                   <div style={{ display: "grid", gap: 12 }}>
@@ -605,17 +627,22 @@ export default function ReviewDialog({
                 onClick={() => void resolveCurrent(false)}
                 style={{ ...actionButtonStyle, color: "var(--mem-accent-warm)" }}
               >
-                {t("review.dismiss")}
+                {item.kind === "capture" ? t("review.forget") : t("review.dismiss")}
               </button>
-              {item.kind === "revision" && onOpenMemory && (
-                <button
-                  type="button"
-                  onClick={() => onOpenMemory(item.targetSourceId)}
-                  style={actionButtonStyle}
-                >
-                  {t("review.openMemory")}
-                </button>
-              )}
+              {(item.kind === "revision" || item.kind === "capture") &&
+                onOpenMemory && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onOpenMemory(
+                        item.kind === "revision" ? item.targetSourceId : item.id,
+                      )
+                    }
+                    style={actionButtonStyle}
+                  >
+                    {t("review.openMemory")}
+                  </button>
+                )}
               <span style={{ flex: 1 }} />
               <button
                 type="button"
@@ -637,7 +664,7 @@ export default function ReviewDialog({
                   fontWeight: 600,
                 }}
               >
-                {t("review.approve")}
+                {item.kind === "capture" ? t("review.confirm") : t("review.approve")}
               </button>
             </div>
           </>

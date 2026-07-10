@@ -4,12 +4,16 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   acceptPendingRevision,
   acceptRefinement,
+  confirmMemory,
+  deleteMemory,
   dismissPendingRevision,
   listPendingRevisions,
   listRefinements,
+  listUnconfirmedMemories,
   rejectRefinement,
   type PendingRevisionItem,
   type ProposalAction,
+  type RecentActivityItem,
   type RefinementPayload,
   type RefinementProposalSummary,
 } from "../../lib/tauri";
@@ -30,6 +34,12 @@ export type ReviewItem =
       sourceIds: string[];
       payload: RefinementPayload | null;
       confidence: number;
+    }
+  | {
+      kind: "capture";
+      id: string;
+      title: string;
+      snippet: string | null;
     };
 
 export function reviewItemId(item: ReviewItem): string {
@@ -38,6 +48,7 @@ export function reviewItemId(item: ReviewItem): string {
 
 const REVISIONS_KEY = ["pending-revisions"];
 const REFINEMENTS_KEY = ["refinement-proposals"];
+const CAPTURES_KEY = ["unconfirmed-captures"];
 
 /**
  * Unified actionable review queue: pending memory revisions plus daemon
@@ -56,6 +67,12 @@ export function useReviewQueue(enabled: boolean = true) {
   const refinements = useQuery({
     queryKey: REFINEMENTS_KEY,
     queryFn: () => listRefinements(50),
+    refetchInterval: 30_000,
+    enabled,
+  });
+  const captures = useQuery({
+    queryKey: CAPTURES_KEY,
+    queryFn: () => listUnconfirmedMemories(50),
     refetchInterval: 30_000,
     enabled,
   });
@@ -82,8 +99,16 @@ export function useReviewQueue(enabled: boolean = true) {
           confidence: proposal.confidence,
         }),
       ),
+      ...(captures.data ?? []).map(
+        (entry: RecentActivityItem): ReviewItem => ({
+          kind: "capture",
+          id: entry.id,
+          title: entry.title,
+          snippet: entry.snippet,
+        }),
+      ),
     ],
-    [revisions.data, refinements.data],
+    [revisions.data, refinements.data, captures.data],
   );
 
   const resolveMutation = useMutation({
@@ -99,6 +124,10 @@ export function useReviewQueue(enabled: boolean = true) {
           ? acceptPendingRevision(item.targetSourceId)
           : dismissPendingRevision(item.targetSourceId);
       }
+      if (item.kind === "capture") {
+        // Curate semantics: confirm keeps the memory, "dismiss" forgets it.
+        return approve ? confirmMemory(item.id) : deleteMemory(item.id);
+      }
       return approve ? acceptRefinement(item.id) : rejectRefinement(item.id);
     },
     onSuccess: (_result, { item }) => {
@@ -112,6 +141,11 @@ export function useReviewQueue(enabled: boolean = true) {
               (entry) => entry.target_source_id !== item.targetSourceId,
             ) ?? [],
         );
+      } else if (item.kind === "capture") {
+        queryClient.setQueryData<RecentActivityItem[]>(
+          CAPTURES_KEY,
+          (old) => old?.filter((entry) => entry.id !== item.id) ?? [],
+        );
       } else {
         queryClient.setQueryData<{ proposals: RefinementProposalSummary[] }>(
           REFINEMENTS_KEY,
@@ -123,13 +157,14 @@ export function useReviewQueue(enabled: boolean = true) {
       }
       queryClient.invalidateQueries({ queryKey: REVISIONS_KEY });
       queryClient.invalidateQueries({ queryKey: REFINEMENTS_KEY });
+      queryClient.invalidateQueries({ queryKey: CAPTURES_KEY });
     },
   });
 
   return {
     items,
-    isLoading: revisions.isLoading || refinements.isLoading,
-    error: revisions.error ?? refinements.error ?? null,
+    isLoading: revisions.isLoading || refinements.isLoading || captures.isLoading,
+    error: revisions.error ?? refinements.error ?? captures.error ?? null,
     resolve: resolveMutation.mutateAsync,
     isResolving: resolveMutation.isPending,
   };

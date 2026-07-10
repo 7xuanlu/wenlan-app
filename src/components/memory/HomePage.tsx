@@ -389,6 +389,7 @@ function WikiHome({
           isLoading={reviewLoading}
           onOpenItem={setOpenReviewId}
           onOpenDistillReview={onOpenDistillReview}
+          leadsColumn={!isWideLayout && reviewItems.length > 0}
         />
       </div>
 
@@ -634,15 +635,21 @@ function NeedsReviewRail({
   isLoading,
   onOpenItem,
   onOpenDistillReview,
+  leadsColumn = false,
 }: {
   items: ReviewItem[];
   isLoading: boolean;
   onOpenItem: (id: string) => void;
   onOpenDistillReview?: () => void;
+  /** Single-column layout: surface the rail above the page list when it has items. */
+  leadsColumn?: boolean;
 }) {
   const { t } = useTranslation();
   return (
-    <section data-testid="wiki-page-updates">
+    <section
+      data-testid="wiki-page-updates"
+      style={leadsColumn ? { order: -1 } : undefined}
+    >
       <SectionHeading
         title={t("home.pageUpdates")}
         size="compact"
@@ -719,11 +726,20 @@ function ReviewRailItem({
 }) {
   const { t } = useTranslation();
   const kind = reviewKindLabel(t, item);
-  const title = item.kind === "revision" ? truncateReviewText(item.content, 72) : kind;
+  const title =
+    item.kind === "revision"
+      ? truncateReviewText(item.content, 72)
+      : item.kind === "capture"
+        ? truncateReviewText(item.title, 72)
+        : kind;
   const meta =
     item.kind === "revision"
       ? t("review.proposedBy", { agent: item.agent })
-      : t("review.confidence", { percent: Math.round(item.confidence * 100) });
+      : item.kind === "capture"
+        ? item.snippet
+          ? truncateReviewText(item.snippet, 64)
+          : ""
+        : t("review.confidence", { percent: Math.round(item.confidence * 100) });
   return (
     <button
       type="button"

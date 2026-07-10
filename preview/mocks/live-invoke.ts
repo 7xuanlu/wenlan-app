@@ -26,6 +26,7 @@ async function http(method: string, path: string, body?: unknown): Promise<any> 
 const get = (p: string) => http("GET", p);
 const post = (p: string, b: unknown = {}) => http("POST", p, b);
 const put = (p: string, b: unknown = {}) => http("PUT", p, b);
+const del = (p: string) => http("DELETE", p);
 
 const enc = encodeURIComponent;
 const qs = (obj: Record<string, unknown>) => {
@@ -163,6 +164,7 @@ const HANDLERS: Record<string, (a: any) => Promise<unknown>> = {
   pin_memory: (a) => post(`/api/memory/${enc(a.sourceId)}/pin`),
   unpin_memory: (a) => post(`/api/memory/${enc(a.sourceId)}/unpin`),
   confirm_memory: (a) => post(`/api/memory/confirm/${enc(a.sourceId)}`, { confirmed: true }),
+  delete_memory: (a) => del(`/api/memory/delete/${enc(a.sourceId)}`),
   update_memory_cmd: (a) => put(`/api/memory/${enc(a.sourceId)}/update`, { content: a.content }),
   get_pipeline_status: () => get("/api/debug/pipeline"),
   list_onboarding_milestones: () =>

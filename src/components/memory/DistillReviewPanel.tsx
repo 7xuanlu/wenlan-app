@@ -91,13 +91,19 @@ function QueueCard({
   const title =
     item.kind === "revision"
       ? truncateReviewText(item.content, 96)
-      : reviewKindLabel(t, item);
+      : item.kind === "capture"
+        ? truncateReviewText(item.title, 96)
+        : reviewKindLabel(t, item);
   const meta =
     item.kind === "revision"
       ? item.agent
         ? t("review.proposedBy", { agent: item.agent })
         : ""
-      : t("review.confidence", { percent: Math.round(item.confidence * 100) });
+      : item.kind === "capture"
+        ? item.snippet
+          ? truncateReviewText(item.snippet, 96)
+          : ""
+        : t("review.confidence", { percent: Math.round(item.confidence * 100) });
   return (
     <button
       type="button"
@@ -193,11 +199,13 @@ export default function DistillReviewPanel({
   const refinementItems = queue.items.filter(
     (item) => item.kind === "refinement",
   );
+  const captureItems = queue.items.filter((item) => item.kind === "capture");
 
   const refresh = () => {
     review.mutate();
     queryClient.invalidateQueries({ queryKey: ["pending-revisions"] });
     queryClient.invalidateQueries({ queryKey: ["refinement-proposals"] });
+    queryClient.invalidateQueries({ queryKey: ["unconfirmed-captures"] });
   };
 
   return (
@@ -323,6 +331,17 @@ export default function DistillReviewPanel({
             <h2 style={sectionTitleStyle}>{t("review.sectionRefinements")}</h2>
             <div className="grid gap-2.5">
               {refinementItems.map((item) => (
+                <QueueCard key={reviewItemId(item)} item={item} onOpen={setOpenId} />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {captureItems.length > 0 && (
+          <section>
+            <h2 style={sectionTitleStyle}>{t("review.sectionCaptures")}</h2>
+            <div className="grid gap-2.5">
+              {captureItems.map((item) => (
                 <QueueCard key={reviewItemId(item)} item={item} onOpen={setOpenId} />
               ))}
             </div>

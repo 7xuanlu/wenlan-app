@@ -31,6 +31,7 @@ vi.mock("../../lib/tauri", async () => {
     getPendingContradictions: vi.fn(),
     dismissContradiction: vi.fn(),
     confirmMemory: vi.fn(),
+    deleteMemory: vi.fn(),
     listPendingRevisions: vi.fn(),
     acceptPendingRevision: vi.fn(),
     dismissPendingRevision: vi.fn(),
@@ -99,6 +100,7 @@ beforeEach(() => {
   vi.mocked(tauri.getMemoryStats).mockResolvedValue({ total: 0, with_embeddings: 0 } as any);
   vi.mocked(tauri.getProfile).mockResolvedValue(null);
   vi.mocked(tauri.confirmMemory).mockResolvedValue(undefined);
+  vi.mocked(tauri.deleteMemory).mockResolvedValue(undefined);
   vi.mocked(tauri.dismissContradiction).mockResolvedValue({ source_id: "mem-new", wrote: true });
   vi.mocked(tauri.listPendingRevisions).mockResolvedValue([]);
   vi.mocked(tauri.acceptPendingRevision).mockResolvedValue({
@@ -587,6 +589,42 @@ describe("HomePage redesign", () => {
     await waitFor(() => {
       expect(tauri.acceptPendingRevision).toHaveBeenCalledWith("mem-target");
     });
+  });
+
+  it("surfaces unconfirmed captures in the needs-review rail with confirm/forget", async () => {
+    const user = userEvent.setup();
+    vi.mocked(tauri.listPages).mockResolvedValue([
+      page({ id: "page-current", title: "Current page" }),
+    ]);
+    vi.mocked(tauri.listUnconfirmedMemories).mockResolvedValue([
+      {
+        kind: "memory",
+        id: "mem-capture",
+        title: "User prefers pnpm over npm",
+        snippet: "Stated while setting up the monorepo.",
+        timestamp_ms: 1_782_365_080_000,
+        badge: { kind: "needs_review" },
+      },
+    ]);
+
+    renderHome({ onOpenDistillReview: vi.fn() });
+
+    await screen.findByRole("heading", { name: "Today in Wenlan" });
+
+    // The rail lists the capture and the context metric counts it.
+    await screen.findByText("User prefers pnpm over npm");
+    expect(screen.getByTestId("wiki-context-needs-review")).toHaveTextContent("1");
+
+    await user.click(
+      screen.getByRole("button", { name: /User prefers pnpm over npm/ }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Unconfirmed capture")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Forget" })).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(tauri.confirmMemory).toHaveBeenCalledWith("mem-capture"));
+    expect(tauri.deleteMemory).not.toHaveBeenCalled();
   });
 
   it("surfaces refinement proposals in the needs-review rail", async () => {
