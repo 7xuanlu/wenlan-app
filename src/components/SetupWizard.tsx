@@ -11,6 +11,7 @@ import {
 import { ImportView } from "./memory/ImportView";
 import VaultConnectCard from "./memory/sources/VaultConnectCard";
 import { RemoteAccessPanel } from "./memory/RemoteAccessPanel";
+import WebPlatformCards from "./connect/WebPlatformCards";
 import { ApiKeyCard, OnDeviceModelCard } from "./intelligence/IntelligenceSetup";
 import AnyProviderCard from "./intelligence/AnyProviderCard";
 import { PROVIDER_PRESETS, ANTHROPIC_VENDOR_NAME } from "./intelligence/providerPresets";
@@ -777,6 +778,7 @@ function ConnectStep({
       <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
         <SectionLabel>{t("setup.connect.webTools")}</SectionLabel>
         <RemoteAccessPanel mode="compact" />
+        <WebPlatformCards />
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
