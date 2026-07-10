@@ -3791,6 +3791,45 @@ pub async fn test_external_llm(
     client.test_llm(endpoint, model).await
 }
 
+/// Parse an OpenAI-compatible `GET {endpoint}/models` body into model IDs.
+pub(crate) fn parse_models_response(body: &serde_json::Value) -> Vec<String> {
+    body.get("data")
+        .and_then(|d| d.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|m| m.get("id").and_then(|id| id.as_str()).map(String::from))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Model auto-discovery for the Any-provider card (spec §1, §6). Talks to the
+/// provider directly (not the daemon) so discovery works before saving.
+#[tauri::command]
+pub async fn list_external_models(
+    endpoint: String,
+    api_key: Option<String>,
+) -> Result<Vec<String>, String> {
+    let base = endpoint.trim_end_matches('/');
+    if !(base.starts_with("http://") || base.starts_with("https://")) {
+        return Err("Endpoint must start with http:// or https://".to_string());
+    }
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .map_err(|e| format!("http client: {e}"))?;
+    let mut req = client.get(format!("{base}/models"));
+    if let Some(key) = api_key.filter(|k| !k.is_empty()) {
+        req = req.bearer_auth(key);
+    }
+    let resp = req.send().await.map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Err(format!("{} from {base}/models", resp.status()));
+    }
+    let body: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    Ok(parse_models_response(&body))
+}
+
 #[cfg(test)]
 mod external_llm_command_type_tests {
     use super::*;
@@ -4275,5 +4314,34 @@ mod registered_source_tests {
         assert!(merged.iter().any(|s| s.id == "obsidian-daemon"));
         assert!(merged.iter().any(|s| s.id == "directory-local"));
         assert!(!merged.iter().any(|s| s.id == "obsidian-stale-local"));
+    }
+}
+
+#[cfg(test)]
+mod list_external_models_tests {
+    use super::*;
+
+    #[test]
+    fn parses_openai_models_shape() {
+        let body = serde_json::json!({
+            "object": "list",
+            "data": [
+                {"id": "llama3.2:3b", "object": "model"},
+                {"id": "qwen2.5-coder", "object": "model"}
+            ]
+        });
+        assert_eq!(
+            parse_models_response(&body),
+            vec!["llama3.2:3b".to_string(), "qwen2.5-coder".to_string()]
+        );
+    }
+
+    #[test]
+    fn missing_or_malformed_data_yields_empty() {
+        assert!(parse_models_response(&serde_json::json!({})).is_empty());
+        assert!(parse_models_response(&serde_json::json!({"data": "nope"})).is_empty());
+        assert!(
+            parse_models_response(&serde_json::json!({"data": [{"name": "no-id"}]})).is_empty()
+        );
     }
 }

@@ -414,6 +414,15 @@ export async function testExternalLlm(
   return invoke("test_external_llm", { endpoint, model });
 }
 
+/** Model auto-discovery: GET {endpoint}/models (OpenAI `{data:[{id}]}` shape),
+ *  Bearer auth when a key is given, 5s timeout. Spec §1. */
+export async function listExternalModels(
+  endpoint: string,
+  apiKey?: string | null
+): Promise<string[]> {
+  return invoke("list_external_models", { endpoint, apiKey: apiKey ?? null });
+}
+
 export interface OnDeviceModelEntry {
   id: string;
   display_name: string;
