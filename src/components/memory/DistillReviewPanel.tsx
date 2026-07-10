@@ -8,7 +8,12 @@ import {
   type DistillReviewResponse,
 } from "../../lib/tauri";
 import ReviewDialog, { reviewKindLabel, truncateReviewText } from "./ReviewDialog";
-import { reviewItemId, useReviewQueue, type ReviewItem } from "./useReviewQueue";
+import {
+  reviewItemId,
+  reviewItemSection,
+  useReviewQueue,
+  type ReviewItem,
+} from "./useReviewQueue";
 
 interface DistillReviewPanelProps {
   onBack: () => void;
@@ -31,29 +36,14 @@ function firstNonEmpty(values: Array<string | null | undefined>): string | null 
   return null;
 }
 
-function pendingLabel(cluster: DistillPendingCluster): string {
+function pendingLabel(cluster: DistillPendingCluster): string | null {
   const fromContent = firstNonEmpty(cluster.contents);
-  return (
-    firstNonEmpty([
-      cluster.existing_page_title,
-      cluster.entity_name,
-      cluster.space,
-      fromContent ? truncateText(fromContent, 72) : null,
-    ]) ?? "Untitled cluster"
-  );
-}
-
-function sourceCountLabel(cluster: DistillPendingCluster): string {
-  const newCount = cluster.new_memory_count;
-  if (newCount != null) {
-    return newCount === 1 ? "1 new source" : `${newCount} new sources`;
-  }
-  const count = cluster.source_ids.length;
-  return count === 1 ? "1 source" : `${count} sources`;
-}
-
-function mentionCountLabel(count: number): string {
-  return count === 1 ? "1 mention" : `${count} mentions`;
+  return firstNonEmpty([
+    cluster.existing_page_title,
+    cluster.entity_name,
+    cluster.space,
+    fromContent ? truncateText(fromContent, 72) : null,
+  ]);
 }
 
 const panelTextStyle = {
@@ -195,11 +185,19 @@ export default function DistillReviewPanel({
     return () => clearTimeout(id);
   }, [review.mutate]);
 
-  const revisionItems = queue.items.filter((item) => item.kind === "revision");
-  const refinementItems = queue.items.filter(
-    (item) => item.kind === "refinement",
-  );
-  const captureItems = queue.items.filter((item) => item.kind === "capture");
+  // Section order mirrors the queue's page > memory ranking.
+  const sections = [
+    { key: "pages", title: t("review.sectionPages") },
+    { key: "conflicts", title: t("review.sectionConflicts") },
+    { key: "revisions", title: t("review.sectionRevisions") },
+    { key: "memory", title: t("review.sectionRefinements") },
+    { key: "captures", title: t("review.sectionCaptures") },
+  ].map((section) => ({
+    ...section,
+    items: queue.items.filter(
+      (item) => reviewItemSection(item) === section.key,
+    ),
+  }));
 
   const refresh = () => {
     review.mutate();
@@ -268,7 +266,11 @@ export default function DistillReviewPanel({
                 whiteSpace: "nowrap",
               }}
             >
-              {t("review.pendingCount", { count: queue.items.length })}
+              {t("review.pendingCount", {
+                count: queue.isTruncated
+                  ? `${queue.items.length}+`
+                  : queue.items.length,
+              })}
             </span>
           )}
           <button
@@ -284,7 +286,7 @@ export default function DistillReviewPanel({
               fontFamily: "var(--mem-font-body)",
             }}
           >
-            {review.isPending ? "Refreshing..." : "Refresh"}
+            {review.isPending ? t("review.refreshing") : t("review.refresh")}
           </button>
         </div>
       </div>
@@ -315,114 +317,106 @@ export default function DistillReviewPanel({
           </section>
         )}
 
-        {revisionItems.length > 0 && (
+        {lastResult && lastResult.pending.length > 0 && (
           <section>
-            <h2 style={sectionTitleStyle}>{t("review.sectionRevisions")}</h2>
+            <h2 style={sectionTitleStyle}>{t("review.sectionPageCandidates")}</h2>
             <div className="grid gap-2.5">
-              {revisionItems.map((item) => (
-                <QueueCard key={reviewItemId(item)} item={item} onOpen={setOpenId} />
-              ))}
+              {lastResult.pending.map((cluster, clusterIndex) => {
+                const label =
+                  pendingLabel(cluster) ?? t("review.untitledCluster");
+                const preview = cluster.contents
+                  .map((content) => content.trim())
+                  .filter((content) => content.length > 0)
+                  .slice(0, 2);
+                return (
+                  <article
+                    key={`${clusterIndex}-${cluster.source_ids.join("-")}`}
+                    style={{
+                      ...itemSurfaceStyle,
+                      padding: "13px 14px",
+                    }}
+                  >
+                    <h3
+                      style={{
+                        margin: 0,
+                        fontFamily: "var(--mem-font-heading)",
+                        fontSize: "15px",
+                        fontWeight: 500,
+                        color: "var(--mem-text)",
+                      }}
+                    >
+                      {label}
+                    </h3>
+                    <p style={{ ...secondaryTextStyle, margin: "6px 0 0", fontSize: "12px" }}>
+                      {cluster.new_memory_count != null
+                        ? t("review.newSources", {
+                            count: cluster.new_memory_count,
+                          })
+                        : t("review.sources", {
+                            count: cluster.source_ids.length,
+                          })}
+                      {cluster.existing_page_id
+                        ? ` · ${t("review.linkedExistingPage")}`
+                        : ""}
+                    </p>
+                    {preview.map((content, index) => (
+                      <p
+                        key={index}
+                        style={{
+                          ...secondaryTextStyle,
+                          margin: "7px 0 0",
+                          fontSize: "13px",
+                          lineHeight: 1.45,
+                        }}
+                      >
+                        {truncateText(content, 140)}
+                      </p>
+                    ))}
+                  </article>
+                );
+              })}
             </div>
           </section>
         )}
 
-        {refinementItems.length > 0 && (
-          <section>
-            <h2 style={sectionTitleStyle}>{t("review.sectionRefinements")}</h2>
-            <div className="grid gap-2.5">
-              {refinementItems.map((item) => (
-                <QueueCard key={reviewItemId(item)} item={item} onOpen={setOpenId} />
-              ))}
-            </div>
-          </section>
-        )}
-
-        {captureItems.length > 0 && (
-          <section>
-            <h2 style={sectionTitleStyle}>{t("review.sectionCaptures")}</h2>
-            <div className="grid gap-2.5">
-              {captureItems.map((item) => (
-                <QueueCard key={reviewItemId(item)} item={item} onOpen={setOpenId} />
-              ))}
-            </div>
-          </section>
+        {sections.map(
+          (section) =>
+            section.items.length > 0 && (
+              <section key={section.key}>
+                <h2 style={sectionTitleStyle}>{section.title}</h2>
+                <div className="grid gap-2.5">
+                  {section.items.map((item) => (
+                    <QueueCard
+                      key={reviewItemId(item)}
+                      item={item}
+                      onOpen={setOpenId}
+                    />
+                  ))}
+                </div>
+              </section>
+            ),
         )}
 
         {lastResult && (
           <>
             <section>
-              <h2 style={sectionTitleStyle}>New page candidates</h2>
-              {lastResult.pending.length === 0 ? (
-                <p style={{ ...secondaryTextStyle, margin: 0, fontSize: "13px" }}>
-                  No new page candidates.
-                </p>
-              ) : (
-                <div className="grid gap-2.5">
-                  {lastResult.pending.map((cluster) => {
-                    const label = pendingLabel(cluster);
-                    const preview = cluster.contents
-                      .map((content) => content.trim())
-                      .filter((content) => content.length > 0)
-                      .slice(0, 2);
-                    return (
-                      <article
-                        key={`${label}-${cluster.source_ids.join("-")}`}
-                        style={{
-                          ...itemSurfaceStyle,
-                          padding: "13px 14px",
-                        }}
-                      >
-                        <h3
-                          style={{
-                            margin: 0,
-                            fontFamily: "var(--mem-font-heading)",
-                            fontSize: "15px",
-                            fontWeight: 500,
-                            color: "var(--mem-text)",
-                          }}
-                        >
-                          {label}
-                        </h3>
-                        <p style={{ ...secondaryTextStyle, margin: "6px 0 0", fontSize: "12px" }}>
-                          {sourceCountLabel(cluster)}
-                          {cluster.existing_page_id ? " linked to an existing page" : ""}
-                        </p>
-                        {preview.map((content, index) => (
-                          <p
-                            key={index}
-                            style={{
-                              ...secondaryTextStyle,
-                              margin: "7px 0 0",
-                              fontSize: "13px",
-                              lineHeight: 1.45,
-                            }}
-                          >
-                            {truncateText(content, 140)}
-                          </p>
-                        ))}
-                      </article>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
-
-            <section>
-              <h2 style={sectionTitleStyle}>Pages with new sources</h2>
+              <h2 style={sectionTitleStyle}>{t("review.sectionStalePages")}</h2>
               {lastResult.stale_truncated && (
                 <p style={{ ...secondaryTextStyle, margin: "0 0 10px", fontSize: "12px" }}>
-                  Showing the first 10 stale pages returned by the daemon.
+                  {t("review.staleTruncated")}
                 </p>
               )}
               {lastResult.stale_pages.length === 0 ? (
-                <p style={{ ...secondaryTextStyle, margin: 0, fontSize: "13px" }}>Pages are current.</p>
+                <p style={{ ...secondaryTextStyle, margin: 0, fontSize: "13px" }}>
+                  {t("review.pagesCurrent")}
+                </p>
               ) : (
                 <div className="grid gap-2.5">
                   {lastResult.stale_pages.map((page) => (
                     <button
                       key={page.page_id}
                       type="button"
-                      aria-label={`Open ${page.title}`}
+                      aria-label={t("home.openPage", { title: page.title })}
                       onClick={() => onPageClick(page.page_id)}
                       className="text-left transition-colors duration-150 hover:bg-[var(--mem-hover)]"
                       style={{
@@ -462,10 +456,10 @@ export default function DistillReviewPanel({
             </section>
 
             <section>
-              <h2 style={sectionTitleStyle}>Unlinked topics</h2>
+              <h2 style={sectionTitleStyle}>{t("review.sectionOrphanTopics")}</h2>
               {lastResult.orphan_topics.length === 0 ? (
                 <p style={{ ...secondaryTextStyle, margin: 0, fontSize: "13px" }}>
-                  No repeated unlinked topics.
+                  {t("review.noOrphanTopics")}
                 </p>
               ) : (
                 <div className="grid gap-2.5">
@@ -489,7 +483,7 @@ export default function DistillReviewPanel({
                         {topic.label}
                       </h3>
                       <p style={{ ...secondaryTextStyle, margin: "6px 0 0", fontSize: "12px" }}>
-                        {mentionCountLabel(topic.count)}
+                        {t("review.mentions", { count: topic.count })}
                       </p>
                     </article>
                   ))}

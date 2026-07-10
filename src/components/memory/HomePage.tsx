@@ -340,7 +340,13 @@ function WikiHome({
   onOpenMemory?: (sourceId: string) => void;
 }) {
   const [containerRef, isWideLayout] = useElementMinWidth<HTMLDivElement>(820);
-  const { items: reviewItems, isLoading: reviewLoading, resolve, isResolving } = useReviewQueue();
+  const {
+    items: reviewItems,
+    isLoading: reviewLoading,
+    isTruncated: reviewTruncated,
+    resolve,
+    isResolving,
+  } = useReviewQueue();
   const [openReviewId, setOpenReviewId] = useState<string | null>(null);
   return (
     <div
@@ -364,7 +370,7 @@ function WikiHome({
       >
         <TodayHeader />
 
-        <HomeContextRail pages={allPages} reviewCount={reviewItems.length} />
+        <HomeContextRail pages={allPages} />
       </section>
 
       <div
@@ -387,6 +393,7 @@ function WikiHome({
         <NeedsReviewRail
           items={reviewItems}
           isLoading={reviewLoading}
+          isTruncated={reviewTruncated}
           onOpenItem={setOpenReviewId}
           onOpenDistillReview={onOpenDistillReview}
           leadsColumn={!isWideLayout && reviewItems.length > 0}
@@ -571,7 +578,7 @@ function PageList({
   );
 }
 
-function HomeContextRail({ pages, reviewCount }: { pages: Page[]; reviewCount: number }) {
+function HomeContextRail({ pages }: { pages: Page[] }) {
   const { t } = useTranslation();
   return (
     <div
@@ -589,7 +596,6 @@ function HomeContextRail({ pages, reviewCount }: { pages: Page[]; reviewCount: n
         >
           <ContextMetric testId="pages" label={t("home.pages")} value={String(pages.length)} />
           <ContextMetric testId="updated-today" label={t("home.relative.today")} value={String(updatedTodayCount(pages))} />
-          <ContextMetric testId="needs-review" label={t("home.pageUpdates")} value={String(reviewCount)} />
           <ContextMetric testId="latest" label={t("home.latest")} value={latestPageUpdate(t, pages)} />
         </div>
       </section>
@@ -633,12 +639,15 @@ function ContextMetric({ testId, label, value }: { testId: string; label: string
 function NeedsReviewRail({
   items,
   isLoading,
+  isTruncated = false,
   onOpenItem,
   onOpenDistillReview,
   leadsColumn = false,
 }: {
   items: ReviewItem[];
   isLoading: boolean;
+  /** A source hit its fetch cap — show the count as "N+", never as exact. */
+  isTruncated?: boolean;
   onOpenItem: (id: string) => void;
   onOpenDistillReview?: () => void;
   /** Single-column layout: surface the rail above the page list when it has items. */
@@ -679,7 +688,7 @@ function NeedsReviewRail({
               padding: "1px 8px",
             }}
           >
-            {items.length}
+            {isTruncated ? `${items.length}+` : items.length}
           </span>
         )}
       </h2>
@@ -740,7 +749,7 @@ function NeedsReviewRail({
             }}
           >
             {items.length > 0
-              ? t("review.reviewAllCount", { count: items.length })
+              ? `${t("review.reviewAll")} →`
               : t("home.reviewPageChanges")}
           </button>
         )}
@@ -758,15 +767,18 @@ function reviewItemAge(ms: number): string {
   return new Date(ms).toLocaleDateString();
 }
 
-/** Mockup kind-dot palette: revision indigo, capture warm, merges amber,
- * conflicts the diff-deletion red, entity suggestions sage. */
+/** Mockup kind-dot palette: revision indigo, page-level the page accent,
+ * capture warm, memory merges amber, conflicts danger, suggestions sage. */
 function reviewDotColor(item: ReviewItem): string {
   if (item.kind === "revision") return "var(--mem-accent-indigo)";
   if (item.kind === "capture") return "var(--mem-accent-warm)";
   switch (item.action) {
+    case "page_merge":
+    case "page_keep_or_archive":
+      return "var(--mem-accent-page)";
     case "detect_contradiction":
     case "relation_conflict":
-      return "rgb(205, 92, 74)";
+      return "var(--mem-status-danger-text)";
     case "suggest_entity":
       return "var(--mem-accent-sage)";
     default:

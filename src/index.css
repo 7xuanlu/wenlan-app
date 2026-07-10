@@ -169,6 +169,9 @@ html[data-theme="dark"] {
   --mem-status-warning-border: rgba(199, 170, 92, 0.36);
   --mem-status-success-bg: rgba(157, 169, 144, 0.14);
   --mem-status-success-text: #BBC7AE;
+  --mem-status-danger-bg: rgba(205, 92, 74, 0.16);
+  --mem-status-danger-text: #D98A78;
+  --mem-status-danger-border: rgba(205, 92, 74, 0.38);
   /* Depth on dark: ink-black shadow so surfaces lift without a grey cast. */
   --mem-shadow-toast:
     0 14px 36px rgba(3, 4, 8, 0.54),
@@ -212,6 +215,9 @@ html[data-theme="light"] {
   --mem-status-warning-border: rgba(181, 132, 46, 0.26);
   --mem-status-success-bg: rgba(111, 143, 118, 0.12);
   --mem-status-success-text: #4F7558;
+  --mem-status-danger-bg: rgba(164, 68, 47, 0.10);
+  --mem-status-danger-text: #A4442F;
+  --mem-status-danger-border: rgba(164, 68, 47, 0.28);
   /* Depth on light: a warm ink-toned shadow (anchored in the body text hue
      rather than flat grey) so the toast feels letterpressed on cream. */
   --mem-shadow-toast:

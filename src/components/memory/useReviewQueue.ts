@@ -49,9 +49,52 @@ export function reviewItemId(item: ReviewItem): string {
   return item.kind + ":" + item.id;
 }
 
+export type ReviewSection =
+  | "pages"
+  | "conflicts"
+  | "revisions"
+  | "memory"
+  | "captures";
+
+/** Queue order: page-level work first, then conflicts, then memory-level. */
+const SECTION_ORDER: ReviewSection[] = [
+  "pages",
+  "conflicts",
+  "revisions",
+  "memory",
+  "captures",
+];
+
+export function reviewItemSection(item: ReviewItem): ReviewSection {
+  if (item.kind === "revision") return "revisions";
+  if (item.kind === "capture") return "captures";
+  switch (item.action) {
+    case "page_merge":
+    case "page_keep_or_archive":
+      return "pages";
+    case "detect_contradiction":
+    case "relation_conflict":
+      return "conflicts";
+    default:
+      return "memory";
+  }
+}
+
+function compareReviewItems(a: ReviewItem, b: ReviewItem): number {
+  const rankDelta =
+    SECTION_ORDER.indexOf(reviewItemSection(a)) -
+    SECTION_ORDER.indexOf(reviewItemSection(b));
+  if (rankDelta !== 0) return rankDelta;
+  return (b.timestampMs ?? -Infinity) - (a.timestampMs ?? -Infinity);
+}
+
 const REVISIONS_KEY = ["pending-revisions"];
 const REFINEMENTS_KEY = ["refinement-proposals"];
 const CAPTURES_KEY = ["unconfirmed-captures"];
+
+/** Per-source fetch cap. A source returning a full page means the true count
+ * is unknown — surface counts as "N+" via `isTruncated`, never as exact. */
+export const REVIEW_QUEUE_LIMIT = 50;
 
 /**
  * Unified actionable review queue: pending memory revisions plus daemon
@@ -63,19 +106,19 @@ export function useReviewQueue(enabled: boolean = true) {
 
   const revisions = useQuery({
     queryKey: REVISIONS_KEY,
-    queryFn: () => listPendingRevisions(50),
+    queryFn: () => listPendingRevisions(REVIEW_QUEUE_LIMIT),
     refetchInterval: 30_000,
     enabled,
   });
   const refinements = useQuery({
     queryKey: REFINEMENTS_KEY,
-    queryFn: () => listRefinements(50),
+    queryFn: () => listRefinements(REVIEW_QUEUE_LIMIT),
     refetchInterval: 30_000,
     enabled,
   });
   const captures = useQuery({
     queryKey: CAPTURES_KEY,
-    queryFn: () => listUnconfirmedMemories(50),
+    queryFn: () => listUnconfirmedMemories(REVIEW_QUEUE_LIMIT),
     refetchInterval: 30_000,
     enabled,
   });
@@ -118,7 +161,7 @@ export function useReviewQueue(enabled: boolean = true) {
           timestampMs: entry.timestamp_ms ?? null,
         }),
       ),
-    ],
+    ].sort(compareReviewItems),
     [revisions.data, refinements.data, captures.data],
   );
 
@@ -176,6 +219,11 @@ export function useReviewQueue(enabled: boolean = true) {
     items,
     isLoading: revisions.isLoading || refinements.isLoading || captures.isLoading,
     error: revisions.error ?? refinements.error ?? captures.error ?? null,
+    /** True when any source filled its page — the queue may hold more. */
+    isTruncated:
+      (revisions.data?.length ?? 0) >= REVIEW_QUEUE_LIMIT ||
+      (refinements.data?.proposals.length ?? 0) >= REVIEW_QUEUE_LIMIT ||
+      (captures.data?.length ?? 0) >= REVIEW_QUEUE_LIMIT,
     resolve: resolveMutation.mutateAsync,
     isResolving: resolveMutation.isPending,
   };

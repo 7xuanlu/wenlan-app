@@ -23,7 +23,23 @@ export function reviewKindLabel(t: TFunction, item: ReviewItem): string {
       return t("review.kindEntitySuggestion");
     case "page_merge":
       return t("review.kindPageMerge");
+    case "cross_space_discovery":
+      return t("review.kindCrossSpace");
+    case "page_keep_or_archive":
+      return t("review.kindPageArchive");
   }
+}
+
+/** Actions the daemon rejects with 422 on accept — the dialog offers only
+ * dismiss for these (suggest_entity/dedup_merge have no accept path;
+ * cross_space_discovery needs a pick-space verb the app doesn't plumb yet). */
+export function reviewApproveBlocked(item: ReviewItem): boolean {
+  return (
+    item.kind === "refinement" &&
+    (item.action === "suggest_entity" ||
+      item.action === "dedup_merge" ||
+      item.action === "cross_space_discovery")
+  );
 }
 
 export function truncateReviewText(value: string, max: number): string {
@@ -33,14 +49,14 @@ export function truncateReviewText(value: string, max: number): string {
 }
 
 const INS_STYLE: React.CSSProperties = {
-  backgroundColor: "rgba(140, 165, 130, 0.24)",
+  backgroundColor: "color-mix(in srgb, var(--mem-accent-sage) 24%, transparent)",
   textDecoration: "none",
   borderRadius: 3,
   padding: "0 2px",
 };
 
 const DEL_STYLE: React.CSSProperties = {
-  backgroundColor: "rgba(205, 92, 74, 0.18)",
+  backgroundColor: "var(--mem-status-danger-bg)",
   borderRadius: 3,
   padding: "0 2px",
 };
@@ -139,10 +155,14 @@ export default function ReviewDialog({
     enabled: detailSourceId != null,
   });
 
+  // Actions whose source_ids are memory ids; the rest point at entities,
+  // pages, or relations and get dedicated panes below.
   const memoryPaneIds =
     item?.kind === "refinement" &&
-    item.action !== "entity_merge" &&
-    item.action !== "page_merge"
+    (item.action === "detect_contradiction" ||
+      item.action === "dedup_merge" ||
+      item.action === "suggest_entity" ||
+      item.action === "cross_space_discovery")
       ? item.sourceIds.slice(0, 2)
       : [];
   const memoryPaneA = useQuery({
@@ -170,6 +190,16 @@ export default function ReviewDialog({
     queryKey: ["page", pageMergeIds[1] ?? null],
     queryFn: () => getPage(pageMergeIds[1]),
     enabled: pageMergeIds.length > 1,
+  });
+
+  const archivePageId =
+    item?.kind === "refinement" && item.action === "page_keep_or_archive"
+      ? (item.sourceIds[0] ?? null)
+      : null;
+  const archivePage = useQuery({
+    queryKey: ["page", archivePageId],
+    queryFn: () => getPage(archivePageId as string),
+    enabled: archivePageId != null,
   });
 
   const mergePayload =
@@ -215,6 +245,7 @@ export default function ReviewDialog({
 
   const resolveCurrent = async (approve: boolean) => {
     if (!item || isResolving) return;
+    if (approve && reviewApproveBlocked(item)) return;
     const isCapture = item.kind === "capture";
     const isConflict =
       item.kind === "refinement" && item.action === "detect_contradiction";
@@ -496,9 +527,19 @@ export default function ReviewDialog({
                     ? t("review.captureHint")
                     : isContradiction
                       ? t("review.contradictionHint")
-                      : t("review.confidence", {
-                          percent: Math.round(item.confidence * 100),
-                        })}
+                      : item.action === "relation_conflict"
+                        ? t("review.relationConflictHint")
+                        : item.action === "page_keep_or_archive"
+                          ? t("review.pageArchiveHint")
+                          : item.action === "cross_space_discovery"
+                            ? t("review.crossSpaceHint")
+                            : item.action === "suggest_entity"
+                              ? t("review.suggestEntityHint")
+                              : item.action === "dedup_merge"
+                                ? t("review.dedupHint")
+                                : t("review.confidence", {
+                                    percent: Math.round(item.confidence * 100),
+                                  })}
               </p>
 
               {item.kind === "revision" && (
@@ -713,15 +754,84 @@ export default function ReviewDialog({
               )}
 
               {item.kind === "refinement" &&
-                item.action !== "entity_merge" &&
-                item.action !== "page_merge" &&
-                item.action !== "detect_contradiction" && (
+                item.action === "relation_conflict" &&
+                item.payload?.action === "relation_conflict" && (
                   <div style={{ display: "grid", gap: 12 }}>
-                    {item.action === "suggest_entity" &&
-                      item.payload?.action === "suggest_entity" &&
+                    <div>
+                      <p style={paneLabelStyle}>{t("review.relationOld")}</p>
+                      <div style={{ ...paneStyle, fontFamily: "var(--mem-font-mono)", fontSize: 13 }}>
+                        <del style={DEL_STYLE}>
+                          {item.payload.from} —{item.payload.old_type}→ {item.payload.to}
+                        </del>
+                      </div>
+                    </div>
+                    <div>
+                      <p style={paneLabelStyle}>{t("review.relationNew")}</p>
+                      <div style={{ ...paneStyle, fontFamily: "var(--mem-font-mono)", fontSize: 13 }}>
+                        <ins style={INS_STYLE}>
+                          {item.payload.from} —{item.payload.new_type}→ {item.payload.to}
+                        </ins>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+              {item.kind === "refinement" &&
+                item.action === "page_keep_or_archive" && (
+                  <div style={{ display: "grid", gap: 12 }}>
+                    <div>
+                      <p style={paneLabelStyle}>
+                        {archivePage.data?.title ?? item.sourceIds[0]}
+                      </p>
+                      <div style={paneStyle}>
+                        {archivePage.isLoading
+                          ? t("review.loadingCurrent")
+                          : (archivePage.data?.summary ??
+                            archivePage.data?.content ??
+                            "")}
+                      </div>
+                    </div>
+                    {item.payload?.action === "page_keep_or_archive" && (
+                      <p
+                        style={{
+                          fontFamily: "var(--mem-font-body)",
+                          color: "var(--mem-text-tertiary)",
+                          fontSize: 12,
+                          margin: 0,
+                        }}
+                      >
+                        {t("review.sources", {
+                          count: item.payload.source_count,
+                        })}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+              {item.kind === "refinement" &&
+                (item.action === "suggest_entity" ||
+                  item.action === "dedup_merge" ||
+                  item.action === "cross_space_discovery") && (
+                  <div style={{ display: "grid", gap: 12 }}>
+                    {item.payload?.action === "suggest_entity" &&
                       item.payload.name_hint && (
                         <div style={paneStyle}>{item.payload.name_hint}</div>
                       )}
+                    {item.payload?.action === "cross_space_discovery" && (
+                      <p
+                        style={{
+                          fontFamily: "var(--mem-font-body)",
+                          color: "var(--mem-text-secondary)",
+                          fontSize: 13,
+                          margin: 0,
+                        }}
+                      >
+                        {t("review.crossSpaceSpaces", {
+                          spaces: item.payload.spaces.join(" · "),
+                          count: item.payload.memory_count,
+                        })}
+                      </p>
+                    )}
                     {[memoryPaneA, memoryPaneB].map(
                       (pane, paneIndex) =>
                         memoryPaneIds[paneIndex] && (
@@ -755,13 +865,26 @@ export default function ReviewDialog({
                 type="button"
                 disabled={isResolving}
                 onClick={() => void resolveCurrent(false)}
-                style={{ ...actionButtonStyle, color: "var(--mem-accent-warm)" }}
+                style={{
+                  ...actionButtonStyle,
+                  // Forget hard-deletes the capture; every other dismiss just
+                  // clears the proposal, so only Forget wears the danger tone.
+                  ...(item.kind === "capture"
+                    ? {
+                        color: "var(--mem-status-danger-text)",
+                        borderColor: "var(--mem-status-danger-border)",
+                      }
+                    : { color: "var(--mem-text-secondary)" }),
+                }}
               >
                 {item.kind === "capture"
                   ? t("review.forget")
                   : isContradiction
                     ? t("review.keepBoth")
-                    : t("review.dismiss")}
+                    : item.kind === "refinement" &&
+                        item.action === "page_keep_or_archive"
+                      ? t("review.keepPage")
+                      : t("review.dismiss")}
               </button>
               {(item.kind === "revision" || item.kind === "capture") &&
                 onOpenMemory && (
@@ -786,24 +909,29 @@ export default function ReviewDialog({
               >
                 {t("review.skip")}
               </button>
-              <button
-                type="button"
-                disabled={isResolving}
-                onClick={() => void resolveCurrent(true)}
-                style={{
-                  ...actionButtonStyle,
-                  backgroundColor: "var(--mem-accent-indigo)",
-                  borderColor: "var(--mem-accent-indigo)",
-                  color: "var(--mem-bg)",
-                  fontWeight: 600,
-                }}
-              >
-                {item.kind === "capture"
-                  ? t("review.confirm")
-                  : isContradiction
-                    ? t("review.resolve")
-                    : t("review.approve")}
-              </button>
+              {!reviewApproveBlocked(item) && (
+                <button
+                  type="button"
+                  disabled={isResolving}
+                  onClick={() => void resolveCurrent(true)}
+                  style={{
+                    ...actionButtonStyle,
+                    backgroundColor: "var(--mem-accent-indigo)",
+                    borderColor: "var(--mem-accent-indigo)",
+                    color: "var(--mem-bg)",
+                    fontWeight: 600,
+                  }}
+                >
+                  {item.kind === "capture"
+                    ? t("review.confirm")
+                    : isContradiction
+                      ? t("review.resolve")
+                      : item.kind === "refinement" &&
+                          item.action === "page_keep_or_archive"
+                        ? t("review.archive")
+                        : t("review.approve")}
+                </button>
+              )}
             </div>
           </>
         ) : null}

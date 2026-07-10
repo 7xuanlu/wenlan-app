@@ -277,6 +277,35 @@ const reviewProposals = (): RefinementProposalSummary[] => [
     confidence: 1.0,
     created_at: "2026-07-10T08:26:41Z",
   },
+  {
+    id: "prop-rel-conflict-editor",
+    action: "relation_conflict",
+    // Daemon order: source_ids[0] is the new relation, [1] the existing one.
+    source_ids: ["rel-uses-new", "rel-uses-old"],
+    payload: {
+      action: "relation_conflict",
+      existing_id: "rel-uses-old",
+      new_id: "rel-uses-new",
+      from: "Lucian",
+      to: "Zed",
+      old_type: "EVALUATES",
+      new_type: "USES_DAILY",
+    } as RefinementProposalSummary["payload"],
+    confidence: 0.82,
+    created_at: "2026-07-09T18:40:00Z",
+  },
+  {
+    id: "prop-keep-or-archive-scratch",
+    action: "page_keep_or_archive",
+    source_ids: ["page-cleared"],
+    payload: {
+      action: "page_keep_or_archive",
+      page_id: "page-cleared",
+      source_count: 1,
+    } as RefinementProposalSummary["payload"],
+    confidence: 1.0,
+    created_at: "2026-07-10T07:12:00Z",
+  },
 ];
 
 const reviewCaptures = (): RecentActivityItem[] => [

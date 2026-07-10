@@ -190,7 +190,8 @@ describe("HomePage redesign", () => {
     expect(screen.getByTestId("wiki-context-rail")).not.toHaveTextContent("Recently active");
     expect(screen.getByTestId("wiki-context-pages")).toHaveTextContent("2");
     expect(screen.getByTestId("wiki-context-updated-today")).toHaveTextContent("2");
-    expect(screen.getByTestId("wiki-context-needs-review")).toHaveTextContent("0");
+    // The review count lives only in the needs-review rail pill now.
+    expect(screen.queryByTestId("wiki-context-needs-review")).toBeNull();
     expect(screen.queryByTestId("wiki-space-filter-row")).toBeNull();
     expect(screen.queryByTestId("wiki-recent-spaces")).toBeNull();
     expect(screen.queryByText("Wiki pages")).toBeNull();
@@ -366,9 +367,11 @@ describe("HomePage redesign", () => {
 
     await screen.findByRole("heading", { name: "Today in Wenlan" });
 
-    // The rail's list slices to 3 items; the metric must still count all 4.
-    await screen.findByText("Review all 4 →");
-    expect(screen.getByTestId("wiki-context-needs-review")).toHaveTextContent("4");
+    // The rail's list slices to 3 items; the heading pill still counts all 4.
+    const rail = await screen.findByTestId("wiki-page-updates");
+    await within(rail).findByText("4");
+    await within(rail).findByText("Review all →");
+    expect(screen.queryByTestId("wiki-context-needs-review")).toBeNull();
     expect(screen.getByTestId("wiki-context-updated-today")).toHaveTextContent("3");
     expect(screen.getByText("Third proposed wording")).toBeInTheDocument();
     expect(screen.queryByText("Entity merge")).toBeNull();
@@ -443,9 +446,9 @@ describe("HomePage redesign", () => {
     // stays in the review dialog, not the rail row.
     expect(pageUpdates).not.toHaveTextContent("proposed by");
     expect(pageUpdates).not.toHaveTextContent("Current page");
-    expect(pageUpdates).toHaveTextContent("Review all 1");
+    expect(pageUpdates).toHaveTextContent("Review all →");
 
-    await user.click(within(pageUpdates).getByRole("button", { name: /review all 1/i }));
+    await user.click(within(pageUpdates).getByRole("button", { name: /review all/i }));
 
     expect(onOpenDistillReview).toHaveBeenCalledTimes(1);
   });
@@ -614,9 +617,11 @@ describe("HomePage redesign", () => {
 
     await screen.findByRole("heading", { name: "Today in Wenlan" });
 
-    // The rail lists the capture and the context metric counts it.
+    // The rail lists the capture and its heading pill counts it.
     await screen.findByText("User prefers pnpm over npm");
-    expect(screen.getByTestId("wiki-context-needs-review")).toHaveTextContent("1");
+    expect(
+      within(screen.getByTestId("wiki-page-updates")).getByText("1"),
+    ).toBeInTheDocument();
 
     await user.click(
       screen.getByRole("button", { name: /User prefers pnpm over npm/ }),
@@ -740,6 +745,217 @@ describe("HomePage redesign", () => {
     await waitFor(() =>
       expect(tauri.acceptRefinement).toHaveBeenCalledWith("ref-page-merge"),
     );
+  });
+
+  it("orders the review queue page-level first, then conflicts, then memory items", async () => {
+    vi.mocked(tauri.listPendingRevisions).mockResolvedValue([
+      {
+        target_source_id: "mem-target",
+        revision_source_id: "mem-revision",
+        revision_content: "Revised memory wording",
+        source_agent: "claude-code",
+        last_modified: 1_782_365_000,
+      },
+    ] as any);
+    vi.mocked(tauri.listRefinements).mockResolvedValue({
+      proposals: [
+        {
+          id: "ref-merge",
+          action: "entity_merge",
+          source_ids: ["ent-a", "ent-b"],
+          payload: null,
+          confidence: 0.86,
+          created_at: nowIso,
+        },
+        {
+          id: "ref-contra",
+          action: "detect_contradiction",
+          source_ids: ["mem-new", "mem-old"],
+          payload: null,
+          confidence: 0.78,
+          created_at: nowIso,
+        },
+        {
+          id: "ref-page-merge",
+          action: "page_merge",
+          source_ids: ["page-keep", "page-absorb"],
+          payload: null,
+          confidence: 1.0,
+          created_at: nowIso,
+        },
+      ],
+    } as any);
+    vi.mocked(tauri.listPages).mockResolvedValue([
+      page({ id: "page-current", title: "Current page" }),
+    ]);
+
+    renderHome();
+
+    const strip = await screen.findByTestId("worth-a-glance");
+    await within(strip).findAllByText(/Page merge/);
+    const labels = within(strip)
+      .getAllByRole("button")
+      .map((button) => button.getAttribute("aria-label"));
+    // Rail shows the top 3 of the ranked queue: pages > conflicts > revisions.
+    expect(labels).toEqual([
+      "Review Page merge",
+      "Review Contradiction",
+      "Review Revised memory wording",
+    ]);
+  });
+
+  it("shows the review count as N+ when a source hits its fetch cap", async () => {
+    vi.mocked(tauri.listUnconfirmedMemories).mockResolvedValue(
+      Array.from({ length: 50 }, (_, i) => ({
+        kind: "memory",
+        id: `mem-cap-${i}`,
+        title: `Capture ${i}`,
+        snippet: null,
+        timestamp_ms: 1_782_365_080_000 + i,
+        badge: { kind: "needs_review" },
+      })) as any,
+    );
+    vi.mocked(tauri.listPages).mockResolvedValue([
+      page({ id: "page-current", title: "Current page" }),
+    ]);
+
+    renderHome({ onOpenDistillReview: vi.fn() });
+
+    const rail = await screen.findByTestId("wiki-page-updates");
+    await within(rail).findByText("50+");
+  });
+
+  it("shows a before/after relation pair for relation conflicts and approves", async () => {
+    const user = userEvent.setup();
+    vi.mocked(tauri.listRefinements).mockResolvedValue({
+      proposals: [
+        {
+          id: "ref-relation",
+          action: "relation_conflict",
+          source_ids: ["rel-new", "rel-old"],
+          payload: {
+            action: "relation_conflict",
+            existing_id: "rel-old",
+            new_id: "rel-new",
+            from: "Lucian",
+            to: "Zed",
+            old_type: "EVALUATES",
+            new_type: "USES_DAILY",
+          },
+          confidence: 0.82,
+          created_at: nowIso,
+        },
+      ],
+    } as any);
+    vi.mocked(tauri.listPages).mockResolvedValue([
+      page({ id: "page-current", title: "Current page" }),
+    ]);
+
+    renderHome();
+
+    await user.click(
+      await screen.findByRole("button", { name: "Review Relation conflict" }),
+    );
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Current relation")).toBeInTheDocument();
+    expect(within(dialog).getByText("Proposed relation")).toBeInTheDocument();
+    expect(within(dialog).getByText(/EVALUATES/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/USES_DAILY/)).toBeInTheDocument();
+    // The relation ids must never be fetched as memories.
+    expect(tauri.getMemoryDetail).not.toHaveBeenCalledWith("rel-new");
+
+    await user.click(within(dialog).getByRole("button", { name: "Approve" }));
+    await waitFor(() =>
+      expect(tauri.acceptRefinement).toHaveBeenCalledWith("ref-relation"),
+    );
+  });
+
+  it("offers only dismiss for proposals the daemon cannot accept", async () => {
+    const user = userEvent.setup();
+    vi.mocked(tauri.listRefinements).mockResolvedValue({
+      proposals: [
+        {
+          id: "ref-suggest",
+          action: "suggest_entity",
+          source_ids: ["mem-a"],
+          payload: { action: "suggest_entity", name_hint: "Zed Editor" },
+          confidence: 0.7,
+          created_at: nowIso,
+        },
+      ],
+    } as any);
+    vi.mocked(tauri.listPages).mockResolvedValue([
+      page({ id: "page-current", title: "Current page" }),
+    ]);
+
+    renderHome();
+
+    await user.click(
+      await screen.findByRole("button", { name: "Review Entity suggestion" }),
+    );
+
+    const dialog = await screen.findByRole("dialog");
+    await within(dialog).findByText("Zed Editor");
+    expect(
+      within(dialog).queryByRole("button", { name: "Approve" }),
+    ).not.toBeInTheDocument();
+    // Enter must not fire the blocked accept verb either.
+    await user.keyboard("{Enter}");
+    expect(tauri.acceptRefinement).not.toHaveBeenCalled();
+
+    await user.click(within(dialog).getByRole("button", { name: "Dismiss" }));
+    await waitFor(() =>
+      expect(tauri.rejectRefinement).toHaveBeenCalledWith("ref-suggest"),
+    );
+  });
+
+  it("opens the page keep-or-archive dialog with archive/keep actions", async () => {
+    const user = userEvent.setup();
+    vi.mocked(tauri.listRefinements).mockResolvedValue({
+      proposals: [
+        {
+          id: "ref-archive",
+          action: "page_keep_or_archive",
+          source_ids: ["page-thin"],
+          payload: {
+            action: "page_keep_or_archive",
+            page_id: "page-thin",
+            source_count: 1,
+          },
+          confidence: 1.0,
+          created_at: nowIso,
+        },
+      ],
+    } as any);
+    vi.mocked(tauri.listPages).mockResolvedValue([
+      page({ id: "page-current", title: "Current page" }),
+    ]);
+    vi.mocked(tauri.getPage).mockResolvedValue(
+      page({
+        id: "page-thin",
+        title: "Thin scratch page",
+        summary: "One lonely source.",
+      }) as any,
+    );
+
+    renderHome();
+
+    await user.click(
+      await screen.findByRole("button", { name: "Review Page cleanup" }),
+    );
+
+    const dialog = await screen.findByRole("dialog");
+    await within(dialog).findByText("Thin scratch page");
+    expect(
+      within(dialog).getByRole("button", { name: "Archive" }),
+    ).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: "Keep page" }));
+    await waitFor(() =>
+      expect(tauri.rejectRefinement).toHaveBeenCalledWith("ref-archive"),
+    );
+    expect(tauri.acceptRefinement).not.toHaveBeenCalled();
   });
 
   it("surfaces refinement proposals in the needs-review rail", async () => {

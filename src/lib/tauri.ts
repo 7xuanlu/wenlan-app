@@ -1274,8 +1274,6 @@ export interface StoreMemoryResponse {
    * is not_needed.
    */
   hint?: string;
-  triggered_revisions?: string[];
-  auto_superseded?: string[];
 }
 
 export async function storeMemory(req: StoreMemoryRequest): Promise<StoreMemoryResponse> {
@@ -1443,7 +1441,9 @@ export type ProposalAction =
   | "detect_contradiction"
   | "suggest_entity"
   | "dedup_merge"
-  | "page_merge";
+  | "page_merge"
+  | "cross_space_discovery"
+  | "page_keep_or_archive";
 
 export type RefinementPayload =
   | {
@@ -1470,6 +1470,16 @@ export type RefinementPayload =
       right_page_id: string;
       source_overlap: number;
       source_overlap_ratio: number;
+    }
+  | {
+      action: "cross_space_discovery";
+      memory_count: number;
+      spaces: string[];
+    }
+  | {
+      action: "page_keep_or_archive";
+      page_id: string;
+      source_count: number;
     };
 
 export interface RefinementProposalSummary {

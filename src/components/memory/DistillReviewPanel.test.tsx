@@ -352,7 +352,7 @@ describe("DistillReviewPanel review queue", () => {
       .mockResolvedValue({ proposals: [] });
     const { user } = renderPanel();
 
-    expect(await screen.findByRole("heading", { name: "Merges & conflicts" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Merges & suggestions" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /Review Entity merge/ }));
 
     const dialog = await screen.findByRole("dialog");
