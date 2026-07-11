@@ -441,9 +441,12 @@ Artifact facts (validated): Claude Code plugin (`.claude-plugin/plugin.json`),
 Claude Desktop `.mcpb` (zip: `manifest.json` + one MCP server, NO skills), and
 Codex plugin (`.codex-plugin/plugin.json`: skills + `.mcp.json` + hooks) are
 **three distinct, non-interoperable formats**. One GitHub repo can host
-`.claude-plugin/` and `.codex-plugin/` side by side. A plugin installed on
-claude.ai web activates **skills only** — MCP/hooks/commands do not carry over,
-so the daemon connection on claude.ai still requires the custom connector.
+`.claude-plugin/` and `.codex-plugin/` side by side. On claude.ai, a plugin
+installed from the Directory activates its **skills** in web chat, and **Cowork
+gets full plugin support including MCP connectors** (claude.com/docs/plugins/overview
+availability table; Cowork is part of claude.ai for paid users since 2026-07-07).
+The daemon connection in plain web chat still requires the custom connector,
+because a public plugin cannot bundle a user-specific tunnel URL.
 
 Per-surface cards, primary path first (user rule: recommend plugin everywhere
 except ChatGPT.com):
@@ -454,7 +457,7 @@ except ChatGPT.com):
 | Codex (CLI + ChatGPT-desktop Codex mode) | `codex mcp add wenlan -- <same command+args as getWenlanMcpEntry>` (works today, no marketplace needed); upgrade copy to `codex plugin marketplace add 7xuanlu/wenlan` once `.codex-plugin/` ships in the daemon repo | "Copy setup prompt"; Codex TOML one-click write under Advanced |
 | Claude Desktop | one-click config write (existing registry entry) until the `.mcpb` bundle ships in the follow-up daemon-repo PR; card copy must not reference `.mcpb` before it exists | manual JSON |
 | Gemini CLI | one-click config write (existing); `gemini extensions install` copy lands when the backlog extension repo exists | manual JSON |
-| claude.ai (web) | custom connector: copy tunnel URL + deep link `https://claude.ai/settings/connectors?modal=add-custom-connector` (opens modal; does NOT prefill URL). Secondary line: "Wenlan's skills are also installable from the Claude Directory" `[unverified for individual accounts — copy must hedge or be omitted until verified]` | existing no-auth tunnel warning stays (council change f) |
+| claude.ai (web) | **plugin-first copy** (user-corrected 2026-07-11, verified against claude.com/docs/plugins/overview): claude.ai supports plugins — Directory installs on web (plugin **skills** activate in chat) and **Cowork has full plugin support incl. MCP connectors** (part of claude.ai for paid users since 2026-07-07). Card leads with the plugin, then the memory-access step: a public plugin cannot carry a user-specific tunnel URL, so MCP in plain web chat still needs the custom connector — copy tunnel URL + deep link `https://claude.ai/settings/connectors?modal=add-custom-connector` (opens modal; does NOT prefill URL). Backlog: submit the Wenlan plugin to the Anthropic directory (claude.com/docs/plugins/submit) so it is one-click on claude.ai | existing no-auth tunnel warning stays (council change f) |
 | ChatGPT.com | connector only (Developer Mode paste-URL) — per user's own call, "the only MCP" surface | existing warning stays |
 | Cursor | unchanged (one-click config write) | manual JSON |
 
