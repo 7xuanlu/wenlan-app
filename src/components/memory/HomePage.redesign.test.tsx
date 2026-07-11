@@ -597,8 +597,7 @@ describe("HomePage redesign", () => {
     });
   });
 
-  it("surfaces unconfirmed captures in the needs-review rail with confirm/forget", async () => {
-    const user = userEvent.setup();
+  it("keeps new memories out of the needs-review rail and counts them in the context rail", async () => {
     vi.mocked(tauri.listPages).mockResolvedValue([
       page({ id: "page-current", title: "Current page" }),
     ]);
@@ -617,22 +616,14 @@ describe("HomePage redesign", () => {
 
     await screen.findByRole("heading", { name: "Today in Wenlan" });
 
-    // The rail lists the capture and its heading pill counts it.
-    await screen.findByText("User prefers pnpm over npm");
+    // Inflow counts up top…
+    await within(screen.getByTestId("wiki-context-new-memories")).findByText("1");
+    // …while the decisions rail stays caught up and never lists the capture.
+    const rail = screen.getByTestId("wiki-page-updates");
+    await within(rail).findByText(/All caught up/);
     expect(
-      within(screen.getByTestId("wiki-page-updates")).getByText("1"),
-    ).toBeInTheDocument();
-
-    await user.click(
-      screen.getByRole("button", { name: /User prefers pnpm over npm/ }),
-    );
-    const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByText("Unconfirmed capture")).toBeInTheDocument();
-    expect(within(dialog).getByRole("button", { name: "Forget" })).toBeInTheDocument();
-
-    await user.click(within(dialog).getByRole("button", { name: "Confirm" }));
-    await waitFor(() => expect(tauri.confirmMemory).toHaveBeenCalledWith("mem-capture"));
-    expect(tauri.deleteMemory).not.toHaveBeenCalled();
+      within(rail).queryByText("User prefers pnpm over npm"),
+    ).not.toBeInTheDocument();
   });
 
   it("opens the contradiction dialog with before/after panes and resolves it", async () => {
@@ -804,7 +795,7 @@ describe("HomePage redesign", () => {
     ]);
   });
 
-  it("shows the review count as N+ when a source hits its fetch cap", async () => {
+  it("shows the new-memories count as N+ when captures hit their fetch cap", async () => {
     vi.mocked(tauri.listUnconfirmedMemories).mockResolvedValue(
       Array.from({ length: 50 }, (_, i) => ({
         kind: "memory",
@@ -821,8 +812,11 @@ describe("HomePage redesign", () => {
 
     renderHome({ onOpenDistillReview: vi.fn() });
 
-    const rail = await screen.findByTestId("wiki-page-updates");
-    await within(rail).findByText("50+");
+    const metric = await screen.findByTestId("wiki-context-new-memories");
+    await within(metric).findByText("50+");
+    // Capture inflow no longer inflates the decisions pill.
+    const rail = screen.getByTestId("wiki-page-updates");
+    expect(within(rail).queryByText("50+")).not.toBeInTheDocument();
   });
 
   it("shows a before/after relation pair for relation conflicts and approves", async () => {

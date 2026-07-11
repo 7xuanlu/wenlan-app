@@ -215,15 +215,21 @@ export function useReviewQueue(enabled: boolean = true) {
     },
   });
 
+  const decisionsTruncated =
+    (revisions.data?.length ?? 0) >= REVIEW_QUEUE_LIMIT ||
+    (refinements.data?.proposals.length ?? 0) >= REVIEW_QUEUE_LIMIT;
+  const capturesTruncated = (captures.data?.length ?? 0) >= REVIEW_QUEUE_LIMIT;
+
   return {
     items,
     isLoading: revisions.isLoading || refinements.isLoading || captures.isLoading,
     error: revisions.error ?? refinements.error ?? captures.error ?? null,
     /** True when any source filled its page — the queue may hold more. */
-    isTruncated:
-      (revisions.data?.length ?? 0) >= REVIEW_QUEUE_LIMIT ||
-      (refinements.data?.proposals.length ?? 0) >= REVIEW_QUEUE_LIMIT ||
-      (captures.data?.length ?? 0) >= REVIEW_QUEUE_LIMIT,
+    isTruncated: decisionsTruncated || capturesTruncated,
+    /** Decision sources (revisions + refinements) at their fetch cap. */
+    decisionsTruncated,
+    /** New-memory captures at their fetch cap. */
+    capturesTruncated,
     resolve: resolveMutation.mutateAsync,
     isResolving: resolveMutation.isPending,
   };

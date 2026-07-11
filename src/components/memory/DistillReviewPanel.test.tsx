@@ -21,6 +21,9 @@ vi.mock("../../lib/tauri", async () => {
     listRefinements: vi.fn(),
     acceptRefinement: vi.fn(),
     rejectRefinement: vi.fn(),
+    listUnconfirmedMemories: vi.fn(),
+    confirmMemory: vi.fn(),
+    deleteMemory: vi.fn(),
     getMemoryDetail: vi.fn(),
     getEntityDetail: vi.fn(),
   };
@@ -34,6 +37,9 @@ import {
   listRefinements,
   acceptRefinement,
   rejectRefinement,
+  listUnconfirmedMemories,
+  confirmMemory,
+  deleteMemory,
   getMemoryDetail,
   getEntityDetail,
 } from "../../lib/tauri";
@@ -139,6 +145,9 @@ beforeEach(() => {
   vi.mocked(distillReview).mockResolvedValue(reviewPayload);
   vi.mocked(listPendingRevisions).mockResolvedValue([]);
   vi.mocked(listRefinements).mockResolvedValue({ proposals: [] });
+  vi.mocked(listUnconfirmedMemories).mockResolvedValue([]);
+  vi.mocked(confirmMemory).mockResolvedValue(undefined);
+  vi.mocked(deleteMemory).mockResolvedValue(undefined);
   vi.mocked(acceptPendingRevision).mockResolvedValue({
     target_source_id: "mem_target",
     revision_source_id: "mem_target_rev",
@@ -362,5 +371,30 @@ describe("DistillReviewPanel review queue", () => {
     await waitFor(() => {
       expect(acceptRefinement).toHaveBeenCalledWith("prop_1");
     });
+  });
+
+  it("confirms a new memory from the New memories section with confirm/forget verbs", async () => {
+    vi.mocked(listUnconfirmedMemories).mockResolvedValue([
+      {
+        kind: "memory",
+        id: "mem-capture",
+        title: "User prefers pnpm over npm",
+        snippet: "Stated while setting up the monorepo.",
+        timestamp_ms: 1_782_365_080_000,
+        badge: { kind: "needs_review" },
+      },
+    ]);
+    const { user } = renderPanel();
+
+    expect(await screen.findByRole("heading", { name: "New memories" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /User prefers pnpm over npm/ }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("New memory")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Forget" })).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(confirmMemory).toHaveBeenCalledWith("mem-capture"));
+    expect(deleteMemory).not.toHaveBeenCalled();
   });
 });

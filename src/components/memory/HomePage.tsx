@@ -343,11 +343,16 @@ function WikiHome({
   const {
     items: reviewItems,
     isLoading: reviewLoading,
-    isTruncated: reviewTruncated,
+    decisionsTruncated,
+    capturesTruncated,
     resolve,
     isResolving,
   } = useReviewQueue();
   const [openReviewId, setOpenReviewId] = useState<string | null>(null);
+  // The rail asks for decisions; new-memory captures are inflow, surfaced as
+  // a context metric instead and triaged via Review all.
+  const decisionItems = reviewItems.filter((item) => item.kind !== "capture");
+  const newMemoryCount = reviewItems.length - decisionItems.length;
   return (
     <div
       data-testid="wiki-home"
@@ -370,7 +375,11 @@ function WikiHome({
       >
         <TodayHeader />
 
-        <HomeContextRail pages={allPages} />
+        <HomeContextRail
+          pages={allPages}
+          newMemoryCount={newMemoryCount}
+          newMemoriesTruncated={capturesTruncated}
+        />
       </section>
 
       <div
@@ -391,12 +400,12 @@ function WikiHome({
           isWideLayout={isWideLayout}
         />
         <NeedsReviewRail
-          items={reviewItems}
+          items={decisionItems}
           isLoading={reviewLoading}
-          isTruncated={reviewTruncated}
+          isTruncated={decisionsTruncated}
           onOpenItem={setOpenReviewId}
           onOpenDistillReview={onOpenDistillReview}
-          leadsColumn={!isWideLayout && reviewItems.length > 0}
+          leadsColumn={!isWideLayout && decisionItems.length > 0}
         />
       </div>
 
@@ -578,7 +587,17 @@ function PageList({
   );
 }
 
-function HomeContextRail({ pages }: { pages: Page[] }) {
+function HomeContextRail({
+  pages,
+  newMemoryCount,
+  newMemoriesTruncated = false,
+}: {
+  pages: Page[];
+  /** Unconfirmed agent-stored memories awaiting triage — inflow, not decisions. */
+  newMemoryCount: number;
+  /** The captures fetch hit its cap — show the count as "N+", never as exact. */
+  newMemoriesTruncated?: boolean;
+}) {
   const { t } = useTranslation();
   return (
     <div
@@ -596,6 +615,11 @@ function HomeContextRail({ pages }: { pages: Page[] }) {
         >
           <ContextMetric testId="pages" label={t("home.pages")} value={String(pages.length)} />
           <ContextMetric testId="updated-today" label={t("home.relative.today")} value={String(updatedTodayCount(pages))} />
+          <ContextMetric
+            testId="new-memories"
+            label={t("home.newMemories")}
+            value={newMemoriesTruncated ? `${newMemoryCount}+` : String(newMemoryCount)}
+          />
           <ContextMetric testId="latest" label={t("home.latest")} value={latestPageUpdate(t, pages)} />
         </div>
       </section>
