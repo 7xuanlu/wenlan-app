@@ -163,6 +163,9 @@ html[data-theme="dark"] {
   --mem-shimmer-color: rgba(143, 179, 234, 0.15);
   --mem-detail-surface: #171A23;
   --mem-detail-surface-raised: #1C2130;
+  /* Home review card fill: dark lifts by surface color (shadows barely read on
+     dark), so it aliases the raised token; light stays canvas-white + shadow. */
+  --mem-home-card: var(--mem-detail-surface-raised);
   --mem-detail-divider: rgba(241, 239, 232, 0.11);
   --mem-status-warning-bg: rgba(199, 170, 92, 0.15);
   --mem-status-warning-text: #DCC36F;
@@ -211,6 +214,9 @@ html[data-theme="light"] {
   /* Cool-neutral off-white — matches --mem-border and the dark theme's lean.
      Was #F8FAF9, whose green channel peaked and tinted raised cards greenish. */
   --mem-detail-surface-raised: #F7F8FA;
+  /* Home review card fill: canvas-white on light — elevation is carried by the
+     border + ink-toned shadow, not a fill tint, so it never reads as a smudge. */
+  --mem-home-card: var(--mem-surface);
   --mem-detail-divider: rgba(26, 26, 46, 0.10);
   --mem-status-warning-bg: rgba(181, 132, 46, 0.12);
   --mem-status-warning-text: #8C5F16;

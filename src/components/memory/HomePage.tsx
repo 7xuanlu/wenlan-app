@@ -873,9 +873,13 @@ function NeedsReviewRail({
           border: "1px solid var(--mem-border)",
           borderRadius: 10,
           padding: "11px 13px 8px",
-          // Faint indigo wash (the widget's own accent) so the card reads as a
-          // chosen raised surface, not a gray smudge on the white home canvas.
-          backgroundColor: "color-mix(in srgb, var(--mem-accent-indigo) 7%, var(--mem-surface))",
+          // Raised via border + ink-toned shadow, not a fill tint. Light stays
+          // canvas-white (no smudge on the white home); dark lifts by fill
+          // (--mem-home-card) where the shadow barely reads. Indigo identity
+          // lives in the heading + count pill, not the fill.
+          backgroundColor: "var(--mem-home-card)",
+          boxShadow:
+            "0 1px 2px rgba(26, 26, 46, 0.05), 0 4px 12px rgba(26, 26, 46, 0.06)",
         }}
       >
         <div data-testid="worth-a-glance" style={{ display: "grid" }}>
