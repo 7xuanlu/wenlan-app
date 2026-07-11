@@ -629,7 +629,7 @@ describe("HomePage redesign", () => {
     });
   });
 
-  it("keeps new memories out of the needs-review rail and counts them in the context rail", async () => {
+  it("keeps new memories out of the needs-review rail — inflow, not decisions", async () => {
     vi.mocked(tauri.listPages).mockResolvedValue([
       page({ id: "page-current", title: "Current page" }),
     ]);
@@ -648,10 +648,11 @@ describe("HomePage redesign", () => {
 
     await screen.findByRole("heading", { name: "Today in Wenlan" });
 
-    // Inflow counts up top, as the memories cell's warm inbox pill…
-    const inboxPill = await screen.findByTestId("wiki-context-new-memories");
-    expect(inboxPill).toHaveTextContent("1 to confirm");
-    // …while the decisions rail stays caught up and never lists the capture.
+    // Captures are already-live inflow, not a chore: no "to confirm" pill…
+    expect(
+      screen.queryByTestId("wiki-context-new-memories"),
+    ).not.toBeInTheDocument();
+    // …and the decisions rail stays caught up and never lists the capture.
     const rail = screen.getByTestId("wiki-page-updates");
     await within(rail).findByText(/All caught up/);
     expect(
@@ -865,30 +866,6 @@ describe("HomePage redesign", () => {
         "Review Page merge",
       ]);
     });
-  });
-
-  it("shows the new-memories count as N+ when captures hit their fetch cap", async () => {
-    vi.mocked(tauri.listUnconfirmedMemories).mockResolvedValue(
-      Array.from({ length: 50 }, (_, i) => ({
-        kind: "memory",
-        id: `mem-cap-${i}`,
-        title: `Capture ${i}`,
-        snippet: null,
-        timestamp_ms: 1_782_365_080_000 + i,
-        badge: { kind: "needs_review" },
-      })) as any,
-    );
-    vi.mocked(tauri.listPages).mockResolvedValue([
-      page({ id: "page-current", title: "Current page" }),
-    ]);
-
-    renderHome({ onOpenDistillReview: vi.fn() });
-
-    const metric = await screen.findByTestId("wiki-context-new-memories");
-    expect(metric).toHaveTextContent("50+ to confirm");
-    // Capture inflow no longer inflates the decisions pill.
-    const rail = screen.getByTestId("wiki-page-updates");
-    expect(within(rail).queryByText("50+")).not.toBeInTheDocument();
   });
 
   it("shows em-dash totals for memories and entities while their queries are pending", async () => {

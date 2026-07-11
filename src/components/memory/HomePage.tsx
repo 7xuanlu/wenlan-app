@@ -354,16 +354,14 @@ function WikiHome({
     isLoading: reviewLoading,
     error: reviewError,
     decisionsTruncated,
-    capturesTruncated,
     resolve,
     isResolving,
     refetch: refetchReviewQueue,
   } = useReviewQueue();
   const [openReviewId, setOpenReviewId] = useState<string | null>(null);
-  // The rail asks for decisions; new-memory captures are inflow, surfaced as
-  // a context metric instead and triaged via Review all.
+  // New-memory captures are inflow, not decisions — they're unconfirmed but
+  // already live (recalled, feeding pages), so they stay out of the rail.
   const decisionItems = reviewItems.filter((item) => item.kind !== "capture");
-  const newMemoryCount = reviewItems.length - decisionItems.length;
   return (
     <div
       data-testid="wiki-home"
@@ -389,8 +387,6 @@ function WikiHome({
         <HomeContextRail
           pages={allPages}
           stats={stats}
-          newMemoryCount={newMemoryCount}
-          newMemoriesTruncated={capturesTruncated}
         />
       </section>
 
@@ -619,16 +615,10 @@ function PageList({
 function HomeContextRail({
   pages,
   stats,
-  newMemoryCount,
-  newMemoriesTruncated = false,
 }: {
   pages: Page[];
   /** Aggregate memory counts; undefined while the stats query is loading. */
   stats?: MemoryStats;
-  /** Unconfirmed agent-stored memories awaiting triage — inflow, not decisions. */
-  newMemoryCount: number;
-  /** The captures fetch hit its cap — show the count as "N+", never as exact. */
-  newMemoriesTruncated?: boolean;
 }) {
   const { t } = useTranslation();
   // Same cache key/shape as ConstellationMap's entity fetch — shared cache,
@@ -680,8 +670,8 @@ function HomeContextRail({
             testId="memories"
             label={t("home.memories")}
             total={stats ? String(stats.total) : "—"}
-            deltas={[
-              ...(stats && stats.new_today > 0
+            deltas={
+              stats && stats.new_today > 0
                 ? [
                     {
                       text: t("home.deltaToday", { value: String(stats.new_today) }),
@@ -689,19 +679,8 @@ function HomeContextRail({
                       testId: "wiki-context-memories-delta",
                     },
                   ]
-                : []),
-              ...(newMemoryCount > 0
-                ? [
-                    {
-                      text: t("home.deltaInbox", {
-                        value: newMemoriesTruncated ? `${newMemoryCount}+` : String(newMemoryCount),
-                      }),
-                      tone: "warm-pill" as const,
-                      testId: "wiki-context-new-memories",
-                    },
-                  ]
-                : []),
-            ]}
+                : []
+            }
           />
           <ContextMetric
             testId="entities"
