@@ -1102,4 +1102,44 @@ describe("HomePage redesign", () => {
     expect(screen.queryByTestId("connections")).toBeNull();
     expect(screen.queryByTestId("retrievals")).toBeNull();
   });
+
+  it("shows a load-error state with retry in the needs-review rail when the queue fetch fails and the queue is empty, never All caught up", async () => {
+    vi.mocked(tauri.listRefinements).mockRejectedValue(new Error("daemon can't deserialize a proposal variant"));
+    vi.mocked(tauri.listPages).mockResolvedValue([
+      page({ id: "page-current", title: "Current page", domain: "Projects" }),
+    ]);
+
+    renderHome();
+
+    const rail = await screen.findByTestId("worth-a-glance");
+    await within(rail).findByText(/Couldn't load review items/);
+    expect(within(rail).queryByText(/All caught up/)).not.toBeInTheDocument();
+
+    await userEvent.click(within(rail).getByRole("button", { name: "Try again" }));
+    expect(tauri.listRefinements).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows the queue items plus a quiet partial-load notice when one source fails but others have data", async () => {
+    vi.mocked(tauri.listRefinements).mockRejectedValue(new Error("daemon can't deserialize a proposal variant"));
+    vi.mocked(tauri.listPendingRevisions).mockResolvedValue([
+      {
+        target_source_id: "mem-target",
+        revision_source_id: "mem-revision",
+        revision_content: "The durable updated wording from the daemon.",
+        source_agent: "claude-code",
+        last_modified: 1_782_365_076,
+      },
+    ]);
+    vi.mocked(tauri.listPages).mockResolvedValue([
+      page({ id: "page-current", title: "Current page", domain: "Projects" }),
+    ]);
+
+    renderHome();
+
+    const rail = await screen.findByTestId("worth-a-glance");
+    await within(rail).findByText(/The durable updated wording/);
+    await within(rail).findByText(/Some review items couldn't load/);
+    // Self-heals via the 30s refetch — no retry button while items are shown.
+    expect(within(rail).queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+  });
 });

@@ -630,7 +630,31 @@ impl WenlanClient {
         if let Some(limit) = limit {
             path.push_str(&format!("?limit={limit}"));
         }
-        self.get_json(&path).await
+        // The daemon can run ahead of our pinned wenlan-types and emit proposal
+        // actions this build doesn't know yet. Parse proposals one-by-one so an
+        // unknown variant degrades to a skip instead of emptying the whole queue.
+        let raw: serde_json::Value = self.get_json(&path).await?;
+        let all = raw
+            .get("proposals")
+            .and_then(|v| v.as_array())
+            .map(|a| a.len())
+            .unwrap_or(0);
+        let proposals: Vec<wenlan_types::responses::RefinementProposalSummary> = raw
+            .get("proposals")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|p| serde_json::from_value(p.clone()).ok())
+                    .collect()
+            })
+            .unwrap_or_default();
+        if proposals.len() < all {
+            tracing::warn!(
+                skipped = all - proposals.len(),
+                "list_refinements: skipped refinement proposals with unknown action variants"
+            );
+        }
+        Ok(wenlan_types::responses::ListRefinementsResponse { proposals })
     }
 
     pub async fn accept_refinement(

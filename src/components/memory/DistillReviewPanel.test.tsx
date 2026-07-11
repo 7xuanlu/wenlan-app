@@ -289,6 +289,59 @@ describe("DistillReviewPanel review queue", () => {
     expect(screen.queryByRole("heading", { name: "All caught up" })).toBeNull();
   });
 
+  it("does not claim all-caught-up when the review queue fails to load, and retry reuses the existing refresh", async () => {
+    vi.mocked(distillReview).mockResolvedValue({
+      pages_created: 0,
+      scoped: false,
+      created_ids: [],
+      pending: [],
+      stale_pages: [],
+      stale_truncated: false,
+      orphan_topics: [],
+    });
+    vi.mocked(listRefinements).mockRejectedValue(
+      new Error("HTTP GET /api/refinery/queue returned 500"),
+    );
+
+    const { user } = renderPanel();
+
+    expect(
+      await screen.findByRole("heading", { name: "Couldn't load review items." }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "All caught up" })).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    expect(listRefinements).toHaveBeenCalledTimes(2);
+    expect(distillReview).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows the queue plus a quiet partial-load notice, no retry button, when items exist alongside a queue error", async () => {
+    vi.mocked(distillReview).mockResolvedValue({
+      pages_created: 0,
+      scoped: false,
+      created_ids: [],
+      pending: [],
+      stale_pages: [],
+      stale_truncated: false,
+      orphan_topics: [],
+    });
+    vi.mocked(listRefinements).mockRejectedValue(
+      new Error("HTTP GET /api/refinery/queue returned 500"),
+    );
+    vi.mocked(listPendingRevisions).mockResolvedValue([
+      revision({ target_source_id: "mem_target", revision_content: "Prefers pnpm for installs" }),
+    ]);
+
+    renderPanel();
+
+    expect(await screen.findByRole("heading", { name: "Memory revisions" })).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Some review items couldn't load/),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Couldn't load review items." })).toBeNull();
+  });
+
   it("renders revision cards with a pending count", async () => {
     vi.mocked(listPendingRevisions).mockResolvedValue([
       revision({ target_source_id: "mem_target", revision_content: "Prefers pnpm for installs" }),

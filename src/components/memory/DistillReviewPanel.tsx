@@ -244,10 +244,14 @@ export default function DistillReviewPanel({
       setResolvedStaleIds(new Set());
     },
   });
-  const error = review.error instanceof Error
-    ? review.error.message
-    : review.error
-      ? String(review.error)
+  // Mutation errors only — a failed queue fetch (queue.error) gets its own
+  // dedicated UI in the caught-up slot / section list below, so it never
+  // doubles up with this box.
+  const rawError = review.error;
+  const error = rawError instanceof Error
+    ? rawError.message
+    : rawError
+      ? String(rawError)
       : null;
 
   // Deferred past StrictMode's setup→cleanup→setup cycle: mutating inside the
@@ -340,7 +344,9 @@ export default function DistillReviewPanel({
       topicItems.length > 0);
   const allCaughtUp =
     !queue.isLoading &&
+    !queue.error &&
     !review.isPending &&
+    !review.error &&
     decisionItems.length === 0 &&
     !distillHasWork;
 
@@ -460,6 +466,32 @@ export default function DistillReviewPanel({
               {t("review.allCaughtUpHint")}
             </p>
           </section>
+        )}
+
+        {queue.error && decisionItems.length === 0 && (
+          <section>
+            <h2 style={emptyTitleStyle}>{t("review.loadFailed")}</h2>
+            <button
+              type="button"
+              onClick={refresh}
+              className="rounded-md px-3 py-2 text-sm transition-colors duration-150 hover:bg-[var(--mem-hover)]"
+              style={{
+                border: "1px solid var(--mem-border)",
+                backgroundColor: "var(--mem-surface)",
+                color: "var(--mem-text)",
+                cursor: "pointer",
+                fontFamily: "var(--mem-font-body)",
+              }}
+            >
+              {t("review.retry")}
+            </button>
+          </section>
+        )}
+
+        {queue.error && decisionItems.length > 0 && (
+          <p style={{ ...secondaryTextStyle, margin: 0, fontSize: "12px" }}>
+            {t("review.loadPartial")}
+          </p>
         )}
 
         {sections.map(

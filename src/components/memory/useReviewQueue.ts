@@ -273,6 +273,13 @@ export function useReviewQueue(enabled: boolean = true) {
     (refinements.data?.proposals.length ?? 0) >= REVIEW_QUEUE_LIMIT;
   const capturesTruncated = (captures.data?.length ?? 0) >= REVIEW_QUEUE_LIMIT;
 
+  // Re-fetch all three sources — used to retry after a failed queue load.
+  const refetch = () => {
+    void revisions.refetch();
+    void refinements.refetch();
+    void captures.refetch();
+  };
+
   return {
     items,
     isLoading: revisions.isLoading || refinements.isLoading || captures.isLoading,
@@ -285,5 +292,6 @@ export function useReviewQueue(enabled: boolean = true) {
     capturesTruncated,
     resolve: resolveMutation.mutateAsync,
     isResolving: resolveMutation.isPending,
+    refetch,
   };
 }

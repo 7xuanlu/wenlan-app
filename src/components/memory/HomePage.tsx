@@ -346,10 +346,12 @@ function WikiHome({
   const {
     items: reviewItems,
     isLoading: reviewLoading,
+    error: reviewError,
     decisionsTruncated,
     capturesTruncated,
     resolve,
     isResolving,
+    refetch: refetchReviewQueue,
   } = useReviewQueue();
   const [openReviewId, setOpenReviewId] = useState<string | null>(null);
   // The rail asks for decisions; new-memory captures are inflow, surfaced as
@@ -405,6 +407,8 @@ function WikiHome({
         <NeedsReviewRail
           items={decisionItems}
           isLoading={reviewLoading}
+          error={reviewError}
+          onRetry={refetchReviewQueue}
           isTruncated={decisionsTruncated}
           onOpenItem={setOpenReviewId}
           onOpenDistillReview={onOpenDistillReview}
@@ -666,6 +670,8 @@ function ContextMetric({ testId, label, value }: { testId: string; label: string
 function NeedsReviewRail({
   items,
   isLoading,
+  error,
+  onRetry,
   isTruncated = false,
   onOpenItem,
   onOpenDistillReview,
@@ -673,6 +679,9 @@ function NeedsReviewRail({
 }: {
   items: ReviewItem[];
   isLoading: boolean;
+  /** Set when the queue fetch failed — an empty `items` then means "unknown", not "caught up". */
+  error?: unknown;
+  onRetry?: () => void;
   /** A source hit its fetch cap — show the count as "N+", never as exact. */
   isTruncated?: boolean;
   onOpenItem: (id: string) => void;
@@ -729,31 +738,80 @@ function NeedsReviewRail({
       >
         <div data-testid="worth-a-glance" style={{ display: "grid" }}>
           {items.length === 0 ? (
-            !isLoading && (
+            error ? (
               <p
                 style={{
                   display: "flex",
                   alignItems: "center",
                   gap: 7,
                   fontFamily: "var(--mem-font-body)",
-                  fontSize: 12.5,
-                  color: "var(--mem-accent-sage)",
+                  fontSize: 13,
+                  color: "var(--mem-text-secondary)",
                   lineHeight: 1.5,
                   margin: "4px 0 6px",
                 }}
               >
-                ✓ {t("review.allCaughtUp")}
+                {t("review.loadFailed")}
+                {onRetry && (
+                  <button
+                    type="button"
+                    onClick={onRetry}
+                    style={{
+                      border: "none",
+                      background: "none",
+                      padding: 0,
+                      color: "var(--mem-accent-indigo)",
+                      fontFamily: "inherit",
+                      fontSize: "inherit",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {t("review.retry")}
+                  </button>
+                )}
               </p>
+            ) : (
+              !isLoading && (
+                <p
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 7,
+                    fontFamily: "var(--mem-font-body)",
+                    fontSize: 12.5,
+                    color: "var(--mem-accent-sage)",
+                    lineHeight: 1.5,
+                    margin: "4px 0 6px",
+                  }}
+                >
+                  ✓ {t("review.allCaughtUp")}
+                </p>
+              )
             )
           ) : (
-            items.slice(0, 3).map((item, itemIndex, shown) => (
-              <ReviewRailItem
-                key={reviewItemId(item)}
-                item={item}
-                onOpenItem={onOpenItem}
-                isLast={itemIndex === shown.length - 1}
-              />
-            ))
+            <>
+              {items.slice(0, 3).map((item, itemIndex, shown) => (
+                <ReviewRailItem
+                  key={reviewItemId(item)}
+                  item={item}
+                  onOpenItem={onOpenItem}
+                  isLast={itemIndex === shown.length - 1}
+                />
+              ))}
+              {error && (
+                <p
+                  style={{
+                    fontFamily: "var(--mem-font-body)",
+                    fontSize: 12,
+                    color: "var(--mem-text-tertiary)",
+                    lineHeight: 1.4,
+                    margin: "6px 0 0",
+                  }}
+                >
+                  {t("review.loadPartial")}
+                </p>
+              )}
+            </>
           )}
         </div>
 
