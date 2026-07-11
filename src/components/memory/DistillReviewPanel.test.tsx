@@ -28,6 +28,7 @@ vi.mock("../../lib/tauri", async () => {
     getEntityDetail: vi.fn(),
     redistillPage: vi.fn(),
     search: vi.fn(),
+    listRecentChanges: vi.fn(),
   };
 });
 
@@ -46,6 +47,7 @@ import {
   getEntityDetail,
   redistillPage,
   search,
+  listRecentChanges,
 } from "../../lib/tauri";
 
 function renderPanel(props: Partial<React.ComponentProps<typeof DistillReviewPanel>> = {}) {
@@ -145,8 +147,10 @@ const reviewPayload: DistillReviewResponse = {
 };
 
 beforeEach(() => {
+  localStorage.clear();
   vi.clearAllMocks();
   vi.mocked(distillReview).mockResolvedValue(reviewPayload);
+  vi.mocked(listRecentChanges).mockResolvedValue([]);
   vi.mocked(listPendingRevisions).mockResolvedValue([]);
   vi.mocked(listRefinements).mockResolvedValue({ proposals: [] });
   vi.mocked(listUnconfirmedMemories).mockResolvedValue([]);
@@ -631,5 +635,78 @@ describe("DistillReviewPanel review queue", () => {
       within(dialog).getByText(/Found by search/),
     ).toBeInTheDocument();
     expect(within(dialog).queryByRole("button", { name: "Approve" })).toBeNull();
+  });
+
+  it("hides a topic through the dialog, persists it to localStorage, and keeps it hidden across a refresh", async () => {
+    const { user } = renderPanel();
+
+    await user.click(await screen.findByRole("button", { name: "Review Vector clocks" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Hide" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("heading", { name: "New topics" })).toBeNull();
+    });
+    const stored = JSON.parse(localStorage.getItem("wenlan.review.hidden.v1") ?? "[]");
+    expect(stored).toHaveLength(1);
+    expect(stored[0]).toMatchObject({ key: "topic:Vector clocks", kind: "topic" });
+
+    // Refresh re-fetches the same distill payload — unlike resolvedStaleIds,
+    // the hide survives a fresh lastResult instead of resetting with it.
+    await user.click(screen.getByRole("button", { name: /^refresh$/i }));
+    await waitFor(() => {
+      expect(distillReview).toHaveBeenCalledTimes(2);
+    });
+    expect(screen.queryByRole("heading", { name: "New topics" })).toBeNull();
+  });
+
+  it("restores a hidden item from the Hidden footer", async () => {
+    localStorage.setItem(
+      "wenlan.review.hidden.v1",
+      JSON.stringify([
+        { key: "topic:Vector clocks", label: "Vector clocks", kind: "topic", at: Date.now() },
+      ]),
+    );
+    const { user } = renderPanel();
+
+    await screen.findByText("Temporal page refresh");
+    expect(screen.queryByRole("heading", { name: "New topics" })).toBeNull();
+
+    await user.click(await screen.findByRole("button", { name: /1 hidden/ }));
+    await user.click(await screen.findByRole("button", { name: "Restore" }));
+
+    expect(await screen.findByRole("heading", { name: "New topics" })).toBeInTheDocument();
+    expect(screen.getByText("Vector clocks")).toBeInTheDocument();
+    const stored = JSON.parse(localStorage.getItem("wenlan.review.hidden.v1") ?? "[]");
+    expect(stored).toHaveLength(0);
+  });
+
+  it("renders the revisions section's empty state when nothing is pending", async () => {
+    renderPanel();
+
+    await screen.findByRole("heading", { name: "Memory revisions" });
+    expect(screen.getByText("Nothing waiting for approval.")).toBeInTheDocument();
+    expect(
+      screen.getByText(/before\/after diff lands here first/),
+    ).toBeInTheDocument();
+  });
+
+  it("renders the Recent revisions section from listRecentChanges", async () => {
+    vi.mocked(listRecentChanges).mockResolvedValue([
+      {
+        page_id: "page_recent",
+        title: "Threads Metrics And Postmortem Schema",
+        change_kind: "revised",
+        changed_at_ms: Date.now() - 2 * 60 * 60 * 1000,
+      },
+    ]);
+    const { user, onPageClick } = renderPanel();
+
+    await screen.findByRole("heading", { name: "Recent revisions" });
+    const row = await screen.findByRole("button", {
+      name: /Threads Metrics And Postmortem Schema/,
+    });
+    await user.click(row);
+    expect(onPageClick).toHaveBeenCalledWith("page_recent");
   });
 });

@@ -41,6 +41,8 @@ vi.mock("../../lib/tauri", async () => {
     getMemoryDetail: vi.fn(),
     getEntityDetail: vi.fn(),
     getPage: vi.fn(),
+    getPageSources: vi.fn(),
+    getMemoryRevisions: vi.fn(),
   };
 });
 
@@ -96,6 +98,12 @@ beforeEach(() => {
   vi.mocked(tauri.listPages).mockResolvedValue([]);
   vi.mocked(tauri.listConcepts).mockResolvedValue([]);
   vi.mocked(tauri.listRecentChanges).mockResolvedValue([]);
+  vi.mocked(tauri.getPageSources).mockResolvedValue([]);
+  vi.mocked(tauri.getMemoryRevisions).mockResolvedValue({
+    current_source_id: "mem-target",
+    chain_depth: 1,
+    entries: [],
+  } as any);
   vi.mocked(tauri.listRecentRelations).mockResolvedValue([]);
   vi.mocked(tauri.listEntities).mockResolvedValue([]);
   vi.mocked(tauri.getMemoryStats).mockResolvedValue({ total: 0, with_embeddings: 0 } as any);
@@ -693,7 +701,7 @@ describe("HomePage redesign", () => {
     expect(tauri.rejectRefinement).not.toHaveBeenCalled();
   });
 
-  it("opens the page-merge dialog with keep/folds-in panes and approves it", async () => {
+  it("opens the page-merge strip-off dossier and merges it", async () => {
     const user = userEvent.setup();
     vi.mocked(tauri.listRefinements).mockResolvedValue({
       proposals: [
@@ -723,6 +731,18 @@ describe("HomePage redesign", () => {
           title: id === "page-keep" ? "Surviving page" : "Absorbed page",
         }) as any,
     );
+    // The retiring page's 5 sources are a strict subset of the kept page's 6,
+    // so the dossier ledger yields no unique retiring sources → safe verdict.
+    vi.mocked(tauri.getPageSources).mockImplementation(async (id: string) => {
+      const ids =
+        id === "page-keep"
+          ? ["m1", "m2", "m3", "m4", "m5", "m6"]
+          : ["m1", "m2", "m3", "m4", "m5"];
+      return ids.map((m) => ({
+        source: { page_id: id, memory_source_id: m, linked_at: 0 },
+        memory: null,
+      })) as any;
+    });
 
     renderHome();
 
@@ -732,13 +752,12 @@ describe("HomePage redesign", () => {
     );
 
     const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByText("Keeps")).toBeInTheDocument();
-    expect(within(dialog).getByText("Folds in")).toBeInTheDocument();
-    await within(dialog).findByText("Surviving page");
-    await within(dialog).findByText("Absorbed page");
-    expect(within(dialog).getByText("5 shared sources")).toBeInTheDocument();
+    // New "strip-off" dossier: kept/retiring framing + the "nothing lost" verdict.
+    await within(dialog).findByText(/Nothing unique is lost/i);
+    expect(within(dialog).getByText("Kept page")).toBeInTheDocument();
+    expect(within(dialog).getByText("Retiring page")).toBeInTheDocument();
 
-    await user.click(within(dialog).getByRole("button", { name: "Approve" }));
+    await user.click(within(dialog).getByRole("button", { name: /Merge pages/i }));
     await waitFor(() =>
       expect(tauri.acceptRefinement).toHaveBeenCalledWith("ref-page-merge"),
     );

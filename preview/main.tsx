@@ -17,6 +17,32 @@ const VARIANTS = [
   { id: "page-plain", label: "No citations" },
 ];
 
+// Mirrors reviewSuppression.ts's STORAGE_KEY/HiddenReviewEntry shape so the
+// "Seed hidden" button demoes the review panel's hidden-items footer without
+// clicking through two real Hide actions. Keys reference real fixture items
+// (the page-cited stale entry, the "Preview harness" orphan topic) so
+// Restore visibly brings them back into the queue.
+const HIDDEN_STORAGE_KEY = "wenlan.review.hidden.v1";
+function seedHiddenEntries() {
+  localStorage.setItem(
+    HIDDEN_STORAGE_KEY,
+    JSON.stringify([
+      {
+        key: "stale:page-cited",
+        label: "Wenlan Daemon Architecture",
+        kind: "stale_page",
+        at: Date.now() - 3_600_000,
+      },
+      {
+        key: "topic:Preview harness",
+        label: "Preview harness",
+        kind: "topic",
+        at: Date.now() - 1_800_000,
+      },
+    ]),
+  );
+}
+
 const client = new QueryClient({
   defaultOptions: { queries: { retry: false, staleTime: 0, gcTime: 0 } },
 });
@@ -92,6 +118,16 @@ function Harness() {
               style={tab(failing)}
             >
               {failing ? "Fail queue: on" : "Fail queue"}
+            </button>
+            <button
+              onClick={() => {
+                seedHiddenEntries();
+                client.clear();
+                setReviewRun((n) => n + 1);
+              }}
+              style={tab(false)}
+            >
+              Seed hidden
             </button>
           </>
         )}

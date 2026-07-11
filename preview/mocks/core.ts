@@ -13,6 +13,9 @@ import {
   REVIEW_ENTITIES,
   REVIEW_DISTILL,
   REVIEW_FAIL,
+  MERGE_SOURCES,
+  RECENT_CHANGES,
+  MEMORY_REVISIONS,
 } from "../fixtures";
 import { liveInvoke } from "./live-invoke";
 
@@ -26,12 +29,31 @@ export async function invoke(
   switch (cmd) {
     case "get_page":
       return PAGES[args?.id as string] ?? null;
-    case "get_page_sources":
-      return SOURCES;
+    case "get_page_sources": {
+      const pageId = args?.pageId as string;
+      // Merge-dossier pages get their own source lists (deriveMergeLedger
+      // needs keep/retire to differ); every other page falls back to the
+      // shared citation-preview SOURCES array as before.
+      return MERGE_SOURCES[pageId] ?? SOURCES;
+    }
     case "get_page_links":
       return LINKS;
     case "get_page_revisions":
       return { ...REVISIONS, page_id: args?.pageId };
+    case "list_recent_changes": {
+      const limit = (args?.limit as number) ?? RECENT_CHANGES.length;
+      return RECENT_CHANGES.slice(0, limit);
+    }
+    case "get_memory_revisions": {
+      const sourceId = args?.sourceId as string;
+      return (
+        MEMORY_REVISIONS[sourceId] ?? {
+          current_source_id: sourceId,
+          chain_depth: 1,
+          entries: [],
+        }
+      );
+    }
     case "list_registered_sources":
       return [];
     case "update_page": {

@@ -11,6 +11,8 @@ import {
 } from "../../lib/tauri";
 import { diffWords, diffWordCounts, type DiffSegment } from "../../lib/wordDiff";
 import { reviewItemId, type ReviewItem } from "./useReviewQueue";
+import { PageMergeStripOff } from "./ReviewPageMerge";
+import { MemoryRevisionChain } from "./ReviewHistory";
 
 export function reviewKindLabel(t: TFunction, item: ReviewItem): string {
   if (item.kind === "revision") return t("review.kindRevision");
@@ -57,10 +59,11 @@ export function reviewApproveBlocked(item: ReviewItem): boolean {
   );
 }
 
-/** Items with no dismiss verb: read-only discovery plus stale-page refreshes
- * (a page either gets refreshed or stays as-is — nothing to reject). */
-export function reviewDismissBlocked(item: ReviewItem): boolean {
-  return reviewReadOnly(item) || item.kind === "stale_page";
+/** Every kind now has a dismiss-side action: read-only discovery and
+ * stale-page refreshes hide locally (see DistillReviewPanel's resolveItem
+ * wrapper) rather than calling a daemon dismiss verb. */
+export function reviewDismissBlocked(_item: ReviewItem): boolean {
+  return false;
 }
 
 /** Per-kind chip tone: revisions indigo, page work warm, entity merges amber,
@@ -525,22 +528,6 @@ export default function ReviewDialog({
     enabled: memoryPaneIds.length > 1,
   });
 
-  // Daemon page_merge order: source_ids[0] survives, source_ids[1] is absorbed.
-  const pageMergeIds =
-    item?.kind === "refinement" && item.action === "page_merge"
-      ? item.sourceIds.slice(0, 2)
-      : [];
-  const pageKeep = useQuery({
-    queryKey: ["page", pageMergeIds[0] ?? null],
-    queryFn: () => getPage(pageMergeIds[0]),
-    enabled: pageMergeIds.length > 0,
-  });
-  const pageAbsorb = useQuery({
-    queryKey: ["page", pageMergeIds[1] ?? null],
-    queryFn: () => getPage(pageMergeIds[1]),
-    enabled: pageMergeIds.length > 1,
-  });
-
   const archivePageId =
     item?.kind === "refinement" && item.action === "page_keep_or_archive"
       ? (item.sourceIds[0] ?? null)
@@ -593,12 +580,19 @@ export default function ReviewDialog({
   }, [open, openId]);
 
   const resolveCurrent = async (approve: boolean) => {
-    if (!item || isResolving || reviewReadOnly(item)) return;
+    if (!item || isResolving) return;
+    // reviewApproveBlocked already folds in reviewReadOnly — read-only kinds
+    // (topic/page_candidate) can still dismiss (hide) even though they can't
+    // approve.
     if (approve && reviewApproveBlocked(item)) return;
     if (!approve && reviewDismissBlocked(item)) return;
     const isCapture = item.kind === "capture";
     const isConflict =
       item.kind === "refinement" && item.action === "detect_contradiction";
+    const isLocalHide =
+      item.kind === "topic" ||
+      item.kind === "page_candidate" ||
+      item.kind === "stale_page";
     const next = items[index + 1] ?? (index > 0 ? items[index - 1] : null);
     await onResolve({ item, approve });
     setFlash(
@@ -615,7 +609,9 @@ export default function ReviewDialog({
               ? "review.forgotten"
               : isConflict
                 ? "review.keptBoth"
-                : "review.dismissed",
+                : isLocalHide
+                  ? "review.hidden"
+                  : "review.dismissed",
           ),
     );
     window.setTimeout(() => setFlash(null), 450);
@@ -1026,6 +1022,11 @@ export default function ReviewDialog({
                       <ins style={INS_STYLE}>{t("review.added")}</ins>
                     </p>
                   )}
+
+                  <MemoryRevisionChain
+                    sourceId={item.targetSourceId}
+                    onOpenMemory={(id) => onOpenMemory?.(id)}
+                  />
                 </>
               )}
 
@@ -1162,38 +1163,22 @@ export default function ReviewDialog({
                 )}
 
               {item.kind === "refinement" && item.action === "page_merge" && (
-                <div style={{ display: "grid", gap: 12 }}>
-                  <div>
-                    <p style={paneLabelStyle}>{t("review.mergeKeep")}</p>
-                    <div style={paneStyle}>
-                      {pageKeep.isLoading
-                        ? t("review.loadingCurrent")
-                        : (pageKeep.data?.title ?? item.sourceIds[0])}
-                    </div>
-                  </div>
-                  <div>
-                    <p style={paneLabelStyle}>{t("review.mergeFoldsIn")}</p>
-                    <div style={paneStyle}>
-                      {pageAbsorb.isLoading
-                        ? t("review.loadingCurrent")
-                        : (pageAbsorb.data?.title ?? item.sourceIds[1])}
-                    </div>
-                  </div>
-                  {item.payload?.action === "page_merge" && (
-                    <p
-                      style={{
-                        fontFamily: "var(--mem-font-body)",
-                        color: "var(--mem-text-tertiary)",
-                        fontSize: 12,
-                        margin: 0,
-                      }}
-                    >
-                      {t("review.sharedSources", {
-                        count: item.payload.source_overlap,
-                      })}
-                    </p>
-                  )}
-                </div>
+                <PageMergeStripOff
+                  keepId={item.sourceIds[0]}
+                  retireId={item.sourceIds[1]}
+                  onOpenPage={(id) => onOpenPage?.(id)}
+                  onOpenMemory={(id) => onOpenMemory?.(id)}
+                  sourceOverlap={
+                    item.payload?.action === "page_merge"
+                      ? item.payload.source_overlap
+                      : 0
+                  }
+                  sourceOverlapRatio={
+                    item.payload?.action === "page_merge"
+                      ? item.payload.source_overlap_ratio
+                      : 0
+                  }
+                />
               )}
 
               {item.kind === "refinement" &&
@@ -1338,7 +1323,11 @@ export default function ReviewDialog({
                       : item.kind === "refinement" &&
                           item.action === "page_keep_or_archive"
                         ? t("review.keepPage")
-                        : t("review.dismiss")}
+                        : item.kind === "topic" ||
+                            item.kind === "page_candidate" ||
+                            item.kind === "stale_page"
+                          ? t("review.hide")
+                          : t("review.dismiss")}
                 </button>
               )}
               {item.kind === "page_candidate" &&
@@ -1408,10 +1397,28 @@ export default function ReviewDialog({
                         : item.kind === "refinement" &&
                             item.action === "page_keep_or_archive"
                           ? t("review.archive")
-                          : t("review.approve")}
+                          : item.kind === "refinement" &&
+                              item.action === "page_merge"
+                            ? t("review.mergePages")
+                            : t("review.approve")}
                 </button>
               )}
             </div>
+
+            {(item.kind === "topic" ||
+              item.kind === "page_candidate" ||
+              item.kind === "stale_page") && (
+              <p
+                style={{
+                  fontFamily: "var(--mem-font-body)",
+                  color: "var(--mem-text-tertiary)",
+                  fontSize: 12,
+                  margin: "0 20px 14px",
+                }}
+              >
+                {t("review.hideHint")}
+              </p>
+            )}
           </>
         ) : null}
       </div>

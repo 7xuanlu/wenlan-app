@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import {
   distillReview,
   type DistillPendingCluster,
@@ -12,7 +13,13 @@ import ReviewDialog, {
   reviewKindTone,
   useReviewItemSummary,
 } from "./ReviewDialog";
+import { RecentRevisionsSection } from "./ReviewHistory";
 import { relativeMs } from "./page/format";
+import {
+  reviewSuppressKey,
+  useSuppressedReviewItems,
+  type HiddenReviewEntry,
+} from "./reviewSuppression";
 import {
   reviewItemId,
   reviewItemSection,
@@ -221,6 +228,167 @@ function QueueCard({
   );
 }
 
+/** Mirrors reviewKindTone/reviewKindLabel (ReviewDialog.tsx) for the three
+ * locally-hideable kinds — those helpers key off a full ReviewItem, which a
+ * HiddenReviewEntry (key/label/kind/at only) doesn't carry. */
+function hiddenKindTone(kind: string): { color: string; background: string } {
+  const mix = (token: string) => `color-mix(in srgb, ${token} 15%, transparent)`;
+  switch (kind) {
+    case "stale_page":
+    case "page_candidate":
+      return { color: "var(--mem-accent-warm)", background: mix("var(--mem-accent-warm)") };
+    case "topic":
+      return { color: "var(--mem-accent-sage)", background: mix("var(--mem-accent-sage)") };
+    default:
+      return { color: "var(--mem-text-tertiary)", background: "var(--mem-hover)" };
+  }
+}
+
+function hiddenKindLabel(t: TFunction, kind: string): string {
+  switch (kind) {
+    case "stale_page":
+      return t("review.kindPageRefresh");
+    case "page_candidate":
+      return t("review.kindPageCandidate");
+    case "topic":
+      return t("review.kindTopic");
+    default:
+      return kind;
+  }
+}
+
+/** Permanent, quiet escape hatch for items hidden via the dialog's "Hide"
+ * button — no timed undo toast; Restore is always one click away. */
+function HiddenFooter({
+  entries,
+  onRestore,
+  onRestoreAll,
+}: {
+  entries: HiddenReviewEntry[];
+  onRestore: (key: string) => void;
+  onRestoreAll: () => void;
+}) {
+  const { t } = useTranslation();
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setExpanded((prev) => !prev)}
+        className="rounded-md transition-colors duration-150 hover:bg-[var(--mem-hover)]"
+        style={{
+          fontFamily: "var(--mem-font-body)",
+          fontSize: 12.5,
+          color: "var(--mem-text-tertiary)",
+          border: "none",
+          background: "none",
+          cursor: "pointer",
+          padding: "6px 4px",
+          margin: "-6px -4px",
+        }}
+      >
+        <span
+          style={{
+            fontFamily: "var(--mem-font-mono)",
+            fontVariantNumeric: "tabular-nums",
+          }}
+        >
+          {t("review.hiddenCount", { count: entries.length })}
+        </span>
+        {` · ${t("review.showHidden")}`}
+      </button>
+      {expanded && (
+        <section style={{ marginTop: 8 }}>
+          <h2 style={sectionTitleStyle}>
+            {t("review.hiddenSectionTitle")}
+            <span aria-hidden="true" style={sectionCountStyle}>
+              {entries.length}
+            </span>
+            <button
+              type="button"
+              onClick={onRestoreAll}
+              style={{
+                marginLeft: "auto",
+                fontFamily: "var(--mem-font-body)",
+                fontSize: 12.5,
+                fontWeight: 400,
+                textTransform: "none",
+                letterSpacing: "normal",
+                color: "var(--mem-accent-indigo)",
+                border: "none",
+                background: "none",
+                cursor: "pointer",
+              }}
+            >
+              {t("review.restoreAll")}
+            </button>
+          </h2>
+          <div className="grid gap-1.5">
+            {entries.map((entry) => {
+              const tone = hiddenKindTone(entry.kind);
+              return (
+                <div
+                  key={entry.key}
+                  style={{
+                    ...itemSurfaceStyle,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "8px 12px",
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: 11,
+                      letterSpacing: "0.04em",
+                      borderRadius: 5,
+                      padding: "2px 8px",
+                      color: tone.color,
+                      backgroundColor: tone.background,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {hiddenKindLabel(t, entry.kind)}
+                  </span>
+                  <span
+                    style={{
+                      ...secondaryTextStyle,
+                      flex: 1,
+                      minWidth: 0,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                      fontSize: 13,
+                    }}
+                  >
+                    {truncateText(entry.label, 60)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => onRestore(entry.key)}
+                    style={{
+                      fontFamily: "var(--mem-font-body)",
+                      fontSize: 12.5,
+                      color: "var(--mem-accent-indigo)",
+                      border: "none",
+                      background: "none",
+                      cursor: "pointer",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {t("review.restore")}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
 export default function DistillReviewPanel({
   onBack,
   onPageClick,
@@ -236,6 +404,8 @@ export default function DistillReviewPanel({
   );
   const didLoadInitialReview = useRef(false);
   const queue = useReviewQueue();
+  const { hiddenKeys, hiddenEntries, hide, restore, restoreAll } =
+    useSuppressedReviewItems();
   const review = useMutation({
     mutationFn: distillReview,
     retry: false,
@@ -270,26 +440,38 @@ export default function DistillReviewPanel({
   // on the home context rail instead of flooding this queue.
   const decisionItems = queue.items.filter((item) => item.kind !== "capture");
 
+  // These three kinds have no daemon dismiss verb — "Hide" persists locally
+  // instead (see reviewSuppression.ts); a hidden item drops out here so it
+  // never reappears after a re-render or a fresh distill result.
+  const isHiddenItem = (item: ReviewItem) => {
+    const key = reviewSuppressKey(item);
+    return key != null && hiddenKeys.has(key);
+  };
+
   // Distill discovery rendered through the same card + dialog pattern as the
   // actionable queue, read-only until the daemon grows verbs for them.
-  const candidateItems = (lastResult?.pending ?? []).map(
-    (cluster, clusterIndex): ReviewItem => ({
-      kind: "page_candidate",
-      id: cluster.source_ids.join("-") || `cluster-${clusterIndex}`,
-      title: pendingLabel(cluster) ?? t("review.untitledCluster"),
-      cluster,
-      timestampMs: null,
-    }),
-  );
-  const topicItems = (lastResult?.orphan_topics ?? []).map(
-    (topic): ReviewItem => ({
-      kind: "topic",
-      id: topic.label,
-      label: topic.label,
-      count: topic.count,
-      timestampMs: null,
-    }),
-  );
+  const candidateItems = (lastResult?.pending ?? [])
+    .map(
+      (cluster, clusterIndex): ReviewItem => ({
+        kind: "page_candidate",
+        id: cluster.source_ids.join("-") || `cluster-${clusterIndex}`,
+        title: pendingLabel(cluster) ?? t("review.untitledCluster"),
+        cluster,
+        timestampMs: null,
+      }),
+    )
+    .filter((item) => !isHiddenItem(item));
+  const topicItems = (lastResult?.orphan_topics ?? [])
+    .map(
+      (topic): ReviewItem => ({
+        kind: "topic",
+        id: topic.label,
+        label: topic.label,
+        count: topic.count,
+        timestampMs: null,
+      }),
+    )
+    .filter((item) => !isHiddenItem(item));
   // Compiled pages whose sources changed — actionable: approve re-distills.
   const stalePageItems = (lastResult?.stale_pages ?? [])
     .filter((page) => !resolvedStaleIds.has(page.page_id))
@@ -302,7 +484,8 @@ export default function DistillReviewPanel({
         sourcesUpdated: page.sources_updated_count ?? null,
         timestampMs: null,
       }),
-    );
+    )
+    .filter((item) => !isHiddenItem(item));
   // Dialog order mirrors the page: decisions, page refreshes, then discovery.
   const dialogItems = [
     ...decisionItems,
@@ -314,10 +497,22 @@ export default function DistillReviewPanel({
   // Stale-page refreshes resolve against the panel's distill result, not the
   // queue caches — drop them here after the daemon verb succeeds.
   const resolveItem = async (args: { item: ReviewItem; approve: boolean }) => {
+    const { item, approve } = args;
+    // The three read-only discovery kinds have no daemon dismiss verb — "no"
+    // means hide it locally instead of calling the queue (which no-ops for
+    // page_candidate/topic and has no dismiss path for stale_page anyway).
+    if (
+      !approve &&
+      (item.kind === "stale_page" ||
+        item.kind === "page_candidate" ||
+        item.kind === "topic")
+    ) {
+      hide(item);
+      return;
+    }
     const result = await queue.resolve(args);
-    if (args.item.kind === "stale_page" && args.approve) {
-      const pageId = args.item.id;
-      setResolvedStaleIds((prev) => new Set(prev).add(pageId));
+    if (item.kind === "stale_page" && approve) {
+      setResolvedStaleIds((prev) => new Set(prev).add(item.id));
     }
     return result;
   };
@@ -494,9 +689,55 @@ export default function DistillReviewPanel({
           </p>
         )}
 
-        {sections.map(
-          (section) =>
-            section.items.length > 0 && (
+        {sections.map((section) => {
+          const hasItems = section.items.length > 0;
+          if (section.key === "revisions") {
+            // Always-on once the queue has settled — proves revisions exist
+            // even when nothing is pending. Hidden during a real load
+            // failure: the loadFailed/loadPartial blocks above already
+            // cover that state.
+            if (queue.isLoading || (!hasItems && queue.error)) return null;
+            return (
+              <section key={section.key}>
+                <h2 style={sectionTitleStyle}>
+                  {section.title}
+                  <span aria-hidden="true" style={sectionCountStyle}>
+                    {section.items.length}
+                  </span>
+                </h2>
+                {hasItems ? (
+                  <div className="grid gap-2.5">
+                    {section.items.map((item) => (
+                      <QueueCard
+                        key={reviewItemId(item)}
+                        item={item}
+                        onOpen={setOpenId}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ ...itemSurfaceStyle, padding: "13px 14px" }}>
+                    <p style={{ ...secondaryTextStyle, margin: 0, fontSize: 13.5 }}>
+                      {t("review.revisionsEmptyTitle")}
+                    </p>
+                    <p
+                      style={{
+                        ...secondaryTextStyle,
+                        margin: "6px 0 0",
+                        fontSize: 13,
+                        lineHeight: 1.5,
+                        color: "var(--mem-text-tertiary)",
+                      }}
+                    >
+                      {t("review.revisionsEmptyBody")}
+                    </p>
+                  </div>
+                )}
+              </section>
+            );
+          }
+          return (
+            hasItems && (
               <section key={section.key}>
                 <h2 style={sectionTitleStyle}>
                   {section.title}
@@ -514,8 +755,9 @@ export default function DistillReviewPanel({
                   ))}
                 </div>
               </section>
-            ),
-        )}
+            )
+          );
+        })}
 
         {lastResult && (
           <section>
@@ -588,6 +830,16 @@ export default function DistillReviewPanel({
               ))}
             </div>
           </section>
+        )}
+
+        <RecentRevisionsSection onPageClick={onPageClick} />
+
+        {hiddenEntries.length > 0 && (
+          <HiddenFooter
+            entries={hiddenEntries}
+            onRestore={restore}
+            onRestoreAll={restoreAll}
+          />
         )}
       </div>
 
