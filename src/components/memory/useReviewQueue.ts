@@ -10,6 +10,7 @@ import {
   listPendingRevisions,
   listRefinements,
   listUnconfirmedMemories,
+  redistillPage,
   rejectRefinement,
   type DistillPendingCluster,
   type PendingRevisionItem,
@@ -44,6 +45,16 @@ export type ReviewItem =
       title: string;
       snippet: string | null;
       timestampMs: number | null;
+    }
+  // A compiled page whose sources changed since the last distill. Approve
+  // re-runs redistill_page; there is no dismiss verb, so the dialog hides it.
+  | {
+      kind: "stale_page";
+      id: string;
+      title: string;
+      summary: string | null;
+      sourcesUpdated: number | null;
+      timestampMs: null;
     }
   // Read-only discovery items from distill review — no daemon verb exists for
   // them yet, so the dialog shows them without approve/dismiss actions.
@@ -90,6 +101,7 @@ const SECTION_ORDER: ReviewSection[] = [
 export function reviewItemSection(item: ReviewItem): ReviewSection {
   if (item.kind === "revision") return "revisions";
   if (item.kind === "capture") return "captures";
+  if (item.kind === "stale_page") return "pages";
   if (item.kind === "page_candidate") return "candidates";
   if (item.kind === "topic") return "topics";
   switch (item.action) {
@@ -206,6 +218,11 @@ export function useReviewQueue(enabled: boolean = true) {
         // Curate semantics: confirm keeps the memory, "dismiss" forgets it.
         return approve ? confirmMemory(item.id) : deleteMemory(item.id);
       }
+      if (item.kind === "stale_page") {
+        // Approve rebuilds the page from its sources; dismiss has no verb and
+        // the dialog never offers it.
+        return approve ? redistillPage(item.id) : undefined;
+      }
       if (item.kind === "page_candidate" || item.kind === "topic") {
         // Read-only discovery — no daemon verb; the dialog never offers one.
         return;
@@ -213,7 +230,14 @@ export function useReviewQueue(enabled: boolean = true) {
       return approve ? acceptRefinement(item.id) : rejectRefinement(item.id);
     },
     onSuccess: (_result, { item }) => {
-      if (item.kind === "page_candidate" || item.kind === "topic") return;
+      // Panel-owned distill items never live in these caches — stale pages are
+      // removed from the panel's last distill result by its resolve wrapper.
+      if (
+        item.kind === "stale_page" ||
+        item.kind === "page_candidate" ||
+        item.kind === "topic"
+      )
+        return;
       // Drop the resolved item from the cache right away so the queue and any
       // open dialog advance without waiting for the refetch.
       if (item.kind === "revision") {

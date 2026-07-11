@@ -12,7 +12,10 @@ import {
 } from "../../lib/tauri";
 import { Greeting } from "./Greeting";
 import { useReviewQueue, reviewItemId, type ReviewItem } from "./useReviewQueue";
-import ReviewDialog, { reviewKindLabel, truncateReviewText } from "./ReviewDialog";
+import ReviewDialog, {
+  reviewKindLabel,
+  useReviewItemSummary,
+} from "./ReviewDialog";
 import { RefiningList } from "./RefiningList";
 import { ConnectionsList } from "./ConnectionsList";
 import { RetrievalsList } from "./RetrievalsList";
@@ -797,6 +800,7 @@ function reviewDotColor(item: ReviewItem): string {
   if (item.kind === "revision") return "var(--mem-accent-indigo)";
   if (item.kind === "capture") return "var(--mem-accent-warm)";
   // Distill discovery never reaches the home rail; colors kept for totality.
+  if (item.kind === "stale_page") return "var(--mem-accent-page)";
   if (item.kind === "page_candidate") return "var(--mem-accent-warm)";
   if (item.kind === "topic") return "var(--mem-accent-sage)";
   switch (item.action) {
@@ -824,12 +828,9 @@ function ReviewRailItem({
 }) {
   const { t } = useTranslation();
   const kind = reviewKindLabel(t, item);
-  const title =
-    item.kind === "revision"
-      ? truncateReviewText(item.content, 72)
-      : item.kind === "capture"
-        ? truncateReviewText(item.title, 72)
-        : kind;
+  // Same rich titles as the review-page cards — a rail row never reads as
+  // just its kind label when the names its ids point at can be fetched.
+  const { title } = useReviewItemSummary(item);
   const meta = [
     kind,
     item.kind === "refinement"

@@ -10,6 +10,7 @@ import { reviewItemId, type ReviewItem } from "./useReviewQueue";
 export function reviewKindLabel(t: TFunction, item: ReviewItem): string {
   if (item.kind === "revision") return t("review.kindRevision");
   if (item.kind === "capture") return t("review.kindCapture");
+  if (item.kind === "stale_page") return t("review.kindPageRefresh");
   if (item.kind === "page_candidate") return t("review.kindPageCandidate");
   if (item.kind === "topic") return t("review.kindTopic");
   switch (item.action) {
@@ -51,6 +52,12 @@ export function reviewApproveBlocked(item: ReviewItem): boolean {
   );
 }
 
+/** Items with no dismiss verb: read-only discovery plus stale-page refreshes
+ * (a page either gets refreshed or stays as-is — nothing to reject). */
+export function reviewDismissBlocked(item: ReviewItem): boolean {
+  return reviewReadOnly(item) || item.kind === "stale_page";
+}
+
 /** Per-kind chip tone: revisions indigo, page work warm, entity merges amber,
  * conflicts danger, new entities/topics sage. */
 export function reviewKindTone(item: ReviewItem): {
@@ -65,7 +72,7 @@ export function reviewKindTone(item: ReviewItem): {
       background: "var(--mem-indigo-bg)",
     };
   }
-  if (item.kind === "page_candidate") {
+  if (item.kind === "page_candidate" || item.kind === "stale_page") {
     return {
       color: "var(--mem-accent-warm)",
       background: mix("var(--mem-accent-warm)"),
@@ -109,6 +116,187 @@ export function truncateReviewText(value: string, max: number): string {
   const trimmed = value.trim().replace(/\s+/g, " ");
   if (trimmed.length <= max) return trimmed;
   return `${trimmed.slice(0, max - 3).trimEnd()}...`;
+}
+
+type ReviewLookup = "page" | "entity" | "memory" | null;
+
+/** Resolve which two ids a review item's evidence points at, if any. */
+function reviewLookupRefs(item: ReviewItem | null): {
+  lookup: ReviewLookup;
+  aId: string | null;
+  bId: string | null;
+} {
+  if (item?.kind === "revision") {
+    return { lookup: "memory", aId: item.targetSourceId, bId: null };
+  }
+  if (item?.kind !== "refinement") return { lookup: null, aId: null, bId: null };
+  switch (item.action) {
+    case "page_merge":
+      return {
+        lookup: "page",
+        aId: item.sourceIds[0] ?? null,
+        bId: item.sourceIds[1] ?? null,
+      };
+    case "page_keep_or_archive":
+      return { lookup: "page", aId: item.sourceIds[0] ?? null, bId: null };
+    case "entity_merge":
+      return item.payload?.action === "entity_merge"
+        ? {
+            lookup: "entity",
+            aId: item.payload.existing_id,
+            bId: item.payload.new_id,
+          }
+        : { lookup: null, aId: null, bId: null };
+    case "detect_contradiction":
+    case "dedup_merge":
+      return {
+        lookup: "memory",
+        aId: item.sourceIds[0] ?? null,
+        bId: item.sourceIds[1] ?? null,
+      };
+    default:
+      // relation_conflict / suggest_entity / cross_space_discovery carry
+      // their evidence in the payload; their source_ids are not fetchable.
+      return { lookup: null, aId: null, bId: null };
+  }
+}
+
+async function fetchReviewName(
+  lookup: Exclude<ReviewLookup, null>,
+  id: string,
+): Promise<{ name: string | null; text: string | null }> {
+  if (lookup === "page") {
+    const page = await getPage(id);
+    return { name: page?.title ?? null, text: null };
+  }
+  if (lookup === "entity") {
+    const detail = await getEntityDetail(id);
+    return { name: detail?.entity.name ?? null, text: null };
+  }
+  const detail = await getMemoryDetail(id);
+  return {
+    name: detail?.title?.trim() || detail?.content || null,
+    text: detail?.content ?? null,
+  };
+}
+
+/**
+ * Rich card/rail summary for a review item: fetches the names its ids point
+ * at and surfaces the payload evidence (page names, overlap, similarity, word
+ * delta) so an item never reads as just its kind label. Falls back to the
+ * kind label while names load.
+ */
+export function useReviewItemSummary(item: ReviewItem | null): {
+  title: string;
+  reason: string | null;
+  delta: { added: number; removed: number } | null;
+} {
+  const { t } = useTranslation();
+  const { lookup, aId, bId } = reviewLookupRefs(item);
+  const a = useQuery({
+    queryKey: ["review-summary", lookup, aId],
+    queryFn: () => fetchReviewName(lookup as Exclude<ReviewLookup, null>, aId as string),
+    enabled: lookup != null && aId != null,
+    staleTime: 60_000,
+  });
+  const b = useQuery({
+    queryKey: ["review-summary", lookup, bId],
+    queryFn: () => fetchReviewName(lookup as Exclude<ReviewLookup, null>, bId as string),
+    enabled: lookup != null && bId != null,
+    staleTime: 60_000,
+  });
+  const delta = useMemo(
+    () =>
+      item?.kind === "revision" && a.data?.text
+        ? diffWordCounts(diffWords(a.data.text, item.content))
+        : null,
+    [item, a.data],
+  );
+  if (!item) return { title: "", reason: null, delta: null };
+
+  const short = (value: string | null | undefined, max = 36): string | null => {
+    const trimmed = value?.trim();
+    return trimmed ? truncateReviewText(trimmed, max) : null;
+  };
+  const aName = short(a.data?.name);
+  const bName = short(b.data?.name);
+  let title: string | null = null;
+  let reason: string | null = null;
+  if (item.kind === "revision") {
+    title = short(a.data?.name, 96) ?? short(item.content, 96);
+    reason = item.agent ? t("review.proposedBy", { agent: item.agent }) : null;
+  } else if (item.kind === "capture") {
+    title = short(item.title, 96);
+    reason = short(item.snippet, 96);
+  } else if (item.kind === "page_candidate") {
+    title = item.title;
+    reason =
+      (item.cluster.new_memory_count != null
+        ? t("review.newSources", { count: item.cluster.new_memory_count })
+        : t("review.sources", { count: item.cluster.source_ids.length })) +
+      (item.cluster.existing_page_id
+        ? ` · ${t("review.linkedExistingPage")}`
+        : "");
+  } else if (item.kind === "topic") {
+    title = item.label;
+    reason = t("review.mentions", { count: item.count });
+  } else if (item.kind === "stale_page") {
+    title = item.title;
+    reason =
+      item.sourcesUpdated != null
+        ? t("review.sourcesUpdated", { count: item.sourcesUpdated })
+        : null;
+  } else {
+    const confidence = t("review.confidence", {
+      percent: Math.round(item.confidence * 100),
+    });
+    reason = confidence;
+    switch (item.action) {
+      case "page_merge":
+        if (aName && bName)
+          title = t("review.pageMergeTitle", { keep: aName, absorb: bName });
+        if (item.payload?.action === "page_merge")
+          reason = t("review.mergeReason", {
+            count: item.payload.source_overlap,
+            percent: Math.round(item.payload.source_overlap_ratio * 100),
+          });
+        break;
+      case "entity_merge":
+        if (aName && bName)
+          title = t("review.entityMergeTitle", { a: aName, b: bName });
+        if (item.payload?.action === "entity_merge")
+          reason = t("review.similarity", {
+            percent: Math.round(item.payload.similarity * 100),
+          });
+        break;
+      case "detect_contradiction":
+        if (aName && bName)
+          title = t("review.contradictionTitle", { a: aName, b: bName });
+        break;
+      case "dedup_merge":
+        if (aName && bName)
+          title = t("review.dedupTitle", { a: aName, b: bName });
+        break;
+      case "page_keep_or_archive":
+        title = short(a.data?.name, 96);
+        if (item.payload?.action === "page_keep_or_archive")
+          reason = `${t("review.sources", { count: item.payload.source_count })} · ${confidence}`;
+        break;
+      case "relation_conflict":
+        if (item.payload?.action === "relation_conflict")
+          title = `${item.payload.from} → ${item.payload.to}`;
+        break;
+      case "suggest_entity":
+        if (item.payload?.action === "suggest_entity")
+          title = short(item.payload.name_hint, 96);
+        break;
+      case "cross_space_discovery":
+        if (item.payload?.action === "cross_space_discovery")
+          title = item.payload.spaces.join(" · ");
+        break;
+    }
+  }
+  return { title: title ?? reviewKindLabel(t, item), reason, delta };
 }
 
 const INS_STYLE: React.CSSProperties = {
@@ -207,6 +395,7 @@ export default function ReviewDialog({
   const index = foundIndex >= 0 ? foundIndex : items.length > 0 ? 0 : -1;
   const item = showDone ? null : index >= 0 ? items[index] : null;
   const done = open && (showDone || items.length === 0);
+  const summary = useReviewItemSummary(item);
 
   const detailSourceId =
     item?.kind === "revision"
@@ -311,6 +500,7 @@ export default function ReviewDialog({
   const resolveCurrent = async (approve: boolean) => {
     if (!item || isResolving || reviewReadOnly(item)) return;
     if (approve && reviewApproveBlocked(item)) return;
+    if (!approve && reviewDismissBlocked(item)) return;
     const isCapture = item.kind === "capture";
     const isConflict =
       item.kind === "refinement" && item.action === "detect_contradiction";
@@ -389,12 +579,14 @@ export default function ReviewDialog({
         truncateReviewText(item.content, 72))
       : item?.kind === "capture"
         ? truncateReviewText(item.title, 72)
-        : item?.kind === "page_candidate"
+        : item?.kind === "page_candidate" || item?.kind === "stale_page"
           ? item.title
           : item?.kind === "topic"
             ? item.label
             : item
-              ? reviewKindLabel(t, item)
+              ? // Refinements: the resolved names ("A" and "B" look like the
+                // same entity), falling back to the kind label while loading.
+                summary.title
               : "";
 
   return (
@@ -607,6 +799,12 @@ export default function ReviewDialog({
                           : "")
                       : item.kind === "topic"
                         ? t("review.mentions", { count: item.count })
+                        : item.kind === "stale_page"
+                          ? (item.sourcesUpdated != null
+                              ? t("review.sourcesUpdated", {
+                                  count: item.sourcesUpdated,
+                                })
+                              : "")
                         : isContradiction
                           ? t("review.contradictionHint")
                       : item.action === "relation_conflict"
@@ -619,9 +817,18 @@ export default function ReviewDialog({
                               ? t("review.suggestEntityHint")
                               : item.action === "dedup_merge"
                                 ? t("review.dedupHint")
-                                : t("review.confidence", {
-                                    percent: Math.round(item.confidence * 100),
-                                  })}
+                                : item.payload?.action === "page_merge"
+                                  ? `${t("review.mergeReason", {
+                                      count: item.payload.source_overlap,
+                                      percent: Math.round(
+                                        item.payload.source_overlap_ratio * 100,
+                                      ),
+                                    })} · ${t("review.confidence", {
+                                      percent: Math.round(item.confidence * 100),
+                                    })}`
+                                  : t("review.confidence", {
+                                      percent: Math.round(item.confidence * 100),
+                                    })}
               </p>
 
               {item.kind === "revision" && (
@@ -770,6 +977,22 @@ export default function ReviewDialog({
                 >
                   {t("review.topicHint")}
                 </p>
+              )}
+
+              {item.kind === "stale_page" && (
+                <div style={{ display: "grid", gap: 12 }}>
+                  <p
+                    style={{
+                      fontFamily: "var(--mem-font-body)",
+                      color: "var(--mem-text-secondary)",
+                      fontSize: 13,
+                      margin: 0,
+                    }}
+                  >
+                    {t("review.refreshHint")}
+                  </p>
+                  {item.summary && <div style={paneStyle}>{item.summary}</div>}
+                </div>
               )}
 
               {item.kind === "refinement" &&
@@ -980,7 +1203,7 @@ export default function ReviewDialog({
                 marginTop: 14,
               }}
             >
-              {!reviewReadOnly(item) && (
+              {!reviewDismissBlocked(item) && (
                 <button
                   type="button"
                   disabled={isResolving}
@@ -1020,6 +1243,15 @@ export default function ReviewDialog({
                     {t("review.openPage")}
                   </button>
                 )}
+              {item.kind === "stale_page" && onOpenPage && (
+                <button
+                  type="button"
+                  onClick={() => onOpenPage(item.id)}
+                  style={actionButtonStyle}
+                >
+                  {t("review.openPage")}
+                </button>
+              )}
               {(item.kind === "revision" || item.kind === "capture") &&
                 onOpenMemory && (
                   <button
@@ -1058,12 +1290,14 @@ export default function ReviewDialog({
                 >
                   {item.kind === "capture"
                     ? t("review.confirm")
-                    : isContradiction
-                      ? t("review.resolve")
-                      : item.kind === "refinement" &&
-                          item.action === "page_keep_or_archive"
-                        ? t("review.archive")
-                        : t("review.approve")}
+                    : item.kind === "stale_page"
+                      ? t("review.refreshPage")
+                      : isContradiction
+                        ? t("review.resolve")
+                        : item.kind === "refinement" &&
+                            item.action === "page_keep_or_archive"
+                          ? t("review.archive")
+                          : t("review.approve")}
                 </button>
               )}
             </div>

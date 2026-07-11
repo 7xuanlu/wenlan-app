@@ -373,7 +373,10 @@ describe("HomePage redesign", () => {
     await within(rail).findByText("Review all →");
     expect(screen.queryByTestId("wiki-context-needs-review")).toBeNull();
     expect(screen.getByTestId("wiki-context-updated-today")).toHaveTextContent("3");
-    expect(screen.getByText("Third proposed wording")).toBeInTheDocument();
+    // All three revision rows title themselves with the fetched memory name.
+    await waitFor(() => {
+      expect(screen.getAllByText("Target memory")).toHaveLength(3);
+    });
     expect(screen.queryByText("Entity merge")).toBeNull();
   });
 
@@ -583,8 +586,9 @@ describe("HomePage redesign", () => {
 
     renderHome();
 
+    // The rail row titles itself with the target memory's real name.
     await user.click(
-      await screen.findByRole("button", { name: /Review The durable updated wording/ }),
+      await screen.findByRole("button", { name: /Review Target memory/ }),
     );
 
     const dialog = await screen.findByRole("dialog");
@@ -667,8 +671,9 @@ describe("HomePage redesign", () => {
 
     renderHome();
 
+    // Both memory names load into the rail title.
     await user.click(
-      await screen.findByRole("button", { name: "Review Contradiction" }),
+      await screen.findByRole("button", { name: /contradicts/ }),
     );
 
     const dialog = await screen.findByRole("dialog");
@@ -721,8 +726,9 @@ describe("HomePage redesign", () => {
 
     renderHome();
 
+    // The rail title carries both page names and the merge direction.
     await user.click(
-      await screen.findByRole("button", { name: "Review Page merge" }),
+      await screen.findByRole("button", { name: /“Surviving page” absorbs “Absorbed page”/ }),
     );
 
     const dialog = await screen.findByRole("dialog");
@@ -779,20 +785,46 @@ describe("HomePage redesign", () => {
     vi.mocked(tauri.listPages).mockResolvedValue([
       page({ id: "page-current", title: "Current page" }),
     ]);
+    vi.mocked(tauri.getMemoryDetail).mockImplementation(
+      async (sourceId: string) =>
+        ({
+          source_id: sourceId,
+          title:
+            sourceId === "mem-new"
+              ? "New claim"
+              : sourceId === "mem-old"
+                ? "Old claim"
+                : "Target memory",
+          content: "content",
+          summary: null,
+          memory_type: null,
+          domain: null,
+          source_agent: null,
+          confidence: null,
+          confirmed: true,
+          pinned: false,
+          supersedes: null,
+          last_modified: 1_782_365_000,
+          chunk_count: 1,
+        }) as any,
+    );
 
     renderHome();
 
     const strip = await screen.findByTestId("worth-a-glance");
     await within(strip).findAllByText(/Page merge/);
-    const labels = within(strip)
-      .getAllByRole("button")
-      .map((button) => button.getAttribute("aria-label"));
     // Rail shows the top 3 of the ranked queue: revisions > conflicts > pages.
-    expect(labels).toEqual([
-      "Review Revised memory wording",
-      "Review Contradiction",
-      "Review Page merge",
-    ]);
+    // Titles resolve asynchronously from the fetched names, so wait for them.
+    await waitFor(() => {
+      const labels = within(strip)
+        .getAllByRole("button")
+        .map((button) => button.getAttribute("aria-label"));
+      expect(labels).toEqual([
+        "Review Target memory",
+        "Review “New claim” contradicts “Old claim”",
+        "Review Page merge",
+      ]);
+    });
   });
 
   it("shows the new-memories count as N+ when captures hit their fetch cap", async () => {
@@ -847,8 +879,9 @@ describe("HomePage redesign", () => {
 
     renderHome();
 
+    // Relation conflicts title themselves from the payload's endpoints.
     await user.click(
-      await screen.findByRole("button", { name: "Review Relation conflict" }),
+      await screen.findByRole("button", { name: "Review Lucian → Zed" }),
     );
 
     const dialog = await screen.findByRole("dialog");
@@ -886,11 +919,12 @@ describe("HomePage redesign", () => {
     renderHome();
 
     await user.click(
-      await screen.findByRole("button", { name: "Review Entity suggestion" }),
+      await screen.findByRole("button", { name: "Review Zed Editor" }),
     );
 
     const dialog = await screen.findByRole("dialog");
-    await within(dialog).findByText("Zed Editor");
+    // The name hint appears as both the dialog heading and the body chip.
+    await within(dialog).findAllByText("Zed Editor");
     expect(
       within(dialog).queryByRole("button", { name: "Approve" }),
     ).not.toBeInTheDocument();
@@ -936,11 +970,12 @@ describe("HomePage redesign", () => {
     renderHome();
 
     await user.click(
-      await screen.findByRole("button", { name: "Review Page cleanup" }),
+      await screen.findByRole("button", { name: /Review Thin scratch page/ }),
     );
 
     const dialog = await screen.findByRole("dialog");
-    await within(dialog).findByText("Thin scratch page");
+    // The page title appears as both the dialog heading and the body pane.
+    await within(dialog).findAllByText("Thin scratch page");
     expect(
       within(dialog).getByRole("button", { name: "Archive" }),
     ).toBeInTheDocument();

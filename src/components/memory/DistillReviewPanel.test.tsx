@@ -26,6 +26,7 @@ vi.mock("../../lib/tauri", async () => {
     deleteMemory: vi.fn(),
     getMemoryDetail: vi.fn(),
     getEntityDetail: vi.fn(),
+    redistillPage: vi.fn(),
   };
 });
 
@@ -42,6 +43,7 @@ import {
   deleteMemory,
   getMemoryDetail,
   getEntityDetail,
+  redistillPage,
 } from "../../lib/tauri";
 
 function renderPanel(props: Partial<React.ComponentProps<typeof DistillReviewPanel>> = {}) {
@@ -162,6 +164,11 @@ beforeEach(() => {
   vi.mocked(getMemoryDetail).mockResolvedValue(
     memory({ source_id: "mem_target", title: "Target memory", content: "Prefers npm for installs" }),
   );
+  vi.mocked(redistillPage).mockResolvedValue({
+    status: "ok",
+    updated: true,
+    hint: null,
+  } as any);
   vi.mocked(getEntityDetail).mockResolvedValue({
     entity: {
       id: "ent_1",
@@ -213,15 +220,26 @@ describe("DistillReviewPanel", () => {
     expect(screen.getByText(fallbackSecondSource)).toBeInTheDocument();
   });
 
-  it("navigates stale pages without exposing rebuild controls", async () => {
+  it("opens a stale page card and refreshes it through redistill", async () => {
     const { user, onPageClick } = renderPanel();
 
-    await user.click(await screen.findByRole("button", { name: /open Retrieval Pipeline/i }));
+    await user.click(
+      await screen.findByRole("button", { name: /Review Retrieval Pipeline/ }),
+    );
 
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Page refresh")).toBeInTheDocument();
+    expect(within(dialog).getByText("3 sources updated")).toBeInTheDocument();
+    // No dismiss verb exists for stale pages, so the dialog never offers one.
+    expect(within(dialog).queryByRole("button", { name: "Dismiss" })).toBeNull();
+
+    await user.click(within(dialog).getByRole("button", { name: "Open page" }));
     expect(onPageClick).toHaveBeenCalledWith("page_stale");
-    expect(screen.queryByText(/force rebuild/i)).toBeNull();
-    expect(screen.queryByText(/synthesize page/i)).toBeNull();
-    expect(screen.queryByText(/^rebuild$/i)).toBeNull();
+
+    await user.click(within(dialog).getByRole("button", { name: "Refresh page" }));
+    await waitFor(() => {
+      expect(redistillPage).toHaveBeenCalledWith("page_stale");
+    });
   });
 
   it("keeps the last successful result visible after refresh failure", async () => {
@@ -279,7 +297,8 @@ describe("DistillReviewPanel review queue", () => {
 
     expect(await screen.findByRole("heading", { name: "Memory revisions" })).toBeInTheDocument();
     expect(screen.getByText("1 pending")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Review Prefers pnpm for installs/ })).toBeInTheDocument();
+    // The card titles itself with the target memory's real name once fetched.
+    expect(await screen.findByRole("button", { name: /Review Target memory/ })).toBeInTheDocument();
   });
 
   it("opens the diff dialog from a card and shows stripped and added words", async () => {
@@ -288,7 +307,7 @@ describe("DistillReviewPanel review queue", () => {
     ]);
     const { user } = renderPanel();
 
-    await user.click(await screen.findByRole("button", { name: /Review Prefers pnpm/ }));
+    await user.click(await screen.findByRole("button", { name: /Review Target memory/ }));
 
     const dialog = await screen.findByRole("dialog");
     expect(await within(dialog).findByRole("heading", { name: "Target memory" })).toBeInTheDocument();
@@ -298,8 +317,8 @@ describe("DistillReviewPanel review queue", () => {
       expect([...dels].some((el) => el.textContent?.includes("npm"))).toBe(true);
       expect([...inss].some((el) => el.textContent?.includes("pnpm"))).toBe(true);
     });
-    // 1 revision + 2 page candidates + 1 topic share the dialog list.
-    expect(within(dialog).getByText("1 of 4")).toBeInTheDocument();
+    // 1 revision + 1 stale page + 2 page candidates + 1 topic share the list.
+    expect(within(dialog).getByText("1 of 5")).toBeInTheDocument();
   });
 
   it("approves the last revision and shows the caught-up pane when nothing else is queued", async () => {
@@ -319,7 +338,7 @@ describe("DistillReviewPanel review queue", () => {
       .mockResolvedValue([]);
     const { user } = renderPanel();
 
-    await user.click(await screen.findByRole("button", { name: /Review Prefers pnpm/ }));
+    await user.click(await screen.findByRole("button", { name: /Review Target memory/ }));
     const dialog = await screen.findByRole("dialog");
     await user.click(within(dialog).getByRole("button", { name: "Approve" }));
 
@@ -337,15 +356,16 @@ describe("DistillReviewPanel review queue", () => {
       .mockResolvedValue([]);
     const { user } = renderPanel();
 
-    await user.click(await screen.findByRole("button", { name: /Review Prefers pnpm/ }));
+    await user.click(await screen.findByRole("button", { name: /Review Target memory/ }));
     const dialog = await screen.findByRole("dialog");
     await user.click(within(dialog).getByRole("button", { name: "Approve" }));
 
     await waitFor(() => {
       expect(acceptPendingRevision).toHaveBeenCalledWith("mem_target");
     });
+    // The stale page now precedes discovery items in the dialog list.
     expect(
-      await within(dialog).findByRole("heading", { name: "Temporal page refresh" }),
+      await within(dialog).findByRole("heading", { name: "Retrieval Pipeline" }),
     ).toBeInTheDocument();
   });
 
@@ -357,7 +377,7 @@ describe("DistillReviewPanel review queue", () => {
       .mockResolvedValue([]);
     const { user } = renderPanel();
 
-    await user.click(await screen.findByRole("button", { name: /Review Prefers pnpm/ }));
+    await user.click(await screen.findByRole("button", { name: /Review Target memory/ }));
     const dialog = await screen.findByRole("dialog");
     await user.click(within(dialog).getByRole("button", { name: "Dismiss" }));
 
@@ -377,11 +397,11 @@ describe("DistillReviewPanel review queue", () => {
     );
     const { user } = renderPanel();
 
-    await user.click(await screen.findByRole("button", { name: /Review First revision/ }));
+    await user.click(await screen.findByRole("button", { name: /Review Title mem_a/ }));
     const dialog = await screen.findByRole("dialog");
     expect(await within(dialog).findByRole("heading", { name: "Title mem_a" })).toBeInTheDocument();
-    // 2 revisions + 2 page candidates + 1 topic share the dialog list.
-    expect(within(dialog).getByText("1 of 5")).toBeInTheDocument();
+    // 2 revisions + 1 stale page + 2 page candidates + 1 topic share the list.
+    expect(within(dialog).getByText("1 of 6")).toBeInTheDocument();
 
     await user.click(within(dialog).getByRole("button", { name: "Approve" }));
 
@@ -409,7 +429,11 @@ describe("DistillReviewPanel review queue", () => {
     const { user } = renderPanel();
 
     expect(await screen.findByRole("heading", { name: "Merges & suggestions" })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: /Review Entity merge/ }));
+    // Both entity ids resolve through the same mocked detail, so the card
+    // titles itself with the fetched names instead of the bare kind label.
+    await user.click(
+      await screen.findByRole("button", { name: /look like the same entity/ }),
+    );
 
     const dialog = await screen.findByRole("dialog");
     expect(await within(dialog).findByText("94% confidence")).toBeInTheDocument();
@@ -456,8 +480,8 @@ describe("DistillReviewPanel review queue", () => {
     expect(within(dialog).getByText(/next compile pass/)).toBeInTheDocument();
     expect(within(dialog).queryByRole("button", { name: "Approve" })).toBeNull();
     expect(within(dialog).queryByRole("button", { name: "Dismiss" })).toBeNull();
-    // 0 decisions + 2 page candidates + 1 topic share the dialog list.
-    expect(within(dialog).getByText("1 of 3")).toBeInTheDocument();
+    // 1 stale page + 2 page candidates + 1 topic; the stale page comes first.
+    expect(within(dialog).getByText("2 of 4")).toBeInTheDocument();
 
     await user.click(within(dialog).getByRole("button", { name: "Open page" }));
     expect(onPageClick).toHaveBeenCalledWith("page_temporal");
