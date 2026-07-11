@@ -184,7 +184,10 @@ describe("MemoryDetail enrichment status", () => {
     const dossier = screen.getByRole("main", { name: /memory dossier/i });
     const backButton = within(dossier).getByRole("button", { name: /back to memories/i });
     const reading = within(dossier).getByRole("region", { name: /memory reading/i });
-    const rail = within(dossier).getByRole("complementary", { name: /memory context/i });
+    // Context rail mounts a tick after the reading column (its related-memories
+    // + entities queries resolve separately), so await it — a bare getByRole
+    // races on slower CI runners.
+    const rail = await within(dossier).findByRole("complementary", { name: /memory context/i });
 
     expect(backButton.textContent).toBe("");
     expect(backButton.querySelector("svg")).not.toBeNull();
