@@ -12,6 +12,7 @@ import {
   REVIEW_MEMORIES,
   REVIEW_ENTITIES,
   REVIEW_DISTILL,
+  REVIEW_FAIL,
 } from "../fixtures";
 import { liveInvoke } from "./live-invoke";
 
@@ -53,6 +54,7 @@ export async function invoke(
     case "distill_review":
       return REVIEW_DISTILL;
     case "list_pending_revisions":
+      if (REVIEW_FAIL.queue) throw new Error("[preview] simulated queue failure");
       return REVIEW_STATE.revisions;
     case "accept_pending_revision":
     case "dismiss_pending_revision": {
@@ -63,8 +65,10 @@ export async function invoke(
       return { target_source_id: id, revision_source_id: `${id}-rev`, wrote: true };
     }
     case "list_refinements":
+      if (REVIEW_FAIL.queue) throw new Error("[preview] simulated queue failure");
       return { proposals: REVIEW_STATE.proposals };
     case "list_unconfirmed_memories":
+      if (REVIEW_FAIL.queue) throw new Error("[preview] simulated queue failure");
       return REVIEW_STATE.captures;
     case "confirm_memory":
     case "delete_memory": {
@@ -83,6 +87,30 @@ export async function invoke(
       return REVIEW_MEMORIES[args?.sourceId as string] ?? null;
     case "get_entity_detail_cmd":
       return REVIEW_ENTITIES[args?.entityId as string] ?? null;
+    // On-open evidence for topic/suggest_entity review dialogs — a plain
+    // substring match against title/content, standing in for real search.
+    case "search": {
+      const query = ((args?.query as string) ?? "").toLowerCase();
+      const limit = (args?.limit as number) ?? 10;
+      return Object.values(REVIEW_MEMORIES)
+        .filter(
+          (memory) =>
+            memory.title.toLowerCase().includes(query) ||
+            memory.content.toLowerCase().includes(query),
+        )
+        .slice(0, limit)
+        .map((memory, index) => ({
+          id: `${memory.source_id}-search`,
+          content: memory.content,
+          source: "memory",
+          source_id: memory.source_id,
+          title: memory.title,
+          url: null,
+          chunk_index: 0,
+          last_modified: memory.last_modified,
+          score: 1 - index * 0.05,
+        }));
+    }
     default:
       console.warn(`[preview] unmocked invoke: ${cmd}`, args);
       return null;

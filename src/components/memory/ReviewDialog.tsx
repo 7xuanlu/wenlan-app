@@ -3,7 +3,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
-import { getEntityDetail, getMemoryDetail, getPage } from "../../lib/tauri";
+import {
+  getEntityDetail,
+  getMemoryDetail,
+  getPage,
+  search,
+} from "../../lib/tauri";
 import { diffWords, diffWordCounts, type DiffSegment } from "../../lib/wordDiff";
 import { reviewItemId, type ReviewItem } from "./useReviewQueue";
 
@@ -239,7 +244,7 @@ export function useReviewItemSummary(item: ReviewItem | null): {
         : "");
   } else if (item.kind === "topic") {
     title = item.label;
-    reason = t("review.mentions", { count: item.count });
+    reason = t("review.topicReason", { count: item.count });
   } else if (item.kind === "stale_page") {
     title = item.title;
     reason =
@@ -345,6 +350,95 @@ const actionButtonStyle: React.CSSProperties = {
   color: "var(--mem-text)",
 };
 
+/** On-open evidence for topic/suggest_entity cards: their daemon payloads
+ * carry no source ids to look up, so the dialog runs a search for the topic
+ * label / entity name hint instead — never per-card, only once the dialog is
+ * actually open. */
+function useReviewEvidence(query: string | null) {
+  return useQuery({
+    queryKey: ["review-evidence", query],
+    queryFn: () => search(query as string, 4),
+    enabled: query != null,
+    staleTime: 60_000,
+  });
+}
+
+const evidenceRowStyle: React.CSSProperties = {
+  display: "block",
+  width: "100%",
+  textAlign: "left",
+  border: "1px solid var(--mem-border)",
+  borderRadius: 8,
+  padding: "8px 12px",
+  backgroundColor: "var(--mem-surface)",
+  cursor: "pointer",
+};
+
+function ReviewEvidencePane({
+  query,
+  onOpenMemory,
+}: {
+  query: string | null;
+  onOpenMemory?: (sourceId: string) => void;
+}) {
+  const { t } = useTranslation();
+  const evidence = useReviewEvidence(query);
+  if (query == null) return null;
+  const results = (evidence.data ?? []).slice(0, 3);
+  return (
+    <div>
+      <p style={paneLabelStyle}>{t("review.mentionedIn")}</p>
+      {evidence.isLoading ? (
+        <div style={paneStyle}>{t("review.loadingCurrent")}</div>
+      ) : results.length === 0 ? (
+        <div style={paneStyle}>{t("review.evidenceNone")}</div>
+      ) : (
+        <div style={{ display: "grid", gap: 8 }}>
+          {results.map((result) => (
+            <button
+              key={result.id}
+              type="button"
+              onClick={() => onOpenMemory?.(result.source_id)}
+              style={evidenceRowStyle}
+            >
+              <div
+                style={{
+                  fontFamily: "var(--mem-font-heading)",
+                  fontWeight: 500,
+                  fontSize: 13.5,
+                  color: "var(--mem-text)",
+                }}
+              >
+                {result.title || truncateReviewText(result.content, 60)}
+              </div>
+              <div
+                style={{
+                  fontFamily: "var(--mem-font-body)",
+                  fontSize: 12,
+                  color: "var(--mem-text-tertiary)",
+                  marginTop: 2,
+                }}
+              >
+                {truncateReviewText(result.content, 100)}
+              </div>
+            </button>
+          ))}
+          <p
+            style={{
+              fontFamily: "var(--mem-font-body)",
+              color: "var(--mem-text-tertiary)",
+              fontSize: 12,
+              margin: 0,
+            }}
+          >
+            {t("review.evidenceBySearch")}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DiffText({ segments }: { segments: DiffSegment[] }) {
   return (
     <>
@@ -410,12 +504,13 @@ export default function ReviewDialog({
   });
 
   // Actions whose source_ids are memory ids; the rest point at entities,
-  // pages, or relations and get dedicated panes below.
+  // pages, or relations and get dedicated panes below. suggest_entity's
+  // source_ids aren't fetchable memory ids at all (see reviewLookupRefs
+  // above) — it gets a search-backed evidence pane instead.
   const memoryPaneIds =
     item?.kind === "refinement" &&
     (item.action === "detect_contradiction" ||
       item.action === "dedup_merge" ||
-      item.action === "suggest_entity" ||
       item.action === "cross_space_discovery")
       ? item.sourceIds.slice(0, 2)
       : [];
@@ -798,7 +893,7 @@ export default function ReviewDialog({
                           ? ` · ${t("review.linkedExistingPage")}`
                           : "")
                       : item.kind === "topic"
-                        ? t("review.mentions", { count: item.count })
+                        ? t("review.topicReason", { count: item.count })
                         : item.kind === "stale_page"
                           ? (item.sourcesUpdated != null
                               ? t("review.sourcesUpdated", {
@@ -967,16 +1062,22 @@ export default function ReviewDialog({
               )}
 
               {item.kind === "topic" && (
-                <p
-                  style={{
-                    fontFamily: "var(--mem-font-body)",
-                    color: "var(--mem-text-secondary)",
-                    fontSize: 13,
-                    margin: 0,
-                  }}
-                >
-                  {t("review.topicHint")}
-                </p>
+                <div style={{ display: "grid", gap: 12 }}>
+                  <p
+                    style={{
+                      fontFamily: "var(--mem-font-body)",
+                      color: "var(--mem-text-secondary)",
+                      fontSize: 13,
+                      margin: 0,
+                    }}
+                  >
+                    {t("review.topicHint")}
+                  </p>
+                  <ReviewEvidencePane
+                    query={item.label}
+                    onOpenMemory={onOpenMemory}
+                  />
+                </div>
               )}
 
               {item.kind === "stale_page" && (
@@ -1159,6 +1260,16 @@ export default function ReviewDialog({
                       item.payload.name_hint && (
                         <div style={paneStyle}>{item.payload.name_hint}</div>
                       )}
+                    {item.action === "suggest_entity" && (
+                      <ReviewEvidencePane
+                        query={
+                          item.payload?.action === "suggest_entity"
+                            ? (item.payload.name_hint ?? null)
+                            : null
+                        }
+                        onOpenMemory={onOpenMemory}
+                      />
+                    )}
                     {item.payload?.action === "cross_space_discovery" && (
                       <p
                         style={{

@@ -7,7 +7,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import PageDetail from "../src/components/memory/PageDetail";
 import DistillReviewPanel from "../src/components/memory/DistillReviewPanel";
 import { initializeI18n } from "../src/i18n";
-import { resetReviewFixtures } from "./fixtures";
+import { resetReviewFixtures, REVIEW_FAIL } from "./fixtures";
 import "../src/index.css";
 
 const VARIANTS = [
@@ -26,6 +26,7 @@ function Harness() {
   const [pageId, setPageId] = useState("page-cited");
   const [theme, setTheme] = useState("dark");
   const [reviewRun, setReviewRun] = useState(0);
+  const [failing, setFailing] = useState(false);
 
   const applyTheme = (next: string) => {
     document.documentElement.setAttribute("data-theme", next);
@@ -70,16 +71,29 @@ function Harness() {
             </button>
           ))
         ) : (
-          <button
-            onClick={() => {
-              resetReviewFixtures();
-              client.clear();
-              setReviewRun((n) => n + 1);
-            }}
-            style={tab(false)}
-          >
-            Reset queue
-          </button>
+          <>
+            <button
+              onClick={() => {
+                resetReviewFixtures();
+                client.clear();
+                setReviewRun((n) => n + 1);
+              }}
+              style={tab(false)}
+            >
+              Reset queue
+            </button>
+            <button
+              onClick={() => {
+                REVIEW_FAIL.queue = !REVIEW_FAIL.queue;
+                setFailing(REVIEW_FAIL.queue);
+                client.clear();
+                setReviewRun((n) => n + 1);
+              }}
+              style={tab(failing)}
+            >
+              {failing ? "Fail queue: on" : "Fail queue"}
+            </button>
+          </>
         )}
         <button
           onClick={() => applyTheme(theme === "dark" ? "light" : "dark")}

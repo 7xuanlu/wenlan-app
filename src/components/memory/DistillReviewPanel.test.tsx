@@ -27,6 +27,7 @@ vi.mock("../../lib/tauri", async () => {
     getMemoryDetail: vi.fn(),
     getEntityDetail: vi.fn(),
     redistillPage: vi.fn(),
+    search: vi.fn(),
   };
 });
 
@@ -44,6 +45,7 @@ import {
   getMemoryDetail,
   getEntityDetail,
   redistillPage,
+  search,
 } from "../../lib/tauri";
 
 function renderPanel(props: Partial<React.ComponentProps<typeof DistillReviewPanel>> = {}) {
@@ -164,6 +166,7 @@ beforeEach(() => {
   vi.mocked(getMemoryDetail).mockResolvedValue(
     memory({ source_id: "mem_target", title: "Target memory", content: "Prefers npm for installs" }),
   );
+  vi.mocked(search).mockResolvedValue([]);
   vi.mocked(redistillPage).mockResolvedValue({
     status: "ok",
     updated: true,
@@ -547,11 +550,86 @@ describe("DistillReviewPanel review queue", () => {
 
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText("New topic")).toBeInTheDocument();
-    expect(within(dialog).getByText("4 mentions")).toBeInTheDocument();
+    expect(
+      within(dialog).getByText("4 mentions · no page covers it yet"),
+    ).toBeInTheDocument();
     expect(
       within(dialog).getByText("Mentioned across memories, but no page covers it yet."),
     ).toBeInTheDocument();
     expect(within(dialog).queryByRole("button", { name: "Approve" })).toBeNull();
     expect(within(dialog).queryByRole("button", { name: "Dismiss" })).toBeNull();
+    // No search hits (default mock) — the evidence pane says so honestly
+    // instead of rendering nothing.
+    expect(within(dialog).getByText("Mentioned in")).toBeInTheDocument();
+    expect(
+      await within(dialog).findByText("No related memories found."),
+    ).toBeInTheDocument();
+  });
+
+  it("shows search evidence and its honesty caveat in a new topic dialog", async () => {
+    vi.mocked(search).mockResolvedValue([
+      {
+        id: "mem_vc-search",
+        content: "Vector clocks order events across replicas without a shared clock.",
+        source: "memory",
+        source_id: "mem_vc",
+        title: "Vector clocks note",
+        url: null,
+        chunk_index: 0,
+        last_modified: 1_760_000_000,
+        score: 0.9,
+      },
+    ]);
+    const { user } = renderPanel();
+
+    await user.click(await screen.findByRole("button", { name: "Review Vector clocks" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByText("Vector clocks note")).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(/Found by search/),
+    ).toBeInTheDocument();
+  });
+
+  it("opens a read-only dialog from a new entity suggestion card and surfaces search evidence", async () => {
+    vi.mocked(listRefinements)
+      .mockResolvedValueOnce({
+        proposals: [
+          {
+            id: "prop_entity",
+            action: "suggest_entity",
+            source_ids: ["mem_x", "mem_y"],
+            payload: { action: "suggest_entity", name_hint: "Tauri" },
+            confidence: 0.8,
+            created_at: "2026-07-09T00:00:00Z",
+          },
+        ],
+      })
+      .mockResolvedValue({ proposals: [] });
+    vi.mocked(search).mockResolvedValue([
+      {
+        id: "mem_x-search",
+        content: "Tauri wraps a Rust backend with a web frontend.",
+        source: "memory",
+        source_id: "mem_x",
+        title: "Tauri overview",
+        url: null,
+        chunk_index: 0,
+        last_modified: 1_760_000_000,
+        score: 0.9,
+      },
+    ]);
+    const { user } = renderPanel();
+
+    await user.click(await screen.findByRole("button", { name: "Review Tauri" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("heading", { name: "Tauri" })).toBeInTheDocument();
+    expect(within(dialog).getByText("Entity suggestion")).toBeInTheDocument();
+    expect(await within(dialog).findByText("Tauri overview")).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(/Found by search/),
+    ).toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: "Approve" })).toBeNull();
   });
 });

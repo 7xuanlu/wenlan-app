@@ -211,6 +211,12 @@ export const REVIEW_MEMORIES: Record<string, MemoryItem> = {
     "Recently switched to Zed for Rust work.",
     1_751_200_000,
   ),
+  "mem-preview-harness": reviewMemory(
+    "mem-preview-harness",
+    "Preview harness architecture",
+    "The preview harness mocks Tauri's invoke() so review-queue UI can be exercised without the daemon running.",
+    1_751_400_000,
+  ),
 };
 
 const reviewRevisions = (): PendingRevisionItem[] => [
@@ -306,6 +312,17 @@ const reviewProposals = (): RefinementProposalSummary[] => [
     confidence: 1.0,
     created_at: "2026-07-10T07:12:00Z",
   },
+  {
+    id: "prop-suggest-entity-tauri",
+    action: "suggest_entity",
+    source_ids: ["mem-preview-harness", "mem-daemon-port"],
+    payload: {
+      action: "suggest_entity",
+      name_hint: "Tauri",
+    } as RefinementProposalSummary["payload"],
+    confidence: 0.8,
+    created_at: "2026-07-10T10:00:00Z",
+  },
 ];
 
 const reviewCaptures = (): RecentActivityItem[] => [
@@ -342,6 +359,11 @@ export function resetReviewFixtures(): void {
   REVIEW_STATE.proposals = reviewProposals();
   REVIEW_STATE.captures = reviewCaptures();
 }
+
+// Toggled by the preview harness's "Fail queue" button so problem 1's
+// error-state UI (load failed / partial load) is reachable without a real
+// daemon outage.
+export const REVIEW_FAIL = { queue: false };
 
 export const REVIEW_ENTITIES: Record<string, EntityDetail> = {
   "ent-vscode": {
