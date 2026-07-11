@@ -993,14 +993,15 @@ function reviewItemAge(ms: number): string {
 }
 
 /** Mockup kind-dot palette: revision indigo, page-level the page accent,
- * capture warm, memory merges amber, conflicts danger, suggestions sage. */
+ * capture warm, memory merges + suggestions amber, conflicts danger. Green
+ * (sage) is reserved for success/added semantics, never a pending-review dot. */
 function reviewDotColor(item: ReviewItem): string {
   if (item.kind === "revision") return "var(--mem-accent-indigo)";
   if (item.kind === "capture") return "var(--mem-accent-warm)";
   // Distill discovery never reaches the home rail; colors kept for totality.
   if (item.kind === "stale_page") return "var(--mem-accent-page)";
   if (item.kind === "page_candidate") return "var(--mem-accent-warm)";
-  if (item.kind === "topic") return "var(--mem-accent-sage)";
+  if (item.kind === "topic") return "var(--mem-accent-amber)";
   switch (item.action) {
     case "page_merge":
     case "page_keep_or_archive":
@@ -1008,9 +1009,8 @@ function reviewDotColor(item: ReviewItem): string {
     case "detect_contradiction":
     case "relation_conflict":
       return "var(--mem-status-danger-text)";
-    case "suggest_entity":
-      return "var(--mem-accent-sage)";
     default:
+      // suggest_entity and other refinements fold into amber.
       return "var(--mem-accent-amber)";
   }
 }
@@ -1029,11 +1029,10 @@ function ReviewRailItem({
   // Same rich titles as the review-page cards — a rail row never reads as
   // just its kind label when the names its ids point at can be fetched.
   const { title } = useReviewItemSummary(item);
+  // Bare confidence "%" read as an unlabeled number on this terse rail — the
+  // dialog carries the precise, labeled metric (overlap / confidence) instead.
   const meta = [
     kind,
-    item.kind === "refinement"
-      ? `${Math.round(item.confidence * 100)}%`
-      : null,
     item.timestampMs != null ? reviewItemAge(item.timestampMs) : null,
   ]
     .filter(Boolean)

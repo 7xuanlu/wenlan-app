@@ -208,7 +208,9 @@ html[data-theme="light"] {
   --mem-distilled-bg: rgba(94, 88, 200, 0.06);
   --mem-shimmer-color: rgba(94, 88, 200, 0.12);
   --mem-detail-surface: #FFFFFF;
-  --mem-detail-surface-raised: #F8FAF9;
+  /* Cool-neutral off-white — matches --mem-border and the dark theme's lean.
+     Was #F8FAF9, whose green channel peaked and tinted raised cards greenish. */
+  --mem-detail-surface-raised: #F7F8FA;
   --mem-detail-divider: rgba(26, 26, 46, 0.10);
   --mem-status-warning-bg: rgba(181, 132, 46, 0.12);
   --mem-status-warning-text: #8C5F16;

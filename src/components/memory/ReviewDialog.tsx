@@ -90,8 +90,8 @@ export function reviewKindTone(item: ReviewItem): {
   }
   if (item.kind === "topic") {
     return {
-      color: "var(--mem-accent-sage)",
-      background: mix("var(--mem-accent-sage)"),
+      color: "var(--mem-accent-amber)",
+      background: mix("var(--mem-accent-amber)"),
     };
   }
   switch (item.action) {
@@ -116,8 +116,8 @@ export function reviewKindTone(item: ReviewItem): {
     default:
       // suggest_entity / cross_space_discovery — new entities and spaces.
       return {
-        color: "var(--mem-accent-sage)",
-        background: mix("var(--mem-accent-sage)"),
+        color: "var(--mem-accent-amber)",
+        background: mix("var(--mem-accent-amber)"),
       };
   }
 }

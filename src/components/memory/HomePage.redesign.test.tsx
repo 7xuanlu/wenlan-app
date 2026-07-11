@@ -1112,7 +1112,9 @@ describe("HomePage redesign", () => {
     renderHome();
 
     const strip = await screen.findByTestId("worth-a-glance");
-    await within(strip).findByText(/Entity merge · 86%/);
+    // Rail meta is kind + age only — the bare confidence "%" moved to the
+    // dialog, where it's labeled (see DistillReviewPanel "94% confidence").
+    await within(strip).findByText(/Entity merge/);
   });
 
   it("does not render inline approval actions in the needs-review rail", async () => {

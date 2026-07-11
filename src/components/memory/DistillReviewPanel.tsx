@@ -290,7 +290,7 @@ function hiddenKindTone(kind: string): { color: string; background: string } {
     case "page_candidate":
       return { color: "var(--mem-accent-warm)", background: mix("var(--mem-accent-warm)") };
     case "topic":
-      return { color: "var(--mem-accent-sage)", background: mix("var(--mem-accent-sage)") };
+      return { color: "var(--mem-accent-amber)", background: mix("var(--mem-accent-amber)") };
     default:
       return { color: "var(--mem-text-tertiary)", background: "var(--mem-hover)" };
   }
@@ -453,12 +453,10 @@ function FilterChipRow({
   filter,
   onSelect,
   counts,
-  allCount,
 }: {
   filter: ReviewFilterKey;
   onSelect: (filter: ReviewFilterKey) => void;
   counts: Partial<Record<ReviewSection, number>>;
-  allCount: number;
 }) {
   const { t } = useTranslation();
   // "All" and "Revisions" always render — Revisions existing even at 0 shows
@@ -475,7 +473,9 @@ function FilterChipRow({
     >
       {chips.map((key) => {
         const selected = filter === key;
-        const count = key === "all" ? allCount : counts[key] ?? 0;
+        // "All" is a reset toggle — its total (decisions + read-only discovery)
+        // competed with the header's pending count, so it carries no number.
+        const count = key === "all" ? null : counts[key] ?? 0;
         return (
           <button
             key={key}
@@ -498,16 +498,18 @@ function FilterChipRow({
             }}
           >
             {t(FILTER_LABEL_KEYS[key])}
-            <span
-              style={{
-                fontFamily: "var(--mem-font-mono)",
-                fontVariantNumeric: "tabular-nums",
-                fontSize: 11,
-                marginLeft: 6,
-              }}
-            >
-              {count}
-            </span>
+            {count != null && (
+              <span
+                style={{
+                  fontFamily: "var(--mem-font-mono)",
+                  fontVariantNumeric: "tabular-nums",
+                  fontSize: 11,
+                  marginLeft: 6,
+                }}
+              >
+                {count}
+              </span>
+            )}
           </button>
         );
       })}
@@ -816,7 +818,6 @@ export default function DistillReviewPanel({
         filter={filter}
         onSelect={setFilter}
         counts={sectionCounts}
-        allCount={allVisible.length}
       />
 
       {error && (
