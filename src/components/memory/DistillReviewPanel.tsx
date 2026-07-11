@@ -16,6 +16,12 @@ import ReviewDialog, {
 import { RecentRevisionsSection } from "./ReviewHistory";
 import { relativeMs } from "./page/format";
 import {
+  EXAMPLE_REVIEW_ITEMS,
+  isExampleReviewItem,
+  REVIEW_EXAMPLES_ENABLED,
+  seedReviewExampleCaches,
+} from "./reviewExamples";
+import {
   reviewSuppressKey,
   useSuppressedReviewItems,
   type HiddenReviewEntry,
@@ -25,6 +31,7 @@ import {
   reviewItemSection,
   useReviewQueue,
   type ReviewItem,
+  type ReviewSection,
 } from "./useReviewQueue";
 
 interface DistillReviewPanelProps {
@@ -62,6 +69,31 @@ function pendingLabel(cluster: DistillPendingCluster): string | null {
     contentTitle,
   ]);
 }
+
+// Captures never reach this panel (they surface on the home rail instead), so
+// the filter has no "captures" chip — every other section gets one.
+type ReviewFilterKey = "all" | Exclude<ReviewSection, "captures">;
+
+// Mirrors useReviewQueue's SECTION_ORDER (not exported); keep in sync if that
+// list changes.
+const FILTER_ORDER: Exclude<ReviewFilterKey, "all">[] = [
+  "revisions",
+  "conflicts",
+  "pages",
+  "memory",
+  "candidates",
+  "topics",
+];
+
+const FILTER_LABEL_KEYS = {
+  all: "review.filterAll",
+  revisions: "review.filterRevisions",
+  conflicts: "review.filterConflicts",
+  pages: "review.filterPages",
+  memory: "review.filterMemory",
+  candidates: "review.filterCandidates",
+  topics: "review.filterTopics",
+} as const;
 
 const panelTextStyle = {
   fontFamily: "var(--mem-font-body)",
@@ -107,12 +139,28 @@ const itemSurfaceStyle = {
   backgroundColor: "var(--mem-surface)",
 };
 
+/** Dashed pill marking a dev-only sample card (see reviewExamples.ts) —
+ * mirrors the recipe in ReviewDialog's header chip row. */
+const examplePillStyle = {
+  fontFamily: "var(--mem-font-mono)",
+  fontSize: 10.5,
+  letterSpacing: "0.06em",
+  textTransform: "uppercase" as const,
+  borderRadius: 5,
+  padding: "1px 7px",
+  color: "var(--mem-text-tertiary)",
+  border: "1px dashed var(--mem-border)",
+  whiteSpace: "nowrap" as const,
+};
+
 function QueueCard({
   item,
   onOpen,
+  example,
 }: {
   item: ReviewItem;
   onOpen: (id: string) => void;
+  example?: boolean;
 }) {
   const { t } = useTranslation();
   // Mockup card anatomy: chip + age on top, a real title (page/entity names,
@@ -136,6 +184,7 @@ function QueueCard({
       className="text-left transition-[background-color,border-color,transform] duration-150 hover:bg-[var(--mem-hover)] hover:border-[var(--mem-accent-indigo)] active:scale-[0.99] focus-visible:outline-2 focus-visible:outline-[var(--mem-accent-indigo)] focus-visible:outline-offset-2"
       style={{
         ...itemSurfaceStyle,
+        ...(example ? { border: "1px dashed var(--mem-border)" } : null),
         display: "grid",
         gap: 6,
         width: "100%",
@@ -158,6 +207,9 @@ function QueueCard({
         >
           {reviewKindLabel(t, item)}
         </span>
+        {example && (
+          <span style={examplePillStyle}>{t("review.exampleBadge")}</span>
+        )}
         {age && (
           <span
             style={{
@@ -252,6 +304,12 @@ function hiddenKindLabel(t: TFunction, kind: string): string {
       return t("review.kindPageCandidate");
     case "topic":
       return t("review.kindTopic");
+    // Only example items land here with these two kinds — real revisions and
+    // refinements dismiss through the daemon instead (see reviewSuppression.ts).
+    case "revision":
+      return t("review.kindRevision");
+    case "refinement":
+      return t("review.kindRefinement");
     default:
       return kind;
   }
@@ -389,6 +447,74 @@ function HiddenFooter({
   );
 }
 
+/** Wrapping pill-chip row under the header, not a segmented control — the
+ * category count is dynamic (2-7 chips), which reads wrong as segments. */
+function FilterChipRow({
+  filter,
+  onSelect,
+  counts,
+  allCount,
+}: {
+  filter: ReviewFilterKey;
+  onSelect: (filter: ReviewFilterKey) => void;
+  counts: Partial<Record<ReviewSection, number>>;
+  allCount: number;
+}) {
+  const { t } = useTranslation();
+  // "All" and "Revisions" always render — Revisions existing even at 0 shows
+  // the section exists. Every other chip only appears once it has items.
+  const chips: ReviewFilterKey[] = [
+    "all",
+    ...FILTER_ORDER.filter((key) => key === "revisions" || (counts[key] ?? 0) > 0),
+  ];
+  return (
+    <div
+      role="group"
+      aria-label={t("review.filterLabel")}
+      style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "0 0 18px" }}
+    >
+      {chips.map((key) => {
+        const selected = filter === key;
+        const count = key === "all" ? allCount : counts[key] ?? 0;
+        return (
+          <button
+            key={key}
+            type="button"
+            aria-pressed={selected}
+            onClick={() => onSelect(key)}
+            className="transition-colors duration-150 hover:bg-[var(--mem-hover)] focus-visible:outline-2 focus-visible:outline-[var(--mem-accent-indigo)] focus-visible:outline-offset-2"
+            style={{
+              fontFamily: "var(--mem-font-body)",
+              fontSize: 12,
+              lineHeight: 1,
+              padding: "6px 12px",
+              borderRadius: 999,
+              cursor: "pointer",
+              border: selected
+                ? "1px solid color-mix(in srgb, var(--mem-accent-indigo) 35%, transparent)"
+                : "1px solid var(--mem-border)",
+              color: selected ? "var(--mem-accent-indigo)" : "var(--mem-text-secondary)",
+              backgroundColor: selected ? "var(--mem-indigo-bg)" : "transparent",
+            }}
+          >
+            {t(FILTER_LABEL_KEYS[key])}
+            <span
+              style={{
+                fontFamily: "var(--mem-font-mono)",
+                fontVariantNumeric: "tabular-nums",
+                fontSize: 11,
+                marginLeft: 6,
+              }}
+            >
+              {count}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function DistillReviewPanel({
   onBack,
   onPageClick,
@@ -398,6 +524,9 @@ export default function DistillReviewPanel({
   const queryClient = useQueryClient();
   const [lastResult, setLastResult] = useState<DistillReviewResponse | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
+  // Session-only — a review queue is a to-do list, so every mount starts at
+  // the top instead of remembering the last category.
+  const [filter, setFilter] = useState<ReviewFilterKey>("all");
   // Stale pages refreshed this session — a new distill result resets the set.
   const [resolvedStaleIds, setResolvedStaleIds] = useState<ReadonlySet<string>>(
     new Set(),
@@ -435,6 +564,12 @@ export default function DistillReviewPanel({
     }, 0);
     return () => clearTimeout(id);
   }, [review.mutate]);
+
+  // Dev-only sample items (see reviewExamples.ts) read these caches through
+  // the real ReviewDialog query hooks — seed once so no example ever fetches.
+  useEffect(() => {
+    if (REVIEW_EXAMPLES_ENABLED) seedReviewExampleCaches(queryClient);
+  }, [queryClient]);
 
   // New-memory captures are inflow, not decisions — they surface as a count
   // on the home context rail instead of flooding this queue.
@@ -487,17 +622,55 @@ export default function DistillReviewPanel({
     )
     .filter((item) => !isHiddenItem(item));
   // Dialog order mirrors the page: decisions, page refreshes, then discovery.
-  const dialogItems = [
+  // Also the source of chip counts — counted post-suppression, same as what
+  // the page actually shows.
+  const allVisible = [
     ...decisionItems,
     ...stalePageItems,
     ...candidateItems,
     ...topicItems,
+  ];
+  const sectionCounts = allVisible.reduce<Partial<Record<ReviewSection, number>>>(
+    (acc, item) => {
+      const section = reviewItemSection(item);
+      acc[section] = (acc[section] ?? 0) + 1;
+      return acc;
+    },
+    {},
+  );
+  const matchesFilter = (item: ReviewItem) =>
+    filter === "all" || reviewItemSection(item) === filter;
+  // Grouped under Revisions regardless of the filter chip they'd naturally
+  // route to (a contradiction sample is "conflicts") — both examples live in
+  // one teachable spot, so visibility follows that section's filter gate.
+  const examplesVisible = filter === "all" || filter === "revisions";
+  // Only once the entire queue is empty — dev-only garnish for a fresh
+  // install, not competing with real actionable items in any category.
+  const showExamples =
+    REVIEW_EXAMPLES_ENABLED &&
+    !queue.isLoading &&
+    !queue.error &&
+    allVisible.length === 0;
+  const exampleItems = showExamples
+    ? EXAMPLE_REVIEW_ITEMS.filter((item) => !hiddenKeys.has(item.id))
+    : [];
+  // Arrow-key navigation in the dialog stays inside the active filter.
+  const dialogItems = [
+    ...allVisible.filter(matchesFilter),
+    ...(examplesVisible ? exampleItems : []),
   ];
 
   // Stale-page refreshes resolve against the panel's distill result, not the
   // queue caches — drop them here after the daemon verb succeeds.
   const resolveItem = async (args: { item: ReviewItem; approve: boolean }) => {
     const { item, approve } = args;
+    // Examples can never reach the daemon — dismiss hides locally through the
+    // suppression store, accept is a silent no-op (see ReviewDialog's
+    // reviewApproveBlocked, which already hides the Approve button).
+    if (isExampleReviewItem(item)) {
+      if (!approve) hide(item);
+      return;
+    }
     // The three read-only discovery kinds have no daemon dismiss verb — "no"
     // means hide it locally instead of calling the queue (which no-ops for
     // page_candidate/topic and has no dismiss path for stale_page anyway).
@@ -637,6 +810,13 @@ export default function DistillReviewPanel({
         </div>
       </div>
 
+      <FilterChipRow
+        filter={filter}
+        onSelect={setFilter}
+        counts={sectionCounts}
+        allCount={allVisible.length}
+      />
+
       {error && (
         <div
           role="alert"
@@ -654,7 +834,7 @@ export default function DistillReviewPanel({
       )}
 
       <div className="grid gap-6" style={{ marginTop: 24 }}>
-        {allCaughtUp && (
+        {filter === "all" && allCaughtUp && (
           <section>
             <h2 style={emptyTitleStyle}>{t("review.allCaughtUp")}</h2>
             <p style={{ ...secondaryTextStyle, margin: 0, fontSize: "13px" }}>
@@ -689,13 +869,58 @@ export default function DistillReviewPanel({
           </p>
         )}
 
+        {/* Revisions keeps its own richer empty state below instead of this
+         * generic box — see the "revisions" branch in the sections.map. No
+         * auto-jump back to "all" when a filter empties; Show all is the
+         * escape hatch. */}
+        {filter !== "all" && filter !== "revisions" && (sectionCounts[filter] ?? 0) === 0 && (
+          <div
+            style={{
+              ...itemSurfaceStyle,
+              padding: "18px 16px",
+              display: "grid",
+              gap: 10,
+              justifyItems: "start",
+            }}
+          >
+            <p
+              style={{
+                margin: 0,
+                fontFamily: "var(--mem-font-body)",
+                fontSize: 12.5,
+                color: "var(--mem-text-secondary)",
+              }}
+            >
+              {t("review.filterEmpty")}
+            </p>
+            <button
+              type="button"
+              onClick={() => setFilter("all")}
+              style={{
+                fontFamily: "var(--mem-font-body)",
+                fontSize: 12,
+                color: "var(--mem-accent-indigo)",
+                background: "none",
+                border: "none",
+                padding: 0,
+                cursor: "pointer",
+              }}
+            >
+              {t("review.filterShowAll")}
+            </button>
+          </div>
+        )}
+
         {sections.map((section) => {
           const hasItems = section.items.length > 0;
           if (section.key === "revisions") {
             // Always-on once the queue has settled — proves revisions exist
             // even when nothing is pending. Hidden during a real load
             // failure: the loadFailed/loadPartial blocks above already
-            // cover that state.
+            // cover that state. Hidden under any other filter — the generic
+            // empty box above never applies to revisions (it keeps this
+            // richer empty state instead).
+            if (filter !== "all" && filter !== "revisions") return null;
             if (queue.isLoading || (!hasItems && queue.error)) return null;
             return (
               <section key={section.key}>
@@ -715,6 +940,29 @@ export default function DistillReviewPanel({
                       />
                     ))}
                   </div>
+                ) : exampleItems.length > 0 ? (
+                  <>
+                    <p
+                      style={{
+                        margin: "0 0 10px",
+                        fontFamily: "var(--mem-font-mono)",
+                        fontSize: 11,
+                        color: "var(--mem-text-tertiary)",
+                      }}
+                    >
+                      {t("review.exampleHint")}
+                    </p>
+                    <div className="grid gap-2.5">
+                      {exampleItems.map((item) => (
+                        <QueueCard
+                          key={reviewItemId(item)}
+                          item={item}
+                          onOpen={setOpenId}
+                          example
+                        />
+                      ))}
+                    </div>
+                  </>
                 ) : (
                   <div style={{ ...itemSurfaceStyle, padding: "13px 14px" }}>
                     <p style={{ ...secondaryTextStyle, margin: 0, fontSize: 13.5 }}>
@@ -737,6 +985,7 @@ export default function DistillReviewPanel({
             );
           }
           return (
+            (filter === "all" || filter === section.key) &&
             hasItems && (
               <section key={section.key}>
                 <h2 style={sectionTitleStyle}>
@@ -759,7 +1008,13 @@ export default function DistillReviewPanel({
           );
         })}
 
-        {lastResult && (
+        {/* Stale pages share the "pages" filter with the refinement-driven
+         * pages section above. Under "all" this is unchanged (shows even at
+         * zero, via pagesCurrent); under any other filter it only renders
+         * with real items — the generic empty box covers "pages" at zero
+         * across both sources. */}
+        {lastResult &&
+          (filter === "all" || (filter === "pages" && stalePageItems.length > 0)) && (
           <section>
             <h2 style={sectionTitleStyle}>
               {t("review.sectionStalePages")}
@@ -792,7 +1047,7 @@ export default function DistillReviewPanel({
           </section>
         )}
 
-        {candidateItems.length > 0 && (
+        {(filter === "all" || filter === "candidates") && candidateItems.length > 0 && (
           <section>
             <h2 style={sectionTitleStyle}>
               {t("review.sectionPageCandidates")}
@@ -812,7 +1067,9 @@ export default function DistillReviewPanel({
           </section>
         )}
 
-        {lastResult && topicItems.length > 0 && (
+        {(filter === "all" || filter === "topics") &&
+          lastResult &&
+          topicItems.length > 0 && (
           <section>
             <h2 style={sectionTitleStyle}>
               {t("review.sectionOrphanTopics")}
@@ -832,9 +1089,13 @@ export default function DistillReviewPanel({
           </section>
         )}
 
-        <RecentRevisionsSection onPageClick={onPageClick} />
+        {/* Changelog, not category work — noise under a category filter. */}
+        {(filter === "all" || filter === "revisions") && (
+          <RecentRevisionsSection onPageClick={onPageClick} />
+        )}
 
-        {hiddenEntries.length > 0 && (
+        {/* Housekeeping, not category work. */}
+        {filter === "all" && hiddenEntries.length > 0 && (
           <HiddenFooter
             entries={hiddenEntries}
             onRestore={restore}

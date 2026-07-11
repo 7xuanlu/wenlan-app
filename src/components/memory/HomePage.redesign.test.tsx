@@ -26,6 +26,7 @@ vi.mock("../../lib/tauri", async () => {
     listRecentChanges: vi.fn(),
     listRecentRelations: vi.fn(),
     listEntities: vi.fn(),
+    getEntitySuggestions: vi.fn(),
     getMemoryStats: vi.fn(),
     getProfile: vi.fn(),
     getPendingContradictions: vi.fn(),
@@ -106,7 +107,13 @@ beforeEach(() => {
   } as any);
   vi.mocked(tauri.listRecentRelations).mockResolvedValue([]);
   vi.mocked(tauri.listEntities).mockResolvedValue([]);
-  vi.mocked(tauri.getMemoryStats).mockResolvedValue({ total: 0, with_embeddings: 0 } as any);
+  vi.mocked(tauri.getEntitySuggestions).mockResolvedValue([]);
+  vi.mocked(tauri.getMemoryStats).mockResolvedValue({
+    total: 0,
+    new_today: 0,
+    confirmed: 0,
+    domains: [],
+  } as any);
   vi.mocked(tauri.getProfile).mockResolvedValue(null);
   vi.mocked(tauri.confirmMemory).mockResolvedValue(undefined);
   vi.mocked(tauri.deleteMemory).mockResolvedValue(undefined);
@@ -197,7 +204,7 @@ describe("HomePage redesign", () => {
     expect(within(screen.getByTestId("wiki-context-rail")).queryByRole("heading", { name: "Index" })).toBeNull();
     expect(screen.getByTestId("wiki-context-rail")).not.toHaveTextContent("Recently active");
     expect(screen.getByTestId("wiki-context-pages")).toHaveTextContent("2");
-    expect(screen.getByTestId("wiki-context-updated-today")).toHaveTextContent("2");
+    expect(screen.getByTestId("wiki-context-updated-today")).toHaveTextContent(/^2 updated today$/);
     // The review count lives only in the needs-review rail pill now.
     expect(screen.queryByTestId("wiki-context-needs-review")).toBeNull();
     expect(screen.queryByTestId("wiki-space-filter-row")).toBeNull();
@@ -259,6 +266,19 @@ describe("HomePage redesign", () => {
     } finally {
       rectSpy.mockRestore();
     }
+  });
+
+  it("moves the dateline into the Today heading action slot", async () => {
+    vi.mocked(tauri.listPages).mockResolvedValue([
+      page({ id: "page-current", title: "Current page", last_modified: nowIso }),
+    ]);
+
+    renderHome();
+
+    const todayHeading = await screen.findByTestId("wiki-today-heading");
+    expect(within(todayHeading).getByTestId("wiki-context-latest")).toHaveTextContent("updated today");
+    // The dateline lives in the heading now, not among the context rail cells.
+    expect(within(screen.getByTestId("wiki-context-rail")).queryByTestId("wiki-context-latest")).toBeNull();
   });
 
   it("opens wiki page rows from the home index", async () => {
@@ -380,7 +400,7 @@ describe("HomePage redesign", () => {
     await within(rail).findByText("4");
     await within(rail).findByText("Review all →");
     expect(screen.queryByTestId("wiki-context-needs-review")).toBeNull();
-    expect(screen.getByTestId("wiki-context-updated-today")).toHaveTextContent("3");
+    expect(screen.getByTestId("wiki-context-updated-today")).toHaveTextContent(/^3 updated today$/);
     // All three revision rows title themselves with the fetched memory name.
     await waitFor(() => {
       expect(screen.getAllByText("Target memory")).toHaveLength(3);
@@ -628,8 +648,9 @@ describe("HomePage redesign", () => {
 
     await screen.findByRole("heading", { name: "Today in Wenlan" });
 
-    // Inflow counts up top…
-    await within(screen.getByTestId("wiki-context-new-memories")).findByText("1");
+    // Inflow counts up top, as the memories cell's warm inbox pill…
+    const inboxPill = await screen.findByTestId("wiki-context-new-memories");
+    expect(inboxPill).toHaveTextContent("1 to confirm");
     // …while the decisions rail stays caught up and never lists the capture.
     const rail = screen.getByTestId("wiki-page-updates");
     await within(rail).findByText(/All caught up/);
@@ -864,10 +885,70 @@ describe("HomePage redesign", () => {
     renderHome({ onOpenDistillReview: vi.fn() });
 
     const metric = await screen.findByTestId("wiki-context-new-memories");
-    await within(metric).findByText("50+");
+    expect(metric).toHaveTextContent("50+ to confirm");
     // Capture inflow no longer inflates the decisions pill.
     const rail = screen.getByTestId("wiki-page-updates");
     expect(within(rail).queryByText("50+")).not.toBeInTheDocument();
+  });
+
+  it("shows em-dash totals for memories and entities while their queries are pending", async () => {
+    vi.mocked(tauri.listPages).mockResolvedValue([
+      page({ id: "page-current", title: "Current page" }),
+    ]);
+    // Leave getMemoryStats/listEntities pending — the masthead degrades to
+    // an em dash rather than a spinner.
+    vi.mocked(tauri.getMemoryStats).mockImplementation(() => new Promise(() => {}));
+    vi.mocked(tauri.listEntities).mockImplementation(() => new Promise(() => {}));
+
+    renderHome();
+
+    await screen.findByRole("heading", { name: "Today in Wenlan" });
+
+    expect(screen.getByTestId("wiki-context-memories")).toHaveTextContent("—");
+    expect(screen.getByTestId("wiki-context-entities")).toHaveTextContent("—");
+  });
+
+  it("shows memories and entities totals with their today-deltas once loaded", async () => {
+    vi.mocked(tauri.listPages).mockResolvedValue([
+      page({ id: "page-current", title: "Current page" }),
+    ]);
+    vi.mocked(tauri.getMemoryStats).mockResolvedValue({
+      total: 1204,
+      new_today: 18,
+      confirmed: 1190,
+      domains: [],
+    } as any);
+    vi.mocked(tauri.listEntities).mockResolvedValue(
+      Array.from({ length: 87 }, (_, i) => ({
+        id: `ent-${i}`,
+        name: `Entity ${i}`,
+        entity_type: "tool",
+        domain: null,
+        source_agent: null,
+        confidence: null,
+        confirmed: true,
+        created_at: 0,
+        updated_at: 0,
+      })) as any,
+    );
+    vi.mocked(tauri.getEntitySuggestions).mockResolvedValue(
+      Array.from({ length: 4 }, (_, i) => ({
+        id: `sugg-${i}`,
+        entity_name: `Entity ${i}`,
+        source_ids: [],
+        confidence: 0.8,
+        created_at: nowIso,
+      })) as any,
+    );
+
+    renderHome();
+
+    await screen.findByRole("heading", { name: "Today in Wenlan" });
+
+    expect(screen.getByTestId("wiki-context-memories")).toHaveTextContent("1204");
+    expect(await screen.findByTestId("wiki-context-memories-delta")).toHaveTextContent("+18 today");
+    expect(await screen.findByTestId("wiki-context-entities")).toHaveTextContent("87");
+    expect(await screen.findByTestId("wiki-context-entities-delta")).toHaveTextContent("4 suggested");
   });
 
   it("shows a before/after relation pair for relation conflicts and approves", async () => {

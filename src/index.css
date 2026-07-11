@@ -259,18 +259,29 @@ html[data-theme="light"] {
 
 .wiki-index-strip {
   display: grid;
-  grid-template-columns: repeat(4, minmax(112px, max-content));
+  grid-template-columns: repeat(3, minmax(150px, max-content));
   align-items: start;
   justify-content: start;
   width: 100%;
-  column-gap: clamp(36px, 7vw, 104px);
-  row-gap: 12px;
+  column-gap: clamp(28px, 5vw, 72px);
+  row-gap: 14px;
+}
+
+.wiki-index-strip > * + * {
+  border-left: 1px solid var(--mem-border);
+  padding-left: clamp(28px, 5vw, 72px);
+  margin-left: calc(-1 * clamp(28px, 5vw, 72px) / 2);
 }
 
 @media (max-width: 640px) {
   .wiki-index-strip {
-    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-    column-gap: 12px;
+    grid-template-columns: minmax(0, 1fr);
+    column-gap: 0;
+  }
+  .wiki-index-strip > * + * {
+    border-left: none;
+    padding-left: 0;
+    margin-left: 0;
   }
 }
 

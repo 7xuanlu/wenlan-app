@@ -4,10 +4,13 @@ import { useQuery } from "@tanstack/react-query";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import {
+  getEntitySuggestions,
   getMemoryStats,
+  listEntities,
   listPages,
   listRecentChanges,
   listRecentRetrievals,
+  type MemoryStats,
   type Page,
 } from "../../lib/tauri";
 import { Greeting } from "./Greeting";
@@ -180,6 +183,7 @@ export default function HomePage({
         <WikiHome
           allPages={recentConcepts}
           pages={recentlyRefinedPages}
+          stats={stats}
           onSelectPage={onSelectPage}
           onOpenDistillReview={onOpenDistillReview}
           onOpenMemory={onNavigateMemory}
@@ -332,12 +336,14 @@ function useElementMinWidth<T extends HTMLElement>(minWidth: number) {
 function WikiHome({
   allPages,
   pages,
+  stats,
   onSelectPage,
   onOpenDistillReview,
   onOpenMemory,
 }: {
   allPages: Page[];
   pages: Page[];
+  stats?: MemoryStats;
   onSelectPage?: (pageId: string) => void;
   onOpenDistillReview?: () => void;
   onOpenMemory?: (sourceId: string) => void;
@@ -378,10 +384,11 @@ function WikiHome({
         data-testid="wiki-daily-desk"
         className="wiki-daily-desk"
       >
-        <TodayHeader />
+        <TodayHeader pages={allPages} />
 
         <HomeContextRail
           pages={allPages}
+          stats={stats}
           newMemoryCount={newMemoryCount}
           newMemoriesTruncated={capturesTruncated}
         />
@@ -465,11 +472,26 @@ function SectionHeading({
   );
 }
 
-function TodayHeader() {
+function TodayHeader({ pages }: { pages: Page[] }) {
   const { t } = useTranslation();
   return (
     <section data-testid="wiki-today-heading" className="wiki-today-heading">
-      <SectionHeading title={t("home.todayInWenlan")} />
+      <SectionHeading
+        title={t("home.todayInWenlan")}
+        action={
+          <span
+            data-testid="wiki-context-latest"
+            style={{
+              fontFamily: "var(--mem-font-mono)",
+              fontSize: 11,
+              color: "var(--mem-text-tertiary)",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {latestPageUpdate(t, pages)}
+          </span>
+        }
+      />
     </section>
   );
 }
@@ -596,16 +618,34 @@ function PageList({
 
 function HomeContextRail({
   pages,
+  stats,
   newMemoryCount,
   newMemoriesTruncated = false,
 }: {
   pages: Page[];
+  /** Aggregate memory counts; undefined while the stats query is loading. */
+  stats?: MemoryStats;
   /** Unconfirmed agent-stored memories awaiting triage — inflow, not decisions. */
   newMemoryCount: number;
   /** The captures fetch hit its cap — show the count as "N+", never as exact. */
   newMemoriesTruncated?: boolean;
 }) {
   const { t } = useTranslation();
+  // Same cache key/shape as ConstellationMap's entity fetch — shared cache,
+  // no double-fetch.
+  const entitiesQuery = useQuery({
+    queryKey: ["constellation-entities"],
+    queryFn: () => listEntities(),
+    staleTime: 60_000,
+  });
+  // Same cache key/shape as EntitySuggestions' fetch — shared cache.
+  const suggestionsQuery = useQuery({
+    queryKey: ["entity-suggestions"],
+    queryFn: getEntitySuggestions,
+    staleTime: 60_000,
+  });
+  const pagesUpdatedToday = updatedTodayCount(pages);
+
   return (
     <div
       data-testid="wiki-context-rail"
@@ -620,23 +660,92 @@ function HomeContextRail({
           data-testid="wiki-index-strip"
           className="wiki-index-strip"
         >
-          <ContextMetric testId="pages" label={t("home.pages")} value={String(pages.length)} />
-          <ContextMetric testId="updated-today" label={t("home.updatedToday")} value={String(updatedTodayCount(pages))} />
           <ContextMetric
-            testId="new-memories"
-            label={t("home.newMemories")}
-            value={newMemoriesTruncated ? `${newMemoryCount}+` : String(newMemoryCount)}
+            testId="pages"
+            label={t("home.pages")}
+            total={String(pages.length)}
+            deltas={
+              pagesUpdatedToday > 0
+                ? [
+                    {
+                      text: t("home.deltaUpdated", { value: String(pagesUpdatedToday) }),
+                      tone: "indigo",
+                      testId: "wiki-context-updated-today",
+                    },
+                  ]
+                : []
+            }
           />
-          <ContextMetric testId="latest" label={t("home.latest")} value={latestPageUpdate(t, pages)} />
+          <ContextMetric
+            testId="memories"
+            label={t("home.memories")}
+            total={stats ? String(stats.total) : "—"}
+            deltas={[
+              ...(stats && stats.new_today > 0
+                ? [
+                    {
+                      text: t("home.deltaToday", { value: String(stats.new_today) }),
+                      tone: "sage" as const,
+                      testId: "wiki-context-memories-delta",
+                    },
+                  ]
+                : []),
+              ...(newMemoryCount > 0
+                ? [
+                    {
+                      text: t("home.deltaInbox", {
+                        value: newMemoriesTruncated ? `${newMemoryCount}+` : String(newMemoryCount),
+                      }),
+                      tone: "warm-pill" as const,
+                      testId: "wiki-context-new-memories",
+                    },
+                  ]
+                : []),
+            ]}
+          />
+          <ContextMetric
+            testId="entities"
+            label={t("home.entities")}
+            total={entitiesQuery.data ? String(entitiesQuery.data.length) : "—"}
+            deltas={
+              (suggestionsQuery.data?.length ?? 0) > 0
+                ? [
+                    {
+                      text: t("home.deltaSuggested", { value: String(suggestionsQuery.data!.length) }),
+                      tone: "sage",
+                      testId: "wiki-context-entities-delta",
+                    },
+                  ]
+                : []
+            }
+          />
         </div>
       </section>
     </div>
   );
 }
 
-function ContextMetric({ testId, label, value }: { testId: string; label: string; value: string }) {
+interface ContextDelta {
+  /** Rendered text, already localized, e.g. "+18 today". */
+  text: string;
+  tone: "sage" | "indigo" | "warm-pill";
+  testId?: string;
+}
+
+function ContextMetric({
+  testId,
+  label,
+  total,
+  deltas,
+}: {
+  testId: string;
+  label: string;
+  /** Pre-formatted total; "—" while loading. */
+  total: string;
+  deltas: ContextDelta[];
+}) {
   return (
-    <div data-testid={`wiki-context-${testId}`}>
+    <div data-testid={`wiki-context-${testId}-cell`}>
       <p
         style={{
           fontFamily: "var(--mem-font-mono)",
@@ -651,18 +760,49 @@ function ContextMetric({ testId, label, value }: { testId: string; label: string
       >
         {label}
       </p>
-      <p
-        style={{
-          fontFamily: "var(--mem-font-body)",
-          fontSize: 14,
-          fontWeight: 600,
-          color: "var(--mem-text)",
-          lineHeight: 1.3,
-          margin: 0,
-        }}
-      >
-        {value}
-      </p>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+        <span
+          data-testid={`wiki-context-${testId}`}
+          style={{
+            fontFamily: "var(--mem-font-heading)",
+            fontSize: 26,
+            fontWeight: 500,
+            lineHeight: 1.1,
+            color: "var(--mem-text)",
+            fontVariantNumeric: "tabular-nums",
+          }}
+        >
+          {total}
+        </span>
+        {deltas.map((delta, index) => (
+          <span
+            key={delta.testId ?? index}
+            data-testid={delta.testId}
+            style={
+              delta.tone === "warm-pill"
+                ? {
+                    fontFamily: "var(--mem-font-mono)",
+                    fontSize: 11,
+                    fontVariantNumeric: "tabular-nums",
+                    borderRadius: 5,
+                    padding: "2px 8px",
+                    color: "var(--mem-accent-warm)",
+                    backgroundColor: "color-mix(in srgb, var(--mem-accent-warm) 15%, transparent)",
+                    whiteSpace: "nowrap",
+                  }
+                : {
+                    fontFamily: "var(--mem-font-mono)",
+                    fontSize: 11.5,
+                    fontVariantNumeric: "tabular-nums",
+                    color: delta.tone === "sage" ? "var(--mem-accent-sage)" : "var(--mem-accent-indigo)",
+                    whiteSpace: "nowrap",
+                  }
+            }
+          >
+            {delta.text}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }

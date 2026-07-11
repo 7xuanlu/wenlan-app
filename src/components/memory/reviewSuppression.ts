@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useMemo, useState } from "react";
+import { exampleReviewLabel, isExampleReviewItem } from "./reviewExamples";
 import type { ReviewItem } from "./useReviewQueue";
 
 const STORAGE_KEY = "wenlan.review.hidden.v1";
@@ -12,9 +13,14 @@ export interface HiddenReviewEntry {
   at: number;
 }
 
-// Only these three kinds lack a daemon dismiss verb — revision/refinement/
-// capture all persist through daemon calls already (see useReviewQueue.ts).
+// Dev-only sample items (see reviewExamples.ts) key on their own id — real
+// revision/refinement/capture kinds persist dismissal through daemon calls
+// instead (see useReviewQueue.ts), so only topic/page_candidate/stale_page
+// fall through to the switch below.
 function suppressionKey(item: ReviewItem): { key: string; label: string } | null {
+  if (isExampleReviewItem(item)) {
+    return { key: item.id, label: exampleReviewLabel(item) };
+  }
   switch (item.kind) {
     case "topic":
       // The topic's id IS its label already — content-stable across distill runs.

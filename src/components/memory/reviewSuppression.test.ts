@@ -2,6 +2,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import { reviewSuppressKey, useSuppressedReviewItems } from "./reviewSuppression";
+import { EXAMPLE_REVIEW_ITEMS, exampleReviewLabel } from "./reviewExamples";
 import type { ReviewItem } from "./useReviewQueue";
 
 const STORAGE_KEY = "wenlan.review.hidden.v1";
@@ -72,6 +73,12 @@ describe("reviewSuppressKey", () => {
     expect(reviewSuppressKey(captureItem("c1"))).toBeNull();
     expect(reviewSuppressKey(refinementItem("f1"))).toBeNull();
   });
+
+  it("keys example items (revision and refinement kinds) by their own id", () => {
+    for (const item of EXAMPLE_REVIEW_ITEMS) {
+      expect(reviewSuppressKey(item)).toBe(item.id);
+    }
+  });
 });
 
 describe("useSuppressedReviewItems", () => {
@@ -118,5 +125,25 @@ describe("useSuppressedReviewItems", () => {
     expect(result.current.hiddenKeys.has("topic:Preview harness")).toBe(false);
     const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]");
     expect(stored).toHaveLength(0);
+  });
+
+  it("hides and restores an example item, keyed and labeled by reviewExamples.ts", () => {
+    const [coffee] = EXAMPLE_REVIEW_ITEMS;
+    const { result } = renderHook(() => useSuppressedReviewItems());
+
+    act(() => result.current.hide(coffee));
+
+    expect(result.current.hiddenKeys.has(coffee.id)).toBe(true);
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]");
+    expect(stored).toHaveLength(1);
+    expect(stored[0]).toMatchObject({
+      key: coffee.id,
+      label: exampleReviewLabel(coffee),
+      kind: coffee.kind,
+    });
+
+    act(() => result.current.restore(coffee.id));
+
+    expect(result.current.hiddenKeys.has(coffee.id)).toBe(false);
   });
 });

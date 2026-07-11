@@ -4,6 +4,12 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import DistillReviewPanel from "./DistillReviewPanel";
+import {
+  EXAMPLE_REVIEW_ITEMS,
+  exampleReviewLabel,
+  isExampleReviewItem,
+  seedReviewExampleCaches,
+} from "./reviewExamples";
 import type {
   DistillReviewResponse,
   MemoryItem,
@@ -708,5 +714,163 @@ describe("DistillReviewPanel review queue", () => {
     });
     await user.click(row);
     expect(onPageClick).toHaveBeenCalledWith("page_recent");
+  });
+});
+
+describe("DistillReviewPanel review filter", () => {
+  const emptyDistill: DistillReviewResponse = {
+    pages_created: 0,
+    scoped: false,
+    created_ids: [],
+    pending: [],
+    stale_pages: [],
+    stale_truncated: false,
+    orphan_topics: [],
+  };
+
+  it("shows only All and Revisions chips when the queue is empty", async () => {
+    vi.mocked(distillReview).mockResolvedValue(emptyDistill);
+    renderPanel();
+
+    const group = await screen.findByRole("group", { name: "Filter reviews" });
+    expect(within(group).getByRole("button", { name: /^All/ })).toBeInTheDocument();
+    expect(within(group).getByRole("button", { name: /^Revisions/ })).toBeInTheDocument();
+    expect(within(group).queryByRole("button", { name: /^Conflicts/ })).toBeNull();
+    expect(within(group).queryByRole("button", { name: /^Pages/ })).toBeNull();
+    expect(within(group).queryByRole("button", { name: /^Merges/ })).toBeNull();
+    expect(within(group).queryByRole("button", { name: /^Candidates/ })).toBeNull();
+    expect(within(group).queryByRole("button", { name: /^Topics/ })).toBeNull();
+  });
+
+  it("filters to a single category, hides other sections, and Show all returns to all after the last item resolves", async () => {
+    localStorage.setItem(
+      "wenlan.review.hidden.v1",
+      JSON.stringify([{ key: "topic:Ghost topic", label: "Ghost topic", kind: "topic", at: Date.now() }]),
+    );
+    vi.mocked(distillReview).mockResolvedValue(emptyDistill);
+    vi.mocked(listRefinements)
+      .mockResolvedValueOnce({
+        proposals: [
+          {
+            id: "prop_conflict",
+            action: "relation_conflict",
+            source_ids: ["ent_a", "ent_b"],
+            payload: {
+              action: "relation_conflict",
+              existing_id: "ent_a",
+              new_id: "ent_b",
+              from: "Alice",
+              to: "Bob",
+              old_type: "manages",
+              new_type: "reports_to",
+            },
+            confidence: 0.7,
+            created_at: "2026-07-09T00:00:00Z",
+          },
+        ],
+      })
+      .mockResolvedValue({ proposals: [] });
+    const { user } = renderPanel();
+
+    // Under "all": recent revisions and the hidden footer both show.
+    expect(await screen.findByRole("heading", { name: "Recent revisions" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /1 hidden/ })).toBeInTheDocument();
+
+    const group = screen.getByRole("group", { name: "Filter reviews" });
+    await user.click(within(group).getByRole("button", { name: /^Conflicts/ }));
+
+    expect(screen.getByRole("heading", { name: "Contradictions & conflicts" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Memory revisions" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Recent revisions" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /1 hidden/ })).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Review Alice → Bob" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Approve" }));
+
+    await waitFor(() => {
+      expect(acceptRefinement).toHaveBeenCalledWith("prop_conflict");
+    });
+    expect(await screen.findByText("Nothing in this category right now.")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Show all" }));
+
+    expect(
+      within(screen.getByRole("group", { name: "Filter reviews" })).getByRole("button", {
+        name: /^All/,
+      }),
+    ).toHaveAttribute("aria-pressed", "true");
+  });
+});
+
+// REVIEW_EXAMPLES_ENABLED is false under Vitest (MODE === "test"), so the
+// panel never renders these — covered here as plain unit tests of the
+// exported pure functions/fixtures instead.
+describe("reviewExamples", () => {
+  it("flags only example: ids", () => {
+    for (const item of EXAMPLE_REVIEW_ITEMS) {
+      expect(isExampleReviewItem(item)).toBe(true);
+    }
+    expect(
+      isExampleReviewItem({
+        kind: "revision",
+        id: "mem_target",
+        targetSourceId: "mem_target",
+        revisionSourceId: "mem_target_rev",
+        content: "content",
+        agent: null,
+        timestampMs: null,
+      }),
+    ).toBe(false);
+  });
+
+  it("ships exactly one revision and one detect_contradiction refinement sample", () => {
+    expect(EXAMPLE_REVIEW_ITEMS).toHaveLength(2);
+    const [revision, refinement] = EXAMPLE_REVIEW_ITEMS;
+    expect(revision.kind).toBe("revision");
+    expect(refinement.kind).toBe("refinement");
+    expect(refinement.kind === "refinement" && refinement.action).toBe(
+      "detect_contradiction",
+    );
+    for (const item of EXAMPLE_REVIEW_ITEMS) {
+      expect(item.id.startsWith("example:")).toBe(true);
+    }
+  });
+
+  it("labels each sample with its human title", () => {
+    const [revision, refinement] = EXAMPLE_REVIEW_ITEMS;
+    expect(exampleReviewLabel(revision)).toBe("Coffee routine");
+    expect(exampleReviewLabel(refinement)).toBe("Standup schedule (updated)");
+  });
+
+  it("seeds every id the two dialogs read, with no stale gcTime/staleTime", () => {
+    const client = new QueryClient();
+    seedReviewExampleCaches(client);
+
+    const [revision, refinement] = EXAMPLE_REVIEW_ITEMS;
+    expect(revision.kind).toBe("revision");
+    const coffeeId = revision.kind === "revision" ? revision.targetSourceId : "";
+    expect(refinement.kind).toBe("refinement");
+    const [standupNewId, standupOldId] =
+      refinement.kind === "refinement" ? refinement.sourceIds : ["", ""];
+
+    for (const sourceId of [coffeeId, standupNewId, standupOldId]) {
+      const memory = client.getQueryData<MemoryItem>(["memory-detail", sourceId]);
+      expect(memory?.source_id).toBe(sourceId);
+      expect(memory?.content.length).toBeGreaterThan(0);
+
+      const summary = client.getQueryData<{ name: string; text: string }>([
+        "review-summary",
+        "memory",
+        sourceId,
+      ]);
+      expect(summary?.name.length).toBeGreaterThan(0);
+
+      const chain = client.getQueryData<{ chain_depth: number; entries: unknown[] }>([
+        "memory-revisions",
+        sourceId,
+      ]);
+      expect(chain).toEqual({ current_source_id: sourceId, chain_depth: 0, entries: [] });
+    }
   });
 });

@@ -10,6 +10,7 @@ import {
   search,
 } from "../../lib/tauri";
 import { diffWords, diffWordCounts, type DiffSegment } from "../../lib/wordDiff";
+import { isExampleReviewItem } from "./reviewExamples";
 import { reviewItemId, type ReviewItem } from "./useReviewQueue";
 import { PageMergeStripOff } from "./ReviewPageMerge";
 import { MemoryRevisionChain } from "./ReviewHistory";
@@ -50,6 +51,7 @@ export function reviewReadOnly(item: ReviewItem): boolean {
  * dismiss for these (suggest_entity/dedup_merge have no accept path;
  * cross_space_discovery needs a pick-space verb the app doesn't plumb yet). */
 export function reviewApproveBlocked(item: ReviewItem): boolean {
+  if (isExampleReviewItem(item)) return true;
   return (
     reviewReadOnly(item) ||
     (item.kind === "refinement" &&
@@ -351,6 +353,20 @@ const actionButtonStyle: React.CSSProperties = {
   border: "1px solid var(--mem-border)",
   backgroundColor: "var(--mem-surface)",
   color: "var(--mem-text)",
+};
+
+/** Dashed pill marking a dev-only sample item (see reviewExamples.ts) — card
+ * and dialog share this recipe. */
+const examplePillStyle: React.CSSProperties = {
+  fontFamily: "var(--mem-font-mono)",
+  fontSize: 10.5,
+  letterSpacing: "0.06em",
+  textTransform: "uppercase",
+  borderRadius: 5,
+  padding: "1px 7px",
+  color: "var(--mem-text-tertiary)",
+  border: "1px dashed var(--mem-border)",
+  whiteSpace: "nowrap",
 };
 
 /** On-open evidence for topic/suggest_entity cards: their daemon payloads
@@ -760,6 +776,9 @@ export default function ReviewDialog({
             >
               {reviewKindLabel(t, item)}
             </span>
+          )}
+          {item && isExampleReviewItem(item) && (
+            <span style={examplePillStyle}>{t("review.exampleBadge")}</span>
           )}
           <span
             style={{
@@ -1288,6 +1307,19 @@ export default function ReviewDialog({
                   </div>
                 )}
             </div>
+
+            {isExampleReviewItem(item) && (
+              <p
+                style={{
+                  fontFamily: "var(--mem-font-body)",
+                  fontSize: 12,
+                  color: "var(--mem-text-tertiary)",
+                  margin: "0 20px 10px",
+                }}
+              >
+                {t("review.exampleDialogNote")}
+              </p>
+            )}
 
             <div
               style={{
