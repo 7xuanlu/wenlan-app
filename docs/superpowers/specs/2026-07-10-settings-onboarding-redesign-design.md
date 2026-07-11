@@ -369,3 +369,120 @@ best-effort (§2a); per-preset `/models` compatibility validated at implementati
   priority; UI mirrors reality instead of inventing an exclusive mode.
 - **Recursive scan cost on huge vaults?** Caps (depth 6 / 5,000 entries) bound the
   walk; validity short-circuits on the first supported file.
+
+## §9 Feedback round 2 — user review of the live tour (2026-07-11)
+
+User-approved scope (AskUserQuestion 2026-07-11): lands as **additional commits on
+PR #82** (`settings-onboarding-features`); local probe = **both servers on pane
+load**; plugin scope = **UI now + `.mcpb`/`.codex-plugin` as a follow-up daemon-repo
+PR** (Gemini CLI extension repo = backlog). Amends §1, §2, §2a. All claims below
+re-validated 2026-07-11 against primary sources (two research passes); items marked
+`[unverified]` must not be load-bearing.
+
+### 9.1 Per-provider key UX (amends §1 Any-provider card + wizard cloud pane)
+
+Extend `ProviderPreset` (`src/components/intelligence/providerPresets.ts`) with:
+
+```ts
+keyPlaceholder?: string;   // provider-shaped example shown when no key stored
+keyPrefixes?: string[];    // soft-check prefixes; absent = no format check
+getKeyUrl?: string;        // provider console, opened in system browser
+```
+
+| preset id | new `name` | keyPlaceholder | keyPrefixes | getKeyUrl |
+| --- | --- | --- | --- | --- |
+| (native Anthropic card) | Anthropic | `sk-ant-api03-…` | `sk-ant-` | https://console.anthropic.com/settings/keys |
+| openai | OpenAI | `sk-proj-…` | `sk-` | https://platform.openai.com/api-keys |
+| gemini | **Gemini** (renamed from "Google Gemini") | `AIzaSy… or AQ.…` | `AIzaSy`, `AQ.` | https://aistudio.google.com/apikey |
+| groq | Groq | `gsk_…` | `gsk_` | https://console.groq.com/keys |
+| openrouter | OpenRouter | `sk-or-v1-…` | `sk-or-` | https://openrouter.ai/keys |
+| mistral | Mistral | (none — opaque token) | (none) | https://console.mistral.ai |
+| deepseek | DeepSeek | `sk-…` | `sk-` | https://platform.deepseek.com/api_keys |
+| xai | **xAI (Grok)** (renamed from "xAI") | `xai-…` | `xai-` | https://console.x.ai |
+
+Behavior:
+
+- Key input `placeholder` = preset's `keyPlaceholder` (falls back to the existing
+  configured-mask behavior when a key is already stored).
+- **Soft validation only**: non-empty key not matching any `keyPrefixes` shows an
+  amber, non-blocking hint ("This doesn't look like a {vendor} key — expected to
+  start with {prefix}"). Save/Test are never blocked by format. Rationale: Gemini
+  is mid-migration between two live formats (`AIzaSy` legacy, `AQ.` 2026 AI Studio
+  default) and Mistral has no documented prefix.
+- "Get a key →" link on every keyed preset, opens `getKeyUrl` in the system
+  browser via the app's existing external-link mechanism (implementer verifies
+  which opener the codebase already uses; do not add a new plugin for this).
+- **Naming decision (validated)**: Groq (groq.com, LPU inference company) and Grok
+  (xAI's model family, api.x.ai) are unrelated near-homophones — both presets stay.
+  The `xai` rename to "xAI (Grok)" exists precisely to kill this confusion. Preset
+  `id`s never change (endpoint matching is id-independent, but ids are stored
+  nowhere — keep them stable anyway).
+
+### 9.2 Local-server connected signal + model dropdown (amends §1/§2 local pane)
+
+- **Probe both on load**: when the wizard "Local server" pane (or the settings card
+  with a local preset selected) mounts, fire the existing `list_external_models`
+  discovery against BOTH local presets (Ollama `http://localhost:11434/v1`,
+  LM Studio `http://localhost:1234/v1`; existing 5s timeout). No new Rust.
+- **Status on the pills**: each local-provider pill shows ● connected / ○ not
+  detected. If exactly one server responds, auto-select it. Card body shows the
+  full chip: "● Connected to Ollama — N models" / "○ Not detected at
+  localhost:11434 — is Ollama running?".
+- **Dropdown, not datalist**: when discovery returns ≥ 1 model, the model field is
+  a real `<select>` over the discovered ids. Free-text input remains only when
+  discovery fails or preset = Custom (existing fallback path, §1). No hand-typed
+  model names in the happy path.
+- Cloud presets keep the existing datalist/free-text behavior (discovery against
+  cloud vendors requires a key and is already wired; unchanged here).
+
+### 9.3 Plugin-first connect matrix v2 (amends §2a; validated per-surface)
+
+Artifact facts (validated): Claude Code plugin (`.claude-plugin/plugin.json`),
+Claude Desktop `.mcpb` (zip: `manifest.json` + one MCP server, NO skills), and
+Codex plugin (`.codex-plugin/plugin.json`: skills + `.mcp.json` + hooks) are
+**three distinct, non-interoperable formats**. One GitHub repo can host
+`.claude-plugin/` and `.codex-plugin/` side by side. A plugin installed on
+claude.ai web activates **skills only** — MCP/hooks/commands do not carry over,
+so the daemon connection on claude.ai still requires the custom connector.
+
+Per-surface cards, primary path first (user rule: recommend plugin everywhere
+except ChatGPT.com):
+
+| surface | primary (this round) | fallback / advanced |
+| --- | --- | --- |
+| Claude Code | plugin commands (exist today): `claude plugin marketplace add 7xuanlu/wenlan` then `claude plugin install wenlan@7xuanlu` | "Copy setup prompt"; one-click config write moves under Advanced |
+| Codex (CLI + ChatGPT-desktop Codex mode) | `codex mcp add wenlan -- <same command+args as getWenlanMcpEntry>` (works today, no marketplace needed); upgrade copy to `codex plugin marketplace add 7xuanlu/wenlan` once `.codex-plugin/` ships in the daemon repo | "Copy setup prompt"; Codex TOML one-click write under Advanced |
+| Claude Desktop | one-click config write (existing registry entry) until the `.mcpb` bundle ships in the follow-up daemon-repo PR; card copy must not reference `.mcpb` before it exists | manual JSON |
+| Gemini CLI | one-click config write (existing); `gemini extensions install` copy lands when the backlog extension repo exists | manual JSON |
+| claude.ai (web) | custom connector: copy tunnel URL + deep link `https://claude.ai/settings/connectors?modal=add-custom-connector` (opens modal; does NOT prefill URL). Secondary line: "Wenlan's skills are also installable from the Claude Directory" `[unverified for individual accounts — copy must hedge or be omitted until verified]` | existing no-auth tunnel warning stays (council change f) |
+| ChatGPT.com | connector only (Developer Mode paste-URL) — per user's own call, "the only MCP" surface | existing warning stays |
+| Cursor | unchanged (one-click config write) | manual JSON |
+
+**"Copy setup prompt"** (user idea, validated as supported plumbing): each CLI
+client card gets a button copying a prompt the user pastes into that agent, e.g.
+Claude Code: "Install the Wenlan plugin: run `claude plugin marketplace add
+7xuanlu/wenlan`, then `claude plugin install wenlan@7xuanlu`, then tell me to run
+`/reload-plugins` or restart." Codex: same pattern over `codex mcp add wenlan --
+<command+args>`. Prompt text must mention: the agent uses the non-interactive
+shell verbs (the `/plugin` TUI is not agent-drivable), a reload/restart is needed
+after install, and normal permission prompts will appear. Exact prompt strings are
+i18n resources like all other copy.
+
+Sequencing honesty: this round ships UI + copy that is true at ship time. The
+`.mcpb` bundle and `.codex-plugin/` directory are a **follow-up PR in the
+`7xuanlu/wenlan` repo** (user-approved "UI now + .mcpb next"); the two card-copy
+upgrades above land with that PR, not this one.
+
+### 9.4 Testing additions (extends Testing)
+
+- Vitest: preset table carries the exact placeholders/prefixes/URLs above
+  (data-shape test); soft-hint logic (match → no hint, mismatch → hint, empty →
+  no hint, Mistral → never hints, Gemini both prefixes accepted); local pane
+  dual-probe rendering (both up / one up + auto-select / none up), dropdown vs
+  free-text switch; connect cards render primary-path copy per client;
+  setup-prompt copy button writes the full prompt to clipboard (existing
+  clipboardWrite mock pattern).
+- i18n: every new string (hints, chips, prompts, card copy) in en / zh-Hans /
+  zh-Hant; `pnpm test:i18n` green.
+- Existing gates unchanged: `pnpm build`, `pnpm test`, `pnpm test:i18n`; no Rust
+  changes expected this round (probe reuses `list_external_models`).
