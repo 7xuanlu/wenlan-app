@@ -644,13 +644,15 @@ export default function DistillReviewPanel({
   // route to (a contradiction sample is "conflicts") — both examples live in
   // one teachable spot, so visibility follows that section's filter gate.
   const examplesVisible = filter === "all" || filter === "revisions";
-  // Only once the entire queue is empty — dev-only garnish for a fresh
-  // install, not competing with real actionable items in any category.
+  // Shown whenever no real revision items exist — the samples teach what a
+  // revision review looks like, which the daemon otherwise never populates.
+  // Gated on the revisions section (not the whole queue) so they still appear
+  // alongside real work in other categories. Dev-only.
   const showExamples =
     REVIEW_EXAMPLES_ENABLED &&
     !queue.isLoading &&
     !queue.error &&
-    allVisible.length === 0;
+    (sectionCounts.revisions ?? 0) === 0;
   const exampleItems = showExamples
     ? EXAMPLE_REVIEW_ITEMS.filter((item) => !hiddenKeys.has(item.id))
     : [];
