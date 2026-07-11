@@ -738,7 +738,7 @@ describe("HomePage redesign", () => {
     );
   });
 
-  it("orders the review queue page-level first, then conflicts, then memory items", async () => {
+  it("orders the review queue revisions first, then conflicts, then page items", async () => {
     vi.mocked(tauri.listPendingRevisions).mockResolvedValue([
       {
         target_source_id: "mem-target",
@@ -787,11 +787,11 @@ describe("HomePage redesign", () => {
     const labels = within(strip)
       .getAllByRole("button")
       .map((button) => button.getAttribute("aria-label"));
-    // Rail shows the top 3 of the ranked queue: pages > conflicts > revisions.
+    // Rail shows the top 3 of the ranked queue: revisions > conflicts > pages.
     expect(labels).toEqual([
-      "Review Page merge",
-      "Review Contradiction",
       "Review Revised memory wording",
+      "Review Contradiction",
+      "Review Page merge",
     ]);
   });
 

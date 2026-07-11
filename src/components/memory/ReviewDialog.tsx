@@ -10,6 +10,8 @@ import { reviewItemId, type ReviewItem } from "./useReviewQueue";
 export function reviewKindLabel(t: TFunction, item: ReviewItem): string {
   if (item.kind === "revision") return t("review.kindRevision");
   if (item.kind === "capture") return t("review.kindCapture");
+  if (item.kind === "page_candidate") return t("review.kindPageCandidate");
+  if (item.kind === "topic") return t("review.kindTopic");
   switch (item.action) {
     case "entity_merge":
       return t("review.kindEntityMerge");
@@ -30,16 +32,77 @@ export function reviewKindLabel(t: TFunction, item: ReviewItem): string {
   }
 }
 
+/** Distill discovery items have no daemon verb at all — the dialog shows them
+ * without approve or dismiss; the daemon's compile pass consumes them. */
+export function reviewReadOnly(item: ReviewItem): boolean {
+  return item.kind === "page_candidate" || item.kind === "topic";
+}
+
 /** Actions the daemon rejects with 422 on accept — the dialog offers only
  * dismiss for these (suggest_entity/dedup_merge have no accept path;
  * cross_space_discovery needs a pick-space verb the app doesn't plumb yet). */
 export function reviewApproveBlocked(item: ReviewItem): boolean {
   return (
-    item.kind === "refinement" &&
-    (item.action === "suggest_entity" ||
-      item.action === "dedup_merge" ||
-      item.action === "cross_space_discovery")
+    reviewReadOnly(item) ||
+    (item.kind === "refinement" &&
+      (item.action === "suggest_entity" ||
+        item.action === "dedup_merge" ||
+        item.action === "cross_space_discovery"))
   );
+}
+
+/** Per-kind chip tone: revisions indigo, page work warm, entity merges amber,
+ * conflicts danger, new entities/topics sage. */
+export function reviewKindTone(item: ReviewItem): {
+  color: string;
+  background: string;
+} {
+  const mix = (token: string) =>
+    `color-mix(in srgb, ${token} 15%, transparent)`;
+  if (item.kind === "revision" || item.kind === "capture") {
+    return {
+      color: "var(--mem-accent-indigo)",
+      background: "var(--mem-indigo-bg)",
+    };
+  }
+  if (item.kind === "page_candidate") {
+    return {
+      color: "var(--mem-accent-warm)",
+      background: mix("var(--mem-accent-warm)"),
+    };
+  }
+  if (item.kind === "topic") {
+    return {
+      color: "var(--mem-accent-sage)",
+      background: mix("var(--mem-accent-sage)"),
+    };
+  }
+  switch (item.action) {
+    case "page_merge":
+    case "page_keep_or_archive":
+      return {
+        color: "var(--mem-accent-warm)",
+        background: mix("var(--mem-accent-warm)"),
+      };
+    case "entity_merge":
+    case "dedup_merge":
+      return {
+        color: "var(--mem-accent-amber)",
+        background: mix("var(--mem-accent-amber)"),
+      };
+    case "detect_contradiction":
+    case "relation_conflict":
+      return {
+        color: "var(--mem-status-danger-text)",
+        background: "var(--mem-status-danger-bg)",
+      };
+    default:
+      // suggest_entity / cross_space_discovery — new entities and spaces.
+      return {
+        color: "var(--mem-accent-sage)",
+        background: mix("var(--mem-accent-sage)"),
+      };
+  }
 }
 
 export function truncateReviewText(value: string, max: number): string {
@@ -121,6 +184,7 @@ interface ReviewDialogProps {
   onResolve: (args: { item: ReviewItem; approve: boolean }) => Promise<unknown>;
   isResolving: boolean;
   onOpenMemory?: (sourceId: string) => void;
+  onOpenPage?: (pageId: string) => void;
 }
 
 export default function ReviewDialog({
@@ -130,6 +194,7 @@ export default function ReviewDialog({
   onResolve,
   isResolving,
   onOpenMemory,
+  onOpenPage,
 }: ReviewDialogProps) {
   const { t } = useTranslation();
   const [showDone, setShowDone] = useState(false);
@@ -244,7 +309,7 @@ export default function ReviewDialog({
   }, [open, openId]);
 
   const resolveCurrent = async (approve: boolean) => {
-    if (!item || isResolving) return;
+    if (!item || isResolving || reviewReadOnly(item)) return;
     if (approve && reviewApproveBlocked(item)) return;
     const isCapture = item.kind === "capture";
     const isConflict =
@@ -324,9 +389,13 @@ export default function ReviewDialog({
         truncateReviewText(item.content, 72))
       : item?.kind === "capture"
         ? truncateReviewText(item.title, 72)
-        : item
-          ? reviewKindLabel(t, item)
-          : "";
+        : item?.kind === "page_candidate"
+          ? item.title
+          : item?.kind === "topic"
+            ? item.label
+            : item
+              ? reviewKindLabel(t, item)
+              : "";
 
   return (
     <div
@@ -402,8 +471,8 @@ export default function ReviewDialog({
                 letterSpacing: "0.04em",
                 borderRadius: 5,
                 padding: "2px 8px",
-                color: "var(--mem-accent-indigo)",
-                backgroundColor: "var(--mem-indigo-bg)",
+                color: reviewKindTone(item).color,
+                backgroundColor: reviewKindTone(item).background,
               }}
             >
               {reviewKindLabel(t, item)}
@@ -525,8 +594,21 @@ export default function ReviewDialog({
                     : ""
                   : item.kind === "capture"
                     ? t("review.captureHint")
-                    : isContradiction
-                      ? t("review.contradictionHint")
+                    : item.kind === "page_candidate"
+                      ? (item.cluster.new_memory_count != null
+                          ? t("review.newSources", {
+                              count: item.cluster.new_memory_count,
+                            })
+                          : t("review.sources", {
+                              count: item.cluster.source_ids.length,
+                            })) +
+                        (item.cluster.existing_page_id
+                          ? ` · ${t("review.linkedExistingPage")}`
+                          : "")
+                      : item.kind === "topic"
+                        ? t("review.mentions", { count: item.count })
+                        : isContradiction
+                          ? t("review.contradictionHint")
                       : item.action === "relation_conflict"
                         ? t("review.relationConflictHint")
                         : item.action === "page_keep_or_archive"
@@ -651,6 +733,43 @@ export default function ReviewDialog({
                     ? t("review.loadingCurrent")
                     : (target.data?.content ?? item.snippet ?? "")}
                 </div>
+              )}
+
+              {item.kind === "page_candidate" && (
+                <div style={{ display: "grid", gap: 12 }}>
+                  <p
+                    style={{
+                      fontFamily: "var(--mem-font-body)",
+                      color: "var(--mem-text-secondary)",
+                      fontSize: 13,
+                      margin: 0,
+                    }}
+                  >
+                    {t("review.candidateQueued")}
+                  </p>
+                  {item.cluster.contents
+                    .map((content) => content.trim())
+                    .filter((content) => content.length > 0)
+                    .slice(0, 3)
+                    .map((content, contentIndex) => (
+                      <div key={contentIndex} style={paneStyle}>
+                        {content}
+                      </div>
+                    ))}
+                </div>
+              )}
+
+              {item.kind === "topic" && (
+                <p
+                  style={{
+                    fontFamily: "var(--mem-font-body)",
+                    color: "var(--mem-text-secondary)",
+                    fontSize: 13,
+                    margin: 0,
+                  }}
+                >
+                  {t("review.topicHint")}
+                </p>
               )}
 
               {item.kind === "refinement" &&
@@ -861,31 +980,46 @@ export default function ReviewDialog({
                 marginTop: 14,
               }}
             >
-              <button
-                type="button"
-                disabled={isResolving}
-                onClick={() => void resolveCurrent(false)}
-                style={{
-                  ...actionButtonStyle,
-                  // Forget hard-deletes the capture; every other dismiss just
-                  // clears the proposal, so only Forget wears the danger tone.
-                  ...(item.kind === "capture"
-                    ? {
-                        color: "var(--mem-status-danger-text)",
-                        borderColor: "var(--mem-status-danger-border)",
-                      }
-                    : { color: "var(--mem-text-secondary)" }),
-                }}
-              >
-                {item.kind === "capture"
-                  ? t("review.forget")
-                  : isContradiction
-                    ? t("review.keepBoth")
-                    : item.kind === "refinement" &&
-                        item.action === "page_keep_or_archive"
-                      ? t("review.keepPage")
-                      : t("review.dismiss")}
-              </button>
+              {!reviewReadOnly(item) && (
+                <button
+                  type="button"
+                  disabled={isResolving}
+                  onClick={() => void resolveCurrent(false)}
+                  style={{
+                    ...actionButtonStyle,
+                    // Forget hard-deletes the capture; every other dismiss just
+                    // clears the proposal, so only Forget wears the danger tone.
+                    ...(item.kind === "capture"
+                      ? {
+                          color: "var(--mem-status-danger-text)",
+                          borderColor: "var(--mem-status-danger-border)",
+                        }
+                      : { color: "var(--mem-text-secondary)" }),
+                  }}
+                >
+                  {item.kind === "capture"
+                    ? t("review.forget")
+                    : isContradiction
+                      ? t("review.keepBoth")
+                      : item.kind === "refinement" &&
+                          item.action === "page_keep_or_archive"
+                        ? t("review.keepPage")
+                        : t("review.dismiss")}
+                </button>
+              )}
+              {item.kind === "page_candidate" &&
+                item.cluster.existing_page_id &&
+                onOpenPage && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onOpenPage(item.cluster.existing_page_id as string)
+                    }
+                    style={actionButtonStyle}
+                  >
+                    {t("review.openPage")}
+                  </button>
+                )}
               {(item.kind === "revision" || item.kind === "capture") &&
                 onOpenMemory && (
                   <button

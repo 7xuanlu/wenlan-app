@@ -196,7 +196,7 @@ describe("DistillReviewPanel", () => {
     expect(await screen.findByText("Temporal page refresh")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "New page candidates" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Pages with new sources" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Unlinked topics" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "New topics" })).toBeInTheDocument();
     expect(screen.getByText(/1 new source/)).toBeInTheDocument();
     expect(screen.getByText(truncateForTest(fallbackSource, 72))).toBeInTheDocument();
     expect(screen.getByText("Retrieval Pipeline")).toBeInTheDocument();
@@ -249,10 +249,26 @@ describe("DistillReviewPanel", () => {
 });
 
 describe("DistillReviewPanel review queue", () => {
-  it("shows the all-caught-up state when the queue is empty", async () => {
+  it("shows all-caught-up only when the queue and discovery are both empty", async () => {
+    vi.mocked(distillReview).mockResolvedValue({
+      pages_created: 0,
+      scoped: false,
+      created_ids: [],
+      pending: [],
+      stale_pages: [],
+      stale_truncated: false,
+      orphan_topics: [],
+    });
     renderPanel();
 
     expect(await screen.findByRole("heading", { name: "All caught up" })).toBeInTheDocument();
+  });
+
+  it("does not claim all-caught-up while discovery items exist", async () => {
+    renderPanel();
+
+    expect(await screen.findByText("Temporal page refresh")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "All caught up" })).toBeNull();
   });
 
   it("renders revision cards with a pending count", async () => {
@@ -282,10 +298,20 @@ describe("DistillReviewPanel review queue", () => {
       expect([...dels].some((el) => el.textContent?.includes("npm"))).toBe(true);
       expect([...inss].some((el) => el.textContent?.includes("pnpm"))).toBe(true);
     });
-    expect(within(dialog).getByText("1 of 1")).toBeInTheDocument();
+    // 1 revision + 2 page candidates + 1 topic share the dialog list.
+    expect(within(dialog).getByText("1 of 4")).toBeInTheDocument();
   });
 
-  it("approves a revision and shows the caught-up pane when the queue empties", async () => {
+  it("approves the last revision and shows the caught-up pane when nothing else is queued", async () => {
+    vi.mocked(distillReview).mockResolvedValue({
+      pages_created: 0,
+      scoped: false,
+      created_ids: [],
+      pending: [],
+      stale_pages: [],
+      stale_truncated: false,
+      orphan_topics: [],
+    });
     vi.mocked(listPendingRevisions)
       .mockResolvedValueOnce([
         revision({ target_source_id: "mem_target", revision_content: "Prefers pnpm for installs" }),
@@ -301,6 +327,26 @@ describe("DistillReviewPanel review queue", () => {
       expect(acceptPendingRevision).toHaveBeenCalledWith("mem_target");
     });
     expect(await within(dialog).findByText("Every pending change has been reviewed.")).toBeInTheDocument();
+  });
+
+  it("advances into discovery items after the last decision resolves", async () => {
+    vi.mocked(listPendingRevisions)
+      .mockResolvedValueOnce([
+        revision({ target_source_id: "mem_target", revision_content: "Prefers pnpm for installs" }),
+      ])
+      .mockResolvedValue([]);
+    const { user } = renderPanel();
+
+    await user.click(await screen.findByRole("button", { name: /Review Prefers pnpm/ }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Approve" }));
+
+    await waitFor(() => {
+      expect(acceptPendingRevision).toHaveBeenCalledWith("mem_target");
+    });
+    expect(
+      await within(dialog).findByRole("heading", { name: "Temporal page refresh" }),
+    ).toBeInTheDocument();
   });
 
   it("dismisses a revision through the dialog", async () => {
@@ -334,7 +380,8 @@ describe("DistillReviewPanel review queue", () => {
     await user.click(await screen.findByRole("button", { name: /Review First revision/ }));
     const dialog = await screen.findByRole("dialog");
     expect(await within(dialog).findByRole("heading", { name: "Title mem_a" })).toBeInTheDocument();
-    expect(within(dialog).getByText("1 of 2")).toBeInTheDocument();
+    // 2 revisions + 2 page candidates + 1 topic share the dialog list.
+    expect(within(dialog).getByText("1 of 5")).toBeInTheDocument();
 
     await user.click(within(dialog).getByRole("button", { name: "Approve" }));
 
@@ -373,7 +420,7 @@ describe("DistillReviewPanel review queue", () => {
     });
   });
 
-  it("confirms a new memory from the New memories section with confirm/forget verbs", async () => {
+  it("keeps new-memory captures off the review page", async () => {
     vi.mocked(listUnconfirmedMemories).mockResolvedValue([
       {
         kind: "memory",
@@ -384,17 +431,50 @@ describe("DistillReviewPanel review queue", () => {
         badge: { kind: "needs_review" },
       },
     ]);
-    const { user } = renderPanel();
+    renderPanel();
 
-    expect(await screen.findByRole("heading", { name: "New memories" })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: /User prefers pnpm over npm/ }));
+    expect(await screen.findByText("Temporal page refresh")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "New memories" })).toBeNull();
+    expect(screen.queryByText("User prefers pnpm over npm")).toBeNull();
+    expect(screen.queryByText(/1 pending/)).toBeNull();
+    expect(confirmMemory).not.toHaveBeenCalled();
+    expect(deleteMemory).not.toHaveBeenCalled();
+  });
+
+  it("opens a read-only dialog from a new page candidate card", async () => {
+    const { user, onPageClick } = renderPanel();
+
+    await user.click(
+      await screen.findByRole("button", { name: "Review Temporal page refresh" }),
+    );
 
     const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByText("New memory")).toBeInTheDocument();
-    expect(within(dialog).getByRole("button", { name: "Forget" })).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("heading", { name: "Temporal page refresh" }),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByText("New page")).toBeInTheDocument();
+    expect(within(dialog).getByText(/next compile pass/)).toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: "Approve" })).toBeNull();
+    expect(within(dialog).queryByRole("button", { name: "Dismiss" })).toBeNull();
+    // 0 decisions + 2 page candidates + 1 topic share the dialog list.
+    expect(within(dialog).getByText("1 of 3")).toBeInTheDocument();
 
-    await user.click(within(dialog).getByRole("button", { name: "Confirm" }));
-    await waitFor(() => expect(confirmMemory).toHaveBeenCalledWith("mem-capture"));
-    expect(deleteMemory).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole("button", { name: "Open page" }));
+    expect(onPageClick).toHaveBeenCalledWith("page_temporal");
+  });
+
+  it("opens a read-only dialog from a new topic card", async () => {
+    const { user } = renderPanel();
+
+    await user.click(await screen.findByRole("button", { name: "Review Vector clocks" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("New topic")).toBeInTheDocument();
+    expect(within(dialog).getByText("4 mentions")).toBeInTheDocument();
+    expect(
+      within(dialog).getByText("Mentioned across memories, but no page covers it yet."),
+    ).toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: "Approve" })).toBeNull();
+    expect(within(dialog).queryByRole("button", { name: "Dismiss" })).toBeNull();
   });
 });

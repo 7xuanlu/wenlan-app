@@ -7,7 +7,11 @@ import {
   type DistillPendingCluster,
   type DistillReviewResponse,
 } from "../../lib/tauri";
-import ReviewDialog, { reviewKindLabel, truncateReviewText } from "./ReviewDialog";
+import ReviewDialog, {
+  reviewKindLabel,
+  reviewKindTone,
+  truncateReviewText,
+} from "./ReviewDialog";
 import {
   reviewItemId,
   reviewItemSection,
@@ -38,11 +42,16 @@ function firstNonEmpty(values: Array<string | null | undefined>): string | null 
 
 function pendingLabel(cluster: DistillPendingCluster): string | null {
   const fromContent = firstNonEmpty(cluster.contents);
+  // Content fallback: strip a leading markdown heading marker and collapse
+  // newlines so raw memory text reads as a title.
+  const contentTitle = fromContent
+    ? truncateText(fromContent.replace(/^#+\s*/, "").replace(/\s+/g, " "), 72)
+    : null;
   return firstNonEmpty([
     cluster.existing_page_title,
     cluster.entity_name,
     cluster.space,
-    fromContent ? truncateText(fromContent, 72) : null,
+    contentTitle,
   ]);
 }
 
@@ -83,7 +92,11 @@ function QueueCard({
       ? truncateReviewText(item.content, 96)
       : item.kind === "capture"
         ? truncateReviewText(item.title, 96)
-        : reviewKindLabel(t, item);
+        : item.kind === "page_candidate"
+          ? item.title
+          : item.kind === "topic"
+            ? item.label
+            : reviewKindLabel(t, item);
   const meta =
     item.kind === "revision"
       ? item.agent
@@ -93,7 +106,30 @@ function QueueCard({
         ? item.snippet
           ? truncateReviewText(item.snippet, 96)
           : ""
-        : t("review.confidence", { percent: Math.round(item.confidence * 100) });
+        : item.kind === "page_candidate"
+          ? (item.cluster.new_memory_count != null
+              ? t("review.newSources", {
+                  count: item.cluster.new_memory_count,
+                })
+              : t("review.sources", {
+                  count: item.cluster.source_ids.length,
+                })) +
+            (item.cluster.existing_page_id
+              ? ` · ${t("review.linkedExistingPage")}`
+              : "")
+          : item.kind === "topic"
+            ? t("review.mentions", { count: item.count })
+            : t("review.confidence", {
+                percent: Math.round(item.confidence * 100),
+              });
+  const tone = reviewKindTone(item);
+  const preview =
+    item.kind === "page_candidate"
+      ? item.cluster.contents
+          .map((content) => content.trim())
+          .filter((content) => content.length > 0)
+          .slice(0, 2)
+      : [];
   return (
     <button
       type="button"
@@ -118,8 +154,8 @@ function QueueCard({
             letterSpacing: "0.04em",
             borderRadius: 5,
             padding: "2px 8px",
-            color: "var(--mem-accent-indigo)",
-            backgroundColor: "var(--mem-indigo-bg)",
+            color: tone.color,
+            backgroundColor: tone.background,
           }}
         >
           {reviewKindLabel(t, item)}
@@ -147,6 +183,18 @@ function QueueCard({
       >
         {title}
       </span>
+      {preview.map((content, index) => (
+        <span
+          key={index}
+          style={{
+            ...secondaryTextStyle,
+            fontSize: 13,
+            lineHeight: 1.45,
+          }}
+        >
+          {truncateText(content, 140)}
+        </span>
+      ))}
     </button>
   );
 }
@@ -185,19 +233,58 @@ export default function DistillReviewPanel({
     return () => clearTimeout(id);
   }, [review.mutate]);
 
-  // Section order mirrors the queue's page > memory ranking.
+  // New-memory captures are inflow, not decisions — they surface as a count
+  // on the home context rail instead of flooding this queue.
+  const decisionItems = queue.items.filter((item) => item.kind !== "capture");
+
+  // Distill discovery rendered through the same card + dialog pattern as the
+  // actionable queue, read-only until the daemon grows verbs for them.
+  const candidateItems = (lastResult?.pending ?? []).map(
+    (cluster, clusterIndex): ReviewItem => ({
+      kind: "page_candidate",
+      id: cluster.source_ids.join("-") || `cluster-${clusterIndex}`,
+      title: pendingLabel(cluster) ?? t("review.untitledCluster"),
+      cluster,
+      timestampMs: null,
+    }),
+  );
+  const topicItems = (lastResult?.orphan_topics ?? []).map(
+    (topic): ReviewItem => ({
+      kind: "topic",
+      id: topic.label,
+      label: topic.label,
+      count: topic.count,
+      timestampMs: null,
+    }),
+  );
+  // Dialog order mirrors the page: decisions first, then discovery.
+  const dialogItems = [...decisionItems, ...candidateItems, ...topicItems];
+
+  // Section order mirrors the queue's revisions > conflicts > pages ranking.
   const sections = [
-    { key: "pages", title: t("review.sectionPages") },
-    { key: "conflicts", title: t("review.sectionConflicts") },
     { key: "revisions", title: t("review.sectionRevisions") },
+    { key: "conflicts", title: t("review.sectionConflicts") },
+    { key: "pages", title: t("review.sectionPages") },
     { key: "memory", title: t("review.sectionRefinements") },
-    { key: "captures", title: t("review.sectionCaptures") },
   ].map((section) => ({
     ...section,
-    items: queue.items.filter(
+    items: decisionItems.filter(
       (item) => reviewItemSection(item) === section.key,
     ),
   }));
+
+  // "All caught up" must count the distill discovery too — an empty decision
+  // queue with pending page work is not caught up.
+  const distillHasWork =
+    lastResult != null &&
+    (lastResult.pending.length > 0 ||
+      lastResult.stale_pages.length > 0 ||
+      lastResult.orphan_topics.length > 0);
+  const allCaughtUp =
+    !queue.isLoading &&
+    !review.isPending &&
+    decisionItems.length === 0 &&
+    !distillHasWork;
 
   const refresh = () => {
     review.mutate();
@@ -253,7 +340,7 @@ export default function DistillReviewPanel({
           </p>
         </div>
         <div className="flex items-center gap-2.5">
-          {queue.items.length > 0 && (
+          {decisionItems.length > 0 && (
             <span
               style={{
                 fontFamily: "var(--mem-font-mono)",
@@ -267,9 +354,9 @@ export default function DistillReviewPanel({
               }}
             >
               {t("review.pendingCount", {
-                count: queue.isTruncated
-                  ? `${queue.items.length}+`
-                  : queue.items.length,
+                count: queue.decisionsTruncated
+                  ? `${decisionItems.length}+`
+                  : decisionItems.length,
               })}
             </span>
           )}
@@ -308,74 +395,12 @@ export default function DistillReviewPanel({
       )}
 
       <div className="grid gap-6" style={{ marginTop: 24 }}>
-        {!queue.isLoading && queue.items.length === 0 && (
+        {allCaughtUp && (
           <section>
             <h2 style={sectionTitleStyle}>{t("review.allCaughtUp")}</h2>
             <p style={{ ...secondaryTextStyle, margin: 0, fontSize: "13px" }}>
               {t("review.allCaughtUpHint")}
             </p>
-          </section>
-        )}
-
-        {lastResult && lastResult.pending.length > 0 && (
-          <section>
-            <h2 style={sectionTitleStyle}>{t("review.sectionPageCandidates")}</h2>
-            <div className="grid gap-2.5">
-              {lastResult.pending.map((cluster, clusterIndex) => {
-                const label =
-                  pendingLabel(cluster) ?? t("review.untitledCluster");
-                const preview = cluster.contents
-                  .map((content) => content.trim())
-                  .filter((content) => content.length > 0)
-                  .slice(0, 2);
-                return (
-                  <article
-                    key={`${clusterIndex}-${cluster.source_ids.join("-")}`}
-                    style={{
-                      ...itemSurfaceStyle,
-                      padding: "13px 14px",
-                    }}
-                  >
-                    <h3
-                      style={{
-                        margin: 0,
-                        fontFamily: "var(--mem-font-heading)",
-                        fontSize: "15px",
-                        fontWeight: 500,
-                        color: "var(--mem-text)",
-                      }}
-                    >
-                      {label}
-                    </h3>
-                    <p style={{ ...secondaryTextStyle, margin: "6px 0 0", fontSize: "12px" }}>
-                      {cluster.new_memory_count != null
-                        ? t("review.newSources", {
-                            count: cluster.new_memory_count,
-                          })
-                        : t("review.sources", {
-                            count: cluster.source_ids.length,
-                          })}
-                      {cluster.existing_page_id
-                        ? ` · ${t("review.linkedExistingPage")}`
-                        : ""}
-                    </p>
-                    {preview.map((content, index) => (
-                      <p
-                        key={index}
-                        style={{
-                          ...secondaryTextStyle,
-                          margin: "7px 0 0",
-                          fontSize: "13px",
-                          lineHeight: 1.45,
-                        }}
-                      >
-                        {truncateText(content, 140)}
-                      </p>
-                    ))}
-                  </article>
-                );
-              })}
-            </div>
           </section>
         )}
 
@@ -395,6 +420,21 @@ export default function DistillReviewPanel({
                 </div>
               </section>
             ),
+        )}
+
+        {candidateItems.length > 0 && (
+          <section>
+            <h2 style={sectionTitleStyle}>{t("review.sectionPageCandidates")}</h2>
+            <div className="grid gap-2.5">
+              {candidateItems.map((item) => (
+                <QueueCard
+                  key={reviewItemId(item)}
+                  item={item}
+                  onOpen={setOpenId}
+                />
+              ))}
+            </div>
+          </section>
         )}
 
         {lastResult && (
@@ -457,35 +497,18 @@ export default function DistillReviewPanel({
 
             <section>
               <h2 style={sectionTitleStyle}>{t("review.sectionOrphanTopics")}</h2>
-              {lastResult.orphan_topics.length === 0 ? (
+              {topicItems.length === 0 ? (
                 <p style={{ ...secondaryTextStyle, margin: 0, fontSize: "13px" }}>
                   {t("review.noOrphanTopics")}
                 </p>
               ) : (
                 <div className="grid gap-2.5">
-                  {lastResult.orphan_topics.map((topic) => (
-                    <article
-                      key={topic.label}
-                      style={{
-                        ...itemSurfaceStyle,
-                        padding: "13px 14px",
-                      }}
-                    >
-                      <h3
-                        style={{
-                          margin: 0,
-                          fontFamily: "var(--mem-font-heading)",
-                          fontSize: "15px",
-                          fontWeight: 500,
-                          color: "var(--mem-text)",
-                        }}
-                      >
-                        {topic.label}
-                      </h3>
-                      <p style={{ ...secondaryTextStyle, margin: "6px 0 0", fontSize: "12px" }}>
-                        {t("review.mentions", { count: topic.count })}
-                      </p>
-                    </article>
+                  {topicItems.map((item) => (
+                    <QueueCard
+                      key={reviewItemId(item)}
+                      item={item}
+                      onOpen={setOpenId}
+                    />
                   ))}
                 </div>
               )}
@@ -495,12 +518,13 @@ export default function DistillReviewPanel({
       </div>
 
       <ReviewDialog
-        items={queue.items}
+        items={dialogItems}
         openId={openId}
         onOpenChange={setOpenId}
         onResolve={queue.resolve}
         isResolving={queue.isResolving}
         onOpenMemory={onMemoryClick}
+        onOpenPage={onPageClick}
       />
     </div>
   );

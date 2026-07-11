@@ -11,6 +11,7 @@ import {
   listRefinements,
   listUnconfirmedMemories,
   rejectRefinement,
+  type DistillPendingCluster,
   type PendingRevisionItem,
   type ProposalAction,
   type RecentActivityItem,
@@ -43,6 +44,22 @@ export type ReviewItem =
       title: string;
       snippet: string | null;
       timestampMs: number | null;
+    }
+  // Read-only discovery items from distill review — no daemon verb exists for
+  // them yet, so the dialog shows them without approve/dismiss actions.
+  | {
+      kind: "page_candidate";
+      id: string;
+      title: string;
+      cluster: DistillPendingCluster;
+      timestampMs: null;
+    }
+  | {
+      kind: "topic";
+      id: string;
+      label: string;
+      count: number;
+      timestampMs: null;
     };
 
 export function reviewItemId(item: ReviewItem): string {
@@ -50,24 +67,31 @@ export function reviewItemId(item: ReviewItem): string {
 }
 
 export type ReviewSection =
-  | "pages"
-  | "conflicts"
   | "revisions"
+  | "conflicts"
+  | "pages"
   | "memory"
+  | "candidates"
+  | "topics"
   | "captures";
 
-/** Queue order: page-level work first, then conflicts, then memory-level. */
+/** Queue order: memory revisions and contradictions carry the most decision
+ * value, then page/entity merges, then read-only discovery, captures last. */
 const SECTION_ORDER: ReviewSection[] = [
-  "pages",
-  "conflicts",
   "revisions",
+  "conflicts",
+  "pages",
   "memory",
+  "candidates",
+  "topics",
   "captures",
 ];
 
 export function reviewItemSection(item: ReviewItem): ReviewSection {
   if (item.kind === "revision") return "revisions";
   if (item.kind === "capture") return "captures";
+  if (item.kind === "page_candidate") return "candidates";
+  if (item.kind === "topic") return "topics";
   switch (item.action) {
     case "page_merge":
     case "page_keep_or_archive":
@@ -182,9 +206,14 @@ export function useReviewQueue(enabled: boolean = true) {
         // Curate semantics: confirm keeps the memory, "dismiss" forgets it.
         return approve ? confirmMemory(item.id) : deleteMemory(item.id);
       }
+      if (item.kind === "page_candidate" || item.kind === "topic") {
+        // Read-only discovery — no daemon verb; the dialog never offers one.
+        return;
+      }
       return approve ? acceptRefinement(item.id) : rejectRefinement(item.id);
     },
     onSuccess: (_result, { item }) => {
+      if (item.kind === "page_candidate" || item.kind === "topic") return;
       // Drop the resolved item from the cache right away so the queue and any
       // open dialog advance without waiting for the refetch.
       if (item.kind === "revision") {

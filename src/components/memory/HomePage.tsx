@@ -614,7 +614,7 @@ function HomeContextRail({
           className="wiki-index-strip"
         >
           <ContextMetric testId="pages" label={t("home.pages")} value={String(pages.length)} />
-          <ContextMetric testId="updated-today" label={t("home.relative.today")} value={String(updatedTodayCount(pages))} />
+          <ContextMetric testId="updated-today" label={t("home.updatedToday")} value={String(updatedTodayCount(pages))} />
           <ContextMetric
             testId="new-memories"
             label={t("home.newMemories")}
@@ -796,6 +796,9 @@ function reviewItemAge(ms: number): string {
 function reviewDotColor(item: ReviewItem): string {
   if (item.kind === "revision") return "var(--mem-accent-indigo)";
   if (item.kind === "capture") return "var(--mem-accent-warm)";
+  // Distill discovery never reaches the home rail; colors kept for totality.
+  if (item.kind === "page_candidate") return "var(--mem-accent-warm)";
+  if (item.kind === "topic") return "var(--mem-accent-sage)";
   switch (item.action) {
     case "page_merge":
     case "page_keep_or_archive":
