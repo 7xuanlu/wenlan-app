@@ -4,13 +4,21 @@ import { useQuery } from "@tanstack/react-query";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import {
+  getEntitySuggestions,
   getMemoryStats,
+  listEntities,
   listPages,
   listRecentChanges,
   listRecentRetrievals,
+  type MemoryStats,
   type Page,
 } from "../../lib/tauri";
 import { Greeting } from "./Greeting";
+import { useReviewQueue, reviewItemId, type ReviewItem } from "./useReviewQueue";
+import ReviewDialog, {
+  reviewKindLabel,
+  useReviewItemSummary,
+} from "./ReviewDialog";
 import { RefiningList } from "./RefiningList";
 import { ConnectionsList } from "./ConnectionsList";
 import { RetrievalsList } from "./RetrievalsList";
@@ -48,7 +56,7 @@ function deriveHomePageState(params: {
 }
 
 export default function HomePage({
-  onNavigateMemory: _onNavigateMemory,
+  onNavigateMemory,
   onNavigateStream: _onNavigateStream,
   onNavigateLog: _onNavigateLog,
   onNavigateGraph: _onNavigateGraph,
@@ -88,10 +96,6 @@ export default function HomePage({
       [...recentConcepts]
         .sort((a, b) => Date.parse(b.last_modified) - Date.parse(a.last_modified))
         .slice(0, 6),
-    [recentConcepts],
-  );
-  const pageUpdateItems = useMemo(
-    () => pageUpdatesFromPages(recentConcepts),
     [recentConcepts],
   );
 
@@ -179,9 +183,10 @@ export default function HomePage({
         <WikiHome
           allPages={recentConcepts}
           pages={recentlyRefinedPages}
-          pageUpdates={pageUpdateItems}
+          stats={stats}
           onSelectPage={onSelectPage}
           onOpenDistillReview={onOpenDistillReview}
+          onOpenMemory={onNavigateMemory}
         />
 
         {shouldShowFirstConceptModal && firstConcept && (
@@ -262,24 +267,6 @@ export default function HomePage({
   );
 }
 
-function pageUpdatesFromPages(pages: Page[]): Page[] {
-  return [...pages]
-    .filter((page) => page.stale_reason?.trim())
-    .sort((a, b) => {
-      const aPriority = a.stale_reason === "source_conflict" ? 0 : 1;
-      const bPriority = b.stale_reason === "source_conflict" ? 0 : 1;
-      if (aPriority !== bPriority) return aPriority - bPriority;
-      return Date.parse(b.last_modified) - Date.parse(a.last_modified);
-    })
-    .slice(0, 3);
-}
-
-function pageUpdateReason(t: TFunction, page: Page): string {
-  if (page.stale_reason === "source_conflict") return t("home.reasons.sourceConflict");
-  if (page.stale_reason === "source_updated") return t("home.reasons.sourceUpdated");
-  return t("home.reasons.needsRefresh");
-}
-
 function formatPagePath(page: Page): string {
   const domain = page.domain?.trim() || page.space?.trim();
   const title = page.title.replace(/\s+/g, "-");
@@ -288,11 +275,6 @@ function formatPagePath(page: Page): string {
 
 function formatSourceCount(t: TFunction, count: number): string {
   return t("home.counts.source", { count });
-}
-
-// The rail's list slices to 3, so the metric counts stale pages itself.
-function needsReviewCount(pages: Page[]): number {
-  return pages.filter((page) => page.stale_reason?.trim()).length;
 }
 
 function updatedTodayCount(pages: Page[]): number {
@@ -354,17 +336,32 @@ function useElementMinWidth<T extends HTMLElement>(minWidth: number) {
 function WikiHome({
   allPages,
   pages,
-  pageUpdates,
+  stats,
   onSelectPage,
   onOpenDistillReview,
+  onOpenMemory,
 }: {
   allPages: Page[];
   pages: Page[];
-  pageUpdates: Page[];
+  stats?: MemoryStats;
   onSelectPage?: (pageId: string) => void;
   onOpenDistillReview?: () => void;
+  onOpenMemory?: (sourceId: string) => void;
 }) {
   const [containerRef, isWideLayout] = useElementMinWidth<HTMLDivElement>(820);
+  const {
+    items: reviewItems,
+    isLoading: reviewLoading,
+    error: reviewError,
+    decisionsTruncated,
+    resolve,
+    isResolving,
+    refetch: refetchReviewQueue,
+  } = useReviewQueue();
+  const [openReviewId, setOpenReviewId] = useState<string | null>(null);
+  // New-memory captures are inflow, not decisions — they're unconfirmed but
+  // already live (recalled, feeding pages), so they stay out of the rail.
+  const decisionItems = reviewItems.filter((item) => item.kind !== "capture");
   return (
     <div
       data-testid="wiki-home"
@@ -385,9 +382,12 @@ function WikiHome({
         data-testid="wiki-daily-desk"
         className="wiki-daily-desk"
       >
-        <TodayHeader />
+        <TodayHeader pages={allPages} />
 
-        <HomeContextRail pages={allPages} />
+        <HomeContextRail
+          pages={allPages}
+          stats={stats}
+        />
       </section>
 
       <div
@@ -407,13 +407,26 @@ function WikiHome({
           onSelectPage={onSelectPage}
           isWideLayout={isWideLayout}
         />
-        <PageUpdatesRail
-          embedded
-          pages={pageUpdates}
-          onSelectPage={onSelectPage}
+        <NeedsReviewRail
+          items={decisionItems}
+          isLoading={reviewLoading}
+          error={reviewError}
+          onRetry={refetchReviewQueue}
+          isTruncated={decisionsTruncated}
+          onOpenItem={setOpenReviewId}
           onOpenDistillReview={onOpenDistillReview}
+          leadsColumn={!isWideLayout && decisionItems.length > 0}
         />
       </div>
+
+      <ReviewDialog
+        items={reviewItems}
+        openId={openReviewId}
+        onOpenChange={setOpenReviewId}
+        onResolve={resolve}
+        isResolving={isResolving}
+        onOpenMemory={onOpenMemory}
+      />
     </div>
   );
 }
@@ -455,11 +468,26 @@ function SectionHeading({
   );
 }
 
-function TodayHeader() {
+function TodayHeader({ pages }: { pages: Page[] }) {
   const { t } = useTranslation();
   return (
     <section data-testid="wiki-today-heading" className="wiki-today-heading">
-      <SectionHeading title={t("home.todayInWenlan")} />
+      <SectionHeading
+        title={t("home.todayInWenlan")}
+        action={
+          <span
+            data-testid="wiki-context-latest"
+            style={{
+              fontFamily: "var(--mem-font-mono)",
+              fontSize: 11,
+              color: "var(--mem-text-tertiary)",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {latestPageUpdate(t, pages)}
+          </span>
+        }
+      />
     </section>
   );
 }
@@ -584,8 +612,30 @@ function PageList({
   );
 }
 
-function HomeContextRail({ pages }: { pages: Page[] }) {
+function HomeContextRail({
+  pages,
+  stats,
+}: {
+  pages: Page[];
+  /** Aggregate memory counts; undefined while the stats query is loading. */
+  stats?: MemoryStats;
+}) {
   const { t } = useTranslation();
+  // Same cache key/shape as ConstellationMap's entity fetch — shared cache,
+  // no double-fetch.
+  const entitiesQuery = useQuery({
+    queryKey: ["constellation-entities"],
+    queryFn: () => listEntities(),
+    staleTime: 60_000,
+  });
+  // Same cache key/shape as EntitySuggestions' fetch — shared cache.
+  const suggestionsQuery = useQuery({
+    queryKey: ["entity-suggestions"],
+    queryFn: getEntitySuggestions,
+    staleTime: 60_000,
+  });
+  const pagesUpdatedToday = updatedTodayCount(pages);
+
   return (
     <div
       data-testid="wiki-context-rail"
@@ -600,19 +650,81 @@ function HomeContextRail({ pages }: { pages: Page[] }) {
           data-testid="wiki-index-strip"
           className="wiki-index-strip"
         >
-          <ContextMetric testId="pages" label={t("home.pages")} value={String(pages.length)} />
-          <ContextMetric testId="updated-today" label={t("home.relative.today")} value={String(updatedTodayCount(pages))} />
-          <ContextMetric testId="needs-review" label={t("home.pageUpdates")} value={String(needsReviewCount(pages))} />
-          <ContextMetric testId="latest" label={t("home.latest")} value={latestPageUpdate(t, pages)} />
+          <ContextMetric
+            testId="pages"
+            label={t("home.pages")}
+            total={String(pages.length)}
+            deltas={
+              pagesUpdatedToday > 0
+                ? [
+                    {
+                      text: t("home.deltaUpdated", { value: String(pagesUpdatedToday) }),
+                      tone: "indigo",
+                      testId: "wiki-context-updated-today",
+                    },
+                  ]
+                : []
+            }
+          />
+          <ContextMetric
+            testId="memories"
+            label={t("home.memories")}
+            total={stats ? String(stats.total) : "—"}
+            deltas={
+              stats && stats.new_today > 0
+                ? [
+                    {
+                      text: t("home.deltaToday", { value: String(stats.new_today) }),
+                      tone: "sage" as const,
+                      testId: "wiki-context-memories-delta",
+                    },
+                  ]
+                : []
+            }
+          />
+          <ContextMetric
+            testId="entities"
+            label={t("home.entities")}
+            total={entitiesQuery.data ? String(entitiesQuery.data.length) : "—"}
+            deltas={
+              (suggestionsQuery.data?.length ?? 0) > 0
+                ? [
+                    {
+                      text: t("home.deltaSuggested", { value: String(suggestionsQuery.data!.length) }),
+                      tone: "sage",
+                      testId: "wiki-context-entities-delta",
+                    },
+                  ]
+                : []
+            }
+          />
         </div>
       </section>
     </div>
   );
 }
 
-function ContextMetric({ testId, label, value }: { testId: string; label: string; value: string }) {
+interface ContextDelta {
+  /** Rendered text, already localized, e.g. "+18 today". */
+  text: string;
+  tone: "sage" | "indigo" | "warm-pill";
+  testId?: string;
+}
+
+function ContextMetric({
+  testId,
+  label,
+  total,
+  deltas,
+}: {
+  testId: string;
+  label: string;
+  /** Pre-formatted total; "—" while loading. */
+  total: string;
+  deltas: ContextDelta[];
+}) {
   return (
-    <div data-testid={`wiki-context-${testId}`}>
+    <div data-testid={`wiki-context-${testId}-cell`}>
       <p
         style={{
           fontFamily: "var(--mem-font-mono)",
@@ -627,153 +739,354 @@ function ContextMetric({ testId, label, value }: { testId: string; label: string
       >
         {label}
       </p>
-      <p
-        style={{
-          fontFamily: "var(--mem-font-body)",
-          fontSize: 14,
-          fontWeight: 600,
-          color: "var(--mem-text)",
-          lineHeight: 1.3,
-          margin: 0,
-        }}
-      >
-        {value}
-      </p>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+        <span
+          data-testid={`wiki-context-${testId}`}
+          style={{
+            fontFamily: "var(--mem-font-heading)",
+            fontSize: 26,
+            fontWeight: 500,
+            lineHeight: 1.1,
+            color: "var(--mem-text)",
+            fontVariantNumeric: "tabular-nums",
+          }}
+        >
+          {total}
+        </span>
+        {deltas.map((delta, index) => (
+          <span
+            key={delta.testId ?? index}
+            data-testid={delta.testId}
+            style={
+              delta.tone === "warm-pill"
+                ? {
+                    fontFamily: "var(--mem-font-mono)",
+                    fontSize: 11,
+                    fontVariantNumeric: "tabular-nums",
+                    borderRadius: 5,
+                    padding: "2px 8px",
+                    color: "var(--mem-accent-warm)",
+                    backgroundColor: "color-mix(in srgb, var(--mem-accent-warm) 15%, transparent)",
+                    whiteSpace: "nowrap",
+                  }
+                : {
+                    fontFamily: "var(--mem-font-mono)",
+                    fontSize: 11.5,
+                    fontVariantNumeric: "tabular-nums",
+                    color: delta.tone === "sage" ? "var(--mem-accent-sage)" : "var(--mem-accent-indigo)",
+                    whiteSpace: "nowrap",
+                  }
+            }
+          >
+            {delta.text}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
 
-function PageUpdatesRail({
-  embedded = false,
-  pages,
-  onSelectPage,
+function NeedsReviewRail({
+  items,
+  isLoading,
+  error,
+  onRetry,
+  isTruncated = false,
+  onOpenItem,
   onOpenDistillReview,
+  leadsColumn = false,
 }: {
-  embedded?: boolean;
-  pages: Page[];
-  onSelectPage?: (pageId: string) => void;
+  items: ReviewItem[];
+  isLoading: boolean;
+  /** Set when the queue fetch failed — an empty `items` then means "unknown", not "caught up". */
+  error?: unknown;
+  onRetry?: () => void;
+  /** A source hit its fetch cap — show the count as "N+", never as exact. */
+  isTruncated?: boolean;
+  onOpenItem: (id: string) => void;
   onOpenDistillReview?: () => void;
+  /** Single-column layout: surface the rail above the page list when it has items. */
+  leadsColumn?: boolean;
 }) {
   const { t } = useTranslation();
   return (
     <section
       data-testid="wiki-page-updates"
-      style={{
-        border: embedded ? "none" : "1px solid var(--mem-border)",
-        borderRadius: embedded ? 0 : 8,
-        padding: embedded ? 0 : 12,
-        backgroundColor: embedded ? "transparent" : "color-mix(in srgb, var(--mem-surface) 76%, transparent)",
-        maxHeight: embedded ? "none" : "min(420px, calc(100vh - 180px))",
-        overflowY: embedded ? "visible" : "auto",
-      }}
+      style={leadsColumn ? { order: -1 } : undefined}
     >
-      <SectionHeading
-        title={t("home.pageUpdates")}
-        size="compact"
-      />
-      <div data-testid="worth-a-glance" style={{ display: "grid", gap: 7 }}>
-        {pages.length === 0 ? (
-          <p
+      <h2
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          fontFamily: "var(--mem-font-body)",
+          fontSize: 11,
+          fontWeight: 500,
+          letterSpacing: "0.08em",
+          textTransform: "uppercase",
+          color: "var(--mem-text-tertiary)",
+          margin: "0 0 8px",
+        }}
+      >
+        {t("home.pageUpdates")}
+        {items.length > 0 && (
+          <span
             style={{
-              fontFamily: "var(--mem-font-body)",
-              fontSize: 12,
-              color: "var(--mem-text-tertiary)",
-              lineHeight: 1.5,
-              margin: 0,
+              fontFamily: "var(--mem-font-mono)",
+              fontVariantNumeric: "tabular-nums",
+              fontSize: 11,
+              fontWeight: 400,
+              letterSpacing: 0,
+              color: "var(--mem-accent-indigo)",
+              backgroundColor: "var(--mem-indigo-bg)",
+              borderRadius: 999,
+              padding: "1px 8px",
             }}
           >
-            {t("home.pagesCurrent")}
-          </p>
-        ) : (
-          pages.map((page) => (
-            <PageUpdateRailItem
-              key={page.id}
-              page={page}
-              onSelectPage={onSelectPage}
-            />
-          ))
+            {isTruncated ? `${items.length}+` : items.length}
+          </span>
+        )}
+      </h2>
+      <div
+        style={{
+          border: "1px solid var(--mem-border)",
+          borderRadius: 10,
+          padding: "11px 13px 8px",
+          // Raised via border + ink-toned shadow, not a fill tint. Light stays
+          // canvas-white (no smudge on the white home); dark lifts by fill
+          // (--mem-home-card) where the shadow barely reads. Indigo identity
+          // lives in the heading + count pill, not the fill.
+          backgroundColor: "var(--mem-home-card)",
+          boxShadow:
+            "0 1px 2px rgba(26, 26, 46, 0.05), 0 4px 12px rgba(26, 26, 46, 0.06)",
+        }}
+      >
+        <div data-testid="worth-a-glance" style={{ display: "grid" }}>
+          {items.length === 0 ? (
+            error ? (
+              <p
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 7,
+                  fontFamily: "var(--mem-font-body)",
+                  fontSize: 13,
+                  color: "var(--mem-text-secondary)",
+                  lineHeight: 1.5,
+                  margin: "4px 0 6px",
+                }}
+              >
+                {t("review.loadFailed")}
+                {onRetry && (
+                  <button
+                    type="button"
+                    onClick={onRetry}
+                    style={{
+                      border: "none",
+                      background: "none",
+                      padding: 0,
+                      color: "var(--mem-accent-indigo)",
+                      fontFamily: "inherit",
+                      fontSize: "inherit",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {t("review.retry")}
+                  </button>
+                )}
+              </p>
+            ) : (
+              !isLoading && (
+                <p
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 7,
+                    fontFamily: "var(--mem-font-body)",
+                    fontSize: 12.5,
+                    color: "var(--mem-accent-sage)",
+                    lineHeight: 1.5,
+                    margin: "4px 0 6px",
+                  }}
+                >
+                  ✓ {t("review.allCaughtUp")}
+                </p>
+              )
+            )
+          ) : (
+            <>
+              {items.slice(0, 3).map((item, itemIndex, shown) => (
+                <ReviewRailItem
+                  key={reviewItemId(item)}
+                  item={item}
+                  onOpenItem={onOpenItem}
+                  isLast={itemIndex === shown.length - 1}
+                />
+              ))}
+              {error && (
+                <p
+                  style={{
+                    fontFamily: "var(--mem-font-body)",
+                    fontSize: 12,
+                    color: "var(--mem-text-tertiary)",
+                    lineHeight: 1.4,
+                    margin: "6px 0 0",
+                  }}
+                >
+                  {t("review.loadPartial")}
+                </p>
+              )}
+            </>
+          )}
+        </div>
+
+        {onOpenDistillReview && (
+          <button
+            type="button"
+            onClick={onOpenDistillReview}
+            style={{
+              display: "block",
+              width: "100%",
+              marginTop: 2,
+              padding: "7px 2px",
+              textAlign: "left",
+              border: "0",
+              backgroundColor: "transparent",
+              color: "var(--mem-accent-indigo)",
+              cursor: "pointer",
+              fontFamily: "var(--mem-font-body)",
+              fontSize: 12,
+            }}
+          >
+            {items.length > 0
+              ? `${t("review.reviewAll")} →`
+              : t("home.reviewPageChanges")}
+          </button>
         )}
       </div>
-
-      {onOpenDistillReview && (
-        <button
-          type="button"
-          onClick={onOpenDistillReview}
-          style={{
-            width: "100%",
-            marginTop: 12,
-            borderRadius: 6,
-            padding: "6px 0",
-            textAlign: "left",
-            border: "0",
-            backgroundColor: "transparent",
-            color: "var(--mem-accent-sage)",
-            cursor: "pointer",
-            fontFamily: "var(--mem-font-body)",
-            fontSize: 11,
-          }}
-        >
-          {t("home.reviewPageChanges")}
-        </button>
-      )}
     </section>
   );
 }
 
-function PageUpdateRailItem({
-  page,
-  onSelectPage,
+function reviewItemAge(ms: number): string {
+  const diff = (Date.now() - ms) / 1000;
+  if (diff < 60) return "just now";
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
+  return new Date(ms).toLocaleDateString();
+}
+
+/** Mockup kind-dot palette: revision indigo, page-level the page accent,
+ * capture warm, memory merges + suggestions amber, conflicts danger. Green
+ * (sage) is reserved for success/added semantics, never a pending-review dot. */
+function reviewDotColor(item: ReviewItem): string {
+  if (item.kind === "revision") return "var(--mem-accent-indigo)";
+  if (item.kind === "capture") return "var(--mem-accent-warm)";
+  // Distill discovery never reaches the home rail; colors kept for totality.
+  if (item.kind === "stale_page") return "var(--mem-accent-page)";
+  if (item.kind === "page_candidate") return "var(--mem-accent-warm)";
+  if (item.kind === "topic") return "var(--mem-accent-amber)";
+  switch (item.action) {
+    case "page_merge":
+    case "page_keep_or_archive":
+      return "var(--mem-accent-page)";
+    case "detect_contradiction":
+    case "relation_conflict":
+      return "var(--mem-status-danger-text)";
+    default:
+      // suggest_entity and other refinements fold into amber.
+      return "var(--mem-accent-amber)";
+  }
+}
+
+function ReviewRailItem({
+  item,
+  onOpenItem,
+  isLast = false,
 }: {
-  page: Page;
-  onSelectPage?: (pageId: string) => void;
+  item: ReviewItem;
+  onOpenItem: (id: string) => void;
+  isLast?: boolean;
 }) {
   const { t } = useTranslation();
+  const kind = reviewKindLabel(t, item);
+  // Same rich titles as the review-page cards — a rail row never reads as
+  // just its kind label when the names its ids point at can be fetched.
+  const { title } = useReviewItemSummary(item);
+  // Bare confidence "%" read as an unlabeled number on this terse rail — the
+  // dialog carries the precise, labeled metric (overlap / confidence) instead.
+  const meta = [
+    kind,
+    item.timestampMs != null ? reviewItemAge(item.timestampMs) : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   return (
     <button
       type="button"
-      aria-label={t("home.openPageUpdate", { title: page.title })}
-      onClick={() => onSelectPage?.(page.id)}
+      aria-label={t("review.openItem", { title })}
+      onClick={() => onOpenItem(reviewItemId(item))}
       style={{
         display: "grid",
-        gap: 6,
+        gap: 3,
         width: "100%",
         textAlign: "left",
         border: "0",
-        borderBottom: "1px solid color-mix(in srgb, var(--mem-border) 68%, transparent)",
-        borderRadius: 0,
-        padding: "8px 0 9px",
+        borderBottom: isLast
+          ? "none"
+          : "1px solid color-mix(in srgb, var(--mem-border) 68%, transparent)",
+        borderRadius: 6,
+        padding: "8px 2px 9px",
         backgroundColor: "transparent",
         color: "inherit",
-        cursor: onSelectPage ? "pointer" : "default",
+        cursor: "pointer",
       }}
     >
-      <p
+      <span
         style={{
-          display: "-webkit-box",
-          WebkitLineClamp: 1,
-          WebkitBoxOrient: "vertical",
-          overflow: "hidden",
-          fontFamily: "var(--mem-font-heading)",
-          fontSize: 13,
-          fontWeight: 500,
-          color: "var(--mem-text)",
-          lineHeight: 1.2,
-          margin: 0,
+          display: "flex",
+          alignItems: "center",
+          gap: 7,
+          minWidth: 0,
         }}
       >
-        {page.title}
-      </p>
-      <p
+        <span
+          aria-hidden="true"
+          style={{
+            width: 7,
+            height: 7,
+            borderRadius: "50%",
+            flex: "none",
+            backgroundColor: reviewDotColor(item),
+          }}
+        />
+        <span
+          style={{
+            overflow: "hidden",
+            whiteSpace: "nowrap",
+            textOverflow: "ellipsis",
+            fontFamily: "var(--mem-font-heading)",
+            fontSize: 13,
+            fontWeight: 500,
+            color: "var(--mem-text)",
+            lineHeight: 1.25,
+          }}
+        >
+          {title}
+        </span>
+      </span>
+      <span
         style={{
           fontFamily: "var(--mem-font-body)",
-          fontSize: 11,
+          fontSize: 11.5,
           color: "var(--mem-text-tertiary)",
           lineHeight: 1.35,
-          margin: 0,
+          paddingLeft: 14,
         }}
       >
-        {formatSourceCount(t, page.source_memory_ids.length)} · {pageUpdateReason(t, page)}
-      </p>
+        {meta}
+      </span>
     </button>
   );
 }

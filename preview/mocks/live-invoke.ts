@@ -26,6 +26,7 @@ async function http(method: string, path: string, body?: unknown): Promise<any> 
 const get = (p: string) => http("GET", p);
 const post = (p: string, b: unknown = {}) => http("POST", p, b);
 const put = (p: string, b: unknown = {}) => http("PUT", p, b);
+const del = (p: string) => http("DELETE", p);
 
 const enc = encodeURIComponent;
 const qs = (obj: Record<string, unknown>) => {
@@ -151,12 +152,19 @@ const HANDLERS: Record<string, (a: any) => Promise<unknown>> = {
     get("/api/memory/contradictions").then((r) => r.contradictions ?? r),
   get_nurture_cards_cmd: () => get("/api/memory/nurture").then((r) => r.cards ?? r),
   list_refinements: () => get("/api/refinery/queue"),
+  // Review-only pass: POST /api/distill with an empty body never creates pages.
+  distill_review: () => post("/api/distill", {}),
+  accept_pending_revision: (a) => post(`/api/memory/revision/${enc(a.sourceId)}/accept`),
+  dismiss_pending_revision: (a) => post(`/api/memory/revision/${enc(a.sourceId)}/dismiss`),
+  accept_refinement: (a) => post(`/api/refinery/queue/${enc(a.id)}/accept`),
+  reject_refinement: (a) => post(`/api/refinery/queue/${enc(a.id)}/reject`),
   list_decisions_cmd: () => get("/api/decisions?limit=200").then((r) => r.decisions ?? r),
   list_decision_domains_cmd: () => get("/api/decisions/domains").then((r) => r.domains ?? r),
   get_working_memory: () => get("/api/memory/working").then((r) => r ?? null),
   pin_memory: (a) => post(`/api/memory/${enc(a.sourceId)}/pin`),
   unpin_memory: (a) => post(`/api/memory/${enc(a.sourceId)}/unpin`),
   confirm_memory: (a) => post(`/api/memory/confirm/${enc(a.sourceId)}`, { confirmed: true }),
+  delete_memory: (a) => del(`/api/memory/delete/${enc(a.sourceId)}`),
   update_memory_cmd: (a) => put(`/api/memory/${enc(a.sourceId)}/update`, { content: a.content }),
   get_pipeline_status: () => get("/api/debug/pipeline"),
   list_onboarding_milestones: () =>

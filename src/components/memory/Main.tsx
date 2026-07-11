@@ -537,6 +537,7 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
             <DistillReviewPanel
               onBack={navigateBack}
               onPageClick={(id) => navigateTo({ kind: "page", pageId: id })}
+              onMemoryClick={(sid) => navigateTo({ kind: "memory", sourceId: sid })}
             />
           ) : view.kind === "home" ? (
             <HomePage

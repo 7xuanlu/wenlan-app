@@ -1274,8 +1274,6 @@ export interface StoreMemoryResponse {
    * is not_needed.
    */
   hint?: string;
-  triggered_revisions?: string[];
-  auto_superseded?: string[];
 }
 
 export async function storeMemory(req: StoreMemoryRequest): Promise<StoreMemoryResponse> {
@@ -1426,6 +1424,11 @@ export async function confirmMemory(sourceId: string, confirmed: boolean = true)
   return invoke("confirm_memory", { sourceId, confirmed });
 }
 
+/** Permanently deletes the memory — the "forget" half of the curate flow. */
+export async function deleteMemory(sourceId: string): Promise<void> {
+  return invoke("delete_memory", { sourceId });
+}
+
 export async function getPendingRevision(sourceId: string): Promise<PendingRevision | null> {
   return invoke("get_pending_revision", { sourceId });
 }
@@ -1437,7 +1440,10 @@ export type ProposalAction =
   | "relation_conflict"
   | "detect_contradiction"
   | "suggest_entity"
-  | "dedup_merge";
+  | "dedup_merge"
+  | "page_merge"
+  | "cross_space_discovery"
+  | "page_keep_or_archive";
 
 export type RefinementPayload =
   | {
@@ -1457,7 +1463,24 @@ export type RefinementPayload =
     }
   | { action: "detect_contradiction" }
   | { action: "suggest_entity"; name_hint?: string | null }
-  | { action: "dedup_merge" };
+  | { action: "dedup_merge" }
+  | {
+      action: "page_merge";
+      left_page_id: string;
+      right_page_id: string;
+      source_overlap: number;
+      source_overlap_ratio: number;
+    }
+  | {
+      action: "cross_space_discovery";
+      memory_count: number;
+      spaces: string[];
+    }
+  | {
+      action: "page_keep_or_archive";
+      page_id: string;
+      source_count: number;
+    };
 
 export interface RefinementProposalSummary {
   id: string;

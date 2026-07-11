@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Browser preview harness for the page-detail citations redesign.
+// Browser preview harness for the page-detail citations redesign and the
+// review-queue redesign (DistillReviewPanel + ReviewDialog).
 import { StrictMode, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import PageDetail from "../src/components/memory/PageDetail";
+import DistillReviewPanel from "../src/components/memory/DistillReviewPanel";
+import { initializeI18n } from "../src/i18n";
+import { resetReviewFixtures, REVIEW_FAIL } from "./fixtures";
 import "../src/index.css";
 
 const VARIANTS = [
@@ -13,18 +17,56 @@ const VARIANTS = [
   { id: "page-plain", label: "No citations" },
 ];
 
+// Mirrors reviewSuppression.ts's STORAGE_KEY/HiddenReviewEntry shape so the
+// "Seed hidden" button demoes the review panel's hidden-items footer without
+// clicking through two real Hide actions. Keys reference real fixture items
+// (the page-cited stale entry, the "Preview harness" orphan topic) so
+// Restore visibly brings them back into the queue.
+const HIDDEN_STORAGE_KEY = "wenlan.review.hidden.v1";
+function seedHiddenEntries() {
+  localStorage.setItem(
+    HIDDEN_STORAGE_KEY,
+    JSON.stringify([
+      {
+        key: "stale:page-cited",
+        label: "Wenlan Daemon Architecture",
+        kind: "stale_page",
+        at: Date.now() - 3_600_000,
+      },
+      {
+        key: "topic:Preview harness",
+        label: "Preview harness",
+        kind: "topic",
+        at: Date.now() - 1_800_000,
+      },
+    ]),
+  );
+}
+
 const client = new QueryClient({
   defaultOptions: { queries: { retry: false, staleTime: 0, gcTime: 0 } },
 });
 
 function Harness() {
+  const [mode, setMode] = useState<"page" | "review">("review");
   const [pageId, setPageId] = useState("page-cited");
   const [theme, setTheme] = useState("dark");
+  const [reviewRun, setReviewRun] = useState(0);
+  const [failing, setFailing] = useState(false);
 
   const applyTheme = (next: string) => {
     document.documentElement.setAttribute("data-theme", next);
     setTheme(next);
   };
+
+  const tab = (active: boolean) => ({
+    padding: "3px 10px",
+    borderRadius: 6,
+    border: "1px solid var(--mem-border)",
+    background: active ? "var(--mem-accent, #6366f1)" : "transparent",
+    color: active ? "#fff" : "inherit",
+    cursor: "pointer",
+  });
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--mem-bg)" }}>
@@ -41,57 +83,96 @@ function Harness() {
         }}
       >
         <span style={{ fontWeight: 600 }}>PREVIEW</span>
-        {VARIANTS.map((v) => (
-          <button
-            key={v.id}
-            onClick={() => setPageId(v.id)}
-            style={{
-              padding: "3px 10px",
-              borderRadius: 6,
-              border: "1px solid var(--mem-border)",
-              background: pageId === v.id ? "var(--mem-accent, #6366f1)" : "transparent",
-              color: pageId === v.id ? "#fff" : "inherit",
-              cursor: "pointer",
-            }}
-          >
-            {v.label}
-          </button>
-        ))}
+        <button onClick={() => setMode("review")} style={tab(mode === "review")}>
+          Review queue
+        </button>
+        <button onClick={() => setMode("page")} style={tab(mode === "page")}>
+          Page detail
+        </button>
+        <span style={{ opacity: 0.4 }}>|</span>
+        {mode === "page" ? (
+          VARIANTS.map((v) => (
+            <button key={v.id} onClick={() => setPageId(v.id)} style={tab(pageId === v.id)}>
+              {v.label}
+            </button>
+          ))
+        ) : (
+          <>
+            <button
+              onClick={() => {
+                resetReviewFixtures();
+                client.clear();
+                setReviewRun((n) => n + 1);
+              }}
+              style={tab(false)}
+            >
+              Reset queue
+            </button>
+            <button
+              onClick={() => {
+                REVIEW_FAIL.queue = !REVIEW_FAIL.queue;
+                setFailing(REVIEW_FAIL.queue);
+                client.clear();
+                setReviewRun((n) => n + 1);
+              }}
+              style={tab(failing)}
+            >
+              {failing ? "Fail queue: on" : "Fail queue"}
+            </button>
+            <button
+              onClick={() => {
+                seedHiddenEntries();
+                client.clear();
+                setReviewRun((n) => n + 1);
+              }}
+              style={tab(false)}
+            >
+              Seed hidden
+            </button>
+          </>
+        )}
         <button
           onClick={() => applyTheme(theme === "dark" ? "light" : "dark")}
-          style={{
-            marginLeft: "auto",
-            padding: "3px 10px",
-            borderRadius: 6,
-            border: "1px solid var(--mem-border)",
-            background: "transparent",
-            color: "inherit",
-            cursor: "pointer",
-          }}
+          style={{ ...tab(false), marginLeft: "auto" }}
         >
           {theme === "dark" ? "☀ light" : "☾ dark"}
         </button>
       </div>
       <div style={{ maxWidth: 860, margin: "0 auto", padding: "24px 16px" }}>
-        <PageDetail
-          key={pageId}
-          pageId={pageId}
-          onBack={() => console.log("[preview] onBack")}
-          onMemoryClick={(id: string) => console.log("[preview] onMemoryClick:", id)}
-          onPageClick={(id: string) => {
-            console.log("[preview] onPageClick:", id);
-            setPageId(id);
-          }}
-        />
+        {mode === "page" ? (
+          <PageDetail
+            key={pageId}
+            pageId={pageId}
+            onBack={() => console.log("[preview] onBack")}
+            onMemoryClick={(id: string) => console.log("[preview] onMemoryClick:", id)}
+            onPageClick={(id: string) => {
+              console.log("[preview] onPageClick:", id);
+              setPageId(id);
+            }}
+          />
+        ) : (
+          <DistillReviewPanel
+            key={reviewRun}
+            onBack={() => console.log("[preview] onBack")}
+            onPageClick={(id: string) => {
+              console.log("[preview] onPageClick:", id);
+              setMode("page");
+              setPageId(id);
+            }}
+            onMemoryClick={(id: string) => console.log("[preview] onMemoryClick:", id)}
+          />
+        )}
       </div>
     </div>
   );
 }
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <QueryClientProvider client={client}>
-      <Harness />
-    </QueryClientProvider>
-  </StrictMode>,
-);
+void initializeI18n().then(() => {
+  createRoot(document.getElementById("root")!).render(
+    <StrictMode>
+      <QueryClientProvider client={client}>
+        <Harness />
+      </QueryClientProvider>
+    </StrictMode>,
+  );
+});

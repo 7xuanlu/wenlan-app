@@ -163,12 +163,18 @@ html[data-theme="dark"] {
   --mem-shimmer-color: rgba(143, 179, 234, 0.15);
   --mem-detail-surface: #171A23;
   --mem-detail-surface-raised: #1C2130;
+  /* Home review card fill: dark lifts by surface color (shadows barely read on
+     dark), so it aliases the raised token; light stays canvas-white + shadow. */
+  --mem-home-card: var(--mem-detail-surface-raised);
   --mem-detail-divider: rgba(241, 239, 232, 0.11);
   --mem-status-warning-bg: rgba(199, 170, 92, 0.15);
   --mem-status-warning-text: #DCC36F;
   --mem-status-warning-border: rgba(199, 170, 92, 0.36);
   --mem-status-success-bg: rgba(157, 169, 144, 0.14);
   --mem-status-success-text: #BBC7AE;
+  --mem-status-danger-bg: rgba(205, 92, 74, 0.16);
+  --mem-status-danger-text: #D98A78;
+  --mem-status-danger-border: rgba(205, 92, 74, 0.38);
   /* Depth on dark: ink-black shadow so surfaces lift without a grey cast. */
   --mem-shadow-toast:
     0 14px 36px rgba(3, 4, 8, 0.54),
@@ -205,13 +211,21 @@ html[data-theme="light"] {
   --mem-distilled-bg: rgba(94, 88, 200, 0.06);
   --mem-shimmer-color: rgba(94, 88, 200, 0.12);
   --mem-detail-surface: #FFFFFF;
-  --mem-detail-surface-raised: #F8FAF9;
+  /* Cool-neutral off-white — matches --mem-border and the dark theme's lean.
+     Was #F8FAF9, whose green channel peaked and tinted raised cards greenish. */
+  --mem-detail-surface-raised: #F7F8FA;
+  /* Home review card fill: canvas-white on light — elevation is carried by the
+     border + ink-toned shadow, not a fill tint, so it never reads as a smudge. */
+  --mem-home-card: var(--mem-surface);
   --mem-detail-divider: rgba(26, 26, 46, 0.10);
   --mem-status-warning-bg: rgba(181, 132, 46, 0.12);
   --mem-status-warning-text: #8C5F16;
   --mem-status-warning-border: rgba(181, 132, 46, 0.26);
   --mem-status-success-bg: rgba(111, 143, 118, 0.12);
   --mem-status-success-text: #4F7558;
+  --mem-status-danger-bg: rgba(164, 68, 47, 0.10);
+  --mem-status-danger-text: #A4442F;
+  --mem-status-danger-border: rgba(164, 68, 47, 0.28);
   /* Depth on light: a warm ink-toned shadow (anchored in the body text hue
      rather than flat grey) so the toast feels letterpressed on cream. */
   --mem-shadow-toast:
@@ -253,18 +267,29 @@ html[data-theme="light"] {
 
 .wiki-index-strip {
   display: grid;
-  grid-template-columns: repeat(4, minmax(112px, max-content));
+  grid-template-columns: repeat(3, minmax(150px, max-content));
   align-items: start;
   justify-content: start;
   width: 100%;
-  column-gap: clamp(36px, 7vw, 104px);
-  row-gap: 12px;
+  column-gap: clamp(28px, 5vw, 72px);
+  row-gap: 14px;
+}
+
+.wiki-index-strip > * + * {
+  border-left: 1px solid var(--mem-border);
+  padding-left: clamp(28px, 5vw, 72px);
+  margin-left: calc(-1 * clamp(28px, 5vw, 72px) / 2);
 }
 
 @media (max-width: 640px) {
   .wiki-index-strip {
-    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-    column-gap: 12px;
+    grid-template-columns: minmax(0, 1fr);
+    column-gap: 0;
+  }
+  .wiki-index-strip > * + * {
+    border-left: none;
+    padding-left: 0;
+    margin-left: 0;
   }
 }
 

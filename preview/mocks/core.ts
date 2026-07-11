@@ -2,7 +2,21 @@
 // Browser stand-in for @tauri-apps/api/core (aliased in vite.preview.config.ts).
 // Two backends: fixture data for /preview/ (flag set inline in its index.html),
 // live daemon HTTP for the real app at /.
-import { PAGES, PRISTINE, SOURCES, LINKS, REVISIONS } from "../fixtures";
+import {
+  PAGES,
+  PRISTINE,
+  SOURCES,
+  LINKS,
+  REVISIONS,
+  REVIEW_STATE,
+  REVIEW_MEMORIES,
+  REVIEW_ENTITIES,
+  REVIEW_DISTILL,
+  REVIEW_FAIL,
+  MERGE_SOURCES,
+  RECENT_CHANGES,
+  MEMORY_REVISIONS,
+} from "../fixtures";
 import { liveInvoke } from "./live-invoke";
 
 export async function invoke(
@@ -15,12 +29,31 @@ export async function invoke(
   switch (cmd) {
     case "get_page":
       return PAGES[args?.id as string] ?? null;
-    case "get_page_sources":
-      return SOURCES;
+    case "get_page_sources": {
+      const pageId = args?.pageId as string;
+      // Merge-dossier pages get their own source lists (deriveMergeLedger
+      // needs keep/retire to differ); every other page falls back to the
+      // shared citation-preview SOURCES array as before.
+      return MERGE_SOURCES[pageId] ?? SOURCES;
+    }
     case "get_page_links":
       return LINKS;
     case "get_page_revisions":
       return { ...REVISIONS, page_id: args?.pageId };
+    case "list_recent_changes": {
+      const limit = (args?.limit as number) ?? RECENT_CHANGES.length;
+      return RECENT_CHANGES.slice(0, limit);
+    }
+    case "get_memory_revisions": {
+      const sourceId = args?.sourceId as string;
+      return (
+        MEMORY_REVISIONS[sourceId] ?? {
+          current_source_id: sourceId,
+          chain_depth: 1,
+          entries: [],
+        }
+      );
+    }
     case "list_registered_sources":
       return [];
     case "update_page": {
@@ -39,6 +72,67 @@ export async function invoke(
     }
     case "delete_page":
       return null;
+    // --- review queue (DistillReviewPanel + ReviewDialog preview) ---
+    case "distill_review":
+      return REVIEW_DISTILL;
+    case "list_pending_revisions":
+      if (REVIEW_FAIL.queue) throw new Error("[preview] simulated queue failure");
+      return REVIEW_STATE.revisions;
+    case "accept_pending_revision":
+    case "dismiss_pending_revision": {
+      const id = args?.sourceId as string;
+      REVIEW_STATE.revisions = REVIEW_STATE.revisions.filter(
+        (r) => r.target_source_id !== id,
+      );
+      return { target_source_id: id, revision_source_id: `${id}-rev`, wrote: true };
+    }
+    case "list_refinements":
+      if (REVIEW_FAIL.queue) throw new Error("[preview] simulated queue failure");
+      return { proposals: REVIEW_STATE.proposals };
+    case "list_unconfirmed_memories":
+      if (REVIEW_FAIL.queue) throw new Error("[preview] simulated queue failure");
+      return REVIEW_STATE.captures;
+    case "confirm_memory":
+    case "delete_memory": {
+      const id = args?.sourceId as string;
+      REVIEW_STATE.captures = REVIEW_STATE.captures.filter((c) => c.id !== id);
+      return null;
+    }
+    case "accept_refinement":
+    case "reject_refinement": {
+      const id = args?.id as string;
+      const action = REVIEW_STATE.proposals.find((p) => p.id === id)?.action ?? null;
+      REVIEW_STATE.proposals = REVIEW_STATE.proposals.filter((p) => p.id !== id);
+      return { id, action_applied: action };
+    }
+    case "get_memory_detail":
+      return REVIEW_MEMORIES[args?.sourceId as string] ?? null;
+    case "get_entity_detail_cmd":
+      return REVIEW_ENTITIES[args?.entityId as string] ?? null;
+    // On-open evidence for topic/suggest_entity review dialogs — a plain
+    // substring match against title/content, standing in for real search.
+    case "search": {
+      const query = ((args?.query as string) ?? "").toLowerCase();
+      const limit = (args?.limit as number) ?? 10;
+      return Object.values(REVIEW_MEMORIES)
+        .filter(
+          (memory) =>
+            memory.title.toLowerCase().includes(query) ||
+            memory.content.toLowerCase().includes(query),
+        )
+        .slice(0, limit)
+        .map((memory, index) => ({
+          id: `${memory.source_id}-search`,
+          content: memory.content,
+          source: "memory",
+          source_id: memory.source_id,
+          title: memory.title,
+          url: null,
+          chunk_index: 0,
+          last_modified: memory.last_modified,
+          score: 1 - index * 0.05,
+        }));
+    }
     default:
       console.warn(`[preview] unmocked invoke: ${cmd}`, args);
       return null;
