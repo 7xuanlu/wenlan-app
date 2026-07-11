@@ -362,7 +362,7 @@ describe("DistillReviewPanel review queue", () => {
     renderPanel();
 
     expect(await screen.findByRole("heading", { name: "Memory revisions" })).toBeInTheDocument();
-    expect(screen.getByText("1 pending")).toBeInTheDocument();
+    expect(screen.getByText("1 to decide")).toBeInTheDocument();
     // The card titles itself with the target memory's real name once fetched.
     expect(await screen.findByRole("button", { name: /Review Target memory/ })).toBeInTheDocument();
   });
@@ -526,7 +526,7 @@ describe("DistillReviewPanel review queue", () => {
     expect(await screen.findByText("Temporal page refresh")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "New memories" })).toBeNull();
     expect(screen.queryByText("User prefers pnpm over npm")).toBeNull();
-    expect(screen.queryByText(/1 pending/)).toBeNull();
+    expect(screen.queryByText(/to decide/)).toBeNull();
     expect(confirmMemory).not.toHaveBeenCalled();
     expect(deleteMemory).not.toHaveBeenCalled();
   });

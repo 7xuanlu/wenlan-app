@@ -453,10 +453,12 @@ function FilterChipRow({
   filter,
   onSelect,
   counts,
+  allCount,
 }: {
   filter: ReviewFilterKey;
   onSelect: (filter: ReviewFilterKey) => void;
   counts: Partial<Record<ReviewSection, number>>;
+  allCount: number;
 }) {
   const { t } = useTranslation();
   // "All" and "Revisions" always render — Revisions existing even at 0 shows
@@ -473,9 +475,7 @@ function FilterChipRow({
     >
       {chips.map((key) => {
         const selected = filter === key;
-        // "All" is a reset toggle — its total (decisions + read-only discovery)
-        // competed with the header's pending count, so it carries no number.
-        const count = key === "all" ? null : counts[key] ?? 0;
+        const count = key === "all" ? allCount : counts[key] ?? 0;
         return (
           <button
             key={key}
@@ -498,18 +498,16 @@ function FilterChipRow({
             }}
           >
             {t(FILTER_LABEL_KEYS[key])}
-            {count != null && (
-              <span
-                style={{
-                  fontFamily: "var(--mem-font-mono)",
-                  fontVariantNumeric: "tabular-nums",
-                  fontSize: 11,
-                  marginLeft: 6,
-                }}
-              >
-                {count}
-              </span>
-            )}
+            <span
+              style={{
+                fontFamily: "var(--mem-font-mono)",
+                fontVariantNumeric: "tabular-nums",
+                fontSize: 11,
+                marginLeft: 6,
+              }}
+            >
+              {count}
+            </span>
           </button>
         );
       })}
@@ -632,6 +630,11 @@ export default function DistillReviewPanel({
     ...candidateItems,
     ...topicItems,
   ];
+  // Read-only distill discovery — surfaced separately from the pending-decision
+  // count so the header reads "N to decide · +M discovered" (= the All total),
+  // making the home badge (decisions only) an honest subset, not a mismatch.
+  const discoveredCount =
+    stalePageItems.length + candidateItems.length + topicItems.length;
   const sectionCounts = allVisible.reduce<Partial<Record<ReviewSection, number>>>(
     (acc, item) => {
       const section = reviewItemSection(item);
@@ -796,6 +799,23 @@ export default function DistillReviewPanel({
               })}
             </span>
           )}
+          {discoveredCount > 0 && (
+            <span
+              style={{
+                fontFamily: "var(--mem-font-mono)",
+                fontVariantNumeric: "tabular-nums",
+                fontSize: 12,
+                color: "var(--mem-text-secondary)",
+                border: "1px solid var(--mem-border)",
+                backgroundColor: "transparent",
+                borderRadius: 999,
+                padding: "3px 10px",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {t("review.discoveredCount", { count: discoveredCount })}
+            </span>
+          )}
           <button
             type="button"
             onClick={refresh}
@@ -818,6 +838,7 @@ export default function DistillReviewPanel({
         filter={filter}
         onSelect={setFilter}
         counts={sectionCounts}
+        allCount={allVisible.length}
       />
 
       {error && (

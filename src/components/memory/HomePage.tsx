@@ -873,7 +873,9 @@ function NeedsReviewRail({
           border: "1px solid var(--mem-border)",
           borderRadius: 10,
           padding: "11px 13px 8px",
-          backgroundColor: "var(--mem-detail-surface-raised)",
+          // Faint indigo wash (the widget's own accent) so the card reads as a
+          // chosen raised surface, not a gray smudge on the white home canvas.
+          backgroundColor: "color-mix(in srgb, var(--mem-accent-indigo) 7%, var(--mem-surface))",
         }}
       >
         <div data-testid="worth-a-glance" style={{ display: "grid" }}>
