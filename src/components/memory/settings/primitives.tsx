@@ -384,7 +384,11 @@ export function Select({
         {...rest}
         aria-invalid={invalid || undefined}
         className={[
-          "appearance-none cursor-pointer w-full py-[8px] bg-[var(--mem-bg)] outline-none",
+          // No vertical padding: the size classes below set a fixed height, and
+          // py on top of it shrinks the content box under the line height —
+          // 32px - 16px padding - 2px border = 14px for 13px text, which Chrome
+          // renders by clipping the glyphs. Height alone centers the text.
+          "appearance-none cursor-pointer w-full bg-[var(--mem-bg)] outline-none",
           "border",
           invalid ? "border-[var(--mem-status-danger-border)]" : "border-[var(--mem-border)]",
           "text-[var(--mem-text)]",
