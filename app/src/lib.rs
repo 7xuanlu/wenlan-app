@@ -81,9 +81,10 @@ pub fn run() {
 
     let env_filter = || {
         tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-            tracing_subscriber::EnvFilter::new(
-                "warn,wenlan_lib::trigger=info,wenlan_lib::router=info,wenlan_lib::sensor=info",
-            )
+            // Was "warn" plus info-level targets for wenlan_lib::{trigger,router,sensor} —
+            // all three modules are gone, so those directives named nothing and the
+            // filter was already just "warn" in effect.
+            tracing_subscriber::EnvFilter::new("warn")
         })
     };
 
