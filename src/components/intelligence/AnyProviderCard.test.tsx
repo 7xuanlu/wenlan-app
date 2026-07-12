@@ -200,17 +200,21 @@ describe("AnyProviderCard", () => {
     // ollama/lmStudio probe running (both stay disabled off `isLocalOnly`) —
     // the chip and the model <select> must both read the single generic
     // `discovery` query for the selected endpoint, never a second fetch.
+    // Count calls scoped to the Ollama endpoint instead of clearing mock
+    // history before selecting: a `mockClear()` right before the assertion
+    // would erase a dedicated local probe's mount-time call too (it fires
+    // before this point, not after), silently hiding the very regression
+    // this test exists to catch. Filtering by endpoint stays immune to
+    // whatever the default preset does at mount and still fails if a
+    // regression makes the dedicated local probes run (in addition to
+    // `discovery`) for the same endpoint.
     renderCard();
-    await screen.findByLabelText("Provider");
-    // The default preset (openai) is version-locked at the mocked daemon
-    // 0.12, so discovery never fires at mount — but that's incidental to
-    // this test's property. Clear here so the count below is scoped to the
-    // ollama selection under test, not to whatever the default preset does.
-    mocks.listExternalModels.mockClear();
-    await userEvent.selectOptions(screen.getByLabelText("Provider"), "ollama");
+    await userEvent.selectOptions(await screen.findByLabelText("Provider"), "ollama");
     await screen.findByText(/Connected to Ollama/);
-    expect(mocks.listExternalModels).toHaveBeenCalledTimes(1);
-    expect(mocks.listExternalModels).toHaveBeenCalledWith("http://localhost:11434/v1", null);
+    const ollamaCalls = mocks.listExternalModels.mock.calls.filter(
+      ([ep]) => ep === "http://localhost:11434/v1"
+    );
+    expect(ollamaCalls).toEqual([["http://localhost:11434/v1", null]]);
   });
 
   it("settings card: hand-editing the endpoint off the selected local preset drops the chip's false claim and the local dropdown (live endpoint decides, not the preset id)", async () => {
