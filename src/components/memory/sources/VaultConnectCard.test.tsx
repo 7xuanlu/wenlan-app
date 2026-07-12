@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   addSource: vi.fn(),
   syncRegisteredSource: vi.fn(),
   listRegisteredSources: vi.fn(),
+  detectObsidianVaults: vi.fn(),
 }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: mocks.openDialog }));
 vi.mock("../../../lib/vaultDetection", () => ({ detectVault: mocks.detectVault }));
@@ -21,6 +22,7 @@ vi.mock("../../../lib/tauri", async (importOriginal) => {
     addSource: mocks.addSource,
     syncRegisteredSource: mocks.syncRegisteredSource,
     listRegisteredSources: mocks.listRegisteredSources,
+    detectObsidianVaults: mocks.detectObsidianVaults,
   };
 });
 
@@ -54,6 +56,7 @@ describe("VaultConnectCard", () => {
       files_found: 12, ingested: 12, skipped: 0, errors: 0,
     });
     mocks.listRegisteredSources.mockResolvedValue([SOURCE]);
+    mocks.detectObsidianVaults.mockResolvedValue([]);
   });
 
   it("zero-count detection warns but does NOT block submit (council change e)", async () => {
@@ -105,5 +108,50 @@ describe("VaultConnectCard", () => {
     // text-red-500 would fail this while leaving the text assertion green).
     expect(errorEl!).toHaveStyle({ color: "var(--mem-status-danger-text)" });
     expect(errorEl!.className).not.toContain("text-red-500");
+  });
+
+  it("renders Obsidian vault chips and clicking one populates the path input", async () => {
+    mocks.detectObsidianVaults.mockResolvedValue([
+      { name: "Work Notes", path: "/Users/x/Vaults/Work Notes" },
+    ]);
+    renderCard();
+    await waitFor(() => expect(screen.getByText("Work Notes")).toBeInTheDocument());
+    await userEvent.click(screen.getByText("Work Notes"));
+    await waitFor(() =>
+      expect(screen.getByDisplayValue("/Users/x/Vaults/Work Notes")).toBeInTheDocument()
+    );
+  });
+
+  it("connecting a chip-picked vault calls addSource(obsidian, path) and never runs vault detection", async () => {
+    mocks.detectObsidianVaults.mockResolvedValue([
+      { name: "Work Notes", path: "/Users/x/Vaults/Work Notes" },
+    ]);
+    renderCard();
+    await waitFor(() => expect(screen.getByText("Work Notes")).toBeInTheDocument());
+    await userEvent.click(screen.getByText("Work Notes"));
+    await waitFor(() =>
+      expect(screen.getByText(/Obsidian vault — Work Notes/)).toBeInTheDocument()
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Connect" }));
+    await waitFor(() =>
+      expect(mocks.addSource).toHaveBeenCalledWith("obsidian", "/Users/x/Vaults/Work Notes")
+    );
+    expect(mocks.detectVault).not.toHaveBeenCalled();
+  });
+
+  it("zero vaults: no chip row, card behaves exactly as it does today", async () => {
+    mocks.detectVault.mockResolvedValue({
+      isVault: false, sourceType: "directory", docCount: 3,
+      countCapped: false, hasValidDoc: true, unreadable: false,
+    });
+    renderCard();
+    await userEvent.click(screen.getByText("Browse…"));
+    // By the time detection resolves and re-renders, the (mocked, instantly
+    // resolving) obsidian-vaults query has settled too — a reliable point to
+    // assert its absence, unlike asserting right after render.
+    await waitFor(() => expect(screen.getByText(/3 supported files/)).toBeInTheDocument());
+    expect(screen.queryByText("Your Obsidian vaults")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Connect" }));
+    await waitFor(() => expect(mocks.addSource).toHaveBeenCalledWith("directory", "/v"));
   });
 });

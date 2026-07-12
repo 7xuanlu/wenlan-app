@@ -619,6 +619,18 @@ pub async fn read_source_dir(path: String) -> Result<Vec<DirEntryDto>, String> {
     Ok(out)
 }
 
+/// Offer the user's real Obsidian vaults as one-tap chips in the connect
+/// flow, read from Obsidian's own vault registry. A convenience, never a
+/// dependency: any read/parse failure resolves to an empty list rather than
+/// an error (see `sources::obsidian::discover_vaults`).
+#[tauri::command]
+pub async fn detect_obsidian_vaults() -> Result<Vec<crate::sources::obsidian::ObsidianVault>, String>
+{
+    Ok(crate::sources::obsidian::discover_vaults(
+        &crate::sources::obsidian::obsidian_registry_path(),
+    ))
+}
+
 /// Read a text file's contents for inline preview in the Sources detail pane.
 ///
 /// Same trust level as `open_file`, which already hands the whole file to the

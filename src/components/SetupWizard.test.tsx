@@ -55,6 +55,7 @@ vi.mock("../lib/tauri", () => ({
   testExternalLlm: vi.fn().mockResolvedValue({ response: "pong" }),
   listExternalModels: vi.fn().mockResolvedValue([]),
   getExternalLlmKeyConfigured: vi.fn().mockResolvedValue(false),
+  detectObsidianVaults: vi.fn().mockResolvedValue([]),
 }));
 
 import {

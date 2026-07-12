@@ -821,6 +821,7 @@ pub fn run() {
             search::delete_bulk,
             search::open_file,
             search::read_source_dir,
+            search::detect_obsidian_vaults,
             search::read_text_file,
             search::quick_capture,
             search::ingest_clipboard,

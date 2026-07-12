@@ -7,7 +7,9 @@ import {
   addSource,
   syncRegisteredSource,
   listRegisteredSources,
+  detectObsidianVaults,
   type RegisteredSource,
+  type ObsidianVault,
 } from "../../../lib/tauri";
 import { detectVault, type VaultDetection } from "../../../lib/vaultDetection";
 import { Button } from "../settings/primitives";
@@ -26,6 +28,16 @@ export default function VaultConnectCard({ variant, onConnected }: Props) {
   const [connecting, setConnecting] = useState(false);
   const [connectedId, setConnectedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [pickedVault, setPickedVault] = useState<ObsidianVault | null>(null);
+
+  // Zero-friction detection: offer the user's real Obsidian vaults (read from
+  // Obsidian's own registry, Rust-side) as one-tap chips. Empty on any
+  // failure or when Obsidian isn't installed — the card just behaves as it
+  // does today.
+  const { data: obsidianVaults } = useQuery({
+    queryKey: ["obsidian-vaults"],
+    queryFn: detectObsidianVaults,
+  });
 
   // Post-connect: poll the registered source until it reports counts
   // ("Indexed N files · M memories", spec §3). Wizard variant only — the
@@ -46,16 +58,29 @@ export default function VaultConnectCard({ variant, onConnected }: Props) {
     setPath(selected);
     setError(null);
     setDetection(null);
+    setPickedVault(null);
     setDetecting(true);
     setDetection(await detectVault(selected));
     setDetecting(false);
+  }, []);
+
+  // Chip-picked vaults are mutually exclusive with a browsed path: we can't
+  // run detectVault() on a chip's path (the webview never picked it through
+  // the dialog, so it's outside the fs scope), so there's no detection to
+  // clear here — just the reverse direction (see handleBrowse above).
+  const handlePickVault = useCallback((vault: ObsidianVault) => {
+    setError(null);
+    setDetection(null);
+    setPath(vault.path);
+    setPickedVault(vault);
   }, []);
 
   const handleConnect = useCallback(async () => {
     setError(null);
     setConnecting(true);
     try {
-      const source = await addSource(detection?.sourceType ?? "directory", path);
+      const sourceType = pickedVault ? "obsidian" : (detection?.sourceType ?? "directory");
+      const source = await addSource(sourceType, path);
       queryClient.invalidateQueries({ queryKey: ["registeredSources"] });
       // Obsidian vaults are not on the daemon's 30s directory scheduler —
       // kick a one-shot first index (same rationale as AddSourceDialog).
@@ -72,7 +97,7 @@ export default function VaultConnectCard({ variant, onConnected }: Props) {
     } finally {
       setConnecting(false);
     }
-  }, [detection, path, queryClient, onConnected]);
+  }, [detection, pickedVault, path, queryClient, onConnected]);
 
   // Submit is never blocked by a zero count (council change e): the daemon's
   // POST /api/sources validation is the authority; its 4xx surfaces verbatim.
@@ -91,6 +116,49 @@ export default function VaultConnectCard({ variant, onConnected }: Props) {
           {t("vaultConnect.description")}
         </p>
       </div>
+
+      {obsidianVaults && obsidianVaults.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+          <span
+            style={{
+              fontFamily: "var(--mem-font-body)",
+              fontSize: "11px",
+              color: "var(--mem-text-tertiary)",
+              textTransform: "uppercase",
+              letterSpacing: "0.04em",
+            }}
+          >
+            {t("vaultConnect.obsidianVaultsFound")}
+          </span>
+          <div className="flex flex-wrap gap-2">
+            {obsidianVaults.map((vault) => {
+              const picked = pickedVault?.path === vault.path;
+              return (
+                <button
+                  key={vault.path}
+                  type="button"
+                  onClick={() => handlePickVault(vault)}
+                  aria-label={vault.path}
+                  className="rounded-full px-3 py-1"
+                  style={{
+                    fontFamily: "var(--mem-font-body)",
+                    fontSize: "12px",
+                    border: picked
+                      ? "1px solid var(--mem-accent-indigo)"
+                      : "1px solid var(--mem-border)",
+                    backgroundColor: picked
+                      ? "color-mix(in srgb, var(--mem-accent-indigo) 14%, transparent)"
+                      : "var(--mem-bg)",
+                    color: "var(--mem-text)",
+                  }}
+                >
+                  {vault.name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="flex gap-2">
         <input
@@ -136,6 +204,12 @@ export default function VaultConnectCard({ variant, onConnected }: Props) {
             <span style={{ color: "var(--mem-text-tertiary)" }}>{t("vaultConnect.vaultMarkdownOnly")}</span>
           )}
         </div>
+      )}
+
+      {pickedVault && (
+        <p style={{ fontSize: "12px", fontFamily: "var(--mem-font-body)", color: "var(--mem-accent-indigo)" }}>
+          {t("vaultConnect.pickedVault", { name: pickedVault.name })}
+        </p>
       )}
 
       {error && <p style={{ fontSize: "12px", fontFamily: "var(--mem-font-mono)", color: "var(--mem-status-danger-text)" }}>{error}</p>}

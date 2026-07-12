@@ -258,6 +258,23 @@ export async function readSourceDir(path: string): Promise<SourceDirEntry[]> {
   return invoke("read_source_dir", { path });
 }
 
+export interface ObsidianVault {
+  name: string;
+  path: string;
+}
+
+/**
+ * Read the user's real Obsidian vaults from Obsidian's own vault registry
+ * (macOS: `~/Library/Application Support/obsidian/obsidian.json`), most
+ * recently opened first. Read in Rust because the webview's `fs:default`
+ * scope only covers app-specific directories — it can't reach Obsidian's
+ * registry. Never throws: no Obsidian, an unreadable registry, or a vault
+ * whose folder is gone all just mean an empty list.
+ */
+export async function detectObsidianVaults(): Promise<ObsidianVault[]> {
+  return invoke("detect_obsidian_vaults");
+}
+
 /**
  * Read a text file's full contents for inline preview in the detail pane.
  * Backed by the Rust `read_text_file` command (same reason as readSourceDir:
