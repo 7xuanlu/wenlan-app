@@ -121,3 +121,21 @@ describe("presetForEndpoint — normalization applied before matching", () => {
     expect(presetForEndpoint("192.168.1.5:11434").id).toBe("custom");
   });
 });
+
+describe("presetForEndpoint — host-alias matching (Thread #2: 127.0.0.1/[::1] == localhost)", () => {
+  it("127.0.0.1:11434 matches the Ollama preset", () => {
+    expect(presetForEndpoint("127.0.0.1:11434").id).toBe("ollama");
+  });
+  it("[::1]:11434 matches the Ollama preset", () => {
+    expect(presetForEndpoint("[::1]:11434").id).toBe("ollama");
+  });
+  it("localhost:1234 matches the LM Studio preset", () => {
+    expect(presetForEndpoint("localhost:1234").id).toBe("lmstudio");
+  });
+  it("192.168.1.5:11434 is a genuinely different machine — still custom, not aliased to Ollama", () => {
+    expect(presetForEndpoint("192.168.1.5:11434").id).toBe("custom");
+  });
+  it("boundary: normalizeEndpoint does NOT rewrite 127.0.0.1 to localhost — the probed endpoint stays exactly as typed", () => {
+    expect(normalizeEndpoint("127.0.0.1:11434")).toBe("http://127.0.0.1:11434/v1");
+  });
+});

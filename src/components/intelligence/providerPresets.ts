@@ -113,11 +113,36 @@ export function normalizeEndpoint(raw: string): string {
   return ep;
 }
 
+const ENDPOINT_HOST_RE = /^(https?:\/\/)(\[[^\]]+\]|[^/:]+)(.*)$/;
+
+/** localhost, 127.0.0.1, and [::1] are the same host for PRESET MATCHING
+ *  only (Thread #2). Never used to rewrite the endpoint that actually gets
+ *  probed — a server can bind IPv4-only while `localhost` resolves to ::1,
+ *  so rewriting a user's typed host could break a probe that would
+ *  otherwise have worked. See `endpointsMatch`. */
+export function canonicalHostForMatch(host: string): string {
+  const bare = host.startsWith("[") && host.endsWith("]") ? host.slice(1, -1) : host;
+  return bare === "127.0.0.1" || bare === "::1" ? "localhost" : host;
+}
+
+/** True when two already-normalized endpoints denote the same server for
+ *  preset-matching purposes, treating localhost/127.0.0.1/[::1] as one
+ *  host. Match-only: does not affect what gets fetched. */
+export function endpointsMatch(a: string, b: string): boolean {
+  const canon = (ep: string) => {
+    const m = ENDPOINT_HOST_RE.exec(ep);
+    if (!m) return ep;
+    const [, scheme, host, rest] = m;
+    return `${scheme}${canonicalHostForMatch(host)}${rest}`;
+  };
+  return canon(a) === canon(b);
+}
+
 /** Match a saved endpoint back to its preset ("custom" when no match). */
 export function presetForEndpoint(endpoint: string | null): ProviderPreset {
   const norm = normalizeEndpoint(endpoint ?? "");
   return (
-    PROVIDER_PRESETS.find((p) => p.endpoint !== "" && normalizeEndpoint(p.endpoint) === norm) ??
+    PROVIDER_PRESETS.find((p) => p.endpoint !== "" && endpointsMatch(normalizeEndpoint(p.endpoint), norm)) ??
     PROVIDER_PRESETS[PROVIDER_PRESETS.length - 1]
   );
 }
