@@ -5,16 +5,22 @@ import { useTranslation } from "react-i18next";
 export function Toggle({
   enabled,
   onToggle,
+  "aria-label": ariaLabel,
   "aria-describedby": ariaDescribedby,
 }: {
   enabled: boolean;
   onToggle: () => void;
+  /** Required in practice: the switch renders only a decorative knob, so
+   *  without this a screen reader announces "button, pressed" and never says
+   *  WHAT is being toggled. Callers pass the visible row/panel title. */
+  "aria-label"?: string;
   "aria-describedby"?: string;
 }) {
   return (
     <button
       onClick={onToggle}
       aria-pressed={enabled}
+      aria-label={ariaLabel}
       aria-describedby={ariaDescribedby}
       className={`relative w-11 h-[26px] rounded-full transition-colors shrink-0 focus-visible:outline-2 focus-visible:outline-[var(--mem-focus-ring)] focus-visible:outline-offset-2 ${
         enabled ? "bg-[var(--mem-accent-indigo)]" : "bg-[var(--mem-hover-strong)]"
@@ -66,7 +72,12 @@ export function SettingRow(props: SettingRowProps) {
           {"control" in props ? (
             props.control
           ) : (
-            <Toggle enabled={props.enabled} onToggle={props.onToggle} aria-describedby={describedBy} />
+            <Toggle
+              enabled={props.enabled}
+              onToggle={props.onToggle}
+              aria-label={title}
+              aria-describedby={describedBy}
+            />
           )}
         </div>
       </div>

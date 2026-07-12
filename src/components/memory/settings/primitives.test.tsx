@@ -202,6 +202,25 @@ describe("SectionHeader", () => {
   });
 });
 
+describe("Toggle — accessible name", () => {
+  // The switch renders only a decorative knob, so its accessible name is its
+  // ONLY description. Unnamed, a screen reader says "button, pressed" and never
+  // says what was toggled. This was true of the hand-rolled role="switch" it
+  // replaced, so the bug predates the primitive — pin it so it stays fixed.
+  it("is reachable by name, not just by role", () => {
+    render(<Toggle enabled={false} onToggle={() => {}} aria-label="Launch at login" />);
+    expect(screen.getByRole("button", { name: "Launch at login" })).toBeInTheDocument();
+  });
+
+  it("SettingRow names its Toggle with the row title", () => {
+    render(
+      <SettingRow title="Launch at login" description="Start Wenlan on boot" enabled onToggle={() => {}} />,
+    );
+    const toggle = screen.getByRole("button", { name: "Launch at login" });
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+  });
+});
+
 describe("SettingRow", () => {
   it("toggle arm: renders title/description, flips via the Toggle, and wires error to aria-describedby (unchanged behavior)", async () => {
     function ControlledRow() {

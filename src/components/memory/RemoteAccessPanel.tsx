@@ -148,7 +148,11 @@ export function RemoteAccessPanel({ mode }: Props) {
             </p>
           </div>
           <div className="mt-0.5">
-            <Toggle enabled={isOn} onToggle={() => toggleMut.mutate(!isOn)} />
+            <Toggle
+              enabled={isOn}
+              onToggle={() => toggleMut.mutate(!isOn)}
+              aria-label={t("remoteAccess.title")}
+            />
           </div>
         </div>
       </div>

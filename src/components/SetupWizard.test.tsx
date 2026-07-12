@@ -453,7 +453,10 @@ describe("SetupWizard", () => {
     const { toggleRemoteAccess } = await import("../lib/tauri");
     renderWizard({ initialStep: "connect" });
     await screen.findByText(/Share with web-based AI tools/i);
-    fireEvent.click(screen.getByRole("switch"));
+    // The toggle is a `<button aria-pressed>`, not `role="switch"` — and it is
+    // reachable BY NAME, which is the point: the knob is decorative, so without
+    // an aria-label a screen reader would only ever say "button, pressed".
+    fireEvent.click(screen.getByRole("button", { name: /Share with web-based AI tools/i, pressed: false }));
     await waitFor(() => {
       expect(toggleRemoteAccess).toHaveBeenCalled();
     });
