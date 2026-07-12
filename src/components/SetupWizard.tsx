@@ -178,7 +178,7 @@ function WelcomeStep({ onNext, hideDots }: { onNext: () => void; hideDots: boole
         <p
           style={{
             fontFamily: "var(--mem-font-body)",
-            fontSize: "15px",
+            fontSize: "var(--mem-text-lg)",
             color: "var(--mem-text-secondary)",
             lineHeight: "1.5",
           }}
@@ -188,7 +188,7 @@ function WelcomeStep({ onNext, hideDots }: { onNext: () => void; hideDots: boole
         <p
           style={{
             fontFamily: "var(--mem-font-body)",
-            fontSize: "15px",
+            fontSize: "var(--mem-text-lg)",
             color: "var(--mem-text-secondary)",
             lineHeight: "1.5",
           }}
@@ -456,9 +456,6 @@ function ImportStep({
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-        <h3 style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-lg)", fontWeight: 600, color: "var(--mem-text)" }}>
-          {t("setup.import.vaultPathTitle")}
-        </h3>
         <VaultConnectCard variant="wizard" />
       </div>
     </div>

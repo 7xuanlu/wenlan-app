@@ -100,17 +100,18 @@ describe("SetupWizard", () => {
   it("renders Welcome step by default", () => {
     renderWizard();
     expect(screen.getByText("Welcome to Wenlan")).toBeInTheDocument();
-    expect(
-      screen.getByText("A living knowledge base your AI tools build as they work."),
-    ).toBeInTheDocument();
+    const tagline = screen.getByText("A living knowledge base your AI tools build as they work.");
+    expect(tagline).toBeInTheDocument();
     // Wiki-pages-first: the welcome step must say what Wenlan produces
     // (source-cited pages), not just gesture at "understanding".
-    expect(
-      screen.getByText(
-        "Your AI tools write what they learn into source-cited pages that refresh between sessions.",
-      ),
-    ).toBeInTheDocument();
+    const body = screen.getByText(
+      "Your AI tools write what they learn into source-cited pages that refresh between sessions.",
+    );
+    expect(body).toBeInTheDocument();
     expect(screen.getByText("Everything stays on your device")).toBeInTheDocument();
+    // R3 typography ladder: on-scale size only, never an off-scale 15px.
+    expect(tagline).toHaveStyle({ fontSize: "var(--mem-text-lg)" });
+    expect(body).toHaveStyle({ fontSize: "var(--mem-text-lg)" });
   });
 
   it("renders Welcome step in Simplified Chinese when selected", async () => {
@@ -182,10 +183,10 @@ describe("SetupWizard", () => {
     expect(screen.getByText("Bring what you already know")).toBeInTheDocument();
     expect(screen.getByText("Chat history")).toBeInTheDocument();
     expect(screen.getByText("Import chat history")).toBeInTheDocument();
-    // VaultConnectCard (Task 6), rendered inline as the second path, with its
-    // own side-by-side section label (spec §2) above the card.
-    expect(screen.getByText("Obsidian vault / notes folder")).toBeInTheDocument();
+    // VaultConnectCard (Task 6), rendered inline as the second path. It carries
+    // its own title — no separate wrapper heading duplicates it.
     expect(screen.getByText("Connect a notes folder")).toBeInTheDocument();
+    expect(screen.queryByText("Obsidian vault / notes folder")).not.toBeInTheDocument();
   });
 
   it("shows chat-history guidance after choosing the chat path and routes directly to connect", async () => {
