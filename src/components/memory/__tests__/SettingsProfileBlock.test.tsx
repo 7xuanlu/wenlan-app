@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import SettingsPage from "../SettingsPage";
 
 const updateProfileMock = vi.hoisted(() => vi.fn().mockResolvedValue(null));
+const setRunAtLoginMock = vi.hoisted(() => vi.fn().mockResolvedValue(null));
 
 vi.mock("../../../lib/tauri", () => ({
   getProfile: vi.fn().mockResolvedValue({
@@ -33,7 +34,7 @@ vi.mock("../../../lib/tauri", () => ({
   detectMcpClients: vi.fn().mockResolvedValue([]),
   setSetupCompleted: vi.fn().mockResolvedValue(null),
   isRunAtLoginEnabled: vi.fn().mockResolvedValue(false),
-  setRunAtLogin: vi.fn().mockResolvedValue(null),
+  setRunAtLogin: setRunAtLoginMock,
 }));
 
 vi.mock("../../../lib/theme", () => ({
@@ -93,5 +94,27 @@ describe("SettingsPage profile display block", () => {
       undefined,
       undefined,
     );
+  });
+
+  // Primitives migration (Step 6a): the display-name field moved from a
+  // hand-rolled <label><input> pair to the shared Field/Input primitives,
+  // and the run-at-login row moved into a Card wrapper. Both changes could
+  // silently break the label/control association or the toggle's click
+  // wiring without any visual sign, so pin them explicitly.
+  it("keeps the display-name label wired to its input after the Field migration", async () => {
+    renderSettingsPage();
+
+    const input = await screen.findByLabelText("Display name");
+    expect(input).toHaveValue("Lucian");
+  });
+
+  it("still fires the run-at-login toggle after the Card migration", async () => {
+    const user = userEvent.setup();
+    renderSettingsPage();
+
+    const toggle = await screen.findByRole("button", { pressed: false });
+    await user.click(toggle);
+
+    expect(setRunAtLoginMock).toHaveBeenCalledWith(true, expect.anything());
   });
 });

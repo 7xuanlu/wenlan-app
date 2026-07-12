@@ -106,7 +106,7 @@ export default function CaptureSection() {
           <div className="flex items-center gap-2 mt-2.5">
             <span
               className="w-2 h-2 rounded-full shrink-0"
-              style={{ background: screenPermission ? "var(--mem-accent-sage)" : "#ef4444" }}
+              style={{ background: screenPermission ? "var(--mem-accent-sage)" : "var(--mem-status-danger-text)" }}
             />
             <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)" }}>
               {t("settings.capture.screenRecording")} {screenPermission ? t("settings.capture.granted") : t("settings.capture.notGranted")}
