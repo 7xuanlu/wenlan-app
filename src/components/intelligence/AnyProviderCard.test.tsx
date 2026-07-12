@@ -238,12 +238,25 @@ describe("AnyProviderCard", () => {
   });
 
   it("local pane: both servers up → both pills connected, no auto-switch", async () => {
-    // default mock resolves for any endpoint → both probes succeed.
+    // both probes succeed; resolve 2 models each so the chip's exact model count is meaningful.
+    mocks.listExternalModels.mockResolvedValue(["llama3.2:3b", "qwen2.5:7b"]);
     renderCard({ groups: ["local"] });
-    expect(await screen.findByText(/Connected to Ollama/)).toBeInTheDocument();
-    // both local pills present
-    expect(screen.getByRole("button", { name: /Ollama/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /LM Studio/ })).toBeInTheDocument();
+    // Exact interpolated text — guards the modelCount (not count) i18next key.
+    expect(await screen.findByText("Connected to Ollama — 2 models")).toBeInTheDocument();
+    // Exact accessible name: the status-dot span must not fold into the pill's name.
+    const ollamaPill = screen.getByRole("button", { name: "Ollama" });
+    const lmStudioPill = screen.getByRole("button", { name: "LM Studio" });
+    expect(ollamaPill).toBeInTheDocument();
+    expect(lmStudioPill).toBeInTheDocument();
+    // Selection is communicated to assistive tech via aria-pressed, not just color.
+    expect(ollamaPill).toHaveAttribute("aria-pressed", "true");
+    expect(lmStudioPill).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("local pane: both probes still pending → probing chip renders", async () => {
+    mocks.listExternalModels.mockImplementation(() => new Promise(() => {}));
+    renderCard({ groups: ["local"] });
+    expect(await screen.findByText("Checking Ollama…")).toBeInTheDocument();
   });
 
   it("local pane: exactly one server up → auto-selects it", async () => {

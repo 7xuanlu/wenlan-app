@@ -26,8 +26,16 @@ interface Props {
   hidePresetPicker?: boolean;
 }
 
-const OLLAMA_ENDPOINT = "http://localhost:11434/v1";
-const LMSTUDIO_ENDPOINT = "http://localhost:1234/v1";
+// The preset table is the single source of truth for local endpoints — look
+// them up by id rather than restating the URLs here, so a future table edit
+// can't drift the probed endpoint away from the host shown in the UI.
+function presetEndpoint(id: string): string {
+  const preset = PROVIDER_PRESETS.find((p) => p.id === id);
+  if (!preset) throw new Error(`Unknown preset id: ${id}`);
+  return preset.endpoint;
+}
+const OLLAMA_ENDPOINT = presetEndpoint("ollama");
+const LMSTUDIO_ENDPOINT = presetEndpoint("lmstudio");
 const hostOf = (ep: string) => ep.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
 const localLabel = (name: string) => name.replace(/\s*\(local\)$/i, "");
 
@@ -140,9 +148,14 @@ export default function AnyProviderCard({ groups, initialPresetId, hidePresetPic
   useEffect(() => {
     if (!isLocalOnly || autoSelectedRef.current) return;
     if (ollamaProbe.isLoading || lmStudioProbe.isLoading) return;
+    // Wait for the saved-config query to settle before latching a decision —
+    // otherwise a fast probe can auto-select while `current` is still
+    // undefined, and the prefill effect then re-applies the saved endpoint
+    // right after, causing a visible double-set of the endpoint field.
+    if (current === undefined) return;
     autoSelectedRef.current = true; // decide exactly once
     // Respect a previously-saved local endpoint over auto-selection.
-    if (current && current[0]) return;
+    if (current[0]) return;
     const up = [
       ["ollama", ollamaProbe.isSuccess] as const,
       ["lmstudio", lmStudioProbe.isSuccess] as const,
@@ -152,8 +165,14 @@ export default function AnyProviderCard({ groups, initialPresetId, hidePresetPic
       setPresetId(id);
       setEndpoint(id === "ollama" ? OLLAMA_ENDPOINT : LMSTUDIO_ENDPOINT);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLocalOnly, ollamaProbe.isLoading, ollamaProbe.isSuccess, lmStudioProbe.isLoading, lmStudioProbe.isSuccess]);
+  }, [
+    isLocalOnly,
+    ollamaProbe.isLoading,
+    ollamaProbe.isSuccess,
+    lmStudioProbe.isLoading,
+    lmStudioProbe.isSuccess,
+    current,
+  ]);
 
   const selectPreset = (id: string) => {
     setPresetId(id);
@@ -220,7 +239,11 @@ export default function AnyProviderCard({ groups, initialPresetId, hidePresetPic
 
       {isLocalOnly ? (
         <>
-          <div className="flex flex-wrap gap-2">
+          <div
+            className="flex flex-wrap gap-2"
+            role="group"
+            aria-label={t("externalProvider.presetLabel")}
+          >
             {presets.map((p) => {
               const probe = probeFor(p.id);
               const status = !probe
@@ -237,6 +260,7 @@ export default function AnyProviderCard({ groups, initialPresetId, hidePresetPic
                   key={p.id}
                   type="button"
                   onClick={() => selectPreset(p.id)}
+                  aria-pressed={selected}
                   className="rounded-full px-3 py-1.5 text-xs"
                   style={{
                     border: `1px solid ${selected ? "var(--mem-accent-indigo)" : "var(--mem-border)"}`,
@@ -247,6 +271,7 @@ export default function AnyProviderCard({ groups, initialPresetId, hidePresetPic
                 >
                   {probe && (
                     <span
+                      aria-hidden="true"
                       style={{
                         marginRight: "6px",
                         color:
