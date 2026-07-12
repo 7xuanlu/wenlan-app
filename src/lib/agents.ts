@@ -101,41 +101,20 @@ export function resolveAgentDisplayName(
 export type TrustLevel = "full" | "review" | "unknown";
 
 export interface TrustLevelDescriptor {
-  label: string;
-  /** One-line explanation shown as tooltip / badge caption. */
-  summary: string;
-  /** Longer explanation for the section explainer. */
-  detail: string;
+  level: TrustLevel;
   /** CSS accent var for the badge. */
   accent: string;
 }
 
-export const TRUST_LEVELS: Record<TrustLevel, TrustLevelDescriptor> = {
-  full: {
-    label: "Full",
-    summary:
-      "Sees everything: identity, preferences, lessons, gotchas, decisions, pages, and search results.",
-    detail:
-      "This is the default for agents you've explicitly registered — if you walked through setup for it, Wenlan treats it as trusted and gives it access to every tier of context.",
-    accent: "var(--mem-accent-indigo)",
-  },
-  review: {
-    label: "Review",
-    summary:
-      "Sees lessons, gotchas, decisions, corrections, pages, and search — but not identity or preferences.",
-    detail:
-      "Useful when you want an agent to help with work but not see your personal identity or preferences. Rarely needed for single-user setups.",
-    accent: "var(--mem-accent-amber)",
-  },
-  unknown: {
-    label: "Unknown",
-    summary: "Sees search results only. No identity or preferences.",
-    detail:
-      "Unregistered callers (direct curl, third-party MCP clients you didn't register) land here automatically. Safe fallback for untrusted sources.",
-    accent: "var(--mem-accent-warm)",
-  },
+// Label and summary copy live in i18n (`settings.agents.trust.*` /
+// `settings.agents.trustSummary.*`) — this module stays presentation-only.
+export const TRUST_LEVELS: Record<TrustLevel, { accent: string }> = {
+  full: { accent: "var(--mem-accent-indigo)" },
+  review: { accent: "var(--mem-accent-amber)" },
+  unknown: { accent: "var(--mem-accent-warm)" },
 };
 
 export function describeTrustLevel(level: string): TrustLevelDescriptor {
-  return TRUST_LEVELS[level as TrustLevel] ?? TRUST_LEVELS.unknown;
+  const known = (level in TRUST_LEVELS ? level : "unknown") as TrustLevel;
+  return { level: known, accent: TRUST_LEVELS[known].accent };
 }

@@ -2,7 +2,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { getPipelineStatus, type PipelineStatusResponse } from "../../../../lib/tauri";
-import { Button, Card } from "../primitives";
+import { Button, Card, SectionHeader } from "../primitives";
 
 function sortedEntries(values: Record<string, number>): [string, number][] {
   return Object.entries(values).sort(([leftKey, leftValue], [rightKey, rightValue]) => {
@@ -61,7 +61,7 @@ function EntityLinking({ data }: { data: PipelineStatusResponse }) {
         {t("settings.diagnostics.entityLinking")}
       </div>
       <div className="flex items-baseline gap-3">
-        <span style={{ fontFamily: "var(--mem-font-heading)", fontSize: "var(--mem-text-xl)", color: "var(--mem-text)" }}>{data.entity_linking.linked}</span>
+        <span style={{ fontFamily: "var(--mem-font-heading)", fontSize: "var(--mem-text-xl)", color: "var(--mem-text)", fontVariantNumeric: "tabular-nums" }}>{data.entity_linking.linked}</span>
         <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text-secondary)" }}>
           {t("settings.diagnostics.linkedUnlinked", { unlinked: data.entity_linking.unlinked })}
         </span>
@@ -118,14 +118,21 @@ export default function DiagnosticsSection() {
 
   return (
     <section className="mem-fade-up" style={{ animationDelay: "0ms" }}>
-      <div className="flex items-center justify-between gap-3 mb-3 px-1">
-        <h3 style={{ fontFamily: "var(--mem-font-mono)", fontSize: "var(--mem-text-2xs)", fontWeight: 500, letterSpacing: "0.14em", color: "var(--mem-text-tertiary)", textTransform: "uppercase" as const }}>
-          {t("settings.diagnostics.pipelineTitle")}
-        </h3>
-        <Button variant="secondary" size="sm" onClick={() => pipelineQuery.refetch()}>
-          {t("settings.diagnostics.refresh")}
-        </Button>
-      </div>
+      <SectionHeader
+        icon={
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 19V5" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 19h16" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 15l3-3 3 2 4-6" />
+          </svg>
+        }
+        label={t("settings.diagnostics.pipelineTitle")}
+        action={
+          <Button variant="secondary" size="sm" onClick={() => pipelineQuery.refetch()}>
+            {t("settings.diagnostics.refresh")}
+          </Button>
+        }
+      />
       <Card padding="rows">
         {pipelineQuery.isLoading && (
           <p className="px-5 py-4" style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text-secondary)" }}>
@@ -140,7 +147,7 @@ export default function DiagnosticsSection() {
             <RefineryQueue data={pipelineQuery.data} />
             <div className="px-5 py-4">
               <div className="mb-1" style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-base)", fontWeight: 600, color: "var(--mem-text)" }}>{t("settings.diagnostics.recaps")}</div>
-              <span style={{ fontFamily: "var(--mem-font-heading)", fontSize: "var(--mem-text-xl)", color: "var(--mem-text)" }}>{pipelineQuery.data.recaps}</span>
+              <span style={{ fontFamily: "var(--mem-font-heading)", fontSize: "var(--mem-text-xl)", color: "var(--mem-text)", fontVariantNumeric: "tabular-nums" }}>{pipelineQuery.data.recaps}</span>
             </div>
             <StatList title={t("settings.diagnostics.memoryTypes")} values={pipelineQuery.data.types} empty={t("settings.diagnostics.memoryTypesEmpty")} />
             <StatList title={t("settings.diagnostics.quality")} values={pipelineQuery.data.quality} empty={t("settings.diagnostics.qualityEmpty")} />

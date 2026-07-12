@@ -64,3 +64,24 @@ describe("AgentsSection two-step delete", () => {
     expect(deleteAgentMock).toHaveBeenCalledWith("codex", expect.anything());
   });
 });
+
+// S3: the trust legend used to render each level as a hand-styled span with
+// a per-level accent border/color. It's a `Tag` now (tone="neutral", no
+// accent coloring) — `Tag`'s own signature class is `rounded-full`, which
+// the old badge never had, so matching on it proves the swap actually
+// happened rather than just trusting the JSX.
+describe("AgentsSection trust legend", () => {
+  it("renders each trust level as a Tag, not the old accent-bordered badge", async () => {
+    renderAgentsSection();
+
+    // The "Full" trust option also appears as a <select> <option>, which
+    // never carries Tag's signature class — scoping on `.rounded-full`
+    // isolates the legend Tag instead of colliding with it.
+    await screen.findAllByRole("button"); // wait for agents query to settle
+    const fullTags = Array.from(document.querySelectorAll<HTMLElement>(".rounded-full")).filter(
+      (el) => el.textContent === "Full",
+    );
+    expect(fullTags).toHaveLength(1);
+    expect(fullTags[0].style.border).toBe("");
+  });
+});

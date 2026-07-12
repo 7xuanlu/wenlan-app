@@ -18,7 +18,7 @@ import {
   setLocalePreference,
   type StoredLocale,
 } from "../../../../i18n";
-import { Button, Card, Field, Input, SectionHeader, SettingRow } from "../primitives";
+import { Button, Card, Field, Input, SectionHeader, Select, SettingRow } from "../primitives";
 import ProfileAvatar from "../../ProfileAvatar";
 
 type ThemeLabelKey =
@@ -240,89 +240,63 @@ export default function GeneralSection() {
             enabled={runAtLoginQuery.data ?? false}
             onToggle={() => runAtLoginMutation.mutate(!(runAtLoginQuery.data ?? false))}
           />
-        </Card>
-        {/* Theme — folded into General; previously its own "Appearance" sidebar entry. */}
-        <div className="mt-4">
-          <Card padding="rows">
-            <div className="px-5 py-4">
-              <div className="flex items-center justify-between gap-4">
-                <div className="min-w-0">
-                  <div style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-md)", fontWeight: 500, color: "var(--mem-text)" }}>{t("settings.theme.label")}</div>
-                  <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text-secondary)", marginTop: "2px", lineHeight: "1.5" }}>
-                    {t("settings.theme.description")}
-                  </p>
-                </div>
-                <div className="relative flex bg-[var(--mem-hover)] rounded-lg p-0.5 shrink-0">
-                  <div
-                    className="absolute top-0.5 bottom-0.5 rounded-md shadow-sm transition-transform duration-200 ease-out"
-                    style={{
-                      backgroundColor: "var(--mem-accent-indigo)",
-                      width: `calc(${100 / THEME_OPTIONS.length}% - 2px)`,
-                      transform: `translateX(calc(${THEME_OPTIONS.findIndex((o) => o.value === theme)} * (100% + ${4 / (THEME_OPTIONS.length - 1)}px)))`,
-                      left: 1,
-                    }}
-                  />
-                  {THEME_OPTIONS.map((opt) => (
-                    <button
-                      key={opt.value}
-                      onClick={() => setThemeValue(opt.value)}
-                      className={`relative z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-colors duration-200 ${
-                        theme === opt.value
-                          ? "text-[var(--mem-text-on-accent)]"
-                          : "text-[var(--mem-text-secondary)] hover:text-[var(--mem-text)]"
-                      }`}
-                      style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", fontWeight: 500 }}
-                    >
-                      {opt.icon}
-                      {t(opt.labelKey)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </Card>
-        </div>
-        <div className="mt-4">
-          <Card padding="rows">
-            <div className="px-5 py-4">
-              <div className="flex items-center justify-between gap-4">
-                <div className="min-w-0">
-                  <label
-                    htmlFor="settings-language"
-                    style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-md)", fontWeight: 500, color: "var(--mem-text)" }}
+          {/* Theme — folded into General; previously its own "Appearance" sidebar entry. */}
+          <SettingRow
+            title={t("settings.theme.label")}
+            description={t("settings.theme.description")}
+            control={
+              <div className="relative flex bg-[var(--mem-hover)] rounded-lg p-0.5 shrink-0">
+                <div
+                  className="absolute top-0.5 bottom-0.5 rounded-md shadow-sm transition-transform duration-200 ease-out"
+                  style={{
+                    backgroundColor: "var(--mem-accent-indigo)",
+                    width: `calc(${100 / THEME_OPTIONS.length}% - 2px)`,
+                    transform: `translateX(calc(${THEME_OPTIONS.findIndex((o) => o.value === theme)} * (100% + ${4 / (THEME_OPTIONS.length - 1)}px)))`,
+                    left: 1,
+                  }}
+                />
+                {THEME_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setThemeValue(opt.value)}
+                    className={`relative z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-colors duration-200 ${
+                      theme === opt.value
+                        ? "text-[var(--mem-text-on-accent)]"
+                        : "text-[var(--mem-text-secondary)] hover:text-[var(--mem-text)]"
+                    }`}
+                    style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", fontWeight: 500 }}
                   >
-                    {t("settings.language.label")}
-                  </label>
-                  <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text-secondary)", marginTop: "2px", lineHeight: "1.5" }}>
-                    {t("settings.language.description")}
-                  </p>
-                </div>
-                <select
-                  id="settings-language"
+                    {opt.icon}
+                    {t(opt.labelKey)}
+                  </button>
+                ))}
+              </div>
+            }
+          />
+          <SettingRow
+            title={t("settings.language.label")}
+            description={t("settings.language.description")}
+            control={
+              <div className="w-fit shrink-0">
+                <Select
+                  size="sm"
+                  aria-label={t("settings.language.label")}
                   value={languagePreference}
                   onChange={(event) => {
                     const nextPreference = event.currentTarget.value as StoredLocale;
                     setLanguagePreference(nextPreference);
                     void setLocalePreference(nextPreference);
                   }}
-                  className="rounded-lg px-3 py-1.5 shrink-0"
-                  style={{
-                    backgroundColor: "var(--mem-hover)",
-                    border: "1px solid var(--mem-border)",
-                    color: "var(--mem-text)",
-                    fontFamily: "var(--mem-font-body)",
-                    fontSize: "var(--mem-text-sm)",
-                  }}
                 >
                   <option value="system">{t("settings.language.system")}</option>
                   <option value="en">{t("settings.language.english")}</option>
                   <option value="zh-Hans">{t("settings.language.simplifiedChinese")}</option>
                   <option value="zh-Hant">{t("settings.language.traditionalChinese")}</option>
-                </select>
+                </Select>
               </div>
-            </div>
-          </Card>
-        </div>
+            }
+          />
+        </Card>
         {/* Re-run setup wizard. Confirmation prevents accidental restart;
             data is preserved regardless. */}
         <div className="px-2 pt-4">

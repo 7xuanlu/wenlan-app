@@ -412,6 +412,11 @@ const en = {
         review: "Review",
         unknown: "Unknown",
       },
+      trustSummary: {
+        full: "Sees everything: identity, preferences, lessons, gotchas, decisions, pages, and search results.",
+        review: "Sees lessons, gotchas, decisions, corrections, pages, and search — but not identity or preferences.",
+        unknown: "Sees search results only. No identity or preferences.",
+      },
     },
     diagnostics: {
       pipelineTitle: "Pipeline Snapshot",
@@ -1465,6 +1470,11 @@ const zhHans = {
         review: "需审阅",
         unknown: "未知",
       },
+      trustSummary: {
+        full: "可见全部内容：身份、偏好、经验、注意事项、决策、页面与搜索结果。",
+        review: "可见经验、注意事项、决策、更正、页面与搜索——但不含身份与偏好。",
+        unknown: "仅可见搜索结果。不含身份与偏好。",
+      },
     },
     diagnostics: {
       pipelineTitle: "流水线快照",
@@ -2498,6 +2508,11 @@ const zhHant = {
         full: "完整",
         review: "需審閱",
         unknown: "未知",
+      },
+      trustSummary: {
+        full: "可見全部內容：身份、偏好、經驗、注意事項、決策、頁面與搜尋結果。",
+        review: "可見經驗、注意事項、決策、更正、頁面與搜尋——但不含身份與偏好。",
+        unknown: "僅可見搜尋結果。不含身份與偏好。",
       },
     },
     diagnostics: {

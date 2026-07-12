@@ -10,7 +10,7 @@ import {
 } from "../../../../lib/tauri";
 import { describeTrustLevel, resolveAgentDisplayName, TRUST_LEVELS } from "../../../../lib/agents";
 import { RemoteAccessPanel } from "../../RemoteAccessPanel";
-import { Button, Card, SectionHeader, Toggle } from "../primitives";
+import { Button, Card, SectionHeader, Select, Tag, Toggle } from "../primitives";
 import WebPlatformCards from "../../../connect/WebPlatformCards";
 import ClientSetupList from "../../../connect/ClientSetupList";
 
@@ -83,38 +83,23 @@ export default function AgentsSection({ onSetupAgent }: { onSetupAgent?: () => v
             {t("settings.agents.trustLevels")}
           </p>
           <div className="flex flex-col gap-1.5">
-            {(Object.keys(TRUST_LEVELS) as Array<keyof typeof TRUST_LEVELS>).map((level) => {
-              const d = TRUST_LEVELS[level];
-              return (
-                <div key={level} className="flex items-start gap-2">
-                  <span
-                    className="shrink-0 px-1.5 py-0.5 rounded"
-                    style={{
-                      fontFamily: "var(--mem-font-mono)",
-                      fontSize: "var(--mem-text-2xs)",
-                      fontWeight: 500,
-                      color: d.accent,
-                      border: `1px solid ${d.accent}`,
-                      backgroundColor: "transparent",
-                      minWidth: 52,
-                      textAlign: "center",
-                    }}
-                  >
-                    {d.label}
-                  </span>
-                  <span
-                    style={{
-                      fontFamily: "var(--mem-font-body)",
-                      fontSize: "var(--mem-text-sm)",
-                      color: "var(--mem-text-secondary)",
-                      lineHeight: 1.5,
-                    }}
-                  >
-                    {d.summary}
-                  </span>
-                </div>
-              );
-            })}
+            {(Object.keys(TRUST_LEVELS) as Array<keyof typeof TRUST_LEVELS>).map((level) => (
+              <div key={level} className="flex items-start gap-2">
+                <span className="shrink-0">
+                  <Tag tone="neutral">{t(`settings.agents.trust.${level}`)}</Tag>
+                </span>
+                <span
+                  style={{
+                    fontFamily: "var(--mem-font-body)",
+                    fontSize: "var(--mem-text-sm)",
+                    color: "var(--mem-text-secondary)",
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {t(`settings.agents.trustSummary.${level}`)}
+                </span>
+              </div>
+            ))}
           </div>
         </div>
         <Card padding={agents.length === 0 && pendingClients.length === 0 ? "none" : "rows"}>
@@ -178,19 +163,14 @@ export default function AgentsSection({ onSetupAgent }: { onSetupAgent?: () => v
                         <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-md)", fontWeight: 500, color: "var(--mem-text)" }}>
                           {resolveAgentDisplayName(agent.name, agents)}
                         </span>
-                        <span
-                          className="px-1.5 py-0.5 rounded"
-                          style={{ fontFamily: "var(--mem-font-mono)", fontSize: "var(--mem-text-2xs)", backgroundColor: "var(--mem-hover)", color: "var(--mem-text-tertiary)" }}
-                        >
-                          {agent.agent_type}
-                        </span>
                         {/* Trust badge lives in the right-hand action cluster
-                            below — it's a styled `<select>` that doubles as
-                            both the display and the editor. */}
+                            below — it's a `Select` that doubles as both the
+                            display and the editor. */}
                       </div>
                       <div className="flex items-center gap-3 mt-1 flex-wrap">
-                        {/* Canonical technical ID — always shown as a mono
-                            subtitle, every row gets identical anatomy. */}
+                        {/* Canonical technical ID + machine type — always
+                            shown as a mono subtitle, every row gets identical
+                            anatomy. Machine identifiers are never chips. */}
                         <span
                           title={t("settings.agents.canonicalIdTitle")}
                           style={{
@@ -200,7 +180,7 @@ export default function AgentsSection({ onSetupAgent }: { onSetupAgent?: () => v
                             opacity: 0.75,
                           }}
                         >
-                          {agent.name}
+                          {agent.name} · {agent.agent_type}
                         </span>
                         <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", color: "var(--mem-text-tertiary)" }}>
                           {t("settings.agents.memories", { count: agent.memory_count })}
@@ -215,21 +195,19 @@ export default function AgentsSection({ onSetupAgent }: { onSetupAgent?: () => v
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      {/* Trust selector — the <select> is wrapped so a chevron
-                          can sit as a sibling (selects don't accept reliable
-                          pseudo-elements across browsers). The chevron carries
-                          the affordance; the pill border matches the legend
-                          above. Hovering shows the level's summary as a
-                          tooltip AND tints the background subtly so the
-                          control clearly reads as interactive. */}
+                      {/* Trust selector — width-safety wrapper is required:
+                          `Select`'s wrapper span and inner <select> are both
+                          `w-full`, so it needs a `w-fit` ancestor to avoid
+                          stretching to fill this flex row. */}
                       {(() => {
-                        const d = describeTrustLevel(agent.trust_level);
+                        const trustLevel = describeTrustLevel(agent.trust_level).level;
                         return (
                           <div
-                            className="relative shrink-0 inline-flex"
-                            title={d.summary}
+                            className="w-fit shrink-0"
+                            title={t(`settings.agents.trustSummary.${trustLevel}`)}
                           >
-                            <select
+                            <Select
+                              size="sm"
                               value={agent.trust_level}
                               onChange={(e) =>
                                 updateAgentMut.mutate({
@@ -237,61 +215,11 @@ export default function AgentsSection({ onSetupAgent }: { onSetupAgent?: () => v
                                   updates: { trustLevel: e.target.value },
                                 })
                               }
-                              className="rounded focus:outline-none cursor-pointer transition-colors duration-150 bg-transparent mem-row-hover"
-                              style={{
-                                fontFamily: "var(--mem-font-mono)",
-                                fontSize: "var(--mem-text-2xs)",
-                                fontWeight: 500,
-                                color: d.accent,
-                                border: `1px solid ${d.accent}`,
-                                minWidth: 56,
-                                // Asymmetric padding — paddingRight reserves
-                                // room for the chevron so the closed-state
-                                // text doesn't collide with it. `textAlignLast`
-                                // centers the visible value within the
-                                // content area; the slight left bias compensates
-                                // for the chevron's visual weight on the right.
-                                textAlign: "center",
-                                textAlignLast: "center",
-                                paddingTop: 4,
-                                paddingBottom: 4,
-                                paddingLeft: 8,
-                                paddingRight: 17,
-                                appearance: "none",
-                                WebkitAppearance: "none",
-                                MozAppearance: "none",
-                                backgroundImage: "none",
-                                lineHeight: 1.2,
-                              }}
                             >
                               <option value="full">{t("settings.agents.trust.full")}</option>
                               <option value="review">{t("settings.agents.trust.review")}</option>
                               <option value="unknown">{t("settings.agents.trust.unknown")}</option>
-                            </select>
-                            {/* Chevron — absolutely positioned, pointer-events:none
-                                so clicks pass through to the select. Color
-                                matches the trust accent so the whole control
-                                reads as one unit. */}
-                            <svg
-                              width="8"
-                              height="8"
-                              viewBox="0 0 8 8"
-                              fill="none"
-                              stroke={d.accent}
-                              strokeWidth="1.5"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              aria-hidden
-                              style={{
-                                position: "absolute",
-                                right: 6,
-                                top: "50%",
-                                transform: "translateY(-50%)",
-                                pointerEvents: "none",
-                              }}
-                            >
-                              <polyline points="1.5 3 4 5.5 6.5 3" />
-                            </svg>
+                            </Select>
                           </div>
                         );
                       })()}

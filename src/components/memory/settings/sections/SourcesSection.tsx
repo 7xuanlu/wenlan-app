@@ -4,7 +4,7 @@ import SourcesList from "../../sources/SourcesSection";
 import { ImportFlow } from "../../../ChatImport/ImportFlow";
 import { Button, Card, SectionHeader } from "../primitives";
 
-export default function SourcesSection({ onImport }: { onImport?: () => void }) {
+export default function SourcesSection({ onImport }: { onImport: () => void }) {
   const { t } = useTranslation();
   return (
     <>
@@ -23,11 +23,9 @@ export default function SourcesSection({ onImport }: { onImport?: () => void }) 
                   {t("settings.sources.importMemoriesDescription")}
                 </p>
               </div>
-              {onImport && (
-                <Button variant="primary" size="sm" className="shrink-0" onClick={onImport}>
-                  {t("settings.sources.import")}
-                </Button>
-              )}
+              <Button variant="secondary" size="sm" className="shrink-0" onClick={onImport}>
+                {t("settings.sources.import")}
+              </Button>
             </div>
           </div>
         </Card>
