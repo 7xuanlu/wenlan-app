@@ -547,6 +547,76 @@ describe("SetupWizard", () => {
     expect(screen.queryByText("codex-mcp-client")).not.toBeInTheDocument();
   });
 
+  it("intelligence choice tiles signal selection via aria-pressed, not color alone", async () => {
+    renderWizard();
+    fireEvent.click(screen.getByText("Get started"));
+
+    const deviceButton = screen.getByRole("button", { name: "On-device model" });
+    const cloudButton = screen.getByRole("button", { name: /Anthropic API key/ });
+
+    expect(deviceButton).toHaveAttribute("aria-pressed", "true");
+    expect(cloudButton).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(cloudButton);
+
+    expect(cloudButton).toHaveAttribute("aria-pressed", "true");
+    expect(deviceButton).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("connect step: the group pill is gone — no per-row 'Detected'/'Install first' text duplicates the section header", async () => {
+    (detectMcpClients as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        name: "Cursor",
+        client_type: "cursor",
+        config_path: "/path/to/cursor",
+        detected: true,
+        already_configured: false,
+      },
+      {
+        name: "Claude Code",
+        client_type: "claude_code",
+        config_path: "/path/to/claude.json",
+        detected: false,
+        already_configured: false,
+      },
+    ]);
+
+    renderWizard({ initialStep: "connect" });
+
+    await waitFor(() => {
+      expect(screen.getByText("Detected on your Mac")).toBeInTheDocument();
+      expect(screen.getByText("Supported tools")).toBeInTheDocument();
+    });
+
+    // The per-row pill used to duplicate the section label on every row; the
+    // section header above the list already says it once.
+    expect(screen.queryByText("Detected")).not.toBeInTheDocument();
+    expect(screen.queryByText("Install first")).not.toBeInTheDocument();
+  });
+
+  it("escape hatch 'Or write the config for me' is a real button that reveals the manual config snippet", async () => {
+    (detectMcpClients as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        name: "Codex CLI",
+        client_type: "codex_cli",
+        config_path: "/path/to/config.toml",
+        detected: true,
+        already_configured: false,
+      },
+    ]);
+
+    renderWizard({ initialStep: "connect" });
+
+    await screen.findByText("codex mcp add wenlan -- npx -y wenlan-mcp");
+
+    expect(screen.queryByText(/mcpServers/)).not.toBeInTheDocument();
+
+    const escapeHatch = screen.getByRole("button", { name: "Or write the config for me" });
+    await userEvent.click(escapeHatch);
+
+    expect(screen.getByText(/mcpServers/)).toBeInTheDocument();
+  });
+
   it("done: caps connected-agent chips at 6 with a +N overflow chip", async () => {
     const ids = ["tool-a", "tool-b", "tool-c", "tool-d", "tool-e", "tool-f", "tool-g", "tool-h"];
     (listAgents as ReturnType<typeof vi.fn>).mockResolvedValue(

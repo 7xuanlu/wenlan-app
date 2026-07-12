@@ -15,7 +15,7 @@ import WebPlatformCards from "./connect/WebPlatformCards";
 import CliPrimaryPath, { isCliPrimaryClient } from "./connect/CliPrimaryPath";
 import { ApiKeyCard, OnDeviceModelCard } from "./intelligence/IntelligenceSetup";
 import AnyProviderCard from "./intelligence/AnyProviderCard";
-import { Button, StatusChip } from "./memory/settings/primitives";
+import { Button, StatusChip, Tag, SectionHeader } from "./memory/settings/primitives";
 import { resolveAgentDisplayName } from "../lib/agents";
 
 export type WizardStep = "welcome" | "intelligence-choice" | "import" | "connect" | "verify" | "done";
@@ -33,14 +33,6 @@ const STEP_ORDER: WizardStep[] = [
   "verify",
   "done",
 ];
-
-const MEMORY_TYPE_COLORS: Record<string, string> = {
-  identity: "var(--mem-accent-indigo)",
-  preference: "var(--mem-accent-sage)",
-  fact: "var(--mem-accent-amber)",
-  decision: "var(--mem-accent-indigo)",
-  goal: "var(--mem-accent-page)",
-};
 
 // ── Step Indicator ──────────────────────────────────────────────────────
 
@@ -175,7 +167,7 @@ function WelcomeStep({ onNext, hideDots }: { onNext: () => void; hideDots: boole
         <h1
           style={{
             fontFamily: "var(--mem-font-heading)",
-            fontSize: "28px",
+            fontSize: "var(--mem-text-2xl)",
             fontWeight: 500,
             color: "var(--mem-text)",
             letterSpacing: "-0.02em",
@@ -224,6 +216,7 @@ function WelcomeStep({ onNext, hideDots }: { onNext: () => void; hideDots: boole
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
+          aria-hidden="true"
         >
           <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
           <path d="M7 11V7a5 5 0 0110 0v4" />
@@ -258,7 +251,7 @@ function IntelligenceChoiceStep({
   const choiceButtonStyle = (active: boolean): React.CSSProperties => ({
     flex: 1,
     padding: "10px 12px",
-    borderRadius: "10px",
+    borderRadius: "var(--mem-radius-md)",
     border: "1px solid var(--mem-border)",
     backgroundColor: active ? "var(--mem-indigo-bg)" : "var(--mem-surface)",
     color: active ? "var(--mem-accent-indigo)" : "var(--mem-text-secondary)",
@@ -307,7 +300,7 @@ function IntelligenceChoiceStep({
         <h1
           style={{
             fontFamily: "var(--mem-font-heading)",
-            fontSize: "var(--mem-text-xl)",
+            fontSize: "var(--mem-text-2xl)",
             fontWeight: 500,
             color: "var(--mem-text)",
           }}
@@ -327,26 +320,28 @@ function IntelligenceChoiceStep({
       </div>
 
       <div className="flex gap-3">
-        <button onClick={() => setMode("device")} style={choiceButtonStyle(mode === "device")}>
+        <button
+          onClick={() => setMode("device")}
+          aria-pressed={mode === "device"}
+          style={choiceButtonStyle(mode === "device")}
+        >
           {t("setup.intelligence.deviceOption")}
         </button>
-        <button onClick={() => setMode("cloud")} style={choiceButtonStyle(mode === "cloud")}>
+        <button
+          onClick={() => setMode("cloud")}
+          aria-pressed={mode === "cloud"}
+          style={choiceButtonStyle(mode === "cloud")}
+        >
           {t("setup.intelligence.cloudOption")}
-          <span
-            style={{
-              marginLeft: "8px",
-              fontSize: "var(--mem-text-2xs)",
-              fontWeight: 600,
-              color: "var(--mem-accent-indigo)",
-              backgroundColor: "var(--mem-hover)",
-              padding: "1px 6px",
-              borderRadius: "var(--mem-radius-full)",
-            }}
-          >
-            {t("setup.intelligence.recommended")}
+          <span style={{ marginLeft: "8px" }}>
+            <Tag tone="accent">{t("setup.intelligence.recommended")}</Tag>
           </span>
         </button>
-        <button onClick={() => setMode("local")} style={choiceButtonStyle(mode === "local")}>
+        <button
+          onClick={() => setMode("local")}
+          aria-pressed={mode === "local"}
+          style={choiceButtonStyle(mode === "local")}
+        >
           {t("setup.intelligence.localOption")}
         </button>
       </div>
@@ -435,7 +430,7 @@ function ImportStep({
     >
     <div className="flex flex-col" style={{ gap: "24px", paddingTop: "24px" }}>
       <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-        <h1 style={{ fontFamily: "var(--mem-font-heading)", fontSize: "20px", fontWeight: 500, color: "var(--mem-text)" }}>
+        <h1 style={{ fontFamily: "var(--mem-font-heading)", fontSize: "var(--mem-text-2xl)", fontWeight: 500, color: "var(--mem-text)" }}>
           {t("setup.import.title")}
         </h1>
         <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "13px", color: "var(--mem-text-secondary)", lineHeight: "1.5" }}>
@@ -448,24 +443,20 @@ function ImportStep({
         style={{ border: "1px solid var(--mem-border)", backgroundColor: "var(--mem-surface)", gap: "12px" }}
       >
         <div>
-          <h3 style={{ fontFamily: "var(--mem-font-heading)", fontSize: "15px", fontWeight: 500, color: "var(--mem-text)" }}>
+          <h3 style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-lg)", fontWeight: 600, color: "var(--mem-text)" }}>
             {t("setup.import.chatPathTitle")}
           </h3>
           <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-secondary)", marginTop: "4px" }}>
             {t("setup.import.chatPathDescription")}
           </p>
         </div>
-        <button
-          onClick={() => setPathChoice("chat")}
-          className="rounded-md px-4 py-2 text-sm font-medium shrink-0"
-          style={{ backgroundColor: "var(--mem-accent-indigo)", color: "white", fontFamily: "var(--mem-font-body)" }}
-        >
+        <Button variant="secondary" onClick={() => setPathChoice("chat")} className="shrink-0">
           {t("setup.import.chatPathCta")}
-        </button>
+        </Button>
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-        <h3 style={{ fontFamily: "var(--mem-font-heading)", fontSize: "15px", fontWeight: 500, color: "var(--mem-text)" }}>
+        <h3 style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-lg)", fontWeight: 600, color: "var(--mem-text)" }}>
           {t("setup.import.vaultPathTitle")}
         </h3>
         <VaultConnectCard variant="wizard" />
@@ -476,26 +467,6 @@ function ImportStep({
 }
 
 // ── Connect Step ────────────────────────────────────────────────────────
-
-/** Small uppercase sub-section label used inside ConnectStep to group
- *  "Detected on your Mac" / "Claude.ai & ChatGPT (web)" / "Advanced". */
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <p
-      style={{
-        fontFamily: "var(--mem-font-body)",
-        fontSize: "11px",
-        fontWeight: 600,
-        color: "var(--mem-text-tertiary)",
-        letterSpacing: "0.06em",
-        textTransform: "uppercase",
-        margin: 0,
-      }}
-    >
-      {children}
-    </p>
-  );
-}
 
 function ConnectStep({
   onNext,
@@ -625,8 +596,6 @@ function ConnectStep({
 
   const renderClientList = (
     list: NonNullable<typeof clients>,
-    statusLabel: string,
-    statusActive: boolean,
   ) => (
     <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
       {list.map((client) => {
@@ -651,16 +620,6 @@ function ConnectStep({
               }}
             >
               {client.name}
-            </span>
-            <span
-              className="px-2 py-0.5 rounded-full text-xs"
-              style={{
-                fontFamily: "var(--mem-font-body)",
-                backgroundColor: statusActive ? "var(--mem-indigo-bg)" : "var(--mem-hover)",
-                color: statusActive ? "var(--mem-accent-indigo)" : "var(--mem-text-tertiary)",
-              }}
-            >
-              {statusLabel}
             </span>
             {isConnected && (
               <StatusChip state={{ kind: "up" }} label={t("setup.connect.configured")} />
@@ -719,17 +678,14 @@ function ConnectStep({
                 style={{ display: "flex", flexDirection: "column", gap: "6px", paddingLeft: "28px" }}
               >
                 <CliPrimaryPath clientType={client.client_type} />
-                <p
-                  style={{
-                    fontFamily: "var(--mem-font-body)",
-                    fontSize: "var(--mem-text-xs)",
-                    color: "var(--mem-text-tertiary)",
-                    lineHeight: 1.5,
-                    margin: 0,
-                  }}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setManualExpanded((prev) => !prev)}
+                  className="self-start"
                 >
                   {t("connectMatrix.oneClickAdvanced")}
-                </p>
+                </Button>
 
                 {error && (
                   <p
@@ -821,7 +777,7 @@ function ConnectStep({
         <h1
           style={{
             fontFamily: "var(--mem-font-heading)",
-            fontSize: "var(--mem-text-xl)",
+            fontSize: "var(--mem-text-2xl)",
             fontWeight: 500,
             color: "var(--mem-text)",
           }}
@@ -843,7 +799,7 @@ function ConnectStep({
 
       {(isLoading || isError || detectedClients.length > 0) && (
         <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-          <SectionLabel>{t("setup.connect.detectedOnMac")}</SectionLabel>
+          <SectionHeader label={t("setup.connect.detectedOnMac")} />
 
           {isLoading && (
             <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
@@ -876,25 +832,25 @@ function ConnectStep({
             </p>
           )}
 
-          {detectedClients.length > 0 && renderClientList(detectedClients, t("setup.connect.detected"), true)}
+          {detectedClients.length > 0 && renderClientList(detectedClients)}
         </div>
       )}
 
       {supportedClients.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-          <SectionLabel>{t("setup.connect.supportedTools")}</SectionLabel>
-          {renderClientList(supportedClients, t("setup.connect.installFirst"), false)}
+          <SectionHeader label={t("setup.connect.supportedTools")} />
+          {renderClientList(supportedClients)}
         </div>
       )}
 
       <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-        <SectionLabel>{t("setup.connect.webTools")}</SectionLabel>
+        <SectionHeader label={t("setup.connect.webTools")} />
         <RemoteAccessPanel mode="compact" />
         <WebPlatformCards />
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-        <SectionLabel>{t("setup.connect.manualSetup")}</SectionLabel>
+        <SectionHeader label={t("setup.connect.manualSetup")} />
         <Button
           variant="ghost"
           size="sm"
@@ -1087,7 +1043,7 @@ function VerifyStep({
         <h1
           style={{
             fontFamily: "var(--mem-font-heading)",
-            fontSize: "var(--mem-text-xl)",
+            fontSize: "var(--mem-text-2xl)",
             fontWeight: 500,
             color: "var(--mem-text)",
           }}
@@ -1182,7 +1138,7 @@ function Stat({ label, value }: { label: string; value: number }) {
       <span
         style={{
           fontFamily: "var(--mem-font-heading)",
-          fontSize: "20px",
+          fontSize: "var(--mem-text-xl)",
           fontWeight: 500,
           color: "var(--mem-text)",
           lineHeight: 1.1,
@@ -1268,7 +1224,7 @@ function DoneStep({
         <h1
           style={{
             fontFamily: "var(--mem-font-heading)",
-            fontSize: "24px",
+            fontSize: "var(--mem-text-2xl)",
             fontWeight: 500,
             color: "var(--mem-text)",
           }}
@@ -1349,7 +1305,7 @@ function DoneStep({
         <p
           style={{
             fontFamily: "var(--mem-font-heading)",
-            fontSize: "24px",
+            fontSize: "var(--mem-text-2xl)",
             fontWeight: 500,
             color: "var(--mem-text)",
             margin: 0,
@@ -1414,19 +1370,10 @@ function DoneStep({
             {breakdownEntries.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
                 {breakdownEntries.map(([type, count]) => (
-                  <span
-                    key={type}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs"
-                    style={{
-                      fontFamily: "var(--mem-font-body)",
-                      backgroundColor: `color-mix(in srgb, ${MEMORY_TYPE_COLORS[type] || "var(--mem-text-tertiary)"} 15%, transparent)`,
-                      color:
-                        MEMORY_TYPE_COLORS[type] || "var(--mem-text-secondary)",
-                    }}
-                  >
+                  <Tag key={type} tone="neutral">
                     {type}
-                    <span style={{ opacity: 0.7 }}>{count}</span>
-                  </span>
+                    <span style={{ opacity: 0.7, marginLeft: "4px" }}>{count}</span>
+                  </Tag>
                 ))}
               </div>
             )}
@@ -1493,29 +1440,14 @@ function DoneStep({
             {t("setup.done.connected")}
           </span>
           {visibleAgentNames.map((name) => (
-            <span
-              key={name}
-              className="px-2 py-0.5 rounded-full text-xs"
-              style={{
-                fontFamily: "var(--mem-font-body)",
-                backgroundColor: "var(--mem-indigo-bg)",
-                color: "var(--mem-accent-indigo)",
-              }}
-            >
+            <Tag key={name} tone="accent">
               {name}
-            </span>
+            </Tag>
           ))}
           {overflowAgentCount > 0 && (
-            <span
-              className="px-2 py-0.5 rounded-full text-xs"
-              style={{
-                fontFamily: "var(--mem-font-mono)",
-                backgroundColor: "var(--mem-hover)",
-                color: "var(--mem-text-tertiary)",
-              }}
-            >
+            <Tag tone="neutral">
               {t("setup.done.moreAgents", { count: overflowAgentCount })}
-            </span>
+            </Tag>
           )}
         </div>
       )}
