@@ -3,7 +3,7 @@ import { useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { detectMcpClients, writeMcpConfig, type McpClient } from "../../lib/tauri";
-import CliPrimaryPath, { CLI_PRIMARY_CLIENTS, type CliClientType } from "./CliPrimaryPath";
+import CliPrimaryPath, { isCliPrimaryClient, type CliClientType } from "./CliPrimaryPath";
 
 /** Apps & CLIs group (spec §2a / §9.3). CLI clients lead with their primary
  *  plugin path (CliPrimaryPath: terminal commands + "Copy setup prompt");
@@ -94,17 +94,26 @@ export default function ClientSetupList() {
       </span>
     );
 
+  // A plugin-install command for a CLI that isn't on the machine can't
+  // succeed anyway — gate the CLI primary path on detection too, same as
+  // guiPrimary, so an undetected client always shows "Not detected".
+  const cliPrimary = (client: McpClient, clientType: CliClientType) =>
+    client.detected ? (
+      <>
+        <CliPrimaryPath clientType={clientType} />
+        {advancedSetUp(client)}
+      </>
+    ) : (
+      <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)" }}>
+        {t("connectMatrix.notDetected")}
+      </span>
+    );
+
   return (
     <div className="flex flex-col" style={{ gap: "8px" }}>
       {(clients ?? []).map((client) =>
-        CLI_PRIMARY_CLIENTS.has(client.client_type)
-          ? rowShell(
-              client,
-              <>
-                <CliPrimaryPath clientType={client.client_type as CliClientType} />
-                {advancedSetUp(client)}
-              </>,
-            )
+        isCliPrimaryClient(client.client_type)
+          ? rowShell(client, cliPrimary(client, client.client_type))
           : rowShell(client, guiPrimary(client)),
       )}
     </div>
