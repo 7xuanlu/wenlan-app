@@ -1000,7 +1000,12 @@ export default function MemoryView({ onBack, onSelectFile, onSelectRecap, onSele
       {/* Profile detail */}
       {showSettings ? (
         <div className="flex-1 overflow-y-auto px-10 py-7">
-          <SettingsPage onBack={() => setShowSettings(false)} />
+          {/* No import route in this shell, and it only ever shows the
+              "general" section, so the sources card is unreachable from here.
+              An explicit no-op keeps that decision local and visible instead of
+              a default inside SettingsPage that would silently hand every
+              future caller a dead Import button. */}
+          <SettingsPage onBack={() => setShowSettings(false)} onImport={() => {}} />
         </div>
       ) : query.length > 0 ? (
         <div className="flex-1 overflow-y-auto px-10 py-7">

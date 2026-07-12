@@ -76,7 +76,7 @@ function renderSettingsPage() {
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <SettingsPage section="general" onBack={() => {}} />
+      <SettingsPage section="general" onBack={() => {}} onImport={() => {}} />
     </QueryClientProvider>,
   );
 }

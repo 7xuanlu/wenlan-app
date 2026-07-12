@@ -55,7 +55,7 @@ function renderSettingsPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <SettingsPage section="general" onBack={() => {}} />
+      <SettingsPage section="general" onBack={() => {}} onImport={() => {}} />
     </QueryClientProvider>,
   );
 }

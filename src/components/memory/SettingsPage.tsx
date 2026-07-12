@@ -14,7 +14,11 @@ interface SettingsPageProps {
   section?: SettingsSection;
   onBack: () => void;
   onSetupAgent?: () => void;
-  onImport?: () => void;
+  /** Required: SourcesSection's only affordance is the import button, so a
+   *  caller that omits this would render a card whose entire purpose is a
+   *  button that does nothing. Keep it required — that is a compile error,
+   *  which is the point. */
+  onImport: () => void;
 }
 
 export default function SettingsPage({
@@ -45,7 +49,7 @@ export default function SettingsPage({
 
       {section === "general" && <GeneralSection />}
       {section === "capture" && <CaptureSection />}
-      {section === "sources" && <SourcesSection onImport={onImport ?? (() => {})} />}
+      {section === "sources" && <SourcesSection onImport={onImport} />}
       {section === "agents" && <AgentsSection onSetupAgent={onSetupAgent} />}
       {section === "intelligence" && <IntelligenceSection delay={0} />}
       {section === "diagnostics" && <DiagnosticsSection />}
