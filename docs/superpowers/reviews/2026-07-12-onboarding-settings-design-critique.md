@@ -24,6 +24,9 @@ useQuery default only covers `undefined`, so `null` sails past it).
 
 ## Tier 1 — the UI is saying things that are not true
 
+> **Update (same day):** 1.1 and 1.3 are **fixed and verified in pixels** (`cfb07f2`,
+> `5ddd5f1`) — see "Confirmed fixed" below. 1.2 remains **blocked on your sign-off**.
+
 ### 1. Raw agent IDs still ship — and this contradicts my own commit
 
 Commit `ecd009f` claims "no raw agent ids". They are still there, in two places
@@ -103,12 +106,36 @@ This is the complaint made concrete. Each is a rule that exists but is applied u
 
 ## Confirmed fixed (verified in pixels, not tests)
 
+- **Tier 1.1 — raw agent IDs** (`cfb07f2`). Every row now has one anatomy: human title,
+  raw ID as a mono subtitle, memory count, last seen. Unknown slugs get a title derived
+  from the slug itself (split on `-`/`_`, title-case, acronym map) — `cursor-vscode` →
+  **Cursor VS Code**, `codex-ulw-loop` → **Codex Ulw Loop**, `codex-mcp-client` →
+  **Codex MCP Client**. Nothing is fabricated and nothing is hidden: the raw ID is one
+  line below the title, always. Mutation-proven — reverting `prettifySlug` to the raw ID
+  fails 5 tests, including the wizard chip test.
+  The live daemon returns an empty agent list at the moment, so the pixel check ran
+  against a fixture pinned to the exact slugs the daemon returned earlier in the day.
+- **Tier 1.3 — "plugin" copy** (`5ddd5f1`). The Claude Code card and the claude.ai card
+  no longer announce a plugin; claude.ai now reads **"Step 1 — Add Wenlan to claude.ai"**.
+  The real CLI commands and claude.ai's own host menu names (`Directory → Plugins →
+  + Add marketplace`) are untouched — those are literal UI the user must follow, not our
+  description of ourselves.
 - **Thread #6 — Codex.** Codex CLI now gets the full CLI-primary path with a real
   `codex mcp add wenlan -- npx -y wenlan-mcp` command and a Copy setup prompt button, not
   just an MCP one-liner.
 - **Clipped action bar.** The fixed 64 px action bar means Back/Skip/Continue are visible
   on every step by construction.
 - **Command truncation.** Commands render full-width, untruncated.
+
+## Gate blind spots this walk exposed
+
+- **`preview/` is not type-checked.** `tsconfig.json` is `"include": ["src"]`, so `tsc -b`
+  never sees the preview harness. A duplicate object key (`get_wenlan_mcp_entry` twice in
+  `DEFAULTS`) shipped in `b0cba77` and TS1117 never fired. Deduped in `0aefbf2`; widening
+  the include is left alone deliberately (the harness leans on `any` and would cascade).
+- **The daemon's agent list is empty right now**, so both agent-bearing surfaces render
+  their empty states. A green agents test says nothing about the rows a real user sees —
+  which is the entire reason this walk exists.
 
 ## Not my regression (pre-existing at merge-base `907b210`)
 
