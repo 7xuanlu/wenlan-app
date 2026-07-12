@@ -4,9 +4,9 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import DiagnosticsSection from "./DiagnosticsSection";
-import { getPipelineStatus } from "../../../lib/tauri";
+import { getPipelineStatus } from "../../../../lib/tauri";
 
-vi.mock("../../../lib/tauri", () => ({
+vi.mock("../../../../lib/tauri", () => ({
   getPipelineStatus: vi.fn(),
 }));
 

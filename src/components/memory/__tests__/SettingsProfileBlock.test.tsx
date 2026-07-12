@@ -48,7 +48,7 @@ vi.mock("../../intelligence/IntelligenceSetup", () => ({
   OnDeviceModelCard: () => <div />,
   useApiKeyStatus: () => ({ isConfigured: false }),
 }));
-vi.mock("../settings/DiagnosticsSection", () => ({ default: () => <div /> }));
+vi.mock("../settings/sections/DiagnosticsSection", () => ({ default: () => <div /> }));
 
 function renderSettingsPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });

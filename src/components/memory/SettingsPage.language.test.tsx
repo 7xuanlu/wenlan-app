@@ -62,7 +62,7 @@ vi.mock("../intelligence/IntelligenceSetup", () => ({
   }),
 }));
 
-vi.mock("./settings/DiagnosticsSection", () => ({
+vi.mock("./settings/sections/DiagnosticsSection", () => ({
   default: () => <div />,
 }));
 
