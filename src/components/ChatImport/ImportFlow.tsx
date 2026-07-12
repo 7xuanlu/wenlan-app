@@ -127,11 +127,11 @@ export function ImportFlow() {
             alignItems: "center",
             gap: 8,
             background: localAction?.kind === "error"
-              ? "color-mix(in srgb, #ef4444 8%, transparent)"
+              ? "var(--mem-status-danger-bg)"
               : "color-mix(in srgb, var(--mem-accent-indigo) 8%, transparent)",
             border: `1px solid ${
               localAction?.kind === "error"
-                ? "color-mix(in srgb, #ef4444 20%, transparent)"
+                ? "var(--mem-status-danger-border)"
                 : "color-mix(in srgb, var(--mem-accent-indigo) 16%, transparent)"
             }`,
             transition: "all 0.2s ease",
@@ -145,7 +145,7 @@ export function ImportFlow() {
 
           <span style={{
             flex: 1,
-            color: localAction?.kind === "error" ? "#ef4444" : "var(--mem-text-secondary)",
+            color: localAction?.kind === "error" ? "var(--mem-status-danger-text)" : "var(--mem-text-secondary)",
           }}>
             {localAction?.kind === "reading" && t("chatImport.importFlow.importing")}
             {localAction?.kind === "done" && formatDoneMessage(t, localAction.result, isRefining, pending)}
@@ -199,8 +199,8 @@ function StatusIcon({ reading, error, refining }: { reading?: boolean; error?: b
   if (error) {
     return (
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ flexShrink: 0 }}>
-        <circle cx="7" cy="7" r="6" stroke="#ef4444" strokeWidth="1.5" />
-        <path d="M5 5L9 9M9 5L5 9" stroke="#ef4444" strokeWidth="1.5" strokeLinecap="round" />
+        <circle cx="7" cy="7" r="6" stroke="var(--mem-status-danger-text)" strokeWidth="1.5" />
+        <path d="M5 5L9 9M9 5L5 9" stroke="var(--mem-status-danger-text)" strokeWidth="1.5" strokeLinecap="round" />
       </svg>
     );
   }

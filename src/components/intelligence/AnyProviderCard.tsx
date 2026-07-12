@@ -13,7 +13,7 @@ import {
 import { useDaemonVersion } from "../../hooks/useDaemonVersion";
 import { useApiKeyStatus } from "./IntelligenceSetup";
 import { PROVIDER_PRESETS, presetForEndpoint, normalizeEndpoint, keyPrefixMismatch } from "./providerPresets";
-import { Card, Field, Input, Button, StatusChip, type ProbeState } from "../memory/settings/primitives";
+import { Card, Field, Input, Button, Select, StatusChip, type ProbeState } from "../memory/settings/primitives";
 
 // The Local-server card (spec §5.2): only presets that need no key. Widening
 // to all of PROVIDER_PRESETS — with a key Field appearing per preset.keyRequired,
@@ -52,12 +52,6 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
   }, [value, delayMs]);
   return debounced;
 }
-
-const selectClassName =
-  "h-[32px] px-[10px] py-[8px] rounded-[var(--mem-radius-md)] bg-[var(--mem-bg)] outline-none " +
-  "border border-[var(--mem-border)] text-[var(--mem-text)] transition-[border-color] " +
-  "duration-[var(--mem-dur-fast)] focus-visible:border-[var(--mem-accent-indigo)] " +
-  "focus-visible:outline-2 focus-visible:outline-[var(--mem-focus-ring)] focus-visible:outline-offset-0";
 
 export default function AnyProviderCard() {
   const { t } = useTranslation();
@@ -317,12 +311,7 @@ export default function AnyProviderCard() {
 
         <Field label={t("externalProvider.modelLabel")} htmlFor="any-provider-model">
           {localQuery && localQueryModels.length >= 1 ? (
-            <select
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              className={selectClassName}
-              style={{ fontFamily: "var(--mem-font-mono)", fontSize: "var(--mem-text-sm)" }}
-            >
+            <Select mono value={model} onChange={(e) => setModel(e.target.value)}>
               <option value="">{t("externalProvider.modelSelectPlaceholder")}</option>
               {/* A saved model that's no longer among the discovered ids
                   (e.g. removed from Ollama since it was saved) must still
@@ -332,7 +321,7 @@ export default function AnyProviderCard() {
               {localQueryModels.map((m) => (
                 <option key={m} value={m}>{m}</option>
               ))}
-            </select>
+            </Select>
           ) : (
             <Input
               mono

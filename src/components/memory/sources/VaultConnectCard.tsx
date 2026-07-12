@@ -10,6 +10,7 @@ import {
   type RegisteredSource,
 } from "../../../lib/tauri";
 import { detectVault, type VaultDetection } from "../../../lib/vaultDetection";
+import { Button } from "../settings/primitives";
 
 interface Props {
   variant: "dialog" | "wizard";
@@ -83,7 +84,7 @@ export default function VaultConnectCard({ variant, onConnected }: Props) {
       style={{ border: "1px solid var(--mem-border)", backgroundColor: "var(--mem-surface)", gap: "12px" }}
     >
       <div>
-        <h3 style={{ fontFamily: "var(--mem-font-heading)", fontSize: "15px", fontWeight: 500, color: "var(--mem-text)" }}>
+        <h3 style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-lg)", fontWeight: 600, color: "var(--mem-text)" }}>
           {t("vaultConnect.title")}
         </h3>
         <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-secondary)", lineHeight: 1.5, marginTop: "4px" }}>
@@ -106,13 +107,9 @@ export default function VaultConnectCard({ variant, onConnected }: Props) {
             fontSize: "12px",
           }}
         />
-        <button
-          onClick={handleBrowse}
-          className="rounded-md px-3 py-2 text-sm"
-          style={{ border: "1px solid var(--mem-border)", color: "var(--mem-text)", fontFamily: "var(--mem-font-body)" }}
-        >
+        <Button type="button" variant="secondary" onClick={handleBrowse}>
           {t("vaultConnect.browse")}
-        </button>
+        </Button>
       </div>
 
       {detecting && (
@@ -144,14 +141,15 @@ export default function VaultConnectCard({ variant, onConnected }: Props) {
       {error && <p className="text-red-500" style={{ fontSize: "12px", fontFamily: "var(--mem-font-mono)" }}>{error}</p>}
 
       {connectedId === null ? (
-        <button
+        <Button
+          type="button"
+          variant={variant === "wizard" ? "secondary" : "primary"}
           onClick={handleConnect}
           disabled={!canSubmit}
-          className="self-end rounded-md px-4 py-2 text-sm font-medium disabled:opacity-50"
-          style={{ backgroundColor: "var(--mem-accent-indigo)", color: "white", fontFamily: "var(--mem-font-body)" }}
+          className="self-end"
         >
           {connecting ? t("vaultConnect.connecting") : t("vaultConnect.connect")}
-        </button>
+        </Button>
       ) : (
         <p style={{ fontSize: "12px", color: "var(--mem-text-secondary)", fontFamily: "var(--mem-font-body)" }}>
           {connectedSource && connectedSource.file_count > 0

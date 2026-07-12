@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { detectMcpClients, writeMcpConfig, type McpClient } from "../../lib/tauri";
 import CliPrimaryPath, { isCliPrimaryClient, type CliClientType } from "./CliPrimaryPath";
+import { Button } from "../memory/settings/primitives";
 
 /** Apps & CLIs group (spec §2a / §9.3). CLI clients lead with their primary
  *  plugin path (CliPrimaryPath: terminal commands + "Copy setup prompt");
@@ -79,15 +80,16 @@ export default function ClientSetupList() {
 
   const guiPrimary = (client: McpClient) =>
     client.already_configured ? null : client.detected ? (
-      <button
+      <Button
         type="button"
+        variant="secondary"
+        size="sm"
         onClick={() => setUp(client.client_type)}
         disabled={busy === client.client_type}
-        className="self-start rounded-md px-3 py-1.5 text-xs disabled:opacity-50"
-        style={{ backgroundColor: "var(--mem-accent-indigo)", color: "white", fontFamily: "var(--mem-font-body)" }}
+        className="self-start"
       >
         {busy === client.client_type ? t("connectMatrix.settingUp") : t("connectMatrix.setUp")}
-      </button>
+      </Button>
     ) : (
       <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)" }}>
         {t("connectMatrix.notDetected")}

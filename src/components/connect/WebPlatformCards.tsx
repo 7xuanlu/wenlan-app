@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import { clipboardWrite, getRemoteAccessStatus, listAgents } from "../../lib/tauri";
+import { Button } from "../memory/settings/primitives";
 
 const CLAUDE_CONNECTOR_URL = "https://claude.ai/settings/connectors?modal=add-custom-connector";
 
@@ -77,13 +78,9 @@ export default function WebPlatformCards() {
         >
           {url}
         </code>
-        <button
-          onClick={() => copy(platform)}
-          className="rounded-md px-3 py-1.5 text-xs shrink-0"
-          style={{ border: "1px solid var(--mem-border)", color: "var(--mem-text)", fontFamily: "var(--mem-font-body)" }}
-        >
+        <Button type="button" variant="ghost" size="sm" onClick={() => copy(platform)} className="shrink-0">
           {copiedPlatform === platform ? t("connectMatrix.copied") : t("connectMatrix.copyUrl")}
-        </button>
+        </Button>
       </div>
     ) : (
       <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-tertiary)" }}>
@@ -104,7 +101,7 @@ export default function WebPlatformCards() {
       style={{ border: "1px solid var(--mem-border)", backgroundColor: "var(--mem-surface)", gap: "10px" }}
     >
       <div className="flex items-center justify-between">
-        <h3 style={{ fontFamily: "var(--mem-font-heading)", fontSize: "15px", fontWeight: 500, color: "var(--mem-text)" }}>
+        <h3 style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-lg)", fontWeight: 600, color: "var(--mem-text)" }}>
           {title}
         </h3>
         {connectedPlatform === platform && (
@@ -144,14 +141,15 @@ export default function WebPlatformCards() {
           ])}
           {urlRow("claude")}
           {url && (
-            <button
+            <Button
               type="button"
+              variant="secondary"
+              size="sm"
               onClick={() => shellOpen(CLAUDE_CONNECTOR_URL)}
-              className="self-start rounded-md px-3 py-1.5 text-xs"
-              style={{ border: "1px solid var(--mem-border)", color: "var(--mem-text)", fontFamily: "var(--mem-font-body)" }}
+              className="self-start"
             >
               {t("connectMatrix.openConnectorSettings")}
-            </button>
+            </Button>
           )}
           {noAuthWarning}
         </>,

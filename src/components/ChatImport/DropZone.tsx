@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
+import { Button } from "../memory/settings/primitives";
 
 interface DropZoneProps {
   /** Called when a file is drag-dropped (receives a File object). */
@@ -118,25 +119,9 @@ export function DropZone({ onFileSelected, onPathSelected }: DropZoneProps) {
         {t("chatImport.dropZone.subtitle")}
       </div>
 
-      <button
-        onClick={handlePickFile}
-        style={{
-          fontFamily: "var(--mem-font-body)",
-          fontSize: "12px",
-          fontWeight: 500,
-          padding: "6px 14px",
-          borderRadius: "6px",
-          backgroundColor: "var(--mem-accent-indigo)",
-          color: "white",
-          cursor: "pointer",
-          transition: "opacity 0.15s ease",
-          border: "none",
-        }}
-        onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.85")}
-        onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
-      >
+      <Button type="button" variant="secondary" size="sm" onClick={handlePickFile}>
         {t("chatImport.dropZone.chooseFile")}
-      </button>
+      </Button>
 
       {error && (
         <p
@@ -144,7 +129,7 @@ export function DropZone({ onFileSelected, onPathSelected }: DropZoneProps) {
           style={{
             fontFamily: "var(--mem-font-body)",
             fontSize: "11px",
-            color: "#ef4444",
+            color: "var(--mem-status-danger-text)",
             marginTop: 12,
             lineHeight: "1.5",
           }}

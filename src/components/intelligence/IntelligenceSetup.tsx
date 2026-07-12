@@ -11,7 +11,7 @@ import {
   setApiKey,
   setModelChoice,
 } from "../../lib/tauri";
-import { Card, Field, Input, Button, StatusChip } from "../memory/settings/primitives";
+import { Card, Field, Input, Button, Select, StatusChip } from "../memory/settings/primitives";
 
 type AnthropicModelDescriptionKey =
   | "intelligence.modelDescriptions.fastAffordable"
@@ -93,9 +93,9 @@ export function ApiKeyCard({
     <Card padding="card">
       <div className="flex flex-col" style={{ gap: "10px" }}>
         <div className="flex items-center justify-between">
-          <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "13px", color: "var(--mem-text)" }}>
+          <h3 style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-lg)", fontWeight: 600, color: "var(--mem-text)" }}>
             {t("intelligence.apiKeyTitle")}
-          </span>
+          </h3>
           <StatusChip
             state={isConfigured ? { kind: "up" } : { kind: "idle" }}
             label={isConfigured ? t("intelligence.connected") : t("intelligence.notConfigured")}
@@ -188,54 +188,49 @@ export function ModelChoiceSection() {
   });
   const [routineModel, synthesisModel] = modelChoice ?? [null, null];
 
-  const selectStyle: React.CSSProperties = {
-    fontFamily: "var(--mem-font-mono)",
-    fontSize: "11px",
-    backgroundColor: "var(--mem-hover)",
-    border: "1px solid var(--mem-border)",
-    color: "var(--mem-text)",
-    borderRadius: "6px",
-    padding: "4px 8px",
-    outline: "none",
-  };
-
   return (
     <div className="mt-4 pt-3" style={{ borderTop: "1px solid var(--mem-border)" }}>
       <div className="flex items-center justify-between mb-3">
         <div>
-          <div style={{ fontSize: "13px", fontWeight: 500, color: "var(--mem-text)", fontFamily: "var(--mem-font-body)" }}>{t("intelligence.routineModel")}</div>
+          <div style={{ fontSize: "var(--mem-text-base)", fontWeight: 500, color: "var(--mem-text)", fontFamily: "var(--mem-font-body)" }}>{t("intelligence.routineModel")}</div>
           <div style={{ fontSize: "11px", color: "var(--mem-text-tertiary)", fontFamily: "var(--mem-font-body)" }}>{t("intelligence.routineModelDescription")}</div>
         </div>
-        <select
-          value={routineModel ?? "claude-haiku-4-5-20251001"}
-          onChange={async (e) => {
-            await setModelChoice(e.target.value, synthesisModel);
-            queryClient.invalidateQueries({ queryKey: ["modelChoice"] });
-          }}
-          style={selectStyle}
-        >
-          {ANTHROPIC_MODELS.map((m) => (
-            <option key={m.id} value={m.id}>{m.label} - {t(m.descKey)}</option>
-          ))}
-        </select>
+        <div className="shrink-0 w-fit">
+          <Select
+            size="sm"
+            mono
+            value={routineModel ?? "claude-haiku-4-5-20251001"}
+            onChange={async (e) => {
+              await setModelChoice(e.target.value, synthesisModel);
+              queryClient.invalidateQueries({ queryKey: ["modelChoice"] });
+            }}
+          >
+            {ANTHROPIC_MODELS.map((m) => (
+              <option key={m.id} value={m.id}>{m.label} - {t(m.descKey)}</option>
+            ))}
+          </Select>
+        </div>
       </div>
       <div className="flex items-center justify-between">
         <div>
-          <div style={{ fontSize: "13px", fontWeight: 500, color: "var(--mem-text)", fontFamily: "var(--mem-font-body)" }}>{t("intelligence.synthesisModel")}</div>
+          <div style={{ fontSize: "var(--mem-text-base)", fontWeight: 500, color: "var(--mem-text)", fontFamily: "var(--mem-font-body)" }}>{t("intelligence.synthesisModel")}</div>
           <div style={{ fontSize: "11px", color: "var(--mem-text-tertiary)", fontFamily: "var(--mem-font-body)" }}>{t("intelligence.synthesisModelDescription")}</div>
         </div>
-        <select
-          value={synthesisModel ?? "claude-sonnet-4-6"}
-          onChange={async (e) => {
-            await setModelChoice(routineModel, e.target.value);
-            queryClient.invalidateQueries({ queryKey: ["modelChoice"] });
-          }}
-          style={selectStyle}
-        >
-          {ANTHROPIC_MODELS.map((m) => (
-            <option key={m.id} value={m.id}>{m.label} - {t(m.descKey)}</option>
-          ))}
-        </select>
+        <div className="shrink-0 w-fit">
+          <Select
+            size="sm"
+            mono
+            value={synthesisModel ?? "claude-sonnet-4-6"}
+            onChange={async (e) => {
+              await setModelChoice(routineModel, e.target.value);
+              queryClient.invalidateQueries({ queryKey: ["modelChoice"] });
+            }}
+          >
+            {ANTHROPIC_MODELS.map((m) => (
+              <option key={m.id} value={m.id}>{m.label} - {t(m.descKey)}</option>
+            ))}
+          </Select>
+        </div>
       </div>
     </div>
   );
@@ -289,9 +284,9 @@ export function OnDeviceModelCard() {
     <Card padding="card">
       <div className="flex flex-col" style={{ gap: "10px" }}>
         <div className="flex items-center justify-between">
-          <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "13px", color: "var(--mem-text)" }}>
+          <h3 style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-lg)", fontWeight: 600, color: "var(--mem-text)" }}>
             {t("intelligence.onDeviceModel")}
-          </span>
+          </h3>
           <StatusChip state={isLoaded ? { kind: "up" } : { kind: "idle" }} label={statusBadge} />
         </div>
         <p
@@ -337,26 +332,20 @@ export function OnDeviceModelCard() {
             </span>
           )}
 
-          <select
-            value={currentId ?? ""}
-            onChange={(e) => setPickedId(e.target.value)}
-            className="rounded-md outline-none"
-            style={{
-              fontFamily: "var(--mem-font-mono)",
-              fontSize: "11px",
-              backgroundColor: "var(--mem-hover)",
-              border: "1px solid var(--mem-border)",
-              color: "var(--mem-text-secondary)",
-              padding: "4px 8px",
-              flexShrink: 0,
-            }}
-          >
-            {models.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.display_name}
-              </option>
-            ))}
-          </select>
+          <div className="shrink-0 w-fit">
+            <Select
+              size="sm"
+              mono
+              value={currentId ?? ""}
+              onChange={(e) => setPickedId(e.target.value)}
+            >
+              {models.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.display_name}
+                </option>
+              ))}
+            </Select>
+          </div>
 
           {needsDownload && (
             <Button

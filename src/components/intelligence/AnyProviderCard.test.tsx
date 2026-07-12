@@ -211,6 +211,21 @@ describe("AnyProviderCard — the Local-server card (spec §5.2)", () => {
     ).toBeInTheDocument();
   });
 
+  // Chip-never-lies, color channel: the label text alone can read correctly
+  // even if the chip's rendered TONE were wired to something other than the
+  // real probe (e.g. the selected preset) — the label and the color are
+  // computed by two separate ternaries in the component. This pins the tone
+  // independently so that divergence can't hide behind a passing text match.
+  it("chip-never-lies: a failed probe renders the danger tone, never success, regardless of which preset is selected", async () => {
+    mocks.listExternalModels.mockRejectedValue(new Error("ECONNREFUSED"));
+    renderCard();
+    const chipLabel = await screen.findByText(/Not detected at localhost:11434/);
+    const chip = chipLabel.closest('[aria-live="polite"]');
+    expect(chip).not.toBeNull();
+    expect(chip?.className).toContain("mem-status-danger-text");
+    expect(chip?.className).not.toContain("mem-status-success-text");
+  });
+
   it("discovered models render as a <select>, not free text", async () => {
     mocks.listExternalModels.mockResolvedValue(["qwen2.5:7b", "llama3.2:3b"]);
     renderCard();
