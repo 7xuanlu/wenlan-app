@@ -11,6 +11,7 @@ import {
   setApiKey,
   setModelChoice,
 } from "../../lib/tauri";
+import { Card, Field, Input, Button, StatusChip } from "../memory/settings/primitives";
 
 type AnthropicModelDescriptionKey =
   | "intelligence.modelDescriptions.fastAffordable"
@@ -89,24 +90,18 @@ export function ApiKeyCard({
   };
 
   return (
-    <div className="bg-[var(--mem-surface)] rounded-xl overflow-hidden border border-[var(--mem-border)]">
-      <div className="px-5 py-4">
-        <div className="flex items-center justify-between mb-1">
+    <Card padding="card">
+      <div className="flex flex-col" style={{ gap: "10px" }}>
+        <div className="flex items-center justify-between">
           <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "13px", color: "var(--mem-text)" }}>
             {t("intelligence.apiKeyTitle")}
           </span>
-          <span
-            className="px-1.5 py-0.5 rounded text-[10px] font-medium"
-            style={{
-              fontFamily: "var(--mem-font-mono)",
-              backgroundColor: isConfigured ? "rgba(34,197,94,0.1)" : "rgba(156,163,175,0.1)",
-              color: isConfigured ? "rgb(34,197,94)" : "var(--mem-text-tertiary)",
-            }}
-          >
-            {isConfigured ? t("intelligence.connected") : t("intelligence.notConfigured")}
-          </span>
+          <StatusChip
+            state={isConfigured ? { kind: "up" } : { kind: "idle" }}
+            label={isConfigured ? t("intelligence.connected") : t("intelligence.notConfigured")}
+          />
         </div>
-        <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)", marginBottom: "10px" }}>
+        <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)" }}>
           {t("intelligence.apiKeyDescription")}
         </p>
 
@@ -123,72 +118,45 @@ export function ApiKeyCard({
             >
               {maskedKey}
             </span>
-            <button
-              onClick={handleClear}
-              disabled={saving}
-              className="px-2.5 py-1.5 rounded-md text-xs transition-colors hover:bg-[var(--mem-hover-strong)]"
-              style={{ fontFamily: "var(--mem-font-body)", color: "var(--mem-text-tertiary)" }}
-            >
+            <Button variant="ghost" size="sm" onClick={handleClear} disabled={saving}>
               {t("intelligence.clear")}
-            </button>
+            </Button>
           </div>
         ) : (
-          <div className="flex items-center gap-2">
-            <input
-              type="password"
-              value={keyInput}
-              onChange={(e) => setKeyInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && keyInput) handleSave(); }}
-              placeholder="sk-ant-api03-..."
-              className="flex-1 px-3 py-1.5 rounded-md outline-none text-xs"
-              style={{
-                fontFamily: "var(--mem-font-mono)",
-                backgroundColor: "var(--mem-hover)",
-                border: "1px solid var(--mem-border)",
-                color: "var(--mem-text)",
-              }}
-            />
-            <button
-              onClick={handleSave}
-              disabled={saving || !keyInput}
-              className="px-3 py-1.5 rounded-md text-xs font-medium transition-colors"
-              style={{
-                backgroundColor: keyInput ? "var(--mem-accent-indigo)" : "var(--mem-hover)",
-                color: keyInput ? "white" : "var(--mem-text-tertiary)",
-              }}
-            >
-              {saving ? "..." : t("intelligence.save")}
-            </button>
+          <div className="flex items-end gap-2">
+            <div className="flex-1">
+              <Field label={t("externalProvider.apiKeyLabel")} htmlFor="anthropic-api-key">
+                <Input
+                  type="password"
+                  mono
+                  value={keyInput}
+                  onChange={(e) => setKeyInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && keyInput) handleSave(); }}
+                  placeholder="sk-ant-api03-..."
+                />
+              </Field>
+            </div>
+            <Button variant="primary" size="sm" onClick={handleSave} disabled={saving || !keyInput} loading={saving}>
+              {t("intelligence.save")}
+            </Button>
           </div>
         )}
 
         {!isConfigured && (
-          <button
-            type="button"
-            onClick={() => shellOpen("https://console.anthropic.com/settings/keys")}
-            className="mt-2 text-xs"
-            style={{
-              fontFamily: "var(--mem-font-body)",
-              color: "var(--mem-accent-indigo)",
-              background: "none",
-              border: "none",
-              padding: 0,
-              cursor: "pointer",
-            }}
-          >
+          <Button variant="ghost" size="sm" onClick={() => shellOpen("https://console.anthropic.com/settings/keys")} className="self-start">
             {t("externalProvider.getKeyLink")}
-          </button>
+          </Button>
         )}
 
         {error && (
-          <p className="mt-2" style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "rgb(239,68,68)" }}>
+          <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-status-danger-text)" }}>
             {error}
           </p>
         )}
 
         {!isConfigured && showNoKeyGuidance && (
           <div
-            className="mt-3 rounded-lg"
+            className="rounded-lg"
             style={{
               padding: "10px 14px",
               backgroundColor: "var(--mem-hover)",
@@ -207,7 +175,7 @@ export function ApiKeyCard({
 
         {isConfigured && showModelChoice && <ModelChoiceSection />}
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -316,33 +284,21 @@ export function OnDeviceModelCard() {
   };
 
   const statusBadge = isLoaded ? t("intelligence.running") : t("intelligence.notLoaded");
-  const statusColor = isLoaded ? "rgb(34,197,94)" : "var(--mem-text-tertiary)";
-  const statusBg = isLoaded ? "rgba(34,197,94,0.1)" : "rgba(156,163,175,0.1)";
 
   return (
-    <section className="bg-[var(--mem-surface)] rounded-xl overflow-hidden border border-[var(--mem-border)]">
-      <div className="px-5 py-4">
-        <div className="flex items-center justify-between mb-1">
+    <Card padding="card">
+      <div className="flex flex-col" style={{ gap: "10px" }}>
+        <div className="flex items-center justify-between">
           <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "13px", color: "var(--mem-text)" }}>
             {t("intelligence.onDeviceModel")}
           </span>
-          <span
-            className="px-1.5 py-0.5 rounded text-[10px] font-medium"
-            style={{
-              fontFamily: "var(--mem-font-mono)",
-              backgroundColor: statusBg,
-              color: statusColor,
-            }}
-          >
-            {statusBadge}
-          </span>
+          <StatusChip state={isLoaded ? { kind: "up" } : { kind: "idle" }} label={statusBadge} />
         </div>
         <p
           style={{
             fontFamily: "var(--mem-font-body)",
             fontSize: "11px",
             color: "var(--mem-text-tertiary)",
-            marginBottom: "10px",
           }}
         >
           {t("intelligence.localModelDescription")}
@@ -403,43 +359,34 @@ export function OnDeviceModelCard() {
           </select>
 
           {needsDownload && (
-            <button
+            <Button
+              variant="primary"
+              size="sm"
               onClick={handleDownload}
               disabled={downloading || !ramOk}
-              className="px-3 py-1.5 rounded-md text-xs font-medium transition-colors"
-              style={{
-                fontFamily: "var(--mem-font-body)",
-                backgroundColor: ramOk ? "var(--mem-accent-indigo)" : "var(--mem-hover)",
-                color: ramOk ? "white" : "var(--mem-text-tertiary)",
-                whiteSpace: "nowrap",
-                flexShrink: 0,
-              }}
+              loading={downloading}
+              className="whitespace-nowrap shrink-0"
               title={!ramOk ? t("intelligence.notEnoughRamTitle") : undefined}
             >
-              {downloading ? t("intelligence.downloading") : t("intelligence.downloadSize", { size: current?.file_size_gb.toFixed(1) })}
-            </button>
+              {t("intelligence.downloadSize", { size: current?.file_size_gb.toFixed(1) })}
+            </Button>
           )}
           {canLoad && (
-            <button
+            <Button
+              variant="primary"
+              size="sm"
               onClick={handleDownload}
               disabled={downloading}
-              className="px-3 py-1.5 rounded-md text-xs font-medium transition-colors"
-              style={{
-                fontFamily: "var(--mem-font-body)",
-                backgroundColor: "var(--mem-accent-indigo)",
-                color: "white",
-                whiteSpace: "nowrap",
-                flexShrink: 0,
-              }}
+              loading={downloading}
+              className="whitespace-nowrap shrink-0"
             >
-              {downloading ? t("intelligence.loading") : t("intelligence.load")}
-            </button>
+              {t("intelligence.load")}
+            </Button>
           )}
         </div>
 
         {downloading && (
           <p
-            className="mt-2"
             style={{
               fontFamily: "var(--mem-font-body)",
               fontSize: "11px",
@@ -450,18 +397,12 @@ export function OnDeviceModelCard() {
           </p>
         )}
         {error && (
-          <p
-            className="mt-2"
-            style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "rgb(239,68,68)" }}
-          >
+          <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-status-danger-text)" }}>
             {error}
           </p>
         )}
         {!ramOk && current && !downloading && (
-          <p
-            className="mt-2"
-            style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "rgb(234,179,8)" }}
-          >
+          <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-status-warning-text)" }}>
             {t("intelligence.ramWarning", {
               model: current.display_name,
               required: current.ram_required_gb.toFixed(0),
@@ -470,6 +411,6 @@ export function OnDeviceModelCard() {
           </p>
         )}
       </div>
-    </section>
+    </Card>
   );
 }

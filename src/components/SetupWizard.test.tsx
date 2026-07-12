@@ -121,7 +121,7 @@ describe("SetupWizard", () => {
   it("lets users save an API key from the intelligence step", async () => {
     renderWizard();
     fireEvent.click(screen.getByText("Get started"));
-    fireEvent.click(screen.getByText("Cloud API"));
+    fireEvent.click(screen.getByText("Anthropic API key"));
 
     fireEvent.change(screen.getByPlaceholderText("sk-ant-api03-..."), {
       target: { value: "sk-ant-test-key" },
@@ -137,31 +137,32 @@ describe("SetupWizard", () => {
     renderWizard();
     fireEvent.click(screen.getByText("Get started"));
 
-    expect(screen.getByText("On this device")).toBeInTheDocument();
-    expect(screen.getByText("Cloud API")).toBeInTheDocument();
-    expect(screen.getByText("Local server")).toBeInTheDocument();
+    expect(screen.getByText("On-device model")).toBeInTheDocument();
+    expect(screen.getByText("Anthropic API key")).toBeInTheDocument();
+    expect(screen.getByText("Your own local server")).toBeInTheDocument();
   });
 
-  it("cloud pane lists Anthropic first and routes non-Anthropic vendors to the external card", async () => {
+  it("cloud pane offers only the Anthropic key card — no dead cloud-vendor picker (§5.2 honesty fix)", async () => {
     renderWizard();
     fireEvent.click(screen.getByText("Get started"));
-    fireEvent.click(screen.getByText("Cloud API"));
+    fireEvent.click(screen.getByText("Anthropic API key"));
 
-    // Anthropic pill renders the native key card by default.
-    expect(screen.getByText("Anthropic")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("sk-ant-api03-...")).toBeInTheDocument();
-
-    // pick OpenAI → AnyProviderCard appears (its title)
-    await userEvent.click(screen.getByText("OpenAI"));
-    expect(await screen.findByText("Any provider")).toBeInTheDocument();
+    // The 7 keyed cloud vendors the daemon can't actually authenticate must
+    // never appear — no vendor pill row exists in this pane at all.
+    expect(screen.queryByText("OpenAI")).not.toBeInTheDocument();
+    expect(screen.queryByText("Groq")).not.toBeInTheDocument();
   });
 
-  it("local pane offers the external card scoped to local presets", async () => {
+  it("local pane offers the local-server card scoped to keyless presets", async () => {
     renderWizard();
     fireEvent.click(screen.getByText("Get started"));
-    fireEvent.click(screen.getByText("Local server"));
+    fireEvent.click(screen.getByText("Your own local server"));
 
-    expect(await screen.findByText("Any provider")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Your own local server" })).toBeInTheDocument();
+    // No key field for any preset in this pane (none of ollama/lmstudio/custom
+    // require a key) — the keyed-vendor story is gone from the wizard too.
+    expect(screen.queryByLabelText("API key")).not.toBeInTheDocument();
   });
 
   it("import step offers chat history and vault side by side", async () => {
@@ -434,8 +435,8 @@ describe("SetupWizard", () => {
     renderWizard();
     fireEvent.click(screen.getByText("Get started"));
     // "local-server variant" — one of the taller intelligence-choice panes.
-    fireEvent.click(screen.getByText("Local server"));
-    await screen.findByText("Any provider");
+    fireEvent.click(screen.getByText("Your own local server"));
+    await screen.findByRole("heading", { name: "Your own local server" });
 
     const continueButton = screen.getByText("Continue");
     const scrollMain = screen.getByTestId("wizard-scroll-main");

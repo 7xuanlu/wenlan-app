@@ -15,14 +15,15 @@ const en = {
     intelligence: {
       title: "Choose how Wenlan thinks",
       description:
-        "Download an on-device model for local intelligence, or bring your own API key for cloud synthesis. You can change this later in Settings.",
-      deviceOption: "On this device",
-      cloudOption: "Cloud API",
-      localOption: "Local server",
+        "An Anthropic API key, your own local server, or an on-device model — you can change this later in Settings.",
+      deviceOption: "On-device model",
+      cloudOption: "Anthropic API key",
+      localOption: "Your own local server",
+      recommended: "Recommended",
       deviceNote:
         "Local models keep inference on your Mac. If you skip this now, Wenlan can still store memories and you can download a model later from Settings.",
       cloudNote:
-        "Bring a key from any provider. Anthropic connects natively; every other vendor runs through the OpenAI-compatible endpoint.",
+        "Your Anthropic API key powers page synthesis. Nothing else leaves your machine unless you also connect a local server.",
       localNote:
         "Point Wenlan at a local server like Ollama or LM Studio. No key, no cloud — inference stays on your machine.",
     },
@@ -112,9 +113,9 @@ const en = {
     indexed: "Indexed {{files}} files · {{memories}} memories",
   },
   externalProvider: {
-    title: "Any provider",
+    title: "Your own local server",
     description:
-      "Route synthesis through any OpenAI-compatible endpoint — cloud vendors or a local server.",
+      "Route synthesis through Ollama, LM Studio, or any OpenAI-compatible local endpoint. No API key required.",
     presetLabel: "Provider",
     endpointLabel: "Endpoint URL",
     modelLabel: "Model",
@@ -123,13 +124,9 @@ const en = {
     modelDiscoveryFailed: "Couldn't list models — type a model name.",
     apiKeyLabel: "API key",
     apiKeyConfiguredPlaceholder: "••••••••  (key stored)",
-    keyNeedsUpgrade:
-      "API keys for cloud providers need Wenlan daemon 0.13+. This preset stays disabled until the runtime updates.",
     test: "Test",
-    testing: "Testing…",
     testOk: "Response: {{response}}",
     save: "Save",
-    saving: "Saving…",
     savedApplied: "Applied — this provider is live.",
     savedRestart: "Saved. Restart Wenlan to apply.",
     anthropicPrecedence:
@@ -137,7 +134,8 @@ const en = {
     getKeyLink: "Get a key →",
     keyHint:
       "Doesn't match the {{vendor}} key format — expected to start with {{prefix}}.",
-    localConnectedChip: "Connected to {{name}} — {{modelCount}} models",
+    localConnectedChip_one: "Connected to {{name}} — {{count}} model",
+    localConnectedChip_other: "Connected to {{name}} — {{count}} models",
     localNotDetectedChip: "Not detected at {{host}} — is {{name}} running?",
     localProbing: "Checking {{name}}…",
   },
@@ -1021,14 +1019,15 @@ const zhHans = {
     intelligence: {
       title: "选择文澜的智能方式",
       description:
-        "下载本地模型以获得本地智能，或使用自己的 API key 进行云端综合。稍后可在设置中更改。",
-      deviceOption: "在本机运行",
-      cloudOption: "云端 API",
-      localOption: "本地服务器",
+        "Anthropic API key、你自己的本地服务器，或本地模型 — 稍后可在设置中更改。",
+      deviceOption: "本地模型",
+      cloudOption: "Anthropic API key",
+      localOption: "你自己的本地服务器",
+      recommended: "推荐",
       deviceNote:
         "本地模型会在你的 Mac 上完成推理。现在跳过也没关系，文澜仍可存储记忆，稍后可在设置中下载模型。",
       cloudNote:
-        "使用任意服务商的密钥。Anthropic 原生接入；其他服务商通过 OpenAI 兼容端点运行。",
+        "你的 Anthropic API key 用于页面综合。除非你还连接了本地服务器，否则不会有其他内容离开你的设备。",
       localNote:
         "将 Wenlan 指向 Ollama 或 LM Studio 等本地服务器。无需密钥、不上云 — 推理保留在你的设备上。",
     },
@@ -1112,8 +1111,8 @@ const zhHans = {
     indexed: "已索引 {{files}} 个文件 · {{memories}} 条记忆",
   },
   externalProvider: {
-    title: "任意服务商",
-    description: "通过任意 OpenAI 兼容端点进行合成 — 云服务商或本地服务器。",
+    title: "你自己的本地服务器",
+    description: "通过 Ollama、LM Studio 或任意 OpenAI 兼容本地端点进行合成。无需 API 密钥。",
     presetLabel: "服务商",
     endpointLabel: "端点 URL",
     modelLabel: "模型",
@@ -1122,20 +1121,17 @@ const zhHans = {
     modelDiscoveryFailed: "无法列出模型 — 请手动输入模型名称。",
     apiKeyLabel: "API 密钥",
     apiKeyConfiguredPlaceholder: "••••••••（已保存密钥）",
-    keyNeedsUpgrade:
-      "云服务商的 API 密钥需要 Wenlan 守护进程 0.13+。运行时更新前此预设保持禁用。",
     test: "测试",
-    testing: "测试中…",
     testOk: "响应：{{response}}",
     save: "保存",
-    saving: "保存中…",
     savedApplied: "已生效 — 此服务商已启用。",
     savedRestart: "已保存。重启 Wenlan 后生效。",
     anthropicPrecedence:
       "设置了 Anthropic 密钥时优先使用 Anthropic — 移除该密钥后此服务商才会生效。",
     getKeyLink: "获取密钥 →",
     keyHint: "这看起来不像 {{vendor}} 密钥 — 应以 {{prefix}} 开头。",
-    localConnectedChip: "已连接到 {{name}} — {{modelCount}} 个模型",
+    localConnectedChip_one: "已连接到 {{name}} — {{count}} 个模型",
+    localConnectedChip_other: "已连接到 {{name}} — {{count}} 个模型",
     localNotDetectedChip: "未在 {{host}} 检测到 — {{name}} 是否正在运行？",
     localProbing: "正在检查 {{name}}…",
   },
@@ -2000,14 +1996,15 @@ const zhHant = {
     intelligence: {
       title: "選擇文瀾的智慧方式",
       description:
-        "下載本機模型以取得本機智慧，或使用自己的 API key 進行雲端綜合。稍後可在設定中更改。",
-      deviceOption: "在本機執行",
-      cloudOption: "雲端 API",
-      localOption: "本機伺服器",
+        "Anthropic API key、你自己的本機伺服器，或本機模型 — 稍後可在設定中更改。",
+      deviceOption: "本機模型",
+      cloudOption: "Anthropic API key",
+      localOption: "你自己的本機伺服器",
+      recommended: "推薦",
       deviceNote:
         "本機模型會在你的 Mac 上完成推理。現在略過也沒關係，文瀾仍可儲存記憶，稍後可在設定中下載模型。",
       cloudNote:
-        "使用任意服務商的金鑰。Anthropic 原生接入;其他服務商透過 OpenAI 相容端點執行。",
+        "你的 Anthropic API key 用於頁面綜合。除非你還連接了本機伺服器，否則不會有其他內容離開你的裝置。",
       localNote:
         "將 Wenlan 指向 Ollama 或 LM Studio 等本機伺服器。無需金鑰、不上雲 — 推理保留在你的裝置上。",
     },
@@ -2091,8 +2088,8 @@ const zhHant = {
     indexed: "已索引 {{files}} 個檔案 · {{memories}} 條記憶",
   },
   externalProvider: {
-    title: "任意服務商",
-    description: "透過任意 OpenAI 相容端點進行合成 — 雲端服務商或本機伺服器。",
+    title: "你自己的本機伺服器",
+    description: "透過 Ollama、LM Studio 或任意 OpenAI 相容本機端點進行合成。無需 API 金鑰。",
     presetLabel: "服務商",
     endpointLabel: "端點 URL",
     modelLabel: "模型",
@@ -2101,20 +2098,17 @@ const zhHant = {
     modelDiscoveryFailed: "無法列出模型 — 請手動輸入模型名稱。",
     apiKeyLabel: "API 金鑰",
     apiKeyConfiguredPlaceholder: "••••••••（已儲存金鑰）",
-    keyNeedsUpgrade:
-      "雲端服務商的 API 金鑰需要 Wenlan 守護程序 0.13+。執行階段更新前此預設保持停用。",
     test: "測試",
-    testing: "測試中…",
     testOk: "回應：{{response}}",
     save: "儲存",
-    saving: "儲存中…",
     savedApplied: "已生效 — 此服務商已啟用。",
     savedRestart: "已儲存。重新啟動 Wenlan 後生效。",
     anthropicPrecedence:
       "設定了 Anthropic 金鑰時優先使用 Anthropic — 移除該金鑰後此服務商才會生效。",
     getKeyLink: "取得金鑰 →",
     keyHint: "這看起來不像 {{vendor}} 金鑰 — 應以 {{prefix}} 開頭。",
-    localConnectedChip: "已連接到 {{name}} — {{modelCount}} 個模型",
+    localConnectedChip_one: "已連接到 {{name}} — {{count}} 個模型",
+    localConnectedChip_other: "已連接到 {{name}} — {{count}} 個模型",
     localNotDetectedChip: "未在 {{host}} 偵測到 — {{name}} 是否正在執行？",
     localProbing: "正在檢查 {{name}}…",
   },

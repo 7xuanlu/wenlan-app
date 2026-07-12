@@ -101,11 +101,23 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   { id: "custom", name: "Custom…", endpoint: "", keyRequired: false, group: "custom" },
 ];
 
+/** Normalize a hand-typed endpoint so equivalent forms resolve to the same
+ *  probe target: default the scheme to http:// and the path to /v1 when
+ *  absent. No further host validation — malformed input still falls
+ *  through to free text/no-match, same as before this existed. */
+export function normalizeEndpoint(raw: string): string {
+  let ep = raw.trim().replace(/\/+$/, "");
+  if (ep === "") return ep;
+  if (!/^https?:\/\//.test(ep)) ep = `http://${ep}`;
+  if (!/^https?:\/\/[^/]+\/.+/.test(ep)) ep = `${ep}/v1`;
+  return ep;
+}
+
 /** Match a saved endpoint back to its preset ("custom" when no match). */
 export function presetForEndpoint(endpoint: string | null): ProviderPreset {
-  const norm = (endpoint ?? "").replace(/\/+$/, "");
+  const norm = normalizeEndpoint(endpoint ?? "");
   return (
-    PROVIDER_PRESETS.find((p) => p.endpoint !== "" && p.endpoint === norm) ??
+    PROVIDER_PRESETS.find((p) => p.endpoint !== "" && normalizeEndpoint(p.endpoint) === norm) ??
     PROVIDER_PRESETS[PROVIDER_PRESETS.length - 1]
   );
 }

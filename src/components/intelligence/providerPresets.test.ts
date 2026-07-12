@@ -3,6 +3,8 @@ import { describe, it, expect } from "vitest";
 import {
   PROVIDER_PRESETS,
   keyPrefixMismatch,
+  normalizeEndpoint,
+  presetForEndpoint,
   type ProviderPreset,
 } from "./providerPresets";
 
@@ -84,5 +86,38 @@ describe("keyPrefixMismatch — §9.1 soft validation", () => {
   });
   it("Mistral never hints (no documented prefix)", () => {
     expect(keyPrefixMismatch(byId("mistral"), "anything")).toBe(false);
+  });
+});
+
+describe("normalizeEndpoint", () => {
+  it("scheme-defaults and path-defaults a bare host:port", () => {
+    expect(normalizeEndpoint("192.168.1.5:11434")).toBe("http://192.168.1.5:11434/v1");
+  });
+  it("path-defaults a scheme-prefixed host with no path", () => {
+    expect(normalizeEndpoint("http://192.168.1.5:11434")).toBe("http://192.168.1.5:11434/v1");
+  });
+  it("leaves a fully-qualified endpoint unchanged", () => {
+    expect(normalizeEndpoint("192.168.1.5:11434/v1")).toBe("http://192.168.1.5:11434/v1");
+  });
+  it("all three hand-typed forms of the same server converge", () => {
+    const forms = ["192.168.1.5:11434", "http://192.168.1.5:11434", "192.168.1.5:11434/v1"];
+    const normalized = new Set(forms.map(normalizeEndpoint));
+    expect(normalized.size).toBe(1);
+  });
+  it("strips trailing slashes before deciding whether a path exists", () => {
+    expect(normalizeEndpoint("http://localhost:11434/v1/")).toBe("http://localhost:11434/v1");
+  });
+  it("passes through an empty string (no endpoint typed yet)", () => {
+    expect(normalizeEndpoint("")).toBe("");
+    expect(normalizeEndpoint("   ")).toBe("");
+  });
+});
+
+describe("presetForEndpoint — normalization applied before matching", () => {
+  it("matches Ollama from a scheme-less, /v1-less hand-typed endpoint", () => {
+    expect(presetForEndpoint("localhost:11434").id).toBe("ollama");
+  });
+  it("still falls back to custom for a genuinely different host", () => {
+    expect(presetForEndpoint("192.168.1.5:11434").id).toBe("custom");
   });
 });
