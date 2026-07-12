@@ -193,6 +193,16 @@ function WelcomeStep({ onNext, hideDots }: { onNext: () => void; hideDots: boole
         >
           {t("setup.tagline")}
         </p>
+        <p
+          style={{
+            fontFamily: "var(--mem-font-body)",
+            fontSize: "15px",
+            color: "var(--mem-text-secondary)",
+            lineHeight: "1.5",
+          }}
+        >
+          {t("setup.welcomeBody")}
+        </p>
       </div>
 
       {/* Privacy badge */}

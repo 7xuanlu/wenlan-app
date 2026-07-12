@@ -100,7 +100,16 @@ describe("SetupWizard", () => {
   it("renders Welcome step by default", () => {
     renderWizard();
     expect(screen.getByText("Welcome to Wenlan")).toBeInTheDocument();
-    expect(screen.getByText(/Where understanding compounds/i)).toBeInTheDocument();
+    expect(
+      screen.getByText("A living knowledge base your AI tools build as they work."),
+    ).toBeInTheDocument();
+    // Wiki-pages-first: the welcome step must say what Wenlan produces
+    // (source-cited pages), not just gesture at "understanding".
+    expect(
+      screen.getByText(
+        "Your AI tools write what they learn into source-cited pages that refresh between sessions.",
+      ),
+    ).toBeInTheDocument();
     expect(screen.getByText("Everything stays on your device")).toBeInTheDocument();
   });
 
@@ -387,6 +396,16 @@ describe("SetupWizard", () => {
 
     expect(screen.getByText("Claude")).toBeInTheDocument();
     expect(screen.queryByText("Back")).not.toBeInTheDocument();
+
+    // allSetBody1/allSetBody2: wiki-pages-first, not memory-first.
+    expect(
+      screen.getByText(
+        "Keep using your AI tools normally. Wenlan turns what they learn into pages you can read and cite.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Pages refresh between sessions, so the next one starts where the last ended."),
+    ).toBeInTheDocument();
   });
 
   it("renders skip-path Done copy without a back button", async () => {
@@ -406,6 +425,18 @@ describe("SetupWizard", () => {
     await waitFor(() => {
       expect(screen.getByText("Wenlan is ready.")).toBeInTheDocument();
     });
+
+    // readyBody1 must not lead with "Memories will appear..." — wiki pages
+    // first, memory second (the memories are kept "behind" the pages).
+    expect(screen.queryByText(/^Memories will appear/i)).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Use your AI tools normally. As they work, Wenlan turns what they learn into source-cited pages — and keeps the memories behind them. You can always return to Settings to connect more tools.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Pages refresh between sessions, so the next one starts where the last ended."),
+    ).toBeInTheDocument();
 
     expect(screen.queryByText("Back")).not.toBeInTheDocument();
   });

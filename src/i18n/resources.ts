@@ -6,7 +6,9 @@ const en = {
   },
   setup: {
     welcomeTitle: "Welcome to Wenlan",
-    tagline: "Wenlan. Where understanding compounds.",
+    tagline: "A living knowledge base your AI tools build as they work.",
+    welcomeBody:
+      "Your AI tools write what they learn into source-cited pages that refresh between sessions.",
     privacyTitle: "Everything stays on your device",
     getStarted: "Get started",
     back: "Back",
@@ -76,14 +78,15 @@ const en = {
     done: {
       readyTitle: "Wenlan is ready.",
       readyBody1:
-        "Use your AI tools normally. Memories will appear in Wenlan as agents save what they learn. You can always return to Settings to connect more tools.",
+        "Use your AI tools normally. As they work, Wenlan turns what they learn into source-cited pages — and keeps the memories behind them. You can always return to Settings to connect more tools.",
       readyBody2:
-        "Wenlan notices patterns, distills them into pages, and links what you know across tools.",
+        "Pages refresh between sessions, so the next one starts where the last ended.",
       openWenlan: "Open Wenlan",
       allSetTitle: "You're all set.",
-      allSetBody1: "Keep using your AI tools normally. Wenlan watches and learns.",
+      allSetBody1:
+        "Keep using your AI tools normally. Wenlan turns what they learn into pages you can read and cite.",
       allSetBody2:
-        "Wenlan notices patterns, distills them into pages, and links what you know across tools.",
+        "Pages refresh between sessions, so the next one starts where the last ended.",
       memoriesImported_one: "{{count}} memory imported",
       memoriesImported_other: "{{count}} memories imported",
       topics: "Topics",
@@ -1033,7 +1036,8 @@ const zhHans = {
   },
   setup: {
     welcomeTitle: "欢迎使用文澜",
-    tagline: "文澜，让理解持续累积。",
+    tagline: "一个由你的 AI 工具在工作中不断构建的活知识库。",
+    welcomeBody: "你的 AI 工具会把学到的内容写成带来源引用的页面，并在会话之间自动刷新。",
     privacyTitle: "所有内容都留在你的设备上",
     getStarted: "开始使用",
     back: "返回",
@@ -1099,12 +1103,12 @@ const zhHans = {
     done: {
       readyTitle: "文澜已准备好。",
       readyBody1:
-        "照常使用你的 AI 工具。代理保存所学内容后，记忆会出现在文澜中。你随时可以回到设置连接更多工具。",
-      readyBody2: "文澜会发现模式，将其蒸馏成页面，并连接你在不同工具中知道的内容。",
+        "照常使用你的 AI 工具。它们工作时，文澜会把学到的内容整理成带来源引用的页面，并保留页面背后的记忆。你随时可以回到设置连接更多工具。",
+      readyBody2: "页面会在会话之间刷新，让下一次对话从上一次结束的地方继续。",
       openWenlan: "打开文澜",
       allSetTitle: "全部设置完成。",
-      allSetBody1: "继续照常使用你的 AI 工具。文澜会观察并学习。",
-      allSetBody2: "文澜会发现模式，将其蒸馏成页面，并连接你在不同工具中知道的内容。",
+      allSetBody1: "继续照常使用你的 AI 工具。文澜会把它们学到的内容变成可阅读、可引用的页面。",
+      allSetBody2: "页面会在会话之间刷新，让下一次对话从上一次结束的地方继续。",
       memoriesImported_one: "已导入 {{count}} 条记忆",
       memoriesImported_other: "已导入 {{count}} 条记忆",
       topics: "主题",
@@ -2033,7 +2037,8 @@ const zhHant = {
   },
   setup: {
     welcomeTitle: "歡迎使用文瀾",
-    tagline: "文瀾，讓理解持續累積。",
+    tagline: "一個由你的 AI 工具在工作中不斷建立的活知識庫。",
+    welcomeBody: "你的 AI 工具會把學到的內容寫成附來源引用的頁面，並在工作階段之間自動更新。",
     privacyTitle: "所有內容都留在你的裝置上",
     getStarted: "開始使用",
     back: "返回",
@@ -2099,12 +2104,12 @@ const zhHant = {
     done: {
       readyTitle: "文瀾已準備好。",
       readyBody1:
-        "照常使用你的 AI 工具。代理儲存所學內容後，記憶會出現在文瀾中。你隨時可以回到設定連接更多工具。",
-      readyBody2: "文瀾會發現模式，將其蒸餾成頁面，並連接你在不同工具中知道的內容。",
+        "照常使用你的 AI 工具。它們工作時，文瀾會把學到的內容整理成附來源引用的頁面，並保留頁面背後的記憶。你隨時可以回到設定連接更多工具。",
+      readyBody2: "頁面會在工作階段之間更新，讓下一次對話從上一次結束的地方繼續。",
       openWenlan: "開啟文瀾",
       allSetTitle: "全部設定完成。",
-      allSetBody1: "繼續照常使用你的 AI 工具。文瀾會觀察並學習。",
-      allSetBody2: "文瀾會發現模式，將其蒸餾成頁面，並連接你在不同工具中知道的內容。",
+      allSetBody1: "繼續照常使用你的 AI 工具。文瀾會把它們學到的內容變成可閱讀、可引用的頁面。",
+      allSetBody2: "頁面會在工作階段之間更新，讓下一次對話從上一次結束的地方繼續。",
       memoriesImported_one: "已匯入 {{count}} 則記憶",
       memoriesImported_other: "已匯入 {{count}} 則記憶",
       topics: "主題",
