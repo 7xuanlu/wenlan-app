@@ -1255,7 +1255,7 @@ describe("ClientSetupList — §9.3 plugin-first matrix", () => {
   it("Claude Code leads with the plugin commands", async () => {
     renderList();
     expect(await screen.findByText("claude plugin marketplace add 7xuanlu/wenlan")).toBeInTheDocument();
-    expect(screen.getByText("claude plugin install wenlan@7xuanlu")).toBeInTheDocument();
+    expect(screen.getByText("claude plugin install wenlan@7xuanlu-wenlan")).toBeInTheDocument();
   });
 
   it("Codex leads with codex mcp add using the real command+args", async () => {
@@ -1268,7 +1268,7 @@ describe("ClientSetupList — §9.3 plugin-first matrix", () => {
     const buttons = await screen.findAllByRole("button", { name: /Copy setup prompt/ });
     await userEvent.click(buttons[0]); // Claude Code card
     expect(mocks.clipboardWrite).toHaveBeenCalledTimes(1);
-    expect(mocks.clipboardWrite.mock.calls[0][0]).toContain("claude plugin install wenlan@7xuanlu");
+    expect(mocks.clipboardWrite.mock.calls[0][0]).toContain("claude plugin install wenlan@7xuanlu-wenlan");
   });
 
   it("GUI clients keep the one-click Set up as their primary action", async () => {
@@ -1284,7 +1284,7 @@ describe("ClientSetupList — §9.3 plugin-first matrix", () => {
         <ClientSetupList />
       </QueryClientProvider>,
     );
-    await screen.findByText("claude plugin install wenlan@7xuanlu");
+    await screen.findByText("claude plugin install wenlan@7xuanlu-wenlan");
     expect(container.textContent).not.toContain(".mcpb");
     expect(container.textContent).not.toContain(".codex-plugin");
   });
@@ -1505,10 +1505,10 @@ en (block at L947):
     promptCopied: "Prompt copied",
     claudeCodePrimary: "Install the Wenlan plugin from your terminal:",
     claudeCodeCommand1: "claude plugin marketplace add 7xuanlu/wenlan",
-    claudeCodeCommand2: "claude plugin install wenlan@7xuanlu",
+    claudeCodeCommand2: "claude plugin install wenlan@7xuanlu-wenlan",
     claudeCodeReload: "Then run /reload-plugins or restart Claude Code.",
     claudeCodePrompt:
-      "Install the Wenlan plugin for me. Run these shell commands directly (the /plugin menu can't be driven by an agent, so use the non-interactive commands): `claude plugin marketplace add 7xuanlu/wenlan` then `claude plugin install wenlan@7xuanlu`. Approve any permission prompts that appear. When it's done, run /reload-plugins or ask me to restart Claude Code.",
+      "Install the Wenlan plugin for me. Run these shell commands directly (the /plugin menu can't be driven by an agent, so use the non-interactive commands): `claude plugin marketplace add 7xuanlu/wenlan` then `claude plugin install wenlan@7xuanlu-wenlan`. Approve any permission prompts that appear. When it's done, run /reload-plugins or ask me to restart Claude Code.",
     codexPrimary: "Add Wenlan to Codex from your terminal:",
     codexCommand: "codex mcp add wenlan -- {{cmd}}",
     codexReload: "Then restart Codex.",
@@ -1523,10 +1523,10 @@ zh-Hans (block at L1893):
     promptCopied: "提示词已复制",
     claudeCodePrimary: "在终端中安装 Wenlan 插件：",
     claudeCodeCommand1: "claude plugin marketplace add 7xuanlu/wenlan",
-    claudeCodeCommand2: "claude plugin install wenlan@7xuanlu",
+    claudeCodeCommand2: "claude plugin install wenlan@7xuanlu-wenlan",
     claudeCodeReload: "然后运行 /reload-plugins 或重启 Claude Code。",
     claudeCodePrompt:
-      "帮我安装 Wenlan 插件。直接运行这些 shell 命令（/plugin 菜单无法由代理操作，请使用非交互式命令）：`claude plugin marketplace add 7xuanlu/wenlan`，然后 `claude plugin install wenlan@7xuanlu`。批准出现的任何权限提示。完成后运行 /reload-plugins 或让我重启 Claude Code。",
+      "帮我安装 Wenlan 插件。直接运行这些 shell 命令（/plugin 菜单无法由代理操作，请使用非交互式命令）：`claude plugin marketplace add 7xuanlu/wenlan`，然后 `claude plugin install wenlan@7xuanlu-wenlan`。批准出现的任何权限提示。完成后运行 /reload-plugins 或让我重启 Claude Code。",
     codexPrimary: "在终端中将 Wenlan 添加到 Codex：",
     codexCommand: "codex mcp add wenlan -- {{cmd}}",
     codexReload: "然后重启 Codex。",
@@ -1541,10 +1541,10 @@ zh-Hant (block at L2838):
     promptCopied: "提示詞已複製",
     claudeCodePrimary: "在終端機中安裝 Wenlan 外掛：",
     claudeCodeCommand1: "claude plugin marketplace add 7xuanlu/wenlan",
-    claudeCodeCommand2: "claude plugin install wenlan@7xuanlu",
+    claudeCodeCommand2: "claude plugin install wenlan@7xuanlu-wenlan",
     claudeCodeReload: "然後執行 /reload-plugins 或重新啟動 Claude Code。",
     claudeCodePrompt:
-      "幫我安裝 Wenlan 外掛。直接執行這些 shell 命令（/plugin 選單無法由代理操作，請使用非互動式命令）：`claude plugin marketplace add 7xuanlu/wenlan`，然後 `claude plugin install wenlan@7xuanlu`。核准出現的任何權限提示。完成後執行 /reload-plugins 或讓我重新啟動 Claude Code。",
+      "幫我安裝 Wenlan 外掛。直接執行這些 shell 命令（/plugin 選單無法由代理操作，請使用非互動式命令）：`claude plugin marketplace add 7xuanlu/wenlan`，然後 `claude plugin install wenlan@7xuanlu-wenlan`。核准出現的任何權限提示。完成後執行 /reload-plugins 或讓我重新啟動 Claude Code。",
     codexPrimary: "在終端機中將 Wenlan 新增到 Codex：",
     codexCommand: "codex mcp add wenlan -- {{cmd}}",
     codexReload: "然後重新啟動 Codex。",
@@ -1624,7 +1624,7 @@ Then add these tests inside `describe("SetupWizard", ...)` (the file's `vi.mock(
     expect(
       await screen.findByText("claude plugin marketplace add 7xuanlu/wenlan"),
     ).toBeInTheDocument();
-    expect(screen.getByText("claude plugin install wenlan@7xuanlu")).toBeInTheDocument();
+    expect(screen.getByText("claude plugin install wenlan@7xuanlu-wenlan")).toBeInTheDocument();
 
     // One-click demoted for CLI clients: checkbox defaults OFF; GUI stays ON.
     const cursorCheckbox = screen.getByRole("checkbox", { name: "Cursor" });

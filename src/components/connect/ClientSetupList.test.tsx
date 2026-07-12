@@ -54,7 +54,7 @@ describe("ClientSetupList — §9.3 plugin-first matrix", () => {
   it("Claude Code leads with the plugin commands", async () => {
     renderList();
     expect(await screen.findByText("claude plugin marketplace add 7xuanlu/wenlan")).toBeInTheDocument();
-    expect(screen.getByText("claude plugin install wenlan@7xuanlu")).toBeInTheDocument();
+    expect(screen.getByText("claude plugin install wenlan@7xuanlu-wenlan")).toBeInTheDocument();
   });
 
   it("Codex leads with codex mcp add using the real command+args", async () => {
@@ -67,7 +67,7 @@ describe("ClientSetupList — §9.3 plugin-first matrix", () => {
     const buttons = await screen.findAllByRole("button", { name: /Copy setup prompt/ });
     await userEvent.click(buttons[0]); // Claude Code card
     expect(mocks.clipboardWrite).toHaveBeenCalledTimes(1);
-    expect(mocks.clipboardWrite.mock.calls[0][0]).toContain("claude plugin install wenlan@7xuanlu");
+    expect(mocks.clipboardWrite.mock.calls[0][0]).toContain("claude plugin install wenlan@7xuanlu-wenlan");
   });
 
   it("GUI clients keep the one-click Set up as their primary action, CLI clients demote it under Advanced", async () => {
@@ -90,7 +90,7 @@ describe("ClientSetupList — §9.3 plugin-first matrix", () => {
 
   it("shipped copy never references .mcpb or .codex-plugin — DOM, the copied prompt, and every locale", async () => {
     const { container } = renderList();
-    await screen.findByText("claude plugin install wenlan@7xuanlu");
+    await screen.findByText("claude plugin install wenlan@7xuanlu-wenlan");
     expect(container.textContent).not.toContain(".mcpb");
     expect(container.textContent).not.toContain(".codex-plugin");
 

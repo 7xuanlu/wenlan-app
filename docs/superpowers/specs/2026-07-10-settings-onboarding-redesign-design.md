@@ -453,7 +453,7 @@ except ChatGPT.com):
 
 | surface | primary (this round) | fallback / advanced |
 | --- | --- | --- |
-| Claude Code | plugin commands (exist today): `claude plugin marketplace add 7xuanlu/wenlan` then `claude plugin install wenlan@7xuanlu` | "Copy setup prompt"; one-click config write moves under Advanced |
+| Claude Code | plugin commands (exist today): `claude plugin marketplace add 7xuanlu/wenlan` then `claude plugin install wenlan@7xuanlu-wenlan` | "Copy setup prompt"; one-click config write moves under Advanced |
 | Codex (CLI + ChatGPT-desktop Codex mode) | `codex mcp add wenlan -- <same command+args as getWenlanMcpEntry>` (works today, no marketplace needed); upgrade copy to `codex plugin marketplace add 7xuanlu/wenlan` once `.codex-plugin/` ships in the daemon repo | "Copy setup prompt"; Codex TOML one-click write under Advanced |
 | Claude Desktop | one-click config write (existing registry entry) until the `.mcpb` bundle ships in the follow-up daemon-repo PR; card copy must not reference `.mcpb` before it exists | manual JSON |
 | Gemini CLI | one-click config write (existing); `gemini extensions install` copy lands when the backlog extension repo exists | manual JSON |
@@ -464,7 +464,7 @@ except ChatGPT.com):
 **"Copy setup prompt"** (user idea, validated as supported plumbing): each CLI
 client card gets a button copying a prompt the user pastes into that agent, e.g.
 Claude Code: "Install the Wenlan plugin: run `claude plugin marketplace add
-7xuanlu/wenlan`, then `claude plugin install wenlan@7xuanlu`, then tell me to run
+7xuanlu/wenlan`, then `claude plugin install wenlan@7xuanlu-wenlan`, then tell me to run
 `/reload-plugins` or restart." Codex: same pattern over `codex mcp add wenlan --
 <command+args>`. Prompt text must mention: the agent uses the non-interactive
 shell verbs (the `/plugin` TUI is not agent-drivable), a reload/restart is needed
