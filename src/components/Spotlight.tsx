@@ -16,8 +16,6 @@ const SOURCE_FILTERS = [
   { key: undefined, label: "All" },
   { key: "local_files", label: "Files" },
   { key: "manual", label: "Captured" },
-  { key: "clipboard", label: "Clipboard" },
-  { key: "screen_capture", label: "Screen" },
   { key: "session_snapshot", label: "Recaps" },
 ] as const;
 

@@ -16,7 +16,6 @@ pub mod mcp_config;
 pub mod privacy;
 pub mod remote_access;
 mod search;
-mod sensor;
 pub mod sources;
 pub mod state;
 pub mod system_info;
