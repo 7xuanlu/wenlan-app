@@ -176,7 +176,17 @@ const HANDLERS: Record<string, (a: any) => Promise<unknown>> = {
 const DEFAULTS: Record<string, unknown> = {
   should_show_wizard: false,
   get_setup_completed: true,
-  get_setup_status: { completed: true },
+  // Shapes below mirror src/lib/tauri.ts exactly. A stub that returns null or the
+  // wrong keys where the Rust command returns a struct doesn't just render empty —
+  // it white-screens the step (RemoteAccessPanel reads status.status unguarded).
+  get_setup_status: {
+    setup_completed: true,
+    mode: "basic-memory",
+    anthropic_key_configured: false,
+    local_model_selected: null,
+    local_model_loaded: null,
+    local_model_cached: false,
+  },
   set_traffic_lights_visible: null,
   set_setup_completed: null,
   get_clipboard_enabled: false,
@@ -198,11 +208,12 @@ const DEFAULTS: Record<string, unknown> = {
   get_api_key: null,
   get_model_choice: [null, null],
   get_external_llm: [null, null],
-  get_on_device_model: null,
+  get_on_device_model: { loaded: null, selected: null, models: [] },
   get_system_info: null,
-  get_remote_access_status: null,
+  get_remote_access_status: { status: "off" },
   get_wenlan_mcp_entry: null,
   detect_mcp_clients_cmd: [],
+  get_wenlan_mcp_entry: null,
   get_avatar_data_url: null,
   get_knowledge_path: null,
   get_session_snapshots: [],
