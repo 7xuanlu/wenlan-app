@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { quickCapture, type Space } from "../../lib/tauri";
+import { Button, Select } from "./settings/primitives";
 
 interface AddMemoryFormProps {
   spaces: Space[];
@@ -69,46 +70,31 @@ export default function AddMemoryForm({ spaces, onClose }: AddMemoryFormProps) {
             <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-tertiary)" }}>
               {t("addMemory.spaceLabel")}
             </span>
-            <select
+            <Select
+              size="sm"
+              aria-label={t("addMemory.spaceLabel")}
               value={domain}
               onChange={(e) => setDomain(e.target.value)}
-              className="bg-transparent outline-none"
-              style={{
-                fontFamily: "var(--mem-font-body)",
-                fontSize: "12px",
-                color: "var(--mem-text-secondary)",
-              }}
             >
               <option value="">{t("addMemory.noSpace")}</option>
               {spaces.map((s) => (
                 <option key={s.id} value={s.name}>{s.name}</option>
               ))}
-            </select>
+            </Select>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={onClose}
-              style={{
-                fontFamily: "var(--mem-font-body)",
-                fontSize: "12px",
-                color: "var(--mem-text-tertiary)",
-              }}
-            >
+            <Button variant="ghost" size="sm" onClick={onClose}>
               {t("addMemory.cancel")}
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={!content.trim()}
+              loading={mutation.isPending}
               onClick={() => content.trim() && mutation.mutate()}
-              disabled={!content.trim() || mutation.isPending}
-              className="px-3 py-1 rounded-md transition-colors duration-150 disabled:opacity-40"
-              style={{
-                fontFamily: "var(--mem-font-body)",
-                fontSize: "12px",
-                color: "white",
-                backgroundColor: "var(--mem-accent-indigo)",
-              }}
             >
               {t("addMemory.save")}
-            </button>
+            </Button>
           </div>
         </div>
       </div>

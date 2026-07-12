@@ -47,4 +47,15 @@ describe("AddMemoryForm", () => {
     expect(screen.queryByPlaceholderText("What do you want to remember?")).not.toBeInTheDocument();
     expect(screen.queryByText("Save")).not.toBeInTheDocument();
   });
+
+  // S8-visual mutation-proof (c): raw color: white is banned outright, and
+  // the native <select> must be gone in favor of the Select primitive.
+  it("has no raw color: white and no native <select> left in the source", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const filePath = path.join(process.cwd(), "src/components/memory/AddMemoryForm.tsx");
+    const source = await fs.readFile(filePath, "utf-8");
+    expect(source).not.toMatch(/color:\s*["']white["']/i);
+    expect(source).not.toMatch(/<select[\s>]/);
+  });
 });

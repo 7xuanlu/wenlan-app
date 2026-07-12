@@ -50,17 +50,22 @@ describe("RemoteAccessPanel", () => {
     await i18n.changeLanguage("en");
   });
 
-  it("renders 'Off' status when disabled", async () => {
+  // S7-visual: off is a setting the user chose, not something the app
+  // probed — the chip-never-lies invariant says a chip's color may only
+  // come from an observation, so "off" renders no chip at all (the Toggle
+  // already communicates it).
+  it("renders no status chip when disabled — the Toggle already says off", async () => {
     renderPanel("compact");
     await waitFor(() => {
-      expect(screen.getByText("Off")).toBeInTheDocument();
+      expect(screen.getByText("Share with web-based AI tools")).toBeInTheDocument();
     });
+    expect(screen.queryByText("Off")).not.toBeInTheDocument();
   });
 
   it("states the no-auth URL boundary before Remote Access is enabled", async () => {
     renderPanel("compact");
     await waitFor(() => {
-      expect(screen.getByText("Off")).toBeInTheDocument();
+      expect(screen.getByText("Share with web-based AI tools")).toBeInTheDocument();
     });
 
     expect(screen.queryByText(/secure tunnel/i)).not.toBeInTheDocument();
@@ -94,9 +99,12 @@ describe("RemoteAccessPanel", () => {
   it("clicking toggle calls toggleRemoteAccess", async () => {
     renderPanel("compact");
     await waitFor(() => {
-      expect(screen.getByText("Off")).toBeInTheDocument();
+      expect(screen.getByText("Share with web-based AI tools")).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole("switch"));
+    // S7-visual: the hand-rolled role="switch" button became the Toggle
+    // primitive, which uses aria-pressed instead (button + aria-pressed,
+    // not the switch pattern).
+    fireEvent.click(screen.getByRole("button", { pressed: false }));
     await waitFor(() => {
       expect(toggleRemoteAccess).toHaveBeenCalledWith(true);
     });
@@ -206,21 +214,23 @@ describe("RemoteAccessPanel", () => {
   // actually renders translated text — not a coincidence of English being the
   // fallback locale — including the security-critical no-auth warning, which
   // must survive translation intact (commit 3a272d0).
-  it("off state: renders translated title and status, not the hardcoded English", async () => {
+  it("off state: renders translated title and warning, no status chip in any locale", async () => {
     await i18n.changeLanguage("zh-Hans");
     renderPanel("compact");
 
     await waitFor(() => {
-      expect(screen.getByText("关闭")).toBeInTheDocument();
+      expect(screen.getByText("与网页版 AI 工具共享")).toBeInTheDocument();
     });
-    expect(screen.getByText("与网页版 AI 工具共享")).toBeInTheDocument();
     expect(
       screen.getByText(
-        "将为 Claude.ai 与 ChatGPT 创建一个无需身份验证的公开 HTTPS 地址。任何拥有该地址的人都能访问 Wenlan;不使用时请关闭远程访问。",
+        "将为 Claude.ai 与 ChatGPT 创建一个无需身份验证的公开 HTTPS 地址。任何拥有该地址的人都能访问 Wenlan；不使用时请关闭远程访问。",
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText("Share with web-based AI tools")).not.toBeInTheDocument();
+    // No chip in either the fallback English or the translated Chinese —
+    // proves "off" really renders nothing, not just an untranslated label.
     expect(screen.queryByText("Off")).not.toBeInTheDocument();
+    expect(screen.queryByText("关闭")).not.toBeInTheDocument();
   });
 
   it("starting state: renders translated 'Connecting…' in zh-Hans", async () => {
@@ -262,7 +272,7 @@ describe("RemoteAccessPanel", () => {
       expect(testRemoteMcpConnection).toHaveBeenCalled();
     });
     await waitFor(() => {
-      expect(screen.getByText("已连接(42 毫秒)")).toBeInTheDocument();
+      expect(screen.getByText("已连接（42 毫秒）")).toBeInTheDocument();
     });
 
     expect(screen.getByText("重新连接")).toBeInTheDocument();
@@ -298,7 +308,7 @@ describe("RemoteAccessPanel", () => {
     await waitFor(() => {
       expect(screen.getByText("已连接")).toBeInTheDocument();
     });
-    expect(screen.getByText("你的 MCP 地址(稳定)")).toBeInTheDocument();
+    expect(screen.getByText("你的 MCP 地址（稳定）")).toBeInTheDocument();
     expect(
       screen.getByText("此地址是稳定的——不会在 Mac 休眠或重启后变化。"),
     ).toBeInTheDocument();
@@ -317,5 +327,32 @@ describe("RemoteAccessPanel", () => {
     });
     expect(screen.getByText("重新连接")).toBeInTheDocument();
     expect(screen.queryByText("Retry")).not.toBeInTheDocument();
+  });
+
+  // S7-visual mutation-proof (b): the down-state chip must surface the
+  // daemon's error text verbatim, not a generic "Error" label.
+  it("error state: surfaces the verbatim daemon error text", async () => {
+    (getRemoteAccessStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
+      status: "error",
+      error: "connection refused: dial tcp 127.0.0.1:7878",
+    });
+    renderPanel("full");
+    await waitFor(() => {
+      expect(
+        screen.getByText("connection refused: dial tcp 127.0.0.1:7878"),
+      ).toBeInTheDocument();
+    });
+  });
+
+  // S7-visual mutation-proof (c): raw hex/white are banned outright — the
+  // Toggle/Button/StatusChip conversion must remove them from the source,
+  // not just hide them behind CSS.
+  it("has no raw #ef4444 or color: white left in the source", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const filePath = path.join(process.cwd(), "src/components/memory/RemoteAccessPanel.tsx");
+    const source = await fs.readFile(filePath, "utf-8");
+    expect(source).not.toMatch(/#ef4444/i);
+    expect(source).not.toMatch(/color:\s*["']white["']/i);
   });
 });

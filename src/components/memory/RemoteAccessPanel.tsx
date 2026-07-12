@@ -10,6 +10,7 @@ import {
   type RemoteAccessStatus,
   type RemoteConnectionTest,
 } from "../../lib/tauri";
+import { Button, StatusChip, Toggle } from "./settings/primitives";
 
 interface Props {
   mode: "compact" | "full";
@@ -127,8 +128,8 @@ export function RemoteAccessPanel({ mode }: Props) {
             <div
               style={{
                 fontFamily: "var(--mem-font-body)",
-                fontSize: "14px",
-                fontWeight: 500,
+                fontSize: "var(--mem-text-lg)",
+                fontWeight: 600,
                 color: "var(--mem-text)",
               }}
             >
@@ -147,20 +148,7 @@ export function RemoteAccessPanel({ mode }: Props) {
             </p>
           </div>
           <div className="mt-0.5">
-            <button
-              role="switch"
-              aria-checked={isOn}
-              onClick={() => toggleMut.mutate(!isOn)}
-              className={`relative w-11 h-[26px] rounded-full transition-colors shrink-0 ${
-                isOn ? "bg-[var(--mem-accent-indigo)]" : "bg-[var(--mem-hover-strong)]"
-              }`}
-            >
-              <span
-                className={`absolute top-[3px] w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${
-                  isOn ? "left-[22px]" : "left-[3px]"
-                }`}
-              />
-            </button>
+            <Toggle enabled={isOn} onToggle={() => toggleMut.mutate(!isOn)} />
           </div>
         </div>
       </div>
@@ -190,7 +178,7 @@ export function RemoteAccessPanel({ mode }: Props) {
               <pre
                 style={{
                   fontFamily: "var(--mem-font-mono)",
-                  fontSize: "12px",
+                  fontSize: "var(--mem-text-sm)",
                   color: "var(--mem-text)",
                   backgroundColor: "var(--mem-hover)",
                   padding: "6px 8px",
@@ -203,63 +191,28 @@ export function RemoteAccessPanel({ mode }: Props) {
               >
                 {displayUrl}
               </pre>
-              <button
+              <Button
+                variant="secondary"
+                size="sm"
                 aria-label={t("remoteAccess.copyUrl")}
                 onClick={handleCopyUrl}
-                className="px-2 py-1 rounded text-xs font-medium transition-colors shrink-0"
-                style={{
-                  fontFamily: "var(--mem-font-body)",
-                  color: urlCopied ? "var(--mem-accent-warm)" : "var(--mem-accent-indigo)",
-                  backgroundColor: urlCopied
-                    ? "rgba(251, 191, 36, 0.15)"
-                    : "rgba(123, 123, 232, 0.1)",
-                }}
               >
                 {urlCopied ? t("remoteAccess.copied") : t("remoteAccess.copyUrl")}
-              </button>
+              </Button>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            <button
+            <Button
+              variant="secondary"
+              size="sm"
+              loading={testResult.kind === "running"}
               onClick={() => testMut.mutate()}
-              disabled={testResult.kind === "running"}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors"
-              style={{
-                fontFamily: "var(--mem-font-body)",
-                color: "var(--mem-text-secondary)",
-                backgroundColor: "var(--mem-hover)",
-              }}
             >
-              {testResult.kind === "running" ? (
-                <>
-                  <svg
-                    className="w-3 h-3 animate-spin"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    aria-hidden="true"
-                  >
-                    <circle
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="3"
-                      opacity="0.25"
-                    />
-                    <path
-                      d="M4 12a8 8 0 018-8"
-                      stroke="currentColor"
-                      strokeWidth="3"
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                  <span>{t("remoteAccess.testing")}</span>
-                </>
-              ) : (
-                <>{t("remoteAccess.testConnection")}</>
-              )}
-            </button>
+              {testResult.kind === "running"
+                ? t("remoteAccess.testing")
+                : t("remoteAccess.testConnection")}
+            </Button>
             {testResult.kind === "ok" && (
               <span
                 className="inline-flex items-center gap-1"
@@ -292,7 +245,7 @@ export function RemoteAccessPanel({ mode }: Props) {
                 style={{
                   fontFamily: "var(--mem-font-body)",
                   fontSize: "12px",
-                  color: "#ef4444",
+                  color: "var(--mem-status-danger-text)",
                 }}
               >
                 <svg
@@ -321,19 +274,14 @@ export function RemoteAccessPanel({ mode }: Props) {
 
           {mode === "full" && (
             <div className="flex items-center gap-3 pt-1">
-              <button
+              <Button
+                variant="secondary"
+                size="sm"
+                loading={toggleMut.isPending}
                 onClick={handleReconnect}
-                disabled={toggleMut.isPending}
-                className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
-                style={{
-                  fontFamily: "var(--mem-font-body)",
-                  color: "var(--mem-text-secondary)",
-                  backgroundColor: "var(--mem-hover)",
-                  opacity: toggleMut.isPending ? 0.5 : 1,
-                }}
               >
                 {t("remoteAccess.reconnect")}
-              </button>
+              </Button>
               <p
                 style={{
                   fontFamily: "var(--mem-font-body)",
@@ -356,29 +304,13 @@ export function RemoteAccessPanel({ mode }: Props) {
       {status.status === "error" && (
         <div className="px-5 pb-4 space-y-2">
           <div className="flex items-center gap-2 flex-wrap">
-            <button
-              onClick={() => toggleMut.mutate(true)}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
-              style={{
-                fontFamily: "var(--mem-font-body)",
-                backgroundColor: "var(--mem-accent-indigo)",
-                color: "white",
-              }}
-            >
+            <Button variant="secondary" size="sm" onClick={() => toggleMut.mutate(true)}>
               {t("remoteAccess.retry")}
-            </button>
+            </Button>
             {mode === "full" && (
-              <button
-                onClick={handleReconnect}
-                className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
-                style={{
-                  fontFamily: "var(--mem-font-body)",
-                  color: "var(--mem-text-secondary)",
-                  backgroundColor: "var(--mem-hover)",
-                }}
-              >
+              <Button variant="secondary" size="sm" onClick={handleReconnect}>
                 {t("remoteAccess.reconnect")}
-              </button>
+              </Button>
             )}
           </div>
         </div>
@@ -386,17 +318,9 @@ export function RemoteAccessPanel({ mode }: Props) {
 
       {mode === "full" && status.status === "off" && (
         <div className="px-5 pb-4">
-          <button
-            onClick={handleReconnect}
-            className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
-            style={{
-              fontFamily: "var(--mem-font-body)",
-              color: "var(--mem-text-secondary)",
-              backgroundColor: "var(--mem-hover)",
-            }}
-          >
+          <Button variant="secondary" size="sm" onClick={handleReconnect}>
             {t("remoteAccess.reconnect")}
-          </button>
+          </Button>
         </div>
       )}
     </div>
@@ -405,67 +329,19 @@ export function RemoteAccessPanel({ mode }: Props) {
 
 function StatusRow({ status }: { status: RemoteAccessStatus }) {
   const { t } = useTranslation();
-  if (status.status === "off") {
-    return (
-      <span
-        style={{
-          fontFamily: "var(--mem-font-body)",
-          fontSize: "13px",
-          color: "var(--mem-text-secondary)",
-        }}
-      >
-        {t("remoteAccess.statusOff")}
-      </span>
-    );
-  }
+  // "off" is a setting the user chose, not something the app probed — the
+  // chip-never-lies invariant means a chip's color may only come from an
+  // observation, so off gets no chip at all (the Toggle already says it).
+  if (status.status === "off") return null;
   if (status.status === "starting") {
-    return (
-      <span className="inline-flex items-center gap-2">
-        <span className="w-2 h-2 rounded-full bg-[var(--mem-accent-amber)] animate-pulse" />
-        <span
-          style={{
-            fontFamily: "var(--mem-font-body)",
-            fontSize: "13px",
-            color: "var(--mem-text-secondary)",
-          }}
-        >
-          {t("remoteAccess.statusConnecting")}
-        </span>
-      </span>
-    );
+    return <StatusChip state={{ kind: "probing" }} label={t("remoteAccess.statusConnecting")} />;
   }
   if (status.status === "connected") {
-    return (
-      <span className="inline-flex items-center gap-2">
-        <span className="w-2 h-2 rounded-full bg-[var(--mem-accent-sage)]" />
-        <span
-          style={{
-            fontFamily: "var(--mem-font-body)",
-            fontSize: "13px",
-            color: "var(--mem-accent-sage)",
-          }}
-        >
-          {t("remoteAccess.statusConnected")}
-        </span>
-      </span>
-    );
+    return <StatusChip state={{ kind: "up" }} label={t("remoteAccess.statusConnected")} />;
   }
-  // error
-  return (
-    <span className="inline-flex items-center gap-2">
-      <span className="w-2 h-2 rounded-full bg-red-500" />
-      <span
-        style={{
-          fontFamily: "var(--mem-font-body)",
-          fontSize: "13px",
-          color: "#ef4444",
-          wordBreak: "break-word",
-        }}
-      >
-        {status.error}
-      </span>
-    </span>
-  );
+  // error — the verbatim daemon error carries the chip; there is no honest
+  // constant word to put beside it, so it stands alone as the label.
+  return <StatusChip state={{ kind: "down" }} label={status.error} />;
 }
 
 function InstructionsBlock({
@@ -510,9 +386,9 @@ function InstructionsBlock({
           className="mt-2 space-y-3 pl-4"
           style={{
             fontFamily: "var(--mem-font-body)",
-            fontSize: "12px",
+            fontSize: "var(--mem-text-sm)",
             color: "var(--mem-text-secondary)",
-            lineHeight: "1.6",
+            lineHeight: "1.5",
           }}
         >
           <div>
