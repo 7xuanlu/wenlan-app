@@ -211,7 +211,6 @@ const DEFAULTS: Record<string, unknown> = {
   get_on_device_model: { loaded: null, selected: null, models: [] },
   get_system_info: null,
   get_remote_access_status: { status: "off" },
-  get_wenlan_mcp_entry: null,
   detect_mcp_clients_cmd: [],
   get_wenlan_mcp_entry: null,
   get_avatar_data_url: null,
