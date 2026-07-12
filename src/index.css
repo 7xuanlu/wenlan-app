@@ -172,6 +172,10 @@ body {
   --mem-text-xl: 20px;   /* page & section titles, stat numerals (serif) */
   --mem-text-2xl: 26px;  /* wizard step titles (serif)           */
 
+  /* ── Tracking (letter-spacing) ──────────────────────────────*/
+  --mem-tracking-caps: 0.08em;    /* uppercase chip text (StatusChip)  */
+  --mem-tracking-eyebrow: 0.14em; /* SectionHeader eyebrows            */
+
   /* ── Motion ───────────────────────────────────────────────*/
   --mem-dur-fast: 150ms;              /* hover, color, border   */
   --mem-dur-enter: 400ms;             /* entrance only          */

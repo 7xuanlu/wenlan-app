@@ -29,23 +29,22 @@ export function Toggle({
   );
 }
 
-export function SettingRow({
-  title,
-  description,
-  enabled,
-  onToggle,
-  statusLine,
-  warning,
-  error,
-}: {
+type SettingRowBaseProps = {
   title: string;
   description: string;
-  enabled: boolean;
-  onToggle: () => void;
   statusLine?: React.ReactNode;
   warning?: string | null;
   error?: string | null;
-}) {
+};
+
+type SettingRowProps = SettingRowBaseProps &
+  (
+    | { enabled: boolean; onToggle: () => void; control?: never } // toggle row (today's API)
+    | { control: React.ReactNode; enabled?: never; onToggle?: never } // custom-control row
+  );
+
+export function SettingRow(props: SettingRowProps) {
+  const { title, description, statusLine, warning, error } = props;
   const rowId = useId();
   const errorId = `${rowId}-error`;
   const warningId = `${rowId}-warning`;
@@ -56,15 +55,19 @@ export function SettingRow({
     <div className="px-5 py-4">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <div style={{ fontFamily: "var(--mem-font-body)", fontSize: "14px", fontWeight: 500, color: "var(--mem-text)" }}>
+          <div style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-md)", fontWeight: 500, color: "var(--mem-text)" }}>
             {title}
           </div>
-          <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-secondary)", marginTop: "2px", lineHeight: "1.5" }}>
+          <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text-secondary)", marginTop: "2px", lineHeight: "1.5" }}>
             {description}
           </p>
         </div>
         <div className="mt-0.5">
-          <Toggle enabled={enabled} onToggle={onToggle} aria-describedby={describedBy} />
+          {"control" in props ? (
+            props.control
+          ) : (
+            <Toggle enabled={props.enabled} onToggle={props.onToggle} aria-describedby={describedBy} />
+          )}
         </div>
       </div>
       {statusLine && <div className="mt-2">{statusLine}</div>}
@@ -93,25 +96,38 @@ export function SettingRow({
   );
 }
 
-export function SectionHeader({ icon, label }: { icon: React.ReactNode; label: string }) {
+export function SectionHeader({
+  icon,
+  label,
+  action,
+}: {
+  icon?: React.ReactNode;
+  label: string;
+  action?: React.ReactNode; // right-aligned slot, e.g. Diagnostics' Refresh button
+}) {
   return (
-    <div className="flex items-center gap-2 mb-3 px-1">
-      <span aria-hidden="true" style={{ color: "var(--mem-text-tertiary)" }}>
-        {icon}
-      </span>
-      <h3
-        style={{
-          fontFamily: "var(--mem-font-mono)",
-          fontSize: "var(--mem-text-2xs)",
-          fontWeight: 500,
-          lineHeight: 1.2,
-          letterSpacing: "0.14em",
-          color: "var(--mem-text-tertiary)",
-          textTransform: "uppercase" as const,
-        }}
-      >
-        {label}
-      </h3>
+    <div className="flex items-center justify-between gap-2 mb-3 px-1">
+      <div className="flex items-center gap-2">
+        {icon && (
+          <span aria-hidden="true" style={{ color: "var(--mem-text-tertiary)" }}>
+            {icon}
+          </span>
+        )}
+        <h3
+          style={{
+            fontFamily: "var(--mem-font-mono)",
+            fontSize: "var(--mem-text-2xs)",
+            fontWeight: 500,
+            lineHeight: 1.2,
+            letterSpacing: "var(--mem-tracking-eyebrow)",
+            color: "var(--mem-text-tertiary)",
+            textTransform: "uppercase" as const,
+          }}
+        >
+          {label}
+        </h3>
+      </div>
+      {action}
     </div>
   );
 }
@@ -326,6 +342,110 @@ export function Input({ mono = false, invalid = false, className, style, ...rest
   );
 }
 
+// ── Select ─────────────────────────────────────────────────────────────
+// Styled native <select> (appearance:none + custom chevron), not a
+// hand-rolled listbox — native keeps the OS keyboard/VoiceOver contract.
+
+export interface SelectProps
+  extends Omit<React.SelectHTMLAttributes<HTMLSelectElement>, "size"> {
+  size?: "sm" | "md"; // md (default): h-32px, radius-md — Input/Button parity
+                      // sm: h-26px, radius-sm — Button sm parity
+  mono?: boolean; // model ids, machine values (mirrors Input.mono)
+  invalid?: boolean; // aria-invalid + danger border (mirrors Input.invalid)
+}
+
+const SELECT_SIZE_CLASS: Record<NonNullable<SelectProps["size"]>, string> = {
+  md: "h-[32px] pl-[10px] pr-[28px] rounded-[var(--mem-radius-md)]",
+  sm: "h-[26px] pl-[8px] pr-[24px] rounded-[var(--mem-radius-sm)]",
+};
+
+export function Select({
+  size = "md",
+  mono = false,
+  invalid = false,
+  className,
+  style,
+  ...rest
+}: SelectProps) {
+  return (
+    <span className="relative inline-flex w-full">
+      <select
+        {...rest}
+        aria-invalid={invalid || undefined}
+        className={[
+          "appearance-none cursor-pointer w-full py-[8px] bg-[var(--mem-bg)] outline-none",
+          "border",
+          invalid ? "border-[var(--mem-status-danger-border)]" : "border-[var(--mem-border)]",
+          "text-[var(--mem-text)]",
+          "transition-[border-color] duration-[var(--mem-dur-fast)]",
+          invalid ? "" : "focus-visible:border-[var(--mem-accent-indigo)]",
+          "focus-visible:outline-2 focus-visible:outline-[var(--mem-focus-ring)] focus-visible:outline-offset-0",
+          SELECT_SIZE_CLASS[size],
+          className ?? "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        style={{
+          fontFamily: mono ? "var(--mem-font-mono)" : "var(--mem-font-body)",
+          fontSize: mono ? "var(--mem-text-sm)" : size === "md" ? "var(--mem-text-base)" : "var(--mem-text-sm)",
+          ...style,
+        }}
+      />
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute right-[10px] top-1/2 -translate-y-1/2 text-[var(--mem-text-tertiary)]"
+      >
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+          <path
+            d="M3 4.5L6 7.5L9 4.5"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </span>
+    </span>
+  );
+}
+
+// ── Tag — static label, closed tone union, no probe vocabulary ─────────
+// The chip-never-lies invariant expressed in the type system: TagTone has
+// no member that maps to the success/danger palette, so a Tag can never
+// impersonate a probe result (see StatusChip below, the only primitive
+// allowed to speak that vocabulary).
+
+export type TagTone = "neutral" | "accent";
+
+export interface TagProps {
+  tone?: TagTone; // default "neutral"
+  children: React.ReactNode;
+}
+
+const TAG_TONE_CLASS: Record<TagTone, string> = {
+  neutral: "bg-transparent text-[var(--mem-text-secondary)] border-[var(--mem-border)]",
+  accent: "bg-[var(--mem-indigo-bg)] text-[var(--mem-accent-indigo)] border-transparent",
+};
+
+export function Tag({ tone = "neutral", children }: TagProps) {
+  return (
+    <span
+      className={[
+        "inline-flex items-center rounded-full border py-[2px] px-[8px]",
+        TAG_TONE_CLASS[tone],
+      ].join(" ")}
+      style={{
+        fontFamily: "var(--mem-font-body)",
+        fontSize: "var(--mem-text-xs)",
+        fontWeight: 500,
+        lineHeight: 1.2,
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
 // ── StatusChip — the chip-never-lies API ──────────────────────────────
 
 export type ProbeState =
@@ -400,7 +520,7 @@ export function StatusChip({ state, label }: StatusChipProps) {
         fontSize: "var(--mem-text-2xs)",
         fontWeight: 500,
         lineHeight: 1.2,
-        letterSpacing: "0.08em",
+        letterSpacing: "var(--mem-tracking-caps)",
       }}
     >
       <span aria-hidden="true" className={`w-1.5 h-1.5 shrink-0 ${tone.dot}`} />
