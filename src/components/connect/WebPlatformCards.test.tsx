@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import "../../i18n";
 
 const mocks = vi.hoisted(() => ({
@@ -68,5 +69,48 @@ describe("WebPlatformCards", () => {
     await waitFor(() => {
       expect(mocks.clipboardWrite).toHaveBeenCalledWith("https://x.trycloudflare.com/mcp");
     });
+  });
+
+  it("Claude card leads with the plugin install steps (Claude card only)", async () => {
+    mocks.getRemoteAccessStatus.mockResolvedValue({
+      status: "connected", tunnel_url: "https://x.trycloudflare.com", token: "t", relay_url: null,
+    });
+    renderCards();
+    expect(
+      await screen.findByText("Step 1 — Install the Wenlan plugin"),
+    ).toBeInTheDocument();
+    // Marketplace repo string, exact li copy.
+    expect(
+      screen.getByText("Enter the marketplace repo 7xuanlu/wenlan and choose Sync"),
+    ).toBeInTheDocument();
+    // Honesty note: skills in chat, full plugin in Cowork.
+    expect(
+      screen.getByText(
+        "The plugin's skills work in chat; Cowork gets the full plugin, including MCP connectors.",
+      ),
+    ).toBeInTheDocument();
+    // Step 2 framing of the existing connector flow.
+    expect(screen.getByText("Step 2 — Connect your memory")).toBeInTheDocument();
+  });
+
+  it("plugin steps render even when the tunnel is off (install is independent of the connector)", async () => {
+    mocks.getRemoteAccessStatus.mockResolvedValue({ status: "off" });
+    renderCards();
+    expect(
+      await screen.findByText("Step 1 — Install the Wenlan plugin"),
+    ).toBeInTheDocument();
+    expect((await screen.findAllByText(/Turn on Remote Access/)).length).toBeGreaterThan(0);
+  });
+
+  it("opens the Claude connector settings via the deep link (step 2)", async () => {
+    mocks.getRemoteAccessStatus.mockResolvedValue({
+      status: "connected", tunnel_url: "https://x.trycloudflare.com", token: "t", relay_url: null,
+    });
+    vi.mocked(shellOpen).mockClear();
+    renderCards();
+    fireEvent.click(await screen.findByRole("button", { name: "Open connector settings" }));
+    expect(shellOpen).toHaveBeenCalledWith(
+      "https://claude.ai/settings/connectors?modal=add-custom-connector",
+    );
   });
 });

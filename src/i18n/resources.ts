@@ -988,6 +988,14 @@ const en = {
     codexReload: "Then restart Codex.",
     codexPrompt:
       "Add the Wenlan MCP server for me. Run this shell command directly (use the non-interactive command, not a menu): `codex mcp add wenlan -- {{cmd}}`. Approve any permission prompts that appear. When it's done, restart Codex.",
+    claudePluginStepTitle: "Step 1 — Install the Wenlan plugin",
+    claudePluginStep1: "Open Directory → Plugins → + Add marketplace",
+    claudePluginStep2: "Enter the marketplace repo 7xuanlu/wenlan and choose Sync",
+    claudePluginStep3: "Install Wenlan from the marketplace",
+    claudePluginNote:
+      "The plugin's skills work in chat; Cowork gets the full plugin, including MCP connectors.",
+    claudeConnectorStepTitle: "Step 2 — Connect your memory",
+    openConnectorSettings: "Open connector settings",
   },
 };
 
@@ -1954,6 +1962,13 @@ const zhHans = {
     codexReload: "然后重启 Codex。",
     codexPrompt:
       "帮我添加 Wenlan MCP 服务器。直接运行这条 shell 命令（使用非交互式命令，而非菜单）：`codex mcp add wenlan -- {{cmd}}`。批准出现的任何权限提示。完成后重启 Codex。",
+    claudePluginStepTitle: "第 1 步 — 安装 Wenlan 插件",
+    claudePluginStep1: "打开 Directory → 插件 → 「+ 添加市场」",
+    claudePluginStep2: "输入市场仓库 7xuanlu/wenlan，然后选择同步",
+    claudePluginStep3: "从市场安装 Wenlan",
+    claudePluginNote: "插件的技能可在聊天中使用；Cowork 支持完整插件（含 MCP 连接器）。",
+    claudeConnectorStepTitle: "第 2 步 — 连接你的记忆",
+    openConnectorSettings: "打开连接器设置",
   },
 };
 
@@ -2920,6 +2935,13 @@ const zhHant = {
     codexReload: "然後重新啟動 Codex。",
     codexPrompt:
       "幫我新增 Wenlan MCP 伺服器。直接執行這條 shell 命令（使用非互動式命令，而非選單）：`codex mcp add wenlan -- {{cmd}}`。核准出現的任何權限提示。完成後重新啟動 Codex。",
+    claudePluginStepTitle: "第 1 步 — 安裝 Wenlan 外掛",
+    claudePluginStep1: "開啟 Directory → 外掛 → 「+ 新增市集」",
+    claudePluginStep2: "輸入市集儲存庫 7xuanlu/wenlan，然後選擇同步",
+    claudePluginStep3: "從市集安裝 Wenlan",
+    claudePluginNote: "外掛的技能可在聊天中使用；Cowork 支援完整外掛（含 MCP 連接器）。",
+    claudeConnectorStepTitle: "第 2 步 — 連接你的記憶",
+    openConnectorSettings: "開啟連接器設定",
   },
 };
 
