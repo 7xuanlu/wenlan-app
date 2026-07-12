@@ -85,9 +85,15 @@ describe("WebPlatformCards", () => {
     expect(
       await screen.findByText("Step 1 — Add Wenlan to claude.ai"),
     ).toBeInTheDocument();
-    // Marketplace repo string, exact li copy.
+    // Marketplace repo string, exact li copy. The repo MUST be
+    // 7xuanlu/claude-plugins: the wenlan repo's own .claude-plugin/marketplace.json
+    // was deleted on 2026-06-15 (backend 048d77a8, "retire self-marketplace"), so
+    // 7xuanlu/wenlan no longer resolves as a marketplace and this step dead-ends.
+    // This assertion previously pinned that dead string.
     expect(
-      screen.getByText("Enter the marketplace repo 7xuanlu/wenlan and choose Sync"),
+      screen.getByText(
+        "Enter the marketplace repo 7xuanlu/claude-plugins and choose Sync",
+      ),
     ).toBeInTheDocument();
     // Honesty note: skills in chat, MCP connectors in Cowork. Never calls
     // Wenlan itself "a plugin" (standing copy rule).
