@@ -89,7 +89,15 @@ This is the complaint made concrete. Each is a rule that exists but is applied u
   per-command copy button** — only a single "Copy setup prompt" per card.
 - **"Or write the config for me"** is the escape hatch, rendered as muted caption text with
   no button affordance. It reads as a label, not a control.
-- **"Import Memories" card has no affordance at all** — title, description, no button.
+- ~~**"Import Memories" card has no affordance at all** — title, description, no button.~~
+  **Retracted — my own harness caused this.** The button is real
+  (`SourcesSection.tsx:26-30`) but conditional on an `onImport` prop, and the live caller
+  passes it (`Main.tsx:492`). My screenshot came from the TEMP `?settings=` route I wrote,
+  which called `<SettingsPage section={s} onBack={() => {}} />` with no `onImport`. The
+  product is fine; my fixture was not.
+  Latent footgun worth noting but NOT fixed here: `{onImport && …}` means any caller that
+  forgets the prop silently renders a card whose entire purpose — the button — is absent.
+  A required prop would turn that into a compile error.
 - **The default contradicts the recommendation.** On the intelligence step, *On-device
   model* is pre-selected while *Anthropic API key* wears the "Recommended" badge.
 - **The wizard ends twice.** `verify` ("You're all set." → Get started) and `done`
