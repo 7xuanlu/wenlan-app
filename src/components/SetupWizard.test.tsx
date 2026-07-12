@@ -607,6 +607,88 @@ describe("SetupWizard", () => {
     expect(screen.queryByText("codex-mcp-client")).not.toBeInTheDocument();
   });
 
+  // Regression: ConnectStep used to feed resolveAgentDisplayName the Rust
+  // *friendly* name ("Gemini CLI") instead of the canonical client_type
+  // slug ("gemini_cli"). Since prettifySlug only splits on `-`/`_`, a
+  // friendly name with a space collapses to one token and gets mangled
+  // ("Gemini cli"). This exercises the real ConnectStep → DoneStep path
+  // (not resolveAgentDisplayName directly), which is the gap that let it
+  // ship — VerifyStep already passed the correct slug.
+  it("done: tools connected via the batch-write flow show correctly-capitalized names, not mangled friendly names", async () => {
+    (detectMcpClients as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        name: "Claude Desktop",
+        client_type: "claude_desktop",
+        config_path: "/path/to/claude_desktop_config.json",
+        detected: true,
+        already_configured: false,
+      },
+      {
+        name: "Gemini CLI",
+        client_type: "gemini_cli",
+        config_path: "/path/to/gemini/settings.json",
+        detected: true,
+        already_configured: false,
+      },
+    ]);
+
+    renderWizard({ initialStep: "connect" });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Connect 2 tools" })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Connect 2 tools" }));
+
+    // Successful connect auto-advances to verify.
+    await waitFor(() => {
+      expect(screen.getByText("Waiting for your first agent...")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText("Skip"));
+
+    await waitFor(() => {
+      expect(screen.getByText("You're all set.")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("Claude Desktop")).toBeInTheDocument();
+    expect(screen.getByText("Gemini CLI")).toBeInTheDocument();
+    expect(screen.queryByText("Claude desktop")).not.toBeInTheDocument();
+    expect(screen.queryByText("Gemini cli")).not.toBeInTheDocument();
+  });
+
+  // Same bug, the other call site: a client that's *already configured*
+  // (so onConnected fires from ConnectStep's mount effect, not the
+  // batch-write flow) must also resolve from client_type.
+  it("done: an already-configured tool's name also resolves from client_type, not the friendly Rust name", async () => {
+    (detectMcpClients as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        name: "Gemini CLI",
+        client_type: "gemini_cli",
+        config_path: "/path/to/gemini/settings.json",
+        detected: true,
+        already_configured: true,
+      },
+    ]);
+
+    renderWizard({ initialStep: "connect" });
+
+    await waitFor(() => {
+      expect(screen.getByText("Configured")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText("Continue"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Waiting for your first agent...")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText("Skip"));
+
+    await waitFor(() => {
+      expect(screen.getByText("You're all set.")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("Gemini CLI")).toBeInTheDocument();
+    expect(screen.queryByText("Gemini cli")).not.toBeInTheDocument();
+  });
+
   it("intelligence choice tiles signal selection via aria-pressed, not color alone", async () => {
     renderWizard();
     fireEvent.click(screen.getByText("Get started"));

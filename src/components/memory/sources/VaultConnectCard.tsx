@@ -202,7 +202,7 @@ export default function VaultConnectCard({ variant, onConnected }: Props) {
         </p>
       )}
 
-      {detection && !detecting && (
+      {detection && !detecting && !pickedVault && (
         <div style={{ fontSize: "12px", fontFamily: "var(--mem-font-body)", display: "flex", flexDirection: "column", gap: "2px" }}>
           {detection.isVault && (
             <span style={{ color: "var(--mem-accent-indigo)" }}>{t("vaultConnect.detectedVault")}</span>

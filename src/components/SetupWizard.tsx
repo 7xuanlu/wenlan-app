@@ -511,7 +511,7 @@ function ConnectStep({
     if (!clients) return;
     const configuredNames = clients
       .filter((client) => client.already_configured)
-      .map((client) => client.name);
+      .map((client) => client.client_type);
     if (configuredNames.length > 0) {
       onConnected(configuredNames);
     }
@@ -598,7 +598,7 @@ function ConnectStep({
           delete next[client.client_type];
           return next;
         });
-        newlyConnected.push(client.name);
+        newlyConnected.push(client.client_type);
       } catch (err) {
         hadErrors = true;
         setConnectErrors((prev) => ({

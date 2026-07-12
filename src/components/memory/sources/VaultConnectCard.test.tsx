@@ -155,6 +155,61 @@ describe("VaultConnectCard", () => {
     await waitFor(() => expect(mocks.addSource).toHaveBeenCalledWith("directory", "/v"));
   });
 
+  // Regression: handleBrowse is async — it awaits detectVault(selected) then
+  // unconditionally setDetection(...). If the user picks a vault chip while
+  // that scan is still in flight, the abandoned promise later resolves and
+  // overwrites `detection` with results for the folder the user never ended
+  // up choosing, contradicting the "Obsidian vault — <name>" line right
+  // below it. Submission is unaffected (handleConnect keys off
+  // pickedVault/path) — this is display-only.
+  it("a browse scan that resolves after a vault chip was already picked does not overwrite the picked-vault display with stale info", async () => {
+    mocks.detectObsidianVaults.mockResolvedValue([
+      { name: "Work Notes", path: "/Users/x/Vaults/Work Notes" },
+    ]);
+    let resolveDetect!: (value: {
+      isVault: boolean;
+      sourceType: string;
+      docCount: number;
+      countCapped: boolean;
+      hasValidDoc: boolean;
+      unreadable: boolean;
+    }) => void;
+    mocks.detectVault.mockReturnValue(
+      new Promise((resolve) => {
+        resolveDetect = resolve;
+      }),
+    );
+
+    renderCard();
+    await waitFor(() => expect(screen.getByText("Work Notes")).toBeInTheDocument());
+
+    // Start a folder browse — detectVault() is now in flight and won't
+    // resolve until resolveDetect is called below.
+    await userEvent.click(screen.getByText("Browse…"));
+    await waitFor(() => expect(mocks.detectVault).toHaveBeenCalledTimes(1));
+
+    // Before that scan finishes, the user picks a real vault chip instead —
+    // this is the discarding action.
+    await userEvent.click(screen.getByText("Work Notes"));
+    await waitFor(() =>
+      expect(screen.getByText(/Obsidian vault — Work Notes/)).toBeInTheDocument()
+    );
+
+    // Now the abandoned browse-detection promise resolves, with results for
+    // the folder the user never ended up choosing.
+    resolveDetect({
+      isVault: false, sourceType: "directory", docCount: 42,
+      countCapped: false, hasValidDoc: false, unreadable: false,
+    });
+    await waitFor(() => expect(mocks.detectVault).toHaveResolvedTimes(1));
+
+    // The picked-vault line is still the source of truth...
+    expect(screen.getByText(/Obsidian vault — Work Notes/)).toBeInTheDocument();
+    // ...and the stale detection result for the discarded folder must not
+    // render alongside it.
+    expect(screen.queryByText(/42 supported files/)).not.toBeInTheDocument();
+  });
+
   // The chip row is conditional on detection, so it cannot be what tells a user
   // that Obsidian is supported — someone with Obsidian installed but no readable
   // registry entry would see no mention of it at all. Support is stated
