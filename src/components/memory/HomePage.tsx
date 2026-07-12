@@ -76,7 +76,7 @@ export default function HomePage({
     refetchInterval: 30_000,
   });
 
-  const { data: recentConcepts = [] } = useQuery({
+  const { data: recentConcepts = [], isLoading: recentConceptsLoading } = useQuery({
     queryKey: ["recent-concepts"],
     queryFn: () => listPages("active", undefined, 1000),
     refetchInterval: 10_000,
@@ -176,6 +176,14 @@ export default function HomePage({
       </button>
     </div>
   ) : null;
+
+  // The "recent-concepts" query has never resolved right after onboarding
+  // (HomePage isn't mounted during the wizard), so its default `[]` would
+  // otherwise make hasPages look like "no pages" and flash the never-
+  // onboarded seed state before the real page list arrives.
+  if (recentConceptsLoading) {
+    return null;
+  }
 
   if (hasPages) {
     return (
