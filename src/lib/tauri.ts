@@ -454,19 +454,6 @@ export async function rebuildActivities(): Promise<number> {
   return invoke("rebuild_activities");
 }
 
-export interface WorkingMemoryEntry {
-  timestamp: number;
-  source: string;
-  app_name: string;
-  window_title: string;
-  text_snippet: string;
-  source_id: string;
-}
-
-export async function getWorkingMemory(): Promise<WorkingMemoryEntry[]> {
-  return invoke("get_working_memory");
-}
-
 export type CaptureStats = Record<string, number>;
 
 export async function getCaptureStats(): Promise<CaptureStats> {

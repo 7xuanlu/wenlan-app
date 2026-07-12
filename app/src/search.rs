@@ -2618,22 +2618,7 @@ fn percent_encode(s: &str) -> String {
     out
 }
 
-// ── Working memory / sessions ─────────────────────────────────────────
-
-#[tauri::command]
-pub async fn get_working_memory(
-    state: tauri::State<'_, State>,
-) -> Result<Vec<wenlan_types::working_memory::WorkingMemoryEntry>, String> {
-    // Working memory is in-process state populated by the context consumer
-    // (`router/intent.rs`). Sensors run only in the app process, so this
-    // is served from the app's local rolling buffer rather than an HTTP endpoint.
-    let wm_handle = {
-        let s = state.read().await;
-        s.working_memory.clone()
-    };
-    let mut wm = wm_handle.lock().await;
-    Ok(wm.get_recent())
-}
+// ── Sessions ───────────────────────────────────────────────────────────
 
 #[tauri::command]
 pub async fn get_session_snapshots(

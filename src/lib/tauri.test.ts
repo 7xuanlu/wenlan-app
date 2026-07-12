@@ -467,14 +467,6 @@ describe('activities', () => {
   });
 });
 
-describe('getWorkingMemory', () => {
-  it('calls invoke', async () => {
-    mockInvoke.mockResolvedValue([]);
-    await tauri.getWorkingMemory();
-    expect(mockInvoke).toHaveBeenCalledWith('get_working_memory');
-  });
-});
-
 describe('getCaptureStats', () => {
   it('calls invoke', async () => {
     mockInvoke.mockResolvedValue({});

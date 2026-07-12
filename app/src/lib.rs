@@ -15,7 +15,6 @@ mod lifecycle;
 pub mod mcp_config;
 pub mod privacy;
 pub mod remote_access;
-mod router;
 mod search;
 mod sensor;
 pub mod sources;
@@ -24,7 +23,6 @@ pub mod system_info;
 // Public surface consumed by tray_menu (Task 15); suppress dead_code until then.
 #[allow(dead_code)]
 pub(crate) mod tray_health;
-mod trigger;
 mod updater;
 
 use state::AppState;
@@ -402,36 +400,13 @@ pub fn run() {
                 app.state();
             let watcher_clone = watcher_state.inner().clone();
 
-            // ── Unified trigger channel ──
-            let (trigger_tx, trigger_rx) =
-                tokio::sync::mpsc::channel::<trigger::types::TriggerEvent>(32);
-            let (bundle_tx, bundle_rx) =
-                tokio::sync::mpsc::channel::<router::bundle::ContextBundle>(8);
-
-            // Smart router (tokio task)
-            let router_state = state_clone.clone();
-            tauri::async_runtime::spawn(router::intent::run_router(
-                trigger_rx,
-                bundle_tx,
-                router_state,
-            ));
-
-            // Context consumer (tokio task)
-            let consumer_state = state_clone.clone();
-            tauri::async_runtime::spawn(router::intent::run_context_consumer(
-                bundle_rx,
-                consumer_state,
-            ));
-
-            // Save trigger_tx and app_handle
-            let trigger_tx_for_state = trigger_tx.clone();
+            // Save app_handle
             {
                 let state_for_handle = state_clone.clone();
                 let app_handle = handle.clone();
                 tauri::async_runtime::block_on(async {
                     let mut s = state_for_handle.write().await;
                     s.app_handle = Some(app_handle);
-                    s.trigger_tx = Some(trigger_tx_for_state);
                 });
             }
 
@@ -842,7 +817,6 @@ pub fn run() {
             search::suggest_tags,
             search::dismiss_quick_capture,
             search::position_quick_capture,
-            search::get_working_memory,
             search::get_session_snapshots,
             search::get_snapshot_captures,
             search::get_snapshot_captures_with_content,

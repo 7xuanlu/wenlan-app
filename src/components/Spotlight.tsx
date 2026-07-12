@@ -3,7 +3,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { resizeWindow } from "../lib/resizeWindow";
 import { useSearch } from "../hooks/useSearch";
-import { openFile, clipboardWrite, getWorkingMemory, getSessionSnapshots, searchEntities, type IndexedFileInfo } from "../lib/tauri";
+import { openFile, clipboardWrite, getSessionSnapshots, searchEntities, type IndexedFileInfo } from "../lib/tauri";
 import { useEscapeToHide } from "../hooks/useShortcut";
 import SearchInput from "./SearchInput";
 import ResultList from "./ResultList";
@@ -20,16 +20,6 @@ const SOURCE_FILTERS = [
   { key: "screen_capture", label: "Screen" },
   { key: "session_snapshot", label: "Recaps" },
 ] as const;
-
-const SOURCE_BADGE_STYLES: Record<string, { bg: string; text: string }> = {
-  ambient: { bg: "var(--badge-screen)", text: "var(--badge-screen-text)" },
-  focus_capture: { bg: "var(--badge-clipboard)", text: "var(--badge-clipboard-text)" },
-  hotkey_capture: { bg: "var(--badge-capture)", text: "var(--badge-capture-text)" },
-  snip_capture: { bg: "var(--badge-capture)", text: "var(--badge-capture-text)" },
-  clipboard: { bg: "var(--badge-clipboard)", text: "var(--badge-clipboard-text)" },
-  quick_thought: { bg: "var(--badge-capture)", text: "var(--badge-capture-text)" },
-  session_snapshot: { bg: "var(--badge-recap)", text: "var(--badge-recap-text)" },
-};
 
 function relativeTime(ts: number): string {
   const diff = Math.floor(Date.now() / 1000) - ts;
@@ -53,12 +43,6 @@ export default function Spotlight({ onOpenMemory, onOpenPage, onOpenRecap, onEnt
   const [toast, setToast] = useState<string | null>(null);
   const { query, setQuery, results, isLoading } = useSearch(sourceFilter);
   const containerRef = useRef<HTMLDivElement>(null);
-
-  const { data: workingMemory = [] } = useQuery({
-    queryKey: ["workingMemory"],
-    queryFn: getWorkingMemory,
-    refetchInterval: 5000,
-  });
 
   const { data: snapshots = [] } = useQuery({
     queryKey: ["sessionSnapshots"],
@@ -94,7 +78,7 @@ export default function Spotlight({ onOpenMemory, onOpenPage, onOpenRecap, onEnt
       }
     }, 50);
     return () => clearTimeout(timer);
-  }, [query, results, isLoading, workingMemory, snapshots, entityResults]);
+  }, [query, results, isLoading, snapshots, entityResults]);
 
   // Reset selection when results change
   useEffect(() => {
@@ -197,7 +181,7 @@ export default function Spotlight({ onOpenMemory, onOpenPage, onOpenRecap, onEnt
 
   const hasResults = results.length > 0;
   const hasEntityResults = entityResults.length > 0;
-  const hasRecents = query.length === 0 && (snapshots.length > 0 || workingMemory.length > 0);
+  const hasRecents = query.length === 0 && snapshots.length > 0;
   const showChrome = hasResults || hasEntityResults || query.length > 0 || hasRecents;
 
   return (
@@ -362,47 +346,6 @@ export default function Spotlight({ onOpenMemory, onOpenPage, onOpenRecap, onEnt
                   )}
                 </div>
               ))}
-            </div>
-          )}
-
-          {/* Just Now section */}
-          {workingMemory.length > 0 && (
-            <div className="animate-[fade-in_120ms_ease-out]">
-              <div className="px-4 pt-3 pb-1.5">
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)]/70">
-                  Just Now
-                </span>
-              </div>
-              {workingMemory.slice(0, 3).map((entry) => {
-                const badge = SOURCE_BADGE_STYLES[entry.source] ?? { bg: "var(--overlay-active)", text: "var(--text-tertiary)" };
-                return (
-                <button
-                  key={entry.source_id}
-                  onClick={() => setQuery(`${entry.app_name} ${entry.window_title}`)}
-                  className="w-full text-left px-4 py-2.5 hover:bg-[var(--overlay-subtle)] transition-colors duration-100 last:border-b-0"
-                >
-                  <div className="flex items-center gap-2.5 mb-1">
-                    <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full" style={{ background: badge.bg, color: badge.text }}>
-                      {entry.source === "ambient" ? "Screen" : entry.source === "clipboard" ? "Clip" : entry.source === "quick_thought" ? "Note" : "Capture"}
-                    </span>
-                    <span className="text-[13px] font-medium text-[var(--text-primary)] truncate">
-                      {entry.app_name}
-                    </span>
-                    <span className="text-[11px] text-[var(--text-tertiary)] ml-auto shrink-0">
-                      {relativeTime(entry.timestamp)}
-                    </span>
-                  </div>
-                  <div className="text-[12px] text-[var(--text-secondary)] truncate pl-0.5">
-                    {entry.window_title}
-                  </div>
-                  {entry.text_snippet && (
-                    <div className="text-[11px] text-[var(--text-tertiary)] truncate mt-0.5 pl-0.5">
-                      {entry.text_snippet.split("\n")[0]}
-                    </div>
-                  )}
-                </button>
-                );
-              })}
             </div>
           )}
 

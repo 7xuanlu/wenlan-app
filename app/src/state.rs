@@ -11,9 +11,7 @@ use crate::remote_access::RemoteAccessState;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
 use tauri::Emitter;
-use wenlan_types::working_memory::WorkingMemory;
 
 use crate::activity::{Activity, ActivitySummary, ACTIVITY_GAP_SECS};
 use crate::sources::{DataSource, SourceStatus};
@@ -53,19 +51,8 @@ pub struct AppState {
     pub current_activity: Option<Activity>,
     pub completed_activities: Vec<Activity>,
     pub app_handle: Option<tauri::AppHandle>,
-    /// Unified trigger channel sender.
-    pub trigger_tx: Option<tokio::sync::mpsc::Sender<crate::trigger::types::TriggerEvent>>,
-    /// Last context bundle received from the router.
-    pub last_context_bundle: Option<crate::router::bundle::ContextBundle>,
     /// Remote access tunnel state.
     pub remote_access: tokio::sync::Mutex<RemoteAccessState>,
-    /// Rolling in-memory buffer of recent captures for zero-query Spotlight.
-    ///
-    /// Populated by the context consumer (`router/intent.rs`) when it ingests
-    /// a screen/quick-thought capture. Served by the `get_working_memory`
-    /// Tauri command. Lives in the app process because only the app has
-    /// active sensors — captures happen only in the app process.
-    pub working_memory: Arc<tokio::sync::Mutex<WorkingMemory>>,
 }
 
 impl Default for AppState {
@@ -88,10 +75,7 @@ impl Default for AppState {
             current_activity: None,
             completed_activities: vec![],
             app_handle: None,
-            trigger_tx: None,
-            last_context_bundle: None,
             remote_access: tokio::sync::Mutex::new(RemoteAccessState::default()),
-            working_memory: Arc::new(tokio::sync::Mutex::new(WorkingMemory::new())),
         }
     }
 }
