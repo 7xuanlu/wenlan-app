@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, within, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SetupWizard } from "./SetupWizard";
@@ -131,7 +131,7 @@ describe("SetupWizard", () => {
   it("lets users save an API key from the intelligence step", async () => {
     renderWizard();
     fireEvent.click(screen.getByText("Get started"));
-    fireEvent.click(screen.getByText("Anthropic API key"));
+    fireEvent.click(screen.getByText("Cloud model"));
 
     fireEvent.change(screen.getByPlaceholderText("sk-ant-api03-..."), {
       target: { value: "sk-ant-test-key" },
@@ -148,14 +148,26 @@ describe("SetupWizard", () => {
     fireEvent.click(screen.getByText("Get started"));
 
     expect(screen.getByText("On-device model")).toBeInTheDocument();
-    expect(screen.getByText("Anthropic API key")).toBeInTheDocument();
+    expect(screen.getByText("Cloud model")).toBeInTheDocument();
     expect(screen.getByText("Your own local server")).toBeInTheDocument();
+  });
+
+  it("recommends on-device — the same tile that's selected by default, not cloud", async () => {
+    renderWizard();
+    fireEvent.click(screen.getByText("Get started"));
+
+    const deviceButton = screen.getByRole("button", { name: /On-device model/ });
+    const cloudButton = screen.getByRole("button", { name: "Cloud model" });
+
+    expect(deviceButton).toHaveAttribute("aria-pressed", "true");
+    expect(within(deviceButton).getByText("Recommended")).toBeInTheDocument();
+    expect(within(cloudButton).queryByText("Recommended")).not.toBeInTheDocument();
   });
 
   it("cloud pane offers only the Anthropic key card — no dead cloud-vendor picker (§5.2 honesty fix)", async () => {
     renderWizard();
     fireEvent.click(screen.getByText("Get started"));
-    fireEvent.click(screen.getByText("Anthropic API key"));
+    fireEvent.click(screen.getByText("Cloud model"));
 
     expect(screen.getByPlaceholderText("sk-ant-api03-...")).toBeInTheDocument();
     // The 7 keyed cloud vendors the daemon can't actually authenticate must
@@ -555,8 +567,8 @@ describe("SetupWizard", () => {
     renderWizard();
     fireEvent.click(screen.getByText("Get started"));
 
-    const deviceButton = screen.getByRole("button", { name: "On-device model" });
-    const cloudButton = screen.getByRole("button", { name: /Anthropic API key/ });
+    const deviceButton = screen.getByRole("button", { name: /On-device model/ });
+    const cloudButton = screen.getByRole("button", { name: "Cloud model" });
 
     expect(deviceButton).toHaveAttribute("aria-pressed", "true");
     expect(cloudButton).toHaveAttribute("aria-pressed", "false");

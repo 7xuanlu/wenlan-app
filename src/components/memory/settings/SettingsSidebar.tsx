@@ -259,12 +259,15 @@ export default function SettingsSidebar({
           })}
         </nav>
 
-        {/* Bottom brand and privacy reassurance — pinned. Mirrors main Sidebar pattern. */}
+        {/* Bottom brand strip — pinned. Mirrors main Sidebar pattern. The
+            privacy note used to live here too, but it duplicated (and was
+            worded more loosely than) the per-section footer in
+            SettingsPage.tsx, so the claim now appears in exactly one place. */}
         <div
           className="px-4 pt-3 pb-4 flex-shrink-0"
           style={{ borderTop: "1px solid var(--mem-border)" }}
         >
-          <div className="flex items-center justify-between gap-2" style={{ paddingBottom: 8 }}>
+          <div className="flex items-center justify-between gap-2">
             <button
               type="button"
               onClick={onNavigateHome}
@@ -297,34 +300,6 @@ export default function SettingsSidebar({
                 v{appVersion}
               </span>
             )}
-          </div>
-          <div className="flex items-start gap-2">
-            <svg
-              aria-hidden="true"
-              width="12"
-              height="12"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              style={{ color: "var(--mem-text-tertiary)", opacity: 0.7, marginTop: 1 }}
-            >
-              <rect x="3" y="11" width="18" height="11" rx="2" />
-              <path d="M7 11V7a5 5 0 0110 0v4" />
-            </svg>
-            <span
-              style={{
-                fontFamily: "var(--mem-font-body)",
-                fontSize: "var(--mem-text-2xs)",
-                lineHeight: 1.5,
-                color: "var(--mem-text-tertiary)",
-                opacity: 0.7,
-              }}
-            >
-              {t("settings.localOnly")}
-            </span>
           </div>
         </div>
       </div>

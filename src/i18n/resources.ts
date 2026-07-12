@@ -19,7 +19,7 @@ const en = {
       description:
         "An Anthropic API key, your own local server, or an on-device model — you can change this later in Settings.",
       deviceOption: "On-device model",
-      cloudOption: "Anthropic API key",
+      cloudOption: "Cloud model",
       localOption: "Your own local server",
       recommended: "Recommended",
       deviceNote:
@@ -309,7 +309,6 @@ const en = {
     title: "Settings",
     home: "Home",
     manageHint: "Manage agents, sources, and preferences.",
-    localOnly: "Local-only. Your data never leaves this machine.",
     groups: {
       general: {
         label: "General",
@@ -435,7 +434,7 @@ const en = {
       unavailable: "Diagnostics unavailable",
     },
     footer:
-      "Everything stays on your device. No data leaves your machine — no cloud sync, no API calls, no telemetry.",
+      "Your memories live on this machine. Nothing is sent anywhere unless you connect a cloud model or turn on Remote Access.",
   },
   sidebar: {
     brand: "Wenlan",
@@ -1087,7 +1086,7 @@ const zhHans = {
       description:
         "Anthropic API key、你自己的本地服务器，或本地模型 — 稍后可在设置中更改。",
       deviceOption: "本地模型",
-      cloudOption: "Anthropic API key",
+      cloudOption: "云端模型",
       localOption: "你自己的本地服务器",
       recommended: "推荐",
       deviceNote:
@@ -1368,7 +1367,6 @@ const zhHans = {
     title: "设置",
     home: "首页",
     manageHint: "管理代理、来源和偏好设置。",
-    localOnly: "仅在本机。你的数据不会离开这台设备。",
     groups: {
       general: {
         label: "通用",
@@ -1494,7 +1492,7 @@ const zhHans = {
       unavailable: "诊断信息不可用",
     },
     footer:
-      "所有内容都留在你的设备上。没有数据会离开这台机器：没有云同步、没有 API 调用、没有遥测。",
+      "你的记忆保留在这台设备上。除非你连接云端模型或开启远程访问，否则不会发送到任何地方。",
   },
   sidebar: {
     brand: "Wenlan 文瀾",
@@ -2127,7 +2125,7 @@ const zhHant = {
       description:
         "Anthropic API key、你自己的本機伺服器，或本機模型 — 稍後可在設定中更改。",
       deviceOption: "本機模型",
-      cloudOption: "Anthropic API key",
+      cloudOption: "雲端模型",
       localOption: "你自己的本機伺服器",
       recommended: "推薦",
       deviceNote:
@@ -2408,7 +2406,6 @@ const zhHant = {
     title: "設定",
     home: "首頁",
     manageHint: "管理代理、來源和偏好設定。",
-    localOnly: "僅限本機。你的資料不會離開這台裝置。",
     groups: {
       general: {
         label: "一般",
@@ -2534,7 +2531,7 @@ const zhHant = {
       unavailable: "診斷資訊無法使用",
     },
     footer:
-      "所有內容都留在你的裝置上。沒有資料會離開這台機器：沒有雲端同步、沒有 API 呼叫、沒有遙測。",
+      "你的記憶保留在這台裝置上。除非你連接雲端模型或開啟遠端存取，否則不會發送到任何地方。",
   },
   sidebar: {
     brand: "Wenlan 文瀾",

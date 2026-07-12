@@ -326,6 +326,9 @@ function IntelligenceChoiceStep({
           style={choiceButtonStyle(mode === "device")}
         >
           {t("setup.intelligence.deviceOption")}
+          <span style={{ marginLeft: "8px" }}>
+            <Tag tone="accent">{t("setup.intelligence.recommended")}</Tag>
+          </span>
         </button>
         <button
           onClick={() => setMode("cloud")}
@@ -333,9 +336,6 @@ function IntelligenceChoiceStep({
           style={choiceButtonStyle(mode === "cloud")}
         >
           {t("setup.intelligence.cloudOption")}
-          <span style={{ marginLeft: "8px" }}>
-            <Tag tone="accent">{t("setup.intelligence.recommended")}</Tag>
-          </span>
         </button>
         <button
           onClick={() => setMode("local")}

@@ -54,9 +54,8 @@ export default function SettingsPage({
       {section === "intelligence" && <IntelligenceSection delay={0} />}
       {section === "diagnostics" && <DiagnosticsSection />}
 
-      {/* ── Privacy note — persistent footer on all groups. The settings
-          sidebar also carries a shorter version in its bottom strip; this
-          longer one stays here for users who prefer reading it inline. */}
+      {/* ── Privacy note — persistent footer on all groups. This is the only
+          place this claim appears in the UI; keep it truthful and singular. */}
       <div
         className="flex items-start gap-2.5 px-2 pt-2 mem-fade-up"
         style={{ animationDelay: "120ms" }}
