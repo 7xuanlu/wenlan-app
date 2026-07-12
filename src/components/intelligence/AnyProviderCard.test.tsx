@@ -219,4 +219,21 @@ describe("AnyProviderCard", () => {
     await userEvent.click(await screen.findByRole("button", { name: /Get a key/ }));
     expect(shellOpen).toHaveBeenCalledWith("https://platform.openai.com/api-keys");
   });
+
+  it("keeps the API key field's accessible name exact while the hint is visible (describedby, not named-by)", async () => {
+    mocks.getDaemonVersion.mockResolvedValue("0.13.0");
+    renderCard();
+    await userEvent.selectOptions(await screen.findByLabelText("Provider"), "openai");
+    const keyField = await screen.findByLabelText("API key");
+    await userEvent.type(keyField, "nope-123");
+    // Hint is visible now; the accessible name must stay exactly "API key" —
+    // the hint sentence must not leak into the input's computed label text.
+    const exactField = screen.getByLabelText("API key", { exact: true });
+    expect(exactField).toBe(keyField);
+    // The hint must instead be wired as a description, not folded into the name.
+    const describedbyId = exactField.getAttribute("aria-describedby");
+    expect(describedbyId).toBeTruthy();
+    const hint = screen.getByText(/doesn't look like an? OpenAI key/i);
+    expect(hint.id).toBe(describedbyId);
+  });
 });

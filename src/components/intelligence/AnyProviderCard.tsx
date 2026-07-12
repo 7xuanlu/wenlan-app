@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useId, useMemo, useState, type CSSProperties } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
@@ -49,6 +49,7 @@ export default function AnyProviderCard({ groups, initialPresetId, hidePresetPic
   const { supportsExternalKey, supportsHotSwap } = useDaemonVersion();
   const anthropic = useApiKeyStatus();
   const queryClient = useQueryClient();
+  const keyHintId = useId();
 
   const presets = useMemo(
     () =>
@@ -215,21 +216,25 @@ export default function AnyProviderCard({ groups, initialPresetId, hidePresetPic
           )}
 
           {supportsExternalKey && (
-            <label className="flex flex-col gap-1">
-              <span style={labelStyle}>{t("externalProvider.apiKeyLabel")}</span>
-              <input
-                type="password"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder={
-                  keyConfigured
-                    ? t("externalProvider.apiKeyConfiguredPlaceholder")
-                    : (preset.keyPlaceholder ?? "")
-                }
-                style={fieldStyle}
-              />
+            <div className="flex flex-col gap-1">
+              <label className="flex flex-col gap-1">
+                <span style={labelStyle}>{t("externalProvider.apiKeyLabel")}</span>
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder={
+                    keyConfigured
+                      ? t("externalProvider.apiKeyConfiguredPlaceholder")
+                      : (preset.keyPlaceholder ?? "")
+                  }
+                  style={fieldStyle}
+                  aria-describedby={keyPrefixMismatch(preset, apiKey) ? keyHintId : undefined}
+                />
+              </label>
               {keyPrefixMismatch(preset, apiKey) && (
                 <span
+                  id={keyHintId}
                   style={{
                     fontFamily: "var(--mem-font-body)",
                     fontSize: "11px",
@@ -259,7 +264,7 @@ export default function AnyProviderCard({ groups, initialPresetId, hidePresetPic
                   {t("externalProvider.getKeyLink")}
                 </button>
               )}
-            </label>
+            </div>
           )}
         </>
       )}
