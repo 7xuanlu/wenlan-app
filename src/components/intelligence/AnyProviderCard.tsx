@@ -113,16 +113,6 @@ export default function AnyProviderCard({ groups, initialPresetId, hidePresetPic
   const trimmedEndpoint = endpoint.trim().replace(/\/+$/, "");
   const endpointValid = /^https?:\/\//.test(trimmedEndpoint);
 
-  // Model auto-discovery; silent fallback to free text on failure (spec §1).
-  const discovery = useQuery({
-    queryKey: ["external-models", trimmedEndpoint, apiKey],
-    queryFn: () => listExternalModels(trimmedEndpoint, apiKey || null),
-    enabled: endpointValid && !lockedByVersion && !isLocalOnly,
-    retry: false,
-    staleTime: 30_000,
-  });
-  const models = discovery.data ?? [];
-
   // §9.2: probe BOTH local servers on the Local-server pane mount.
   const ollamaProbe = useQuery({
     queryKey: ["local-probe", OLLAMA_ENDPOINT],
@@ -142,6 +132,22 @@ export default function AnyProviderCard({ groups, initialPresetId, hidePresetPic
     id === "ollama" ? ollamaProbe : id === "lmstudio" ? lmStudioProbe : null;
   const selectedProbe = probeFor(presetId);
   const localModels = selectedProbe?.data ?? [];
+
+  // Model auto-discovery; silent fallback to free text on failure (spec §1).
+  // Ollama/LM Studio already have a dedicated probe above — reusing this
+  // query for them would duplicate the fetch, so it stays off for those two.
+  // A hand-typed or "Custom…" local endpoint has no dedicated probe, so this
+  // query is the only discovery source for it — kept enabled even while
+  // `isLocalOnly` is true whenever the selected preset isn't one of the two
+  // probed ones (§9.2: no discovery hole for unprobed local endpoints).
+  const discovery = useQuery({
+    queryKey: ["external-models", trimmedEndpoint, apiKey],
+    queryFn: () => listExternalModels(trimmedEndpoint, apiKey || null),
+    enabled: endpointValid && !lockedByVersion && (!isLocalOnly || !selectedProbe),
+    retry: false,
+    staleTime: 30_000,
+  });
+  const models = discovery.data ?? [];
 
   // Auto-select the single responder, once both probes have settled.
   const autoSelectedRef = useRef(false);
@@ -337,21 +343,32 @@ export default function AnyProviderCard({ groups, initialPresetId, hidePresetPic
 
           <label className="flex flex-col gap-1">
             <span style={labelStyle}>{t("externalProvider.modelLabel")}</span>
-            <input
-              type="text"
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              placeholder={t("externalProvider.modelPlaceholder")}
-              list="any-provider-models"
-              style={fieldStyle}
-            />
-            <datalist id="any-provider-models">
-              {models.map((m) => (
-                <option key={m} value={m} />
-              ))}
-            </datalist>
+            {isLocalOnly && selectedProbe && localModels.length >= 1 ? (
+              <select value={model} onChange={(e) => setModel(e.target.value)} style={fieldStyle}>
+                <option value="">{t("externalProvider.modelSelectPlaceholder")}</option>
+                {localModels.map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+            ) : (
+              <>
+                <input
+                  type="text"
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  placeholder={t("externalProvider.modelPlaceholder")}
+                  list="any-provider-models"
+                  style={fieldStyle}
+                />
+                <datalist id="any-provider-models">
+                  {models.map((m) => (
+                    <option key={m} value={m} />
+                  ))}
+                </datalist>
+              </>
+            )}
           </label>
-          {discovery.isError && (
+          {(discovery.isError || (isLocalOnly && selectedProbe?.isError)) && (
             <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)" }}>
               {t("externalProvider.modelDiscoveryFailed")}
             </span>

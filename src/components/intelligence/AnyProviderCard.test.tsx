@@ -278,4 +278,61 @@ describe("AnyProviderCard", () => {
       await screen.findByText(/Not detected at localhost:11434 — is Ollama running\?/),
     ).toBeInTheDocument();
   });
+
+  it("local pane: discovered models render as a <select>, not free text", async () => {
+    mocks.listExternalModels.mockResolvedValue(["qwen2.5:7b", "llama3.2:3b"]);
+    renderCard({ groups: ["local"] });
+    await screen.findByText(/Connected to Ollama/);
+    const modelField = await screen.findByLabelText("Model");
+    expect(modelField.tagName).toBe("SELECT");
+    await userEvent.selectOptions(modelField, "llama3.2:3b");
+    expect(modelField).toHaveValue("llama3.2:3b");
+  });
+
+  it("local pane: discovery failure keeps free-text model entry with hint", async () => {
+    mocks.listExternalModels.mockRejectedValue(new Error("ECONNREFUSED"));
+    renderCard({ groups: ["local"] });
+    await screen.findByText(/Not detected at localhost:11434/);
+    const modelField = await screen.findByLabelText("Model");
+    expect(modelField.tagName).toBe("INPUT");
+    expect(screen.getByText(/type a model name/i)).toBeInTheDocument();
+  });
+
+  it("local pane: does not duplicate-fetch a probed preset's endpoint via the generic discovery query", async () => {
+    // Default mock (["llama3.2:3b"]) covers both probes; a probed preset
+    // (ollama, the default local selection) must not ALSO trigger the
+    // generic `discovery` query against the same endpoint.
+    renderCard({ groups: ["local"] });
+    await screen.findByText(/Connected to Ollama/);
+    expect(mocks.listExternalModels).toHaveBeenCalledTimes(2);
+    expect(mocks.listExternalModels).toHaveBeenCalledWith("http://localhost:11434/v1", null);
+    expect(mocks.listExternalModels).toHaveBeenCalledWith("http://localhost:1234/v1", null);
+  });
+
+  it("local pane: a hand-typed Custom endpoint still gets model discovery (no discovery hole for unprobed presets)", async () => {
+    mocks.listExternalModels.mockResolvedValue(["custom-model-x"]);
+    renderCard({ groups: ["local"] });
+    await userEvent.click(await screen.findByRole("button", { name: "Custom…" }));
+    await userEvent.type(screen.getByLabelText("Endpoint URL"), "http://localhost:9999/v1");
+    await waitFor(() =>
+      expect(mocks.listExternalModels).toHaveBeenCalledWith("http://localhost:9999/v1", null)
+    );
+    // Custom/unprobed presets have no dedicated probe, so they never get the
+    // polished <select> — but discovery still runs and feeds the datalist,
+    // so free-text entry is never left without autocomplete.
+    const modelField = screen.getByLabelText("Model");
+    expect(modelField.tagName).toBe("INPUT");
+    expect(
+      document.getElementById("any-provider-models")?.querySelector('option[value="custom-model-x"]'),
+    ).toBeTruthy();
+  });
+
+  it("local pane: custom endpoint discovery failure keeps free text with the discovery-failed hint", async () => {
+    mocks.listExternalModels.mockRejectedValue(new Error("ECONNREFUSED"));
+    renderCard({ groups: ["local"] });
+    await userEvent.click(await screen.findByRole("button", { name: "Custom…" }));
+    await userEvent.type(screen.getByLabelText("Endpoint URL"), "http://localhost:9999/v1");
+    expect(await screen.findByText(/type a model name/i)).toBeInTheDocument();
+    expect(screen.getByLabelText("Model").tagName).toBe("INPUT");
+  });
 });
