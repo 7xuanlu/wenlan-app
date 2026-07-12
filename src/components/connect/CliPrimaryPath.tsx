@@ -23,6 +23,7 @@ export function isCliPrimaryClient(clientType: string): clientType is CliClientT
 export default function CliPrimaryPath({ clientType }: { clientType: CliClientType }) {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
+  const [copiedCommandIndex, setCopiedCommandIndex] = useState<number | null>(null);
   const { data: mcpEntry } = useQuery({
     queryKey: ["wenlan-mcp-entry"],
     queryFn: getWenlanMcpEntry,
@@ -56,6 +57,17 @@ export default function CliPrimaryPath({ clientType }: { clientType: CliClientTy
     try {
       await clipboardWrite(prompt);
       setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* clipboard denial is non-fatal */
+    }
+  };
+
+  const copyCommand = async (index: number, text: string) => {
+    try {
+      await clipboardWrite(text);
+      setCopiedCommandIndex(index);
+      setTimeout(() => setCopiedCommandIndex((cur) => (cur === index ? null : cur)), 2000);
     } catch {
       /* clipboard denial is non-fatal */
     }
@@ -67,14 +79,26 @@ export default function CliPrimaryPath({ clientType }: { clientType: CliClientTy
         {lead}
       </p>
       {ready &&
-        commands.map((c) => (
-          <code
-            key={c}
-            className="block truncate rounded-md px-2 py-1.5"
-            style={{ fontFamily: "var(--mem-font-mono)", fontSize: "11px", backgroundColor: "var(--mem-bg)", border: "1px solid var(--mem-border)", color: "var(--mem-text)" }}
-          >
-            {c}
-          </code>
+        commands.map((c, i) => (
+          <div key={c} className="flex items-center gap-2">
+            <code
+              className="flex-1 whitespace-pre-wrap break-all rounded-md px-2 py-1.5"
+              style={{ fontFamily: "var(--mem-font-mono)", fontSize: "11px", backgroundColor: "var(--mem-bg)", border: "1px solid var(--mem-border)", color: "var(--mem-text)" }}
+            >
+              {c}
+            </code>
+            <button
+              type="button"
+              onClick={() => copyCommand(i, c)}
+              aria-label={t("connectMatrix.copyCommandAria", { cmd: c })}
+              className="shrink-0 rounded-md px-2 py-1 text-xs"
+              style={{ border: "1px solid var(--mem-border)", color: "var(--mem-text)", fontFamily: "var(--mem-font-body)" }}
+            >
+              {copiedCommandIndex === i
+                ? t("connectMatrix.commandCopied")
+                : t("connectMatrix.copyCommand")}
+            </button>
+          </div>
         ))}
       <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)", margin: 0 }}>
         {reload}
