@@ -425,4 +425,117 @@ describe("SetupWizard", () => {
       expect(toggleRemoteAccess).toHaveBeenCalled();
     });
   });
+
+  // StepShell (§4.0, defect 5): the primary CTA lives in a fixed action bar
+  // that is a sibling of the scrollable content column, never a descendant
+  // of it — so it is visible by construction regardless of content height,
+  // instead of relying on the tallest step happening to fit in 720px.
+  it("StepShell: the primary CTA lives outside the scrollable content, never inside it", async () => {
+    renderWizard();
+    fireEvent.click(screen.getByText("Get started"));
+    // "local-server variant" — one of the taller intelligence-choice panes.
+    fireEvent.click(screen.getByText("Local server"));
+    await screen.findByText("Any provider");
+
+    const continueButton = screen.getByText("Continue");
+    const scrollMain = screen.getByTestId("wizard-scroll-main");
+    const actionBar = screen.getByTestId("wizard-action-bar");
+
+    expect(scrollMain.contains(actionBar)).toBe(false);
+    expect(actionBar.contains(continueButton)).toBe(true);
+    expect(scrollMain.contains(continueButton)).toBe(false);
+  });
+
+  it("connect: a client that is detected and already connected shows the connected description and the Configured badge — never the detected-but-unconnected copy", async () => {
+    (detectMcpClients as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        name: "Cursor",
+        client_type: "cursor",
+        config_path: "/path/to/cursor",
+        detected: true,
+        already_configured: true,
+      },
+      {
+        name: "Windsurf",
+        client_type: "windsurf",
+        config_path: "/path/to/windsurf.json",
+        detected: true,
+        already_configured: false,
+      },
+    ]);
+
+    renderWizard({ initialStep: "connect" });
+
+    await waitFor(() => {
+      expect(screen.getByText("Cursor")).toBeInTheDocument();
+    });
+
+    // Connected row: badge + connected copy, never the "detected, can
+    // connect in one click" copy that only applies pre-connection.
+    expect(screen.getByText("Configured")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Connected — this tool can already read and write your knowledge base.",
+      ),
+    ).toBeInTheDocument();
+
+    // Not-yet-connected row: detected copy, no badge.
+    expect(
+      screen.getByText("Detected on this Mac — Wenlan can connect it in one click."),
+    ).toBeInTheDocument();
+    // Exactly one badge exists (Cursor's) — getByText above already asserts
+    // that; the not-yet-connected row must not render a second one.
+    expect(screen.getAllByText("Configured")).toHaveLength(1);
+  });
+
+  it("done: agent ids that resolve to the same display name collapse to one chip; raw ids never render", async () => {
+    (listAgents as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        name: "codex-ulw-loop",
+        display_name: "Codex",
+        last_seen_at: Math.floor(Date.now() / 1000) - 3600,
+        memory_count: 1,
+      },
+      {
+        name: "codex-mcp-client",
+        display_name: "Codex",
+        last_seen_at: Math.floor(Date.now() / 1000) - 3600,
+        memory_count: 1,
+      },
+    ]);
+
+    renderWizard({ initialStep: "verify" });
+
+    await waitFor(() => {
+      expect(screen.getByText("You're all set.")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("Codex")).toBeInTheDocument();
+    expect(screen.queryByText("codex-ulw-loop")).not.toBeInTheDocument();
+    expect(screen.queryByText("codex-mcp-client")).not.toBeInTheDocument();
+  });
+
+  it("done: caps connected-agent chips at 6 with a +N overflow chip", async () => {
+    const ids = ["tool-a", "tool-b", "tool-c", "tool-d", "tool-e", "tool-f", "tool-g", "tool-h"];
+    (listAgents as ReturnType<typeof vi.fn>).mockResolvedValue(
+      ids.map((name) => ({
+        name,
+        last_seen_at: Math.floor(Date.now() / 1000) - 3600,
+        memory_count: 1,
+      })),
+    );
+
+    renderWizard({ initialStep: "verify" });
+
+    await waitFor(() => {
+      expect(screen.getByText("You're all set.")).toBeInTheDocument();
+    });
+
+    for (const id of ids.slice(0, 6)) {
+      expect(screen.getByText(id)).toBeInTheDocument();
+    }
+    expect(screen.getByText("+2 more")).toBeInTheDocument();
+    expect(screen.queryByText("tool-g")).not.toBeInTheDocument();
+    expect(screen.queryByText("tool-h")).not.toBeInTheDocument();
+  });
 });

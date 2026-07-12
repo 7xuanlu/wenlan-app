@@ -16,6 +16,8 @@ import CliPrimaryPath, { isCliPrimaryClient } from "./connect/CliPrimaryPath";
 import { ApiKeyCard, OnDeviceModelCard } from "./intelligence/IntelligenceSetup";
 import AnyProviderCard from "./intelligence/AnyProviderCard";
 import { PROVIDER_PRESETS, ANTHROPIC_VENDOR_NAME } from "./intelligence/providerPresets";
+import { Button, StatusChip } from "./memory/settings/primitives";
+import { resolveAgentDisplayName } from "../lib/agents";
 
 export type WizardStep = "welcome" | "intelligence-choice" | "import" | "connect" | "verify" | "done";
 
@@ -37,8 +39,8 @@ const MEMORY_TYPE_COLORS: Record<string, string> = {
   identity: "var(--mem-accent-indigo)",
   preference: "var(--mem-accent-sage)",
   fact: "var(--mem-accent-amber)",
-  decision: "#a78bfa",
-  goal: "#38bdf8",
+  decision: "var(--mem-accent-indigo)",
+  goal: "var(--mem-accent-page)",
 };
 
 // ── Step Indicator ──────────────────────────────────────────────────────
@@ -47,10 +49,7 @@ function StepIndicator({ currentStep }: { currentStep: WizardStep }) {
   const currentIndex = STEP_ORDER.indexOf(currentStep);
 
   return (
-    <div
-      className="flex items-center justify-center gap-2"
-      style={{ padding: "16px 0" }}
-    >
+    <div className="flex items-center justify-center gap-2">
       {STEP_ORDER.map((step, i) => (
         <div
           key={step}
@@ -70,12 +69,105 @@ function StepIndicator({ currentStep }: { currentStep: WizardStep }) {
   );
 }
 
+// ── Step Shell ──────────────────────────────────────────────────────────
+// Structural fix for defect 5 ("actions clipped off-screen"): a fixed-height
+// (100vh) flex column with a scrollable `main` and a 64px action bar that
+// never scrolls out of view — every step's Back/Skip/Continue is visible by
+// construction, regardless of content height. See design-spec.md §4.0.
+
+interface StepShellAction {
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  loading?: boolean;
+}
+
+function StepShell({
+  hideDots,
+  activeStep,
+  leftActions,
+  primaryAction,
+  children,
+}: {
+  hideDots: boolean;
+  activeStep: WizardStep;
+  leftActions?: StepShellAction[];
+  primaryAction?: StepShellAction;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className="flex flex-col"
+      style={{ height: "100vh", backgroundColor: "var(--mem-bg)" }}
+    >
+      <div data-tauri-drag-region style={{ height: "32px", flexShrink: 0 }} />
+
+      <main
+        data-testid="wizard-scroll-main"
+        className="flex-1 overflow-y-auto"
+      >
+        <div className="max-w-xl mx-auto" style={{ padding: "0 24px 32px" }}>
+          {children}
+        </div>
+      </main>
+
+      <div
+        data-testid="wizard-action-bar"
+        className="flex items-center shrink-0"
+        style={{
+          height: "64px",
+          padding: "0 24px",
+          borderTop: "1px solid var(--mem-border)",
+          backgroundColor: "var(--mem-bg)",
+        }}
+      >
+        <div className="flex items-center gap-2" style={{ minWidth: "60px" }}>
+          {(leftActions ?? []).map((action) => (
+            <Button
+              key={action.label}
+              variant="ghost"
+              size="md"
+              onClick={action.onClick}
+              disabled={action.disabled}
+            >
+              {action.label}
+            </Button>
+          ))}
+        </div>
+        <div className="flex-1 flex items-center justify-center">
+          {!hideDots && <StepIndicator currentStep={activeStep} />}
+        </div>
+        <div
+          style={{ minWidth: "60px", display: "flex", justifyContent: "flex-end" }}
+        >
+          {primaryAction && (
+            <Button
+              variant="primary"
+              size="md"
+              onClick={primaryAction.onClick}
+              disabled={primaryAction.disabled}
+              loading={primaryAction.loading}
+            >
+              {primaryAction.label}
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Welcome Step ────────────────────────────────────────────────────────
 
-function WelcomeStep({ onNext }: { onNext: () => void }) {
+function WelcomeStep({ onNext, hideDots }: { onNext: () => void; hideDots: boolean }) {
   const { t } = useTranslation();
 
   return (
+    <StepShell
+      hideDots={hideDots}
+      activeStep="welcome"
+      primaryAction={{ label: t("setup.getStarted"), onClick: onNext }}
+    >
     <div
       className="flex flex-col items-center text-center"
       style={{ gap: "32px", paddingTop: "80px" }}
@@ -137,29 +229,19 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
           {t("setup.privacyTitle")}
         </span>
       </div>
-
-      <button
-        onClick={onNext}
-        className="px-6 py-2.5 rounded-lg text-sm font-medium transition-colors duration-150"
-        style={{
-          fontFamily: "var(--mem-font-body)",
-          backgroundColor: "var(--mem-accent-indigo)",
-          color: "white",
-          fontSize: "14px",
-        }}
-      >
-        {t("setup.getStarted")}
-      </button>
     </div>
+    </StepShell>
   );
 }
 
 function IntelligenceChoiceStep({
   onNext,
   onBack,
+  hideDots,
 }: {
   onNext: () => void;
   onBack: () => void;
+  hideDots: boolean;
 }) {
   const { t } = useTranslation();
   const [mode, setMode] = useState<"device" | "cloud" | "local">("device");
@@ -214,25 +296,19 @@ function IntelligenceChoiceStep({
   );
 
   return (
+    <StepShell
+      hideDots={hideDots}
+      activeStep="intelligence-choice"
+      leftActions={[
+        { label: t("setup.back"), onClick: onBack },
+        { label: t("setup.skip"), onClick: onNext },
+      ]}
+      primaryAction={{ label: t("setup.continue"), onClick: onNext }}
+    >
     <div
-      className="flex flex-col max-w-xl mx-auto"
+      className="flex flex-col"
       style={{ gap: "24px", paddingTop: "24px" }}
     >
-      <button
-        onClick={onBack}
-        className="flex items-center gap-1.5 self-start transition-colors duration-150"
-        style={{
-          fontFamily: "var(--mem-font-body)",
-          fontSize: "13px",
-          color: "var(--mem-text-secondary)",
-        }}
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M19 12H5M12 19l-7-7 7-7" />
-        </svg>
-        {t("setup.back")}
-      </button>
-
       <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
         <h1
           style={{
@@ -307,41 +383,8 @@ function IntelligenceChoiceStep({
           {note("setup.intelligence.localNote")}
         </div>
       )}
-
-      <div
-        className="flex items-center gap-3"
-        style={{
-          paddingTop: "16px",
-          borderTop: "1px solid var(--mem-border)",
-        }}
-      >
-        <button
-          onClick={onNext}
-          className="ml-auto transition-colors duration-150"
-          style={{
-            fontFamily: "var(--mem-font-body)",
-            fontSize: "13px",
-            color: "var(--mem-text-tertiary)",
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-          }}
-        >
-          {t("setup.skip")}
-        </button>
-        <button
-          onClick={onNext}
-          className="px-5 py-2 rounded-lg text-sm font-medium transition-colors duration-150"
-          style={{
-            fontFamily: "var(--mem-font-body)",
-            backgroundColor: "var(--mem-accent-indigo)",
-            color: "white",
-          }}
-        >
-          {t("setup.continue")}
-        </button>
-      </div>
     </div>
+    </StepShell>
   );
 }
 
@@ -353,42 +396,56 @@ function ImportStep({
   onComplete,
   onPhaseChange,
   importHint,
+  hideDots,
 }: {
   onBack: () => void;
   onSkip: () => void;
   onComplete: (source: string, result: ImportResult) => void;
   onPhaseChange: (phase: string) => void;
   importHint: React.ReactNode;
+  hideDots: boolean;
 }) {
   const { t } = useTranslation();
   const [pathChoice, setPathChoice] = useState<"none" | "chat">("none");
 
   if (pathChoice === "chat") {
+    // ImportView owns its own internal Back/Skip/Continue and layout math
+    // (`calc(100vh - 120px)`); it is not migrated to StepShell (out of
+    // scope — §4.3 "no structural redesign"). This wrapper reproduces the
+    // same ~120px of chrome (drag region + optional dots) it always sat
+    // under so its height math keeps working unmodified.
     return (
-      <ImportView
-        onBack={() => setPathChoice("none")}
-        wizardMode
-        wizardHint={importHint}
-        onPhaseChange={onPhaseChange}
-        onSkip={onSkip}
-        onComplete={onComplete}
-      />
+      <div className="flex flex-col" style={{ height: "100vh", backgroundColor: "var(--mem-bg)" }}>
+        <div data-tauri-drag-region style={{ height: "32px", flexShrink: 0 }} />
+        {!hideDots && <StepIndicator currentStep="import" />}
+        <div
+          className="flex-1"
+          style={{ maxWidth: "640px", width: "100%", margin: "0 auto", padding: "0 24px 48px" }}
+        >
+          <ImportView
+            onBack={() => setPathChoice("none")}
+            wizardMode
+            wizardHint={importHint}
+            onPhaseChange={onPhaseChange}
+            onSkip={onSkip}
+            onComplete={onComplete}
+          />
+        </div>
+      </div>
     );
   }
 
   return (
-    <div className="flex flex-col max-w-xl mx-auto" style={{ gap: "24px", paddingTop: "24px" }}>
-      <button
-        onClick={onBack}
-        className="flex items-center gap-1.5 self-start transition-colors duration-150"
-        style={{ fontFamily: "var(--mem-font-body)", fontSize: "13px", color: "var(--mem-text-secondary)" }}
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M19 12H5M12 19l-7-7 7-7" />
-        </svg>
-        {t("setup.back")}
-      </button>
-
+    <StepShell
+      hideDots={hideDots}
+      activeStep="import"
+      leftActions={[
+        { label: t("setup.back"), onClick: onBack },
+        { label: t("setup.skip"), onClick: onSkip },
+      ]}
+      primaryAction={{ label: t("setup.continue"), onClick: onSkip }}
+    >
+    <div className="flex flex-col" style={{ gap: "24px", paddingTop: "24px" }}>
       <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
         <h1 style={{ fontFamily: "var(--mem-font-heading)", fontSize: "20px", fontWeight: 500, color: "var(--mem-text)" }}>
           {t("setup.import.title")}
@@ -425,24 +482,8 @@ function ImportStep({
         </h3>
         <VaultConnectCard variant="wizard" />
       </div>
-
-      <div className="flex items-center" style={{ paddingTop: "16px", borderTop: "1px solid var(--mem-border)" }}>
-        <button
-          onClick={onSkip}
-          className="ml-auto transition-colors duration-150"
-          style={{ fontFamily: "var(--mem-font-body)", fontSize: "13px", color: "var(--mem-text-tertiary)", background: "none", border: "none", cursor: "pointer" }}
-        >
-          {t("setup.skip")}
-        </button>
-        <button
-          onClick={onSkip}
-          className="px-5 py-2 rounded-lg text-sm font-medium transition-colors duration-150 ml-3"
-          style={{ fontFamily: "var(--mem-font-body)", backgroundColor: "var(--mem-accent-indigo)", color: "white" }}
-        >
-          {t("setup.continue")}
-        </button>
-      </div>
     </div>
+    </StepShell>
   );
 }
 
@@ -472,10 +513,12 @@ function ConnectStep({
   onNext,
   onBack,
   onConnected,
+  hideDots,
 }: {
   onNext: () => void;
   onBack: () => void;
   onConnected: (agents: string[]) => void;
+  hideDots: boolean;
 }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -632,16 +675,7 @@ function ConnectStep({
               {statusLabel}
             </span>
             {isConnected && (
-              <span
-                className="px-2 py-0.5 rounded-full text-xs"
-                style={{
-                  fontFamily: "var(--mem-font-body)",
-                  backgroundColor: "rgba(34,197,94,0.12)",
-                  color: "rgb(34,197,94)",
-                }}
-              >
-                {t("setup.connect.configured")}
-              </span>
+              <StatusChip state={{ kind: "up" }} label={t("setup.connect.configured")} />
             )}
           </div>
         );
@@ -750,9 +784,11 @@ function ConnectStep({
                   margin: 0,
                 }}
               >
-                {client.detected
-                  ? t("setup.connect.detectedDescription")
-                  : t("setup.connect.supportedDescription")}
+                {isConnected
+                  ? t("setup.connect.connectedDescription")
+                  : client.detected
+                    ? t("setup.connect.detectedDescription")
+                    : t("setup.connect.supportedDescription")}
               </p>
 
               {error && (
@@ -775,25 +811,24 @@ function ConnectStep({
   );
 
   return (
+    <StepShell
+      hideDots={hideDots}
+      activeStep="connect"
+      leftActions={[
+        { label: t("setup.back"), onClick: onBack },
+        { label: t("setup.skip"), onClick: onNext },
+      ]}
+      primaryAction={{
+        label: isConnectingAll ? t("setup.connect.connecting") : t("setup.continue"),
+        onClick: handleContinue,
+        disabled: isConnectingAll,
+        loading: isConnectingAll,
+      }}
+    >
     <div
-      className="flex flex-col max-w-md mx-auto"
+      className="flex flex-col"
       style={{ gap: "24px", paddingTop: "24px" }}
     >
-      <button
-        onClick={onBack}
-        className="flex items-center gap-1.5 self-start transition-colors duration-150"
-        style={{
-          fontFamily: "var(--mem-font-body)",
-          fontSize: "13px",
-          color: "var(--mem-text-secondary)",
-        }}
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M19 12H5M12 19l-7-7 7-7" />
-        </svg>
-        {t("setup.back")}
-      </button>
-
       <div>
         <h1
           style={{
@@ -872,14 +907,11 @@ function ConnectStep({
 
       <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
         <SectionLabel>{t("setup.connect.manualSetup")}</SectionLabel>
-        <button
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={() => setManualExpanded((prev) => !prev)}
-          className="flex items-center gap-1.5 transition-colors duration-150 self-start"
-          style={{
-            fontFamily: "var(--mem-font-body)",
-            fontSize: "13px",
-            color: "var(--mem-text-secondary)",
-          }}
+          className="self-start"
         >
           <svg
             width="12"
@@ -890,6 +922,7 @@ function ConnectStep({
             strokeWidth="2"
             strokeLinecap="round"
             strokeLinejoin="round"
+            aria-hidden="true"
             style={{
               transform: manualExpanded ? "rotate(90deg)" : "rotate(0deg)",
               transition: "transform 0.2s ease",
@@ -898,7 +931,7 @@ function ConnectStep({
             <polyline points="9 18 15 12 9 6" />
           </svg>
           {t("setup.connect.showConfigSnippet")}
-        </button>
+        </Button>
 
         {manualExpanded && (
           <div style={{ marginTop: "8px" }}>
@@ -943,43 +976,8 @@ function ConnectStep({
           </div>
         )}
       </div>
-
-      <div
-        className="flex items-center gap-3"
-        style={{
-          paddingTop: "16px",
-          borderTop: "1px solid var(--mem-border)",
-        }}
-      >
-        <button
-          onClick={onNext}
-          className="ml-auto transition-colors duration-150"
-          style={{
-            fontFamily: "var(--mem-font-body)",
-            fontSize: "13px",
-            color: "var(--mem-text-tertiary)",
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-          }}
-        >
-          {t("setup.skip")}
-        </button>
-        <button
-          onClick={handleContinue}
-          disabled={isConnectingAll}
-          className="px-5 py-2 rounded-lg text-sm font-medium transition-colors duration-150"
-          style={{
-            fontFamily: "var(--mem-font-body)",
-            backgroundColor: "var(--mem-accent-indigo)",
-            color: "white",
-            opacity: isConnectingAll ? 0.7 : 1,
-          }}
-        >
-          {isConnectingAll ? t("setup.connect.connecting") : t("setup.continue")}
-        </button>
-      </div>
     </div>
+    </StepShell>
   );
 }
 
@@ -990,11 +988,13 @@ function VerifyStep({
   onBack,
   onConnected,
   wizardEnteredAt,
+  hideDots,
 }: {
   onNext: () => void;
   onBack: () => void;
   onConnected: (agents: string[]) => void;
   wizardEnteredAt: number;
+  hideDots: boolean;
 }) {
   const { t } = useTranslation();
   const [elapsed, setElapsed] = useState(0);
@@ -1055,33 +1055,18 @@ function VerifyStep({
   }, [activeAgents, preExistingAgents, advanced]);
 
   return (
+    <StepShell
+      hideDots={hideDots}
+      activeStep="verify"
+      leftActions={[
+        { label: t("setup.back"), onClick: onBack },
+        { label: t("setup.skip"), onClick: onNext },
+      ]}
+    >
     <div
-      className="flex flex-col max-w-md mx-auto"
+      className="flex flex-col"
       style={{ gap: "24px", paddingTop: "24px" }}
     >
-      {/* Back button */}
-      <button
-        onClick={onBack}
-        className="flex items-center gap-1.5 self-start transition-colors duration-150"
-        style={{
-          fontFamily: "var(--mem-font-body)",
-          fontSize: "13px",
-          color: "var(--mem-text-secondary)",
-        }}
-      >
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-        >
-          <path d="M19 12H5M12 19l-7-7 7-7" />
-        </svg>
-        {t("setup.back")}
-      </button>
-
       {/* Centered pulse + heading group */}
       <div
         className="flex flex-col items-center text-center"
@@ -1183,22 +1168,6 @@ function VerifyStep({
           </ul>
         </div>
       )}
-
-      {/* Skip link */}
-      <button
-        onClick={onNext}
-        className="transition-colors duration-150"
-        style={{
-          fontFamily: "var(--mem-font-body)",
-          fontSize: "13px",
-          color: "var(--mem-text-tertiary)",
-          background: "none",
-          border: "none",
-          cursor: "pointer",
-        }}
-      >
-        {t("setup.skip")}
-      </button>
       </div>
 
       {/* Pulse animation */}
@@ -1209,6 +1178,7 @@ function VerifyStep({
         }
       `}</style>
     </div>
+    </StepShell>
   );
 }
 
@@ -1250,16 +1220,25 @@ function Stat({ label, value }: { label: string; value: number }) {
 
 // ── Done Step ───────────────────────────────────────────────────────────
 
+// Defect 4: raw canonical agent ids (e.g. two ids that both mean "Codex")
+// must never render. Every entry is resolved through resolveAgentDisplayName
+// and deduped by resolved display name; the list is capped so the row never
+// runs unbounded.
+const MAX_AGENT_CHIPS = 6;
+
 function DoneStep({
   importResult,
   connectedAgents,
   onComplete,
+  hideDots,
 }: {
   importResult: ImportResult | null;
   connectedAgents: string[];
   onComplete: () => void;
+  hideDots: boolean;
 }) {
   const { t } = useTranslation();
+  const { data: agentConnections } = useQuery({ queryKey: ["agents"], queryFn: listAgents });
   const hasImportData = importResult && importResult.imported > 0;
   const hasConnectedAgents = connectedAgents.length > 0;
   const isSkipPath = !hasImportData && !hasConnectedAgents;
@@ -1272,10 +1251,30 @@ function DoneStep({
       importResult.relations_created
     : 0;
 
+  const resolvedAgentNames = useMemo(() => {
+    const seen = new Set<string>();
+    const resolved: string[] = [];
+    for (const rawId of connectedAgents) {
+      const displayName = resolveAgentDisplayName(rawId, agentConnections);
+      if (!seen.has(displayName)) {
+        seen.add(displayName);
+        resolved.push(displayName);
+      }
+    }
+    return resolved;
+  }, [connectedAgents, agentConnections]);
+  const visibleAgentNames = resolvedAgentNames.slice(0, MAX_AGENT_CHIPS);
+  const overflowAgentCount = resolvedAgentNames.length - visibleAgentNames.length;
+
   if (isSkipPath) {
     return (
+      <StepShell
+        hideDots={hideDots}
+        activeStep="done"
+        primaryAction={{ label: t("setup.done.openWenlan"), onClick: onComplete }}
+      >
       <div
-        className="flex flex-col items-center text-center max-w-md mx-auto"
+        className="flex flex-col items-center text-center"
         style={{ gap: "28px", paddingTop: "32px" }}
       >
         <h1
@@ -1308,25 +1307,19 @@ function DoneStep({
         >
           {t("setup.done.readyBody2")}
         </p>
-        <button
-          onClick={onComplete}
-          className="px-6 py-2.5 rounded-lg text-sm font-medium"
-          style={{
-            fontFamily: "var(--mem-font-body)",
-            backgroundColor: "var(--mem-accent-indigo)",
-            color: "white",
-            fontSize: "14px",
-          }}
-        >
-          {t("setup.done.openWenlan")}
-        </button>
       </div>
+      </StepShell>
     );
   }
 
   return (
+    <StepShell
+      hideDots={hideDots}
+      activeStep="done"
+      primaryAction={{ label: t("setup.getStarted"), onClick: onComplete }}
+    >
     <div
-      className="flex flex-col items-center text-center max-w-md mx-auto"
+      className="flex flex-col items-center text-center"
       style={{ gap: "28px", paddingTop: "32px" }}
     >
       {/* Success icon */}
@@ -1335,7 +1328,7 @@ function DoneStep({
           width: "56px",
           height: "56px",
           borderRadius: "50%",
-          backgroundColor: "rgba(34, 197, 94, 0.15)",
+          backgroundColor: "var(--mem-status-success-bg)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -1346,10 +1339,11 @@ function DoneStep({
           height="28"
           viewBox="0 0 24 24"
           fill="none"
-          stroke="rgb(34, 197, 94)"
+          stroke="var(--mem-status-success-text)"
           strokeWidth="2.5"
           strokeLinecap="round"
           strokeLinejoin="round"
+          aria-hidden="true"
         >
           <polyline points="20 6 9 17 4 12" />
         </svg>
@@ -1496,7 +1490,7 @@ function DoneStep({
       )}
 
       {/* Connected agents */}
-      {connectedAgents.length > 0 && (
+      {visibleAgentNames.length > 0 && (
         <div
           className="flex flex-wrap items-center justify-center gap-2"
           style={{ marginTop: "-8px" }}
@@ -1510,36 +1504,35 @@ function DoneStep({
           >
             {t("setup.done.connected")}
           </span>
-          {connectedAgents.map((name) => (
+          {visibleAgentNames.map((name) => (
             <span
               key={name}
               className="px-2 py-0.5 rounded-full text-xs"
               style={{
                 fontFamily: "var(--mem-font-body)",
-                backgroundColor: "rgba(99, 102, 241, 0.12)",
+                backgroundColor: "var(--mem-indigo-bg)",
                 color: "var(--mem-accent-indigo)",
               }}
             >
               {name}
             </span>
           ))}
+          {overflowAgentCount > 0 && (
+            <span
+              className="px-2 py-0.5 rounded-full text-xs"
+              style={{
+                fontFamily: "var(--mem-font-mono)",
+                backgroundColor: "var(--mem-hover)",
+                color: "var(--mem-text-tertiary)",
+              }}
+            >
+              {t("setup.done.moreAgents", { count: overflowAgentCount })}
+            </span>
+          )}
         </div>
       )}
-
-      {/* Get started button */}
-      <button
-        onClick={onComplete}
-        className="px-6 py-2.5 rounded-lg text-sm font-medium transition-colors duration-150"
-        style={{
-          fontFamily: "var(--mem-font-body)",
-          backgroundColor: "var(--mem-accent-indigo)",
-          color: "white",
-          fontSize: "14px",
-        }}
-      >
-        {t("setup.getStarted")}
-      </button>
     </div>
+    </StepShell>
   );
 }
 
@@ -1552,6 +1545,8 @@ export function SetupWizard({ onComplete, initialStep }: SetupWizardProps) {
   const [connectedAgents, setConnectedAgents] = useState<string[]>([]);
   const [, setImportPhase] = useState<string>("input");
   const wizardEnteredAtRef = useRef<number>(Math.floor(Date.now() / 1000));
+  // Step dots hide when entering at a specific step (unchanged semantics).
+  const hideDots = !!initialStep;
 
   const handleConnectedAgents = (agents: string[]) => {
     setConnectedAgents((prev) => {
@@ -1560,92 +1555,71 @@ export function SetupWizard({ onComplete, initialStep }: SetupWizardProps) {
     });
   };
 
-  return (
-    <div
-      className="flex flex-col"
-      style={{
-        height: "100vh",
-        backgroundColor: "var(--mem-bg)",
-        overflow: "auto",
-      }}
-    >
-      {/* Drag region */}
-      <div
-        data-tauri-drag-region
-        style={{
-          height: "32px",
-          flexShrink: 0,
+  if (step === "welcome") {
+    return <WelcomeStep hideDots={hideDots} onNext={() => setStep("intelligence-choice")} />;
+  }
+
+  if (step === "intelligence-choice") {
+    return (
+      <IntelligenceChoiceStep
+        hideDots={hideDots}
+        onBack={() => setStep("welcome")}
+        onNext={() => setStep("import")}
+      />
+    );
+  }
+
+  if (step === "import") {
+    return (
+      <ImportStep
+        hideDots={hideDots}
+        onBack={() => setStep("intelligence-choice")}
+        importHint={(
+          <Trans
+            i18nKey="setup.import.laterHint"
+            components={{ strong: <strong /> }}
+          />
+        )}
+        onPhaseChange={setImportPhase}
+        onSkip={() => setStep("connect")}
+        onComplete={(_source, result) => {
+          setImportResult(result);
+          setStep("connect");
         }}
       />
+    );
+  }
 
-      {/* Step indicator — hide when entering at a specific step */}
-      {!initialStep && <StepIndicator currentStep={step} />}
+  if (step === "connect") {
+    return (
+      <ConnectStep
+        hideDots={hideDots}
+        onNext={() => setStep("verify")}
+        onBack={startStep === "connect" ? onComplete : () => setStep("import")}
+        onConnected={handleConnectedAgents}
+      />
+    );
+  }
 
-      {/* Step content */}
-      <div
-        className="flex-1"
-        style={{
-          maxWidth: "640px",
-          width: "100%",
-          margin: "0 auto",
-          padding: "0 24px 48px",
-        }}
-      >
-        {step === "welcome" && (
-          <WelcomeStep onNext={() => setStep("intelligence-choice")} />
-        )}
+  if (step === "verify") {
+    return (
+      <VerifyStep
+        hideDots={hideDots}
+        onNext={() => setStep("done")}
+        onBack={() => setStep("connect")}
+        onConnected={handleConnectedAgents}
+        wizardEnteredAt={wizardEnteredAtRef.current}
+      />
+    );
+  }
 
-        {step === "intelligence-choice" && (
-          <IntelligenceChoiceStep
-            onBack={() => setStep("welcome")}
-            onNext={() => setStep("import")}
-          />
-        )}
-
-        {step === "import" && (
-          <ImportStep
-            onBack={() => setStep("intelligence-choice")}
-            importHint={(
-              <Trans
-                i18nKey="setup.import.laterHint"
-                components={{ strong: <strong /> }}
-              />
-            )}
-            onPhaseChange={setImportPhase}
-            onSkip={() => setStep("connect")}
-            onComplete={(_source, result) => {
-              setImportResult(result);
-              setStep("connect");
-            }}
-          />
-        )}
-
-        {step === "connect" && (
-          <ConnectStep
-            onNext={() => setStep("verify")}
-            onBack={startStep === "connect" ? onComplete : () => setStep("import")}
-            onConnected={handleConnectedAgents}
-          />
-        )}
-
-        {step === "verify" && (
-          <VerifyStep
-            onNext={() => setStep("done")}
-            onBack={() => setStep("connect")}
-            onConnected={handleConnectedAgents}
-            wizardEnteredAt={wizardEnteredAtRef.current}
-          />
-        )}
-
-        {step === "done" && (
-          <DoneStep
-            importResult={importResult}
-            connectedAgents={connectedAgents}
-            onComplete={onComplete}
-          />
-        )}
-      </div>
-    </div>
+  return (
+    <DoneStep
+      hideDots={hideDots}
+      importResult={importResult}
+      connectedAgents={connectedAgents}
+      onComplete={onComplete}
+    />
   );
 }
 

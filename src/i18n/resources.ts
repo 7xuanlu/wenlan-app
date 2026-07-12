@@ -39,7 +39,7 @@ const en = {
     connect: {
       title: "Choose tools to connect",
       description:
-        "Pick which tools should share memory with Wenlan. We only offer one-click setup for tools whose MCP config we can write safely today.",
+        "Pick which tools should share memory with Wenlan. We only offer one-click setup for tools we can set up safely today.",
       detectedOnMac: "Detected on your Mac",
       supportedTools: "Supported tools",
       webTools: "Claude.ai & ChatGPT (web)",
@@ -47,12 +47,14 @@ const en = {
       detected: "Detected",
       installFirst: "Install first",
       configured: "Configured",
-      detectedDescription: "Wenlan can add its MCP server for this tool now.",
+      connectedDescription:
+        "Connected — this tool can already read and write your knowledge base.",
+      detectedDescription: "Detected on this Mac — Wenlan can connect it in one click.",
       supportedDescription:
         "Safe one-click setup is supported once this tool is installed on your Mac.",
       detectionFailed:
         "Couldn't detect AI tools automatically. Use the manual setup below, or set up a web-based tool with Remote Access.",
-      showConfigSnippet: "Show MCP config snippet",
+      showConfigSnippet: "Show config snippet",
       addConfigSnippet: "Add this to your MCP client's configuration file:",
       productionDefault:
         "Production default — resolves wenlan-mcp from npm at runtime.",
@@ -87,6 +89,8 @@ const en = {
       connections: "Connections",
       pagesWillDistill: "Pages will distill from these as Wenlan connects the dots.",
       connected: "Connected:",
+      moreAgents_one: "+{{count}} more",
+      moreAgents_other: "+{{count}} more",
     },
   },
   vaultConnect: {
@@ -1041,7 +1045,7 @@ const zhHans = {
     connect: {
       title: "选择要连接的工具",
       description:
-        "选择哪些工具可以与文澜共享记忆。我们只会为目前能安全写入 MCP 配置的工具提供一键设置。",
+        "选择哪些工具可以与文澜共享记忆。我们只会为目前能安全设置的工具提供一键设置。",
       detectedOnMac: "在你的 Mac 上检测到",
       supportedTools: "支持的工具",
       webTools: "Claude.ai 和 ChatGPT 网页版",
@@ -1049,11 +1053,12 @@ const zhHans = {
       detected: "已检测到",
       installFirst: "先安装",
       configured: "已配置",
-      detectedDescription: "文澜现在可以为这个工具添加 MCP 服务器。",
+      connectedDescription: "已连接——该工具已经可以读写你的知识库。",
+      detectedDescription: "已在此 Mac 上检测到——文澜可以一键连接它。",
       supportedDescription: "当这个工具安装到你的 Mac 后，就支持安全的一键设置。",
       detectionFailed:
         "无法自动检测 AI 工具。请使用下方手动设置，或用远程访问设置网页工具。",
-      showConfigSnippet: "显示 MCP 配置片段",
+      showConfigSnippet: "显示配置片段",
       addConfigSnippet: "将这段内容添加到你的 MCP 客户端配置文件：",
       productionDefault: "生产默认配置，会在运行时从 npm 解析 wenlan-mcp。",
       developmentPath: "开发路径（本地构建）。正式安装会使用 npx -y wenlan-mcp。",
@@ -1084,6 +1089,8 @@ const zhHans = {
       connections: "连接",
       pagesWillDistill: "随着文澜连接线索，这些内容会蒸馏成页面。",
       connected: "已连接：",
+      moreAgents_one: "还有 {{count}} 个",
+      moreAgents_other: "还有 {{count}} 个",
     },
   },
   vaultConnect: {
@@ -2017,7 +2024,7 @@ const zhHant = {
     connect: {
       title: "選擇要連接的工具",
       description:
-        "選擇哪些工具可以與文瀾共享記憶。我們只會為目前能安全寫入 MCP 設定的工具提供一鍵設定。",
+        "選擇哪些工具可以與文瀾共享記憶。我們只會為目前能安全設定的工具提供一鍵設定。",
       detectedOnMac: "在你的 Mac 上偵測到",
       supportedTools: "支援的工具",
       webTools: "Claude.ai 和 ChatGPT 網頁版",
@@ -2025,11 +2032,12 @@ const zhHant = {
       detected: "已偵測到",
       installFirst: "先安裝",
       configured: "已設定",
-      detectedDescription: "文瀾現在可以為這個工具新增 MCP 伺服器。",
+      connectedDescription: "已連接——該工具已經可以讀寫你的知識庫。",
+      detectedDescription: "已在此 Mac 上偵測到——文瀾可以一鍵連接它。",
       supportedDescription: "當這個工具安裝到你的 Mac 後，就支援安全的一鍵設定。",
       detectionFailed:
         "無法自動偵測 AI 工具。請使用下方手動設定，或用遠端存取設定網頁工具。",
-      showConfigSnippet: "顯示 MCP 設定片段",
+      showConfigSnippet: "顯示設定片段",
       addConfigSnippet: "將這段內容加入你的 MCP 客戶端設定檔：",
       productionDefault: "正式預設設定，會在執行時從 npm 解析 wenlan-mcp。",
       developmentPath: "開發路徑（本機建置）。正式安裝會使用 npx -y wenlan-mcp。",
@@ -2060,6 +2068,8 @@ const zhHant = {
       connections: "連結",
       pagesWillDistill: "隨著文瀾連接線索，這些內容會蒸餾成頁面。",
       connected: "已連接：",
+      moreAgents_one: "還有 {{count}} 個",
+      moreAgents_other: "還有 {{count}} 個",
     },
   },
   vaultConnect: {

@@ -360,10 +360,11 @@ export function OnDeviceModelCard() {
           )}
         </p>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-start gap-2">
           {current && (
             <span
-              className="flex-1 min-w-0 truncate"
+              data-testid="on-device-model-spec"
+              className="flex-1 min-w-0"
               style={{
                 fontFamily: "var(--mem-font-mono)",
                 fontSize: "11px",

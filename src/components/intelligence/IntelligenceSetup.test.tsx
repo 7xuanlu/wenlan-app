@@ -11,13 +11,15 @@ const mocks = vi.hoisted(() => ({
   setApiKey: vi.fn(),
   getModelChoice: vi.fn(),
   setModelChoice: vi.fn(),
+  getOnDeviceModel: vi.fn(),
+  getSystemInfo: vi.fn(),
 }));
 vi.mock("../../lib/tauri", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../lib/tauri")>();
   return { ...actual, ...mocks };
 });
 
-import { ApiKeyCard } from "./IntelligenceSetup";
+import { ApiKeyCard, OnDeviceModelCard } from "./IntelligenceSetup";
 
 function renderCard(qc: QueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
   render(
@@ -84,5 +86,52 @@ describe("ApiKeyCard", () => {
     expect(shellOpen).toHaveBeenCalledWith(
       "https://console.anthropic.com/settings/keys",
     );
+  });
+});
+
+describe("OnDeviceModelCard", () => {
+  afterEach(() => {
+    mocks.getOnDeviceModel.mockReset();
+    mocks.getSystemInfo.mockReset();
+  });
+
+  beforeEach(() => {
+    mocks.getOnDeviceModel.mockResolvedValue({
+      loaded: null,
+      selected: "qwen3-4b-instruct-2507",
+      models: [{
+        id: "qwen3-4b-instruct-2507",
+        display_name: "Qwen3 4B",
+        param_count: "4B",
+        ram_required_gb: 8,
+        file_size_gb: 2.7,
+        cached: false,
+      }],
+    });
+    mocks.getSystemInfo.mockResolvedValue({
+      total_ram_gb: 16,
+      available_ram_gb: 10,
+      has_metal: true,
+      has_cuda: false,
+      os: "macOS",
+      arch: "arm64",
+      recommended_builtin: "qwen3-4b-instruct-2507",
+    });
+  });
+
+  // Defect 6 / spec §3.6 "metadata never truncates": the model spec line
+  // (params · download size · RAM) is a system-authored fact line — it must
+  // wrap, never truncate mid-word. `truncate` on this span was the bug.
+  it("does not truncate the on-device model spec line", async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <OnDeviceModelCard />
+      </QueryClientProvider>,
+    );
+
+    const specLine = await screen.findByTestId("on-device-model-spec");
+    expect(specLine).toHaveTextContent("4B params");
+    expect(specLine.className.split(/\s+/)).not.toContain("truncate");
   });
 });
