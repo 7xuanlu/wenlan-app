@@ -90,7 +90,14 @@ describe("WebPlatformCards", () => {
       ),
     ).toBeInTheDocument();
     // Step 2 framing of the existing connector flow.
-    expect(screen.getByText("Step 2 — Connect your memory")).toBeInTheDocument();
+    const step2Heading = screen.getByText("Step 2 — Connect your memory");
+    expect(step2Heading).toBeInTheDocument();
+    // Order matters: plugin install (step 1) must precede the connector
+    // step (step 2) in DOM order, not just both be present somewhere.
+    const step1Heading = screen.getByText("Step 1 — Install the Wenlan plugin");
+    expect(
+      step1Heading.compareDocumentPosition(step2Heading) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it("plugin steps render even when the tunnel is off (install is independent of the connector)", async () => {
