@@ -269,21 +269,6 @@ src/components/memory/RetrievalsList.tsx	searched, found nothing relevant	1
 src/components/memory/RetrievalsList.tsx	This page has been archived	2
 src/components/memory/RetrievalsList.tsx	View all recaps &rarr;	1
 src/components/memory/RetrievalsList.tsx	Where AI looked	1
-src/components/memory/settings/sections/DiagnosticsSection.tsx	% linked	1
-src/components/memory/settings/sections/DiagnosticsSection.tsx	Diagnostics require a newer daemon	1
-src/components/memory/settings/sections/DiagnosticsSection.tsx	Diagnostics unavailable	1
-src/components/memory/settings/sections/DiagnosticsSection.tsx	Enrichment	2
-src/components/memory/settings/sections/DiagnosticsSection.tsx	Entity linking	1
-src/components/memory/settings/sections/DiagnosticsSection.tsx	linked /	1
-src/components/memory/settings/sections/DiagnosticsSection.tsx	Loading diagnostics...	1
-src/components/memory/settings/sections/DiagnosticsSection.tsx	Memory types	2
-src/components/memory/settings/sections/DiagnosticsSection.tsx	No pending refinery work.	1
-src/components/memory/settings/sections/DiagnosticsSection.tsx	Pipeline Snapshot	1
-src/components/memory/settings/sections/DiagnosticsSection.tsx	Quality	2
-src/components/memory/settings/sections/DiagnosticsSection.tsx	Recaps	1
-src/components/memory/settings/sections/DiagnosticsSection.tsx	Refinery queue	1
-src/components/memory/settings/sections/DiagnosticsSection.tsx	Refresh	1
-src/components/memory/settings/sections/DiagnosticsSection.tsx	unlinked	1
 src/components/memory/settings/SettingsSidebar.tsx	Wenlan	1
 src/components/memory/SourceList.tsx	+ Add folder or vault	1
 src/components/memory/SourceList.tsx	Add source	2

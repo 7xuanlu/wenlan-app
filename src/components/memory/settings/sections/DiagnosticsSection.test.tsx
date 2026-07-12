@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import DiagnosticsSection from "./DiagnosticsSection";
 import { getPipelineStatus } from "../../../../lib/tauri";
+import { i18n } from "../../../../i18n";
 
 vi.mock("../../../../lib/tauri", () => ({
   getPipelineStatus: vi.fn(),
@@ -83,5 +84,19 @@ describe("DiagnosticsSection", () => {
     await waitFor(() => expect(getPipelineStatus).toHaveBeenCalled());
     expect(screen.queryByText("Run maintenance")).not.toBeInTheDocument();
     expect(screen.queryByText("Steep")).not.toBeInTheDocument();
+  });
+
+  describe("i18n", () => {
+    afterEach(async () => {
+      await i18n.changeLanguage("en");
+    });
+
+    it("renders its heading through the translation layer, not hardcoded English", async () => {
+      await i18n.changeLanguage("zh-Hans");
+      renderDiagnostics();
+
+      expect(await screen.findByText("流水线快照")).toBeInTheDocument();
+      expect(screen.queryByText("Pipeline Snapshot")).not.toBeInTheDocument();
+    });
   });
 });

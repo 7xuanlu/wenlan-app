@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useQuery } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { getPipelineStatus, type PipelineStatusResponse } from "../../../../lib/tauri";
+import { Button, Card } from "../primitives";
 
 function sortedEntries(values: Record<string, number>): [string, number][] {
   return Object.entries(values).sort(([leftKey, leftValue], [rightKey, rightValue]) => {
@@ -18,10 +20,6 @@ function isOldDaemonError(error: unknown): boolean {
   );
 }
 
-function Divider() {
-  return <div className="mx-5 border-t border-[var(--mem-border)]" style={{ opacity: 0.4 }} />;
-}
-
 function StatList({
   title,
   values,
@@ -34,17 +32,17 @@ function StatList({
   const entries = sortedEntries(values);
   return (
     <div className="px-5 py-4">
-      <div className="mb-2" style={{ fontFamily: "var(--mem-font-body)", fontSize: "13px", fontWeight: 600, color: "var(--mem-text)" }}>
+      <div className="mb-2" style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-base)", fontWeight: 600, color: "var(--mem-text)" }}>
         {title}
       </div>
       {entries.length === 0 ? (
-        <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-tertiary)" }}>{empty}</p>
+        <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text-tertiary)" }}>{empty}</p>
       ) : (
         <div className="flex flex-col gap-1.5">
           {entries.map(([key, count]) => (
             <div key={key} className="flex items-center justify-between gap-3">
-              <span style={{ fontFamily: "var(--mem-font-mono)", fontSize: "12px", color: "var(--mem-text-secondary)" }}>{key}</span>
-              <span style={{ fontFamily: "var(--mem-font-mono)", fontSize: "12px", color: "var(--mem-text)" }}>{count}</span>
+              <span style={{ fontFamily: "var(--mem-font-mono)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text-secondary)" }}>{key}</span>
+              <span style={{ fontFamily: "var(--mem-font-mono)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text)" }}>{count}</span>
             </div>
           ))}
         </div>
@@ -54,22 +52,23 @@ function StatList({
 }
 
 function EntityLinking({ data }: { data: PipelineStatusResponse }) {
+  const { t } = useTranslation();
   const total = data.entity_linking.linked + data.entity_linking.unlinked;
   const percent = total === 0 ? null : Math.round((data.entity_linking.linked / total) * 100);
   return (
     <div className="px-5 py-4">
-      <div className="mb-2" style={{ fontFamily: "var(--mem-font-body)", fontSize: "13px", fontWeight: 600, color: "var(--mem-text)" }}>
-        Entity linking
+      <div className="mb-2" style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-base)", fontWeight: 600, color: "var(--mem-text)" }}>
+        {t("settings.diagnostics.entityLinking")}
       </div>
       <div className="flex items-baseline gap-3">
-        <span style={{ fontFamily: "var(--mem-font-heading)", fontSize: "22px", color: "var(--mem-text)" }}>{data.entity_linking.linked}</span>
-        <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-secondary)" }}>
-          linked / {data.entity_linking.unlinked} unlinked
+        <span style={{ fontFamily: "var(--mem-font-heading)", fontSize: "var(--mem-text-xl)", color: "var(--mem-text)" }}>{data.entity_linking.linked}</span>
+        <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text-secondary)" }}>
+          {t("settings.diagnostics.linkedUnlinked", { unlinked: data.entity_linking.unlinked })}
         </span>
       </div>
       {percent !== null && (
-        <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-tertiary)", marginTop: 4 }}>
-          {percent}% linked
+        <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text-tertiary)", marginTop: 4 }}>
+          {t("settings.diagnostics.percentLinked", { percent })}
         </p>
       )}
     </div>
@@ -77,20 +76,21 @@ function EntityLinking({ data }: { data: PipelineStatusResponse }) {
 }
 
 function RefineryQueue({ data }: { data: PipelineStatusResponse }) {
+  const { t } = useTranslation();
   return (
     <div className="px-5 py-4">
-      <div className="mb-2" style={{ fontFamily: "var(--mem-font-body)", fontSize: "13px", fontWeight: 600, color: "var(--mem-text)" }}>
-        Refinery queue
+      <div className="mb-2" style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-base)", fontWeight: 600, color: "var(--mem-text)" }}>
+        {t("settings.diagnostics.refineryQueue")}
       </div>
       {data.refinement_queue.length === 0 ? (
-        <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-tertiary)" }}>No pending refinery work.</p>
+        <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text-tertiary)" }}>{t("settings.diagnostics.refineryEmpty")}</p>
       ) : (
         <div className="flex flex-col gap-1.5">
           {data.refinement_queue.map((entry) => (
             <div key={`${entry.action}:${entry.status}`} className="grid grid-cols-[1fr_auto_auto] items-center gap-3">
-              <span style={{ fontFamily: "var(--mem-font-mono)", fontSize: "12px", color: "var(--mem-text-secondary)" }}>{entry.action}</span>
-              <span style={{ fontFamily: "var(--mem-font-mono)", fontSize: "12px", color: "var(--mem-text-tertiary)" }}>{entry.status}</span>
-              <span style={{ fontFamily: "var(--mem-font-mono)", fontSize: "12px", color: "var(--mem-text)" }}>{entry.count}</span>
+              <span style={{ fontFamily: "var(--mem-font-mono)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text-secondary)" }}>{entry.action}</span>
+              <span style={{ fontFamily: "var(--mem-font-mono)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text-tertiary)" }}>{entry.status}</span>
+              <span style={{ fontFamily: "var(--mem-font-mono)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text)" }}>{entry.count}</span>
             </div>
           ))}
         </div>
@@ -100,14 +100,16 @@ function RefineryQueue({ data }: { data: PipelineStatusResponse }) {
 }
 
 function DiagnosticsError({ error }: { error: unknown }) {
+  const { t } = useTranslation();
   return (
-    <p className="px-5 py-4" style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "#ef4444", lineHeight: "1.5" }}>
-      {isOldDaemonError(error) ? "Diagnostics require a newer daemon" : "Diagnostics unavailable"}
+    <p className="px-5 py-4" style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-status-danger-text)", lineHeight: "1.5" }}>
+      {isOldDaemonError(error) ? t("settings.diagnostics.needsNewerDaemon") : t("settings.diagnostics.unavailable")}
     </p>
   );
 }
 
 export default function DiagnosticsSection() {
+  const { t } = useTranslation();
   const pipelineQuery = useQuery({
     queryKey: ["pipelineStatus"],
     queryFn: getPipelineStatus,
@@ -117,43 +119,34 @@ export default function DiagnosticsSection() {
   return (
     <section className="mem-fade-up" style={{ animationDelay: "0ms" }}>
       <div className="flex items-center justify-between gap-3 mb-3 px-1">
-        <h3 style={{ fontFamily: "var(--mem-font-heading)", fontSize: "12px", fontWeight: 600, letterSpacing: "0.05em", color: "var(--mem-text-tertiary)", textTransform: "uppercase" as const }}>
-          Pipeline Snapshot
+        <h3 style={{ fontFamily: "var(--mem-font-mono)", fontSize: "var(--mem-text-2xs)", fontWeight: 500, letterSpacing: "0.14em", color: "var(--mem-text-tertiary)", textTransform: "uppercase" as const }}>
+          {t("settings.diagnostics.pipelineTitle")}
         </h3>
-        <button
-          onClick={() => pipelineQuery.refetch()}
-          className="px-2.5 py-1 rounded-md transition-colors hover:bg-[var(--mem-hover)]"
-          style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-secondary)", border: "1px solid var(--mem-border)" }}
-        >
-          Refresh
-        </button>
+        <Button variant="secondary" size="sm" onClick={() => pipelineQuery.refetch()}>
+          {t("settings.diagnostics.refresh")}
+        </Button>
       </div>
-      <div className="bg-[var(--mem-surface)] rounded-xl overflow-hidden border border-[var(--mem-border)]">
+      <Card padding="rows">
         {pipelineQuery.isLoading && (
-          <p className="px-5 py-4" style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-secondary)" }}>
-            Loading diagnostics...
+          <p className="px-5 py-4" style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text-secondary)" }}>
+            {t("settings.diagnostics.loading")}
           </p>
         )}
         {pipelineQuery.isError && <DiagnosticsError error={pipelineQuery.error} />}
         {pipelineQuery.data && (
           <>
-            <StatList title="Enrichment" values={pipelineQuery.data.enrichment} empty="No enrichment rows." />
-            <Divider />
+            <StatList title={t("settings.diagnostics.enrichment")} values={pipelineQuery.data.enrichment} empty={t("settings.diagnostics.enrichmentEmpty")} />
             <EntityLinking data={pipelineQuery.data} />
-            <Divider />
             <RefineryQueue data={pipelineQuery.data} />
-            <Divider />
             <div className="px-5 py-4">
-              <div className="mb-1" style={{ fontFamily: "var(--mem-font-body)", fontSize: "13px", fontWeight: 600, color: "var(--mem-text)" }}>Recaps</div>
-              <span style={{ fontFamily: "var(--mem-font-heading)", fontSize: "22px", color: "var(--mem-text)" }}>{pipelineQuery.data.recaps}</span>
+              <div className="mb-1" style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-base)", fontWeight: 600, color: "var(--mem-text)" }}>{t("settings.diagnostics.recaps")}</div>
+              <span style={{ fontFamily: "var(--mem-font-heading)", fontSize: "var(--mem-text-xl)", color: "var(--mem-text)" }}>{pipelineQuery.data.recaps}</span>
             </div>
-            <Divider />
-            <StatList title="Memory types" values={pipelineQuery.data.types} empty="No memory type rows." />
-            <Divider />
-            <StatList title="Quality" values={pipelineQuery.data.quality} empty="No quality rows." />
+            <StatList title={t("settings.diagnostics.memoryTypes")} values={pipelineQuery.data.types} empty={t("settings.diagnostics.memoryTypesEmpty")} />
+            <StatList title={t("settings.diagnostics.quality")} values={pipelineQuery.data.quality} empty={t("settings.diagnostics.qualityEmpty")} />
           </>
         )}
-      </div>
+      </Card>
     </section>
   );
 }

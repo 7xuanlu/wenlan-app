@@ -250,10 +250,10 @@ function IntelligenceChoiceStep({
     padding: "10px 12px",
     borderRadius: "10px",
     border: "1px solid var(--mem-border)",
-    backgroundColor: active ? "rgba(99, 102, 241, 0.12)" : "var(--mem-surface)",
+    backgroundColor: active ? "var(--mem-indigo-bg)" : "var(--mem-surface)",
     color: active ? "var(--mem-accent-indigo)" : "var(--mem-text-secondary)",
     fontFamily: "var(--mem-font-body)",
-    fontSize: "13px",
+    fontSize: "var(--mem-text-base)",
     fontWeight: 500,
     textAlign: "left",
   });
@@ -270,7 +270,7 @@ function IntelligenceChoiceStep({
         backgroundColor: "var(--mem-hover)",
         border: "1px solid var(--mem-border)",
         fontFamily: "var(--mem-font-body)",
-        fontSize: "12px",
+        fontSize: "var(--mem-text-sm)",
         color: "var(--mem-text-secondary)",
         lineHeight: 1.6,
       }}
@@ -297,7 +297,7 @@ function IntelligenceChoiceStep({
         <h1
           style={{
             fontFamily: "var(--mem-font-heading)",
-            fontSize: "20px",
+            fontSize: "var(--mem-text-xl)",
             fontWeight: 500,
             color: "var(--mem-text)",
           }}
@@ -307,7 +307,7 @@ function IntelligenceChoiceStep({
         <p
           style={{
             fontFamily: "var(--mem-font-body)",
-            fontSize: "13px",
+            fontSize: "var(--mem-text-base)",
             color: "var(--mem-text-secondary)",
             lineHeight: "1.5",
           }}
@@ -325,12 +325,12 @@ function IntelligenceChoiceStep({
           <span
             style={{
               marginLeft: "8px",
-              fontSize: "10px",
+              fontSize: "var(--mem-text-2xs)",
               fontWeight: 600,
               color: "var(--mem-accent-indigo)",
               backgroundColor: "var(--mem-hover)",
               padding: "1px 6px",
-              borderRadius: "999px",
+              borderRadius: "var(--mem-radius-full)",
             }}
           >
             {t("setup.intelligence.recommended")}
@@ -635,7 +635,7 @@ function ConnectStep({
             <span
               style={{
                 fontFamily: "var(--mem-font-body)",
-                fontSize: "14px",
+                fontSize: "var(--mem-text-md)",
                 fontWeight: 500,
                 color: "var(--mem-text)",
               }}
@@ -646,7 +646,7 @@ function ConnectStep({
               className="px-2 py-0.5 rounded-full text-xs"
               style={{
                 fontFamily: "var(--mem-font-body)",
-                backgroundColor: statusActive ? "rgba(99, 102, 241, 0.12)" : "var(--mem-hover)",
+                backgroundColor: statusActive ? "var(--mem-indigo-bg)" : "var(--mem-hover)",
                 color: statusActive ? "var(--mem-accent-indigo)" : "var(--mem-text-tertiary)",
               }}
             >
@@ -696,7 +696,7 @@ function ConnectStep({
               className="flex flex-col gap-2 rounded-xl px-4 py-3"
               style={{
                 backgroundColor: "var(--mem-surface)",
-                border: `1px solid ${isSelected ? "rgba(99, 102, 241, 0.4)" : "var(--mem-border)"}`,
+                border: `1px solid ${isSelected ? "var(--mem-accent-indigo-border)" : "var(--mem-border)"}`,
               }}
             >
               <label className="flex items-start gap-3" style={{ cursor: "pointer" }}>
@@ -712,7 +712,7 @@ function ConnectStep({
                 <p
                   style={{
                     fontFamily: "var(--mem-font-body)",
-                    fontSize: "11px",
+                    fontSize: "var(--mem-text-xs)",
                     color: "var(--mem-text-tertiary)",
                     lineHeight: 1.5,
                     margin: 0,
@@ -725,8 +725,8 @@ function ConnectStep({
                   <p
                     style={{
                       fontFamily: "var(--mem-font-body)",
-                      fontSize: "11px",
-                      color: "#ef4444",
+                      fontSize: "var(--mem-text-xs)",
+                      color: "var(--mem-status-danger-text)",
                       margin: 0,
                     }}
                   >
@@ -744,7 +744,7 @@ function ConnectStep({
             className="flex items-start gap-3 rounded-xl px-4 py-3"
             style={{
               backgroundColor: "var(--mem-surface)",
-              border: `1px solid ${isSelected ? "rgba(99, 102, 241, 0.4)" : "var(--mem-border)"}`,
+              border: `1px solid ${isSelected ? "var(--mem-accent-indigo-border)" : "var(--mem-border)"}`,
               cursor: client.detected && !isConnected ? "pointer" : "default",
             }}
           >
@@ -756,7 +756,7 @@ function ConnectStep({
               <p
                 style={{
                   fontFamily: "var(--mem-font-body)",
-                  fontSize: "12px",
+                  fontSize: "var(--mem-text-sm)",
                   color: "var(--mem-text-secondary)",
                   lineHeight: 1.5,
                   margin: 0,
@@ -773,8 +773,8 @@ function ConnectStep({
                 <p
                   style={{
                     fontFamily: "var(--mem-font-body)",
-                    fontSize: "11px",
-                    color: "#ef4444",
+                    fontSize: "var(--mem-text-xs)",
+                    color: "var(--mem-status-danger-text)",
                     margin: 0,
                   }}
                 >
@@ -811,7 +811,7 @@ function ConnectStep({
         <h1
           style={{
             fontFamily: "var(--mem-font-heading)",
-            fontSize: "20px",
+            fontSize: "var(--mem-text-xl)",
             fontWeight: 500,
             color: "var(--mem-text)",
           }}
@@ -821,7 +821,7 @@ function ConnectStep({
         <p
           style={{
             fontFamily: "var(--mem-font-body)",
-            fontSize: "13px",
+            fontSize: "var(--mem-text-base)",
             color: "var(--mem-text-secondary)",
             marginTop: "4px",
             lineHeight: "1.5",
@@ -857,7 +857,7 @@ function ConnectStep({
             <p
               style={{
                 fontFamily: "var(--mem-font-body)",
-                fontSize: "13px",
+                fontSize: "var(--mem-text-base)",
                 color: "var(--mem-text-secondary)",
                 lineHeight: 1.5,
               }}
@@ -916,7 +916,7 @@ function ConnectStep({
             <p
               style={{
                 fontFamily: "var(--mem-font-body)",
-                fontSize: "12px",
+                fontSize: "var(--mem-text-sm)",
                 color: "var(--mem-text-tertiary)",
                 marginBottom: "8px",
                 lineHeight: "1.5",
@@ -928,7 +928,7 @@ function ConnectStep({
               className="rounded-lg px-4 py-3"
               style={{
                 fontFamily: "var(--mem-font-mono)",
-                fontSize: "12px",
+                fontSize: "var(--mem-text-sm)",
                 color: "var(--mem-text)",
                 backgroundColor: "var(--mem-surface)",
                 border: "1px solid var(--mem-border)",
@@ -941,7 +941,7 @@ function ConnectStep({
             <p
               style={{
                 fontFamily: "var(--mem-font-body)",
-                fontSize: "11px",
+                fontSize: "var(--mem-text-xs)",
                 color: "var(--mem-text-tertiary)",
                 lineHeight: "1.5",
                 marginTop: "6px",
@@ -1056,7 +1056,7 @@ function VerifyStep({
           width: "48px",
           height: "48px",
           borderRadius: "50%",
-          backgroundColor: "rgba(99, 102, 241, 0.15)",
+          backgroundColor: "var(--mem-indigo-bg)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -1077,7 +1077,7 @@ function VerifyStep({
         <h1
           style={{
             fontFamily: "var(--mem-font-heading)",
-            fontSize: "20px",
+            fontSize: "var(--mem-text-xl)",
             fontWeight: 500,
             color: "var(--mem-text)",
           }}
@@ -1087,7 +1087,7 @@ function VerifyStep({
         <p
           style={{
             fontFamily: "var(--mem-font-body)",
-            fontSize: "13px",
+            fontSize: "var(--mem-text-base)",
             color: "var(--mem-text-secondary)",
             lineHeight: "1.5",
           }}
@@ -1101,7 +1101,7 @@ function VerifyStep({
         <p
           style={{
             fontFamily: "var(--mem-font-body)",
-            fontSize: "12px",
+            fontSize: "var(--mem-text-sm)",
             color: "var(--mem-text-tertiary)",
             lineHeight: "1.5",
           }}
@@ -1122,7 +1122,7 @@ function VerifyStep({
           <p
             style={{
               fontFamily: "var(--mem-font-body)",
-              fontSize: "13px",
+              fontSize: "var(--mem-text-base)",
               fontWeight: 500,
               color: "var(--mem-text)",
               marginBottom: "8px",
@@ -1133,7 +1133,7 @@ function VerifyStep({
           <ul
             style={{
               fontFamily: "var(--mem-font-body)",
-              fontSize: "12px",
+              fontSize: "var(--mem-text-sm)",
               color: "var(--mem-text-secondary)",
               lineHeight: "1.8",
               paddingLeft: "16px",

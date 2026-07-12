@@ -257,7 +257,7 @@ export default function AnyProviderCard() {
                 style={{
                   border: `1px solid ${selected ? "var(--mem-accent-indigo)" : "var(--mem-border)"}`,
                   backgroundColor: selected ? "var(--mem-accent-indigo)" : "var(--mem-surface)",
-                  color: selected ? "white" : "var(--mem-text)",
+                  color: selected ? "var(--mem-text-on-accent)" : "var(--mem-text)",
                   fontFamily: "var(--mem-font-body)",
                 }}
               >
