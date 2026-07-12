@@ -122,7 +122,7 @@ describe("SetupWizard", () => {
     fireEvent.click(screen.getByText("Get started"));
     fireEvent.click(screen.getByText("Cloud API"));
 
-    fireEvent.change(screen.getByPlaceholderText("sk-ant-..."), {
+    fireEvent.change(screen.getByPlaceholderText("sk-ant-api03-..."), {
       target: { value: "sk-ant-test-key" },
     });
     fireEvent.click(screen.getByText("Save"));
@@ -148,7 +148,7 @@ describe("SetupWizard", () => {
 
     // Anthropic pill renders the native key card by default.
     expect(screen.getByText("Anthropic")).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("sk-ant-...")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("sk-ant-api03-...")).toBeInTheDocument();
 
     // pick OpenAI → AnyProviderCard appears (its title)
     await userEvent.click(screen.getByText("OpenAI"));

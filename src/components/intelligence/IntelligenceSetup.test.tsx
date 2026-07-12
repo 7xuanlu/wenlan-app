@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import "../../i18n";
 
 const mocks = vi.hoisted(() => ({
@@ -49,7 +50,7 @@ describe("ApiKeyCard", () => {
     const qc = renderCard();
     const invalidateSpy = vi.spyOn(qc, "invalidateQueries");
 
-    await userEvent.type(screen.getByPlaceholderText("sk-ant-..."), "sk-ant-test-key");
+    await userEvent.type(screen.getByPlaceholderText("sk-ant-api03-..."), "sk-ant-test-key");
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(mocks.setApiKey).toHaveBeenCalledWith("sk-ant-test-key"));
@@ -72,5 +73,16 @@ describe("ApiKeyCard", () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["setup-status"] });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["external-llm"] });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["external-llm-key-configured"] });
+  });
+
+  it("offers a Get-a-key link to the Anthropic console when no key is set", async () => {
+    // getApiKey → null (set in beforeEach) renders the password-input
+    // branch (not the masked state).
+    vi.mocked(shellOpen).mockClear();
+    renderCard();
+    await userEvent.click(await screen.findByRole("button", { name: /Get a key/ }));
+    expect(shellOpen).toHaveBeenCalledWith(
+      "https://console.anthropic.com/settings/keys",
+    );
   });
 });
