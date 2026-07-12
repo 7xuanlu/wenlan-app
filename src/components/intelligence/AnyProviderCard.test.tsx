@@ -135,7 +135,9 @@ describe("AnyProviderCard", () => {
   it("keyless save on 0.12 omits the key and shows restart note", async () => {
     renderCard();
     await userEvent.selectOptions(await screen.findByLabelText("Provider"), "ollama");
-    await userEvent.type(screen.getByLabelText("Model"), "llama3.2:3b");
+    // Discovery succeeds → the model field is a <select> over discovered ids (§9.2).
+    await screen.findByText(/Connected to Ollama/);
+    await userEvent.selectOptions(screen.getByLabelText("Model"), "llama3.2:3b");
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() =>
       expect(mocks.setExternalLlm).toHaveBeenCalledWith(
@@ -150,16 +152,59 @@ describe("AnyProviderCard", () => {
     renderCard();
     await userEvent.selectOptions(await screen.findByLabelText("Provider"), "ollama");
     expect(await screen.findByText(/type a model name/i)).toBeInTheDocument();
-    expect(screen.getByLabelText("Model")).toBeEnabled();
+    const modelField = screen.getByLabelText("Model");
+    expect(modelField.tagName).toBe("INPUT");
+    expect(modelField).toBeEnabled();
   });
 
   it("test button shows verbatim daemon error", async () => {
     mocks.testExternalLlm.mockRejectedValue(new Error("LLM request failed: 401 Unauthorized"));
     renderCard();
     await userEvent.selectOptions(await screen.findByLabelText("Provider"), "ollama");
-    await userEvent.type(screen.getByLabelText("Model"), "llama3.2:3b");
+    await screen.findByText(/Connected to Ollama/);
+    await userEvent.selectOptions(screen.getByLabelText("Model"), "llama3.2:3b");
     await userEvent.click(screen.getByRole("button", { name: "Test" }));
     expect(await screen.findByText(/401 Unauthorized/)).toBeInTheDocument();
+  });
+
+  it("settings card: selecting a local preset shows the connected chip and a model select", async () => {
+    renderCard(); // all groups — provider <select>, no pills
+    await userEvent.selectOptions(await screen.findByLabelText("Provider"), "ollama");
+    expect(await screen.findByText(/Connected to Ollama — 1 models/)).toBeInTheDocument();
+    // No pills in settings: the Provider select is still the picker.
+    expect(screen.getByLabelText("Provider")).toBeInTheDocument();
+    expect(screen.getByLabelText("Model").tagName).toBe("SELECT");
+  });
+
+  it("settings card: local preset with discovery failure keeps free text and shows the not-detected chip", async () => {
+    mocks.listExternalModels.mockRejectedValue(new Error("ECONNREFUSED"));
+    renderCard();
+    await userEvent.selectOptions(await screen.findByLabelText("Provider"), "ollama");
+    expect(
+      await screen.findByText(/Not detected at localhost:11434 — is Ollama running\?/),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Model").tagName).toBe("INPUT");
+  });
+
+  it("settings card: cloud presets keep the datalist input and never show a local chip", async () => {
+    mocks.getDaemonVersion.mockResolvedValue("0.13.0");
+    renderCard();
+    await userEvent.selectOptions(await screen.findByLabelText("Provider"), "openai");
+    await waitFor(() => expect(mocks.listExternalModels).toHaveBeenCalled());
+    expect(screen.getByLabelText("Model").tagName).toBe("INPUT");
+    expect(screen.queryByText(/Connected to/)).not.toBeInTheDocument();
+  });
+
+  it("settings card: selecting a local preset does not duplicate-fetch (chip and select share the one discovery query)", async () => {
+    // Unlike the wizard's local pane, the settings card has no dedicated
+    // ollama/lmStudio probe running (both stay disabled off `isLocalOnly`) —
+    // the chip and the model <select> must both read the single generic
+    // `discovery` query for the selected endpoint, never a second fetch.
+    renderCard();
+    await userEvent.selectOptions(await screen.findByLabelText("Provider"), "ollama");
+    await screen.findByText(/Connected to Ollama/);
+    expect(mocks.listExternalModels).toHaveBeenCalledTimes(1);
+    expect(mocks.listExternalModels).toHaveBeenCalledWith("http://localhost:11434/v1", null);
   });
 
   it("shows the Anthropic precedence warning when an Anthropic key is configured", async () => {

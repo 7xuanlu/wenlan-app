@@ -141,7 +141,6 @@ export default function AnyProviderCard({ groups, initialPresetId, hidePresetPic
     id === "ollama" ? OLLAMA_ENDPOINT : id === "lmstudio" ? LMSTUDIO_ENDPOINT : null;
   const selectedProbe =
     probedEndpointFor(presetId) === trimmedEndpoint ? probeFor(presetId) : null;
-  const localModels = selectedProbe?.data ?? [];
 
   // Model auto-discovery; silent fallback to free text on failure (spec §1).
   // Ollama/LM Studio already have a dedicated probe above — reusing this
@@ -158,6 +157,13 @@ export default function AnyProviderCard({ groups, initialPresetId, hidePresetPic
     staleTime: 30_000,
   });
   const models = discovery.data ?? [];
+
+  // §9.2 parity: the wizard local pane reads the fixed-endpoint probes; the
+  // settings card (all groups) reuses the generic discovery query when a
+  // local preset is selected. `localQuery` drives the chip and the <select>.
+  const isLocalPreset = preset.group === "local";
+  const localQuery = isLocalOnly ? selectedProbe : isLocalPreset ? discovery : null;
+  const localQueryModels = localQuery?.data ?? [];
 
   // Auto-select the single responder, once both probes have settled.
   const autoSelectedRef = useRef(false);
@@ -254,81 +260,55 @@ export default function AnyProviderCard({ groups, initialPresetId, hidePresetPic
       )}
 
       {isLocalOnly ? (
-        <>
-          <div
-            className="flex flex-wrap gap-2"
-            role="group"
-            aria-label={t("externalProvider.presetLabel")}
-          >
-            {presets.map((p) => {
-              const probe = probeFor(p.id);
-              const status = !probe
-                ? null
-                : probe.isLoading
-                ? "probing"
-                : probe.isSuccess
-                ? "connected"
-                : "notDetected";
-              const dot = status === "connected" ? "●" : status === "notDetected" ? "○" : "…";
-              const selected = p.id === presetId;
-              return (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => selectPreset(p.id)}
-                  aria-pressed={selected}
-                  className="rounded-full px-3 py-1.5 text-xs"
-                  style={{
-                    border: `1px solid ${selected ? "var(--mem-accent-indigo)" : "var(--mem-border)"}`,
-                    backgroundColor: selected ? "var(--mem-accent-indigo)" : "var(--mem-surface)",
-                    color: selected ? "white" : "var(--mem-text)",
-                    fontFamily: "var(--mem-font-body)",
-                  }}
-                >
-                  {probe && (
-                    <span
-                      aria-hidden="true"
-                      style={{
-                        marginRight: "6px",
-                        color:
-                          status === "connected" && !selected
-                            ? "var(--mem-accent-sage)"
-                            : "inherit",
-                      }}
-                    >
-                      {dot}
-                    </span>
-                  )}
-                  {localLabel(p.name)}
-                </button>
-              );
-            })}
-          </div>
-          {selectedProbe && (
-            <p
-              style={{
-                fontFamily: "var(--mem-font-body)",
-                fontSize: "12px",
-                lineHeight: 1.5,
-                color: selectedProbe.isSuccess
-                  ? "var(--mem-accent-sage)"
-                  : "var(--mem-text-secondary)",
-              }}
-            >
-              {selectedProbe.isLoading
-                ? t("externalProvider.localProbing", { name: localLabel(preset.name) })
-                : selectedProbe.isSuccess
-                ? t("externalProvider.localConnectedChip", {
-                    name: localLabel(preset.name),
-                    modelCount: localModels.length,
-                  })
-                : t("externalProvider.localNotDetectedChip", {
-                    name: localLabel(preset.name),
-                    host: hostOf(preset.endpoint),
-                  })}
-            </p>
-          )}
-        </>
+        <div
+          className="flex flex-wrap gap-2"
+          role="group"
+          aria-label={t("externalProvider.presetLabel")}
+        >
+          {presets.map((p) => {
+            const probe = probeFor(p.id);
+            const status = !probe
+              ? null
+              : probe.isLoading
+              ? "probing"
+              : probe.isSuccess
+              ? "connected"
+              : "notDetected";
+            const dot = status === "connected" ? "●" : status === "notDetected" ? "○" : "…";
+            const selected = p.id === presetId;
+            return (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => selectPreset(p.id)}
+                aria-pressed={selected}
+                className="rounded-full px-3 py-1.5 text-xs"
+                style={{
+                  border: `1px solid ${selected ? "var(--mem-accent-indigo)" : "var(--mem-border)"}`,
+                  backgroundColor: selected ? "var(--mem-accent-indigo)" : "var(--mem-surface)",
+                  color: selected ? "white" : "var(--mem-text)",
+                  fontFamily: "var(--mem-font-body)",
+                }}
+              >
+                {probe && (
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      marginRight: "6px",
+                      color:
+                        status === "connected" && !selected
+                          ? "var(--mem-accent-sage)"
+                          : "inherit",
+                    }}
+                  >
+                    {dot}
+                  </span>
+                )}
+                {localLabel(p.name)}
+              </button>
+            );
+          })}
+        </div>
       ) : !hidePresetPicker ? (
         <label className="flex flex-col gap-1">
           <span style={labelStyle}>{t("externalProvider.presetLabel")}</span>
@@ -339,6 +319,31 @@ export default function AnyProviderCard({ groups, initialPresetId, hidePresetPic
           </select>
         </label>
       ) : null}
+
+      {localQuery && (isLocalOnly || endpointValid) && (
+        <p
+          style={{
+            fontFamily: "var(--mem-font-body)",
+            fontSize: "12px",
+            lineHeight: 1.5,
+            color: localQuery.isSuccess
+              ? "var(--mem-accent-sage)"
+              : "var(--mem-text-secondary)",
+          }}
+        >
+          {localQuery.isLoading
+            ? t("externalProvider.localProbing", { name: localLabel(preset.name) })
+            : localQuery.isSuccess
+            ? t("externalProvider.localConnectedChip", {
+                name: localLabel(preset.name),
+                modelCount: localQueryModels.length,
+              })
+            : t("externalProvider.localNotDetectedChip", {
+                name: localLabel(preset.name),
+                host: hostOf(isLocalOnly ? preset.endpoint : trimmedEndpoint),
+              })}
+        </p>
+      )}
 
       {lockedByVersion ? (
         <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-secondary)", lineHeight: 1.5 }}>
@@ -353,7 +358,7 @@ export default function AnyProviderCard({ groups, initialPresetId, hidePresetPic
 
           <label className="flex flex-col gap-1">
             <span style={labelStyle}>{t("externalProvider.modelLabel")}</span>
-            {isLocalOnly && selectedProbe && localModels.length >= 1 ? (
+            {localQuery && localQueryModels.length >= 1 ? (
               <select value={model} onChange={(e) => setModel(e.target.value)} style={fieldStyle}>
                 <option value="">{t("externalProvider.modelSelectPlaceholder")}</option>
                 {/* A saved model that's no longer among the discovered ids
@@ -361,10 +366,10 @@ export default function AnyProviderCard({ groups, initialPresetId, hidePresetPic
                     render as the visibly-selected value — never a blank
                     select while Save/Test remain enabled on a value the user
                     can't see. */}
-                {model !== "" && !localModels.includes(model) && (
+                {model !== "" && !localQueryModels.includes(model) && (
                   <option value={model}>{model}</option>
                 )}
-                {localModels.map((m) => (
+                {localQueryModels.map((m) => (
                   <option key={m} value={m}>{m}</option>
                 ))}
               </select>
@@ -386,7 +391,7 @@ export default function AnyProviderCard({ groups, initialPresetId, hidePresetPic
               </>
             )}
           </label>
-          {(discovery.isError || (isLocalOnly && selectedProbe?.isError)) && (
+          {(discovery.isError || localQuery?.isError) && (
             <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)" }}>
               {t("externalProvider.modelDiscoveryFailed")}
             </span>
