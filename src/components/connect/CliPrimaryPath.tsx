@@ -10,7 +10,6 @@ import { clipboardWrite, getWenlanMcpEntry } from "../../lib/tauri";
  *  `as CliClientType` cast at the call site. */
 export const CLI_PRIMARY_CLIENT_TYPES = ["claude_code", "codex_cli"] as const;
 export type CliClientType = (typeof CLI_PRIMARY_CLIENT_TYPES)[number];
-export const CLI_PRIMARY_CLIENTS: Set<CliClientType> = new Set(CLI_PRIMARY_CLIENT_TYPES);
 
 /** Type guard for `McpClient.client_type` (a plain `string`) — replaces the
  *  unsafe cast so callers narrow instead of asserting. */

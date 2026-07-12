@@ -670,11 +670,18 @@ function ConnectStep({
         // error) lives in a sibling node wired via aria-describedby instead
         // of inside the <label> — the <label> only wraps the checkbox and
         // its plain-text name/status badges.
+        //
+        // The row is stacked (flex-col), not side-by-side: the wizard's
+        // connect column is max-w-md, so a flex-row split left CliPrimaryPath
+        // with ~200px and its command line (a truncating <code>) unreadable.
+        // The description div gets left padding equal to checkbox width
+        // (16px) + the label's gap-3 (12px) so it aligns under the client
+        // name instead of under the checkbox.
         if (isCliPrimary && isCliPrimaryClient(client.client_type)) {
           return (
             <div
               key={client.client_type}
-              className="flex items-start gap-3 rounded-xl px-4 py-3"
+              className="flex flex-col gap-2 rounded-xl px-4 py-3"
               style={{
                 backgroundColor: "var(--mem-surface)",
                 border: `1px solid ${isSelected ? "rgba(99, 102, 241, 0.4)" : "var(--mem-border)"}`,
@@ -685,7 +692,10 @@ function ConnectStep({
                 {nameBadges}
               </label>
 
-              <div id={descId} style={{ flex: 1, display: "flex", flexDirection: "column", gap: "6px" }}>
+              <div
+                id={descId}
+                style={{ display: "flex", flexDirection: "column", gap: "6px", paddingLeft: "28px" }}
+              >
                 <CliPrimaryPath clientType={client.client_type} />
                 <p
                   style={{

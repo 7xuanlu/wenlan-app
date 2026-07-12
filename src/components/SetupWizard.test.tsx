@@ -227,6 +227,32 @@ describe("SetupWizard", () => {
     expect(claudeCheckbox).toBeDisabled();
   });
 
+  it("undetected CLI clients render the disabled checkbox, not the plugin install path", async () => {
+    (detectMcpClients as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        name: "Claude Code",
+        client_type: "claude_code",
+        config_path: "/path/to/claude.json",
+        detected: false,
+        already_configured: false,
+      },
+    ]);
+
+    renderWizard({ initialStep: "connect" });
+
+    await waitFor(() => {
+      expect(screen.getByText("Claude Code")).toBeInTheDocument();
+    });
+
+    // An undetected CLI client can't run a plugin-install command against a
+    // binary that isn't there — it must fall through to the generic
+    // description, never the plugin path or its Copy button.
+    expect(screen.queryByText(/claude plugin marketplace add/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Copy setup prompt/ }),
+    ).not.toBeInTheDocument();
+  });
+
   it("connects selected detected tools on continue", async () => {
     (detectMcpClients as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
