@@ -139,7 +139,13 @@ This is the complaint made concrete. Each is a rule that exists but is applied u
   just an MCP one-liner.
 - **Clipped action bar.** The fixed 64 px action bar means Back/Skip/Continue are visible
   on every step by construction.
-- **Command truncation.** Commands render full-width, untruncated.
+- ~~**Command truncation.** Commands render full-width, untruncated.~~
+  **Retracted — this was wrong.** `CliPrimaryPath.tsx:73` still carries the `truncate`
+  class. The commands in the screenshot merely happened to be short enough to fit, and I
+  read "it looks fine" as "it is fixed". A long command still clips to an ellipsis, and
+  because there is no per-command copy button (only "Copy setup prompt", which copies the
+  prompt), the user has no way to recover the tail. Truncation + no copy is the real
+  defect; it is thread #4, and it is open.
 
 ## Gate blind spots this walk exposed
 
