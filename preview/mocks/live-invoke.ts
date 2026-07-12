@@ -208,7 +208,14 @@ const DEFAULTS: Record<string, unknown> = {
   get_api_key: null,
   get_model_choice: [null, null],
   get_external_llm: [null, null],
-  get_on_device_model: { loaded: null, selected: null, models: [] },
+  get_on_device_model: {
+    loaded: null,
+    selected: null,
+    models: [
+      { id: "qwen3-4b", display_name: "Qwen 3 4B", param_count: "4B", ram_required_gb: 3.0, file_size_gb: 2.7, cached: true },
+      { id: "qwen3.5-9b", display_name: "Qwen 3.5 9B", param_count: "9B", ram_required_gb: 6.0, file_size_gb: 5.5, cached: true },
+    ],
+  },
   get_system_info: null,
   get_remote_access_status: { status: "off" },
   detect_mcp_clients_cmd: [],

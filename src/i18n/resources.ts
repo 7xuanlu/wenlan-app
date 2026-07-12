@@ -914,9 +914,12 @@ const en = {
       "Add an Anthropic API key above to enable page distillation.",
     routineModel: "Routine model",
     routineModelDescription: "Extraction, tagging, classification",
+    chooseRoutineModel: "Choose routine model",
     synthesisModel: "Synthesis model",
     synthesisModelDescription: "Distillation, pages, contradictions",
+    chooseSynthesisModel: "Choose synthesis model",
     onDeviceModel: "On-Device Model",
+    chooseOnDeviceModel: "Choose on-device model",
     running: "Running",
     notLoaded: "Not loaded",
     localModelDescription:
@@ -935,6 +938,7 @@ const en = {
       "This may take several minutes — the model is ~{{size}}GB.",
     ramWarning:
       "{{model}} needs {{required}}GB RAM, but your system has only {{available}}GB.",
+    modelCatalogUnavailable: "Model catalog unavailable — check your connection.",
   },
   onboarding: {
     next: {
@@ -1952,9 +1956,12 @@ const zhHans = {
       "在上方添加 Anthropic API key 以启用页面蒸馏。",
     routineModel: "常规模型",
     routineModelDescription: "抽取、标注、分类",
+    chooseRoutineModel: "选择常规模型",
     synthesisModel: "综合模型",
     synthesisModelDescription: "蒸馏、页面、矛盾",
+    chooseSynthesisModel: "选择综合模型",
     onDeviceModel: "本地模型",
+    chooseOnDeviceModel: "选择本地模型",
     running: "运行中",
     notLoaded: "未加载",
     localModelDescription:
@@ -1973,6 +1980,7 @@ const zhHans = {
       "这可能需要几分钟：模型约 {{size}}GB。",
     ramWarning:
       "{{model}} 需要 {{required}}GB RAM，但你的系统只有 {{available}}GB。",
+    modelCatalogUnavailable: "模型目录不可用——请检查连接。",
   },
   onboarding: {
     next: {
@@ -2988,9 +2996,12 @@ const zhHant = {
       "在上方加入 Anthropic API key 以啟用頁面蒸餾。",
     routineModel: "常規模型",
     routineModelDescription: "擷取、標註、分類",
+    chooseRoutineModel: "選擇常規模型",
     synthesisModel: "綜合模型",
     synthesisModelDescription: "蒸餾、頁面、矛盾",
+    chooseSynthesisModel: "選擇綜合模型",
     onDeviceModel: "本機模型",
+    chooseOnDeviceModel: "選擇本機模型",
     running: "執行中",
     notLoaded: "未載入",
     localModelDescription:
@@ -3009,6 +3020,7 @@ const zhHant = {
       "這可能需要幾分鐘：模型約 {{size}}GB。",
     ramWarning:
       "{{model}} 需要 {{required}}GB RAM，但你的系統只有 {{available}}GB。",
+    modelCatalogUnavailable: "模型目錄無法使用——請檢查連線。",
   },
   onboarding: {
     next: {

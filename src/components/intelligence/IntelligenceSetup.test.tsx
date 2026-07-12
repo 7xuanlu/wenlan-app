@@ -87,6 +87,15 @@ describe("ApiKeyCard", () => {
       "https://console.anthropic.com/settings/keys",
     );
   });
+
+  it("gives the routine and synthesis model selects a real accessible name (not just an adjacent, unassociated row label)", async () => {
+    mocks.getApiKey.mockResolvedValue("sk-ant-***configured");
+    mocks.getModelChoice.mockResolvedValue([null, null]);
+    renderCard();
+    await screen.findByText("sk-ant-***configured");
+    expect(await screen.findByRole("combobox", { name: "Choose routine model" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Choose synthesis model" })).toBeInTheDocument();
+  });
 });
 
 describe("OnDeviceModelCard", () => {
@@ -133,5 +142,27 @@ describe("OnDeviceModelCard", () => {
     const specLine = await screen.findByTestId("on-device-model-spec");
     expect(specLine).toHaveTextContent("4B params");
     expect(specLine.className.split(/\s+/)).not.toContain("truncate");
+  });
+
+  it("gives the model picker Select a real accessible name", async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <OnDeviceModelCard />
+      </QueryClientProvider>,
+    );
+    expect(await screen.findByRole("combobox", { name: "Choose on-device model" })).toBeInTheDocument();
+  });
+
+  it("shows an honest unavailable message instead of an empty, dead-end Select when the catalog is empty", async () => {
+    mocks.getOnDeviceModel.mockResolvedValue({ loaded: null, selected: null, models: [] });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <OnDeviceModelCard />
+      </QueryClientProvider>,
+    );
+    expect(await screen.findByText("Model catalog unavailable — check your connection.")).toBeInTheDocument();
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
   });
 });

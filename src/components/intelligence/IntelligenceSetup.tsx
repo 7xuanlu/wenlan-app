@@ -199,6 +199,7 @@ export function ModelChoiceSection() {
           <Select
             size="sm"
             mono
+            aria-label={t("intelligence.chooseRoutineModel")}
             value={routineModel ?? "claude-haiku-4-5-20251001"}
             onChange={async (e) => {
               await setModelChoice(e.target.value, synthesisModel);
@@ -220,6 +221,7 @@ export function ModelChoiceSection() {
           <Select
             size="sm"
             mono
+            aria-label={t("intelligence.chooseSynthesisModel")}
             value={synthesisModel ?? "claude-sonnet-4-6"}
             onChange={async (e) => {
               await setModelChoice(routineModel, e.target.value);
@@ -332,20 +334,33 @@ export function OnDeviceModelCard() {
             </span>
           )}
 
-          <div className="shrink-0 w-fit">
-            <Select
-              size="sm"
-              mono
-              value={currentId ?? ""}
-              onChange={(e) => setPickedId(e.target.value)}
+          {models.length > 0 ? (
+            <div className="shrink-0 w-fit">
+              <Select
+                size="sm"
+                mono
+                aria-label={t("intelligence.chooseOnDeviceModel")}
+                value={currentId ?? ""}
+                onChange={(e) => setPickedId(e.target.value)}
+              >
+                {models.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.display_name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          ) : (
+            <span
+              style={{
+                fontFamily: "var(--mem-font-body)",
+                fontSize: "11px",
+                color: "var(--mem-text-tertiary)",
+              }}
             >
-              {models.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.display_name}
-                </option>
-              ))}
-            </Select>
-          </div>
+              {t("intelligence.modelCatalogUnavailable")}
+            </span>
+          )}
 
           {needsDownload && (
             <Button
