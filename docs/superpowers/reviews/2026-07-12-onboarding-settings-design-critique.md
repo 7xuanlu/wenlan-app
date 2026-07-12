@@ -99,7 +99,21 @@ This is the complaint made concrete. Each is a rule that exists but is applied u
   pinned to the bottom, nothing optically centred.
 - **`CONNECTED TO OLLAMA — 0 MODELS`** — a success-tone chip for an endpoint that cannot
   serve. The chip is *honest* (it reflects a real probe of the live endpoint — the
-  invariant holds), but the tone claims success. Thread #3's pluralisation is still unfixed.
+  invariant holds), but the tone claims success.
+  **Correction to my own first draft:** I wrote here that "thread #3's pluralisation is
+  still unfixed." That was wrong — I inferred it from the screenshot instead of reading the
+  code. `localConnectedChip_one` / `_other` exist in all three locales and `count` is passed
+  at `AnyProviderCard.tsx:212`, so `1 models` cannot occur. Both landed in `8bf666c`.
+  The fix needed is tone, not grammar: state stays `up` (the server really did answer —
+  a red chip is a claim too), only the label changes.
+- **Thread #2 is nearly done, with one gap.** `normalizeEndpoint`
+  (`providerPresets.ts:108`, also `8bf666c`) already folds bare `host:port`, a missing
+  scheme, a missing `/v1`, and trailing slashes together. What it does *not* do is treat
+  `127.0.0.1` / `[::1]` as the same host as `localhost`, so typing `127.0.0.1:11434` falls
+  through to "Custom…" for what is plainly Ollama (`presetForEndpoint`, line 117).
+  Alias-matching must stay confined to *which preset is selected* — the probed URL has to
+  remain the literal string the user typed, or a v4-only server behind an IPv6 `localhost`
+  would get a false "not detected".
 - **Copy is still memory-first**, not wiki-pages-first: welcome reads "Wenlan. Where
   understanding compounds."; done reads "Memories will appear in Wenlan as agents save
   what they learn."
