@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { useEffect, useId, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
@@ -25,6 +25,11 @@ interface Props {
   initialPresetId?: string;
   hidePresetPicker?: boolean;
 }
+
+const OLLAMA_ENDPOINT = "http://localhost:11434/v1";
+const LMSTUDIO_ENDPOINT = "http://localhost:1234/v1";
+const hostOf = (ep: string) => ep.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+const localLabel = (name: string) => name.replace(/\s*\(local\)$/i, "");
 
 const fieldStyle: CSSProperties = {
   width: "100%",
@@ -58,6 +63,8 @@ export default function AnyProviderCard({ groups, initialPresetId, hidePresetPic
       ),
     [groups]
   );
+
+  const isLocalOnly = groups?.length === 1 && groups[0] === "local";
 
   const [presetId, setPresetId] = useState(initialPresetId ?? presets[0].id);
   const preset = presets.find((p) => p.id === presetId) ?? presets[presets.length - 1];
@@ -102,11 +109,51 @@ export default function AnyProviderCard({ groups, initialPresetId, hidePresetPic
   const discovery = useQuery({
     queryKey: ["external-models", trimmedEndpoint, apiKey],
     queryFn: () => listExternalModels(trimmedEndpoint, apiKey || null),
-    enabled: endpointValid && !lockedByVersion,
+    enabled: endpointValid && !lockedByVersion && !isLocalOnly,
     retry: false,
     staleTime: 30_000,
   });
   const models = discovery.data ?? [];
+
+  // §9.2: probe BOTH local servers on the Local-server pane mount.
+  const ollamaProbe = useQuery({
+    queryKey: ["local-probe", OLLAMA_ENDPOINT],
+    queryFn: () => listExternalModels(OLLAMA_ENDPOINT, null),
+    enabled: !!isLocalOnly,
+    retry: false,
+    staleTime: 30_000,
+  });
+  const lmStudioProbe = useQuery({
+    queryKey: ["local-probe", LMSTUDIO_ENDPOINT],
+    queryFn: () => listExternalModels(LMSTUDIO_ENDPOINT, null),
+    enabled: !!isLocalOnly,
+    retry: false,
+    staleTime: 30_000,
+  });
+  const probeFor = (id: string) =>
+    id === "ollama" ? ollamaProbe : id === "lmstudio" ? lmStudioProbe : null;
+  const selectedProbe = probeFor(presetId);
+  const localModels = selectedProbe?.data ?? [];
+
+  // Auto-select the single responder, once both probes have settled.
+  const autoSelectedRef = useRef(false);
+  useEffect(() => {
+    if (!isLocalOnly || autoSelectedRef.current) return;
+    if (ollamaProbe.isLoading || lmStudioProbe.isLoading) return;
+    autoSelectedRef.current = true; // decide exactly once
+    // Respect a previously-saved local endpoint over auto-selection.
+    if (current && current[0]) return;
+    const up = [
+      ["ollama", ollamaProbe.isSuccess] as const,
+      ["lmstudio", lmStudioProbe.isSuccess] as const,
+    ].filter(([, ok]) => ok);
+    if (up.length === 1) {
+      const id = up[0][0];
+      setPresetId(id);
+      setEndpoint(id === "ollama" ? OLLAMA_ENDPOINT : LMSTUDIO_ENDPOINT);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLocalOnly, ollamaProbe.isLoading, ollamaProbe.isSuccess, lmStudioProbe.isLoading, lmStudioProbe.isSuccess]);
 
   const selectPreset = (id: string) => {
     setPresetId(id);
@@ -171,7 +218,77 @@ export default function AnyProviderCard({ groups, initialPresetId, hidePresetPic
         </p>
       )}
 
-      {!hidePresetPicker && (
+      {isLocalOnly ? (
+        <>
+          <div className="flex flex-wrap gap-2">
+            {presets.map((p) => {
+              const probe = probeFor(p.id);
+              const status = !probe
+                ? null
+                : probe.isLoading
+                ? "probing"
+                : probe.isSuccess
+                ? "connected"
+                : "notDetected";
+              const dot = status === "connected" ? "●" : status === "notDetected" ? "○" : "…";
+              const selected = p.id === presetId;
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => selectPreset(p.id)}
+                  className="rounded-full px-3 py-1.5 text-xs"
+                  style={{
+                    border: `1px solid ${selected ? "var(--mem-accent-indigo)" : "var(--mem-border)"}`,
+                    backgroundColor: selected ? "var(--mem-accent-indigo)" : "var(--mem-surface)",
+                    color: selected ? "white" : "var(--mem-text)",
+                    fontFamily: "var(--mem-font-body)",
+                  }}
+                >
+                  {probe && (
+                    <span
+                      style={{
+                        marginRight: "6px",
+                        color:
+                          status === "connected" && !selected
+                            ? "var(--mem-accent-sage)"
+                            : "inherit",
+                      }}
+                    >
+                      {dot}
+                    </span>
+                  )}
+                  {localLabel(p.name)}
+                </button>
+              );
+            })}
+          </div>
+          {selectedProbe && (
+            <p
+              style={{
+                fontFamily: "var(--mem-font-body)",
+                fontSize: "12px",
+                lineHeight: 1.5,
+                color: selectedProbe.isSuccess
+                  ? "var(--mem-accent-sage)"
+                  : "var(--mem-text-secondary)",
+              }}
+            >
+              {selectedProbe.isLoading
+                ? t("externalProvider.localProbing", { name: localLabel(preset.name) })
+                : selectedProbe.isSuccess
+                ? t("externalProvider.localConnectedChip", {
+                    name: localLabel(preset.name),
+                    modelCount: localModels.length,
+                  })
+                : t("externalProvider.localNotDetectedChip", {
+                    name: localLabel(preset.name),
+                    host: hostOf(preset.endpoint),
+                  })}
+            </p>
+          )}
+        </>
+      ) : !hidePresetPicker ? (
         <label className="flex flex-col gap-1">
           <span style={labelStyle}>{t("externalProvider.presetLabel")}</span>
           <select value={presetId} onChange={(e) => selectPreset(e.target.value)} style={fieldStyle}>
@@ -180,7 +297,7 @@ export default function AnyProviderCard({ groups, initialPresetId, hidePresetPic
             ))}
           </select>
         </label>
-      )}
+      ) : null}
 
       {lockedByVersion ? (
         <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-secondary)", lineHeight: 1.5 }}>

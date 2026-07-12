@@ -236,4 +236,33 @@ describe("AnyProviderCard", () => {
     const hint = screen.getByText(/doesn't look like an? OpenAI key/i);
     expect(hint.id).toBe(describedbyId);
   });
+
+  it("local pane: both servers up → both pills connected, no auto-switch", async () => {
+    // default mock resolves for any endpoint → both probes succeed.
+    renderCard({ groups: ["local"] });
+    expect(await screen.findByText(/Connected to Ollama/)).toBeInTheDocument();
+    // both local pills present
+    expect(screen.getByRole("button", { name: /Ollama/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /LM Studio/ })).toBeInTheDocument();
+  });
+
+  it("local pane: exactly one server up → auto-selects it", async () => {
+    mocks.listExternalModels.mockImplementation((ep: string) =>
+      ep.includes("1234")
+        ? Promise.resolve(["qwen2.5:7b"])
+        : Promise.reject(new Error("ECONNREFUSED")),
+    );
+    renderCard({ groups: ["local"] });
+    // LM Studio (1234) is the sole responder → its chip is shown.
+    expect(await screen.findByText(/Connected to LM Studio/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Endpoint URL")).toHaveValue("http://localhost:1234/v1");
+  });
+
+  it("local pane: no server up → not-detected chip for the selected pill", async () => {
+    mocks.listExternalModels.mockRejectedValue(new Error("ECONNREFUSED"));
+    renderCard({ groups: ["local"] });
+    expect(
+      await screen.findByText(/Not detected at localhost:11434 — is Ollama running\?/),
+    ).toBeInTheDocument();
+  });
 });

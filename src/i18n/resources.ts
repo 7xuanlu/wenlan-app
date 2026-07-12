@@ -132,6 +132,9 @@ const en = {
     getKeyLink: "Get a key →",
     keyHint:
       "This doesn't look like a {{vendor}} key — expected to start with {{prefix}}.",
+    localConnectedChip: "Connected to {{name}} — {{modelCount}} models",
+    localNotDetectedChip: "Not detected at {{host}} — is {{name}} running?",
+    localProbing: "Checking {{name}}…",
   },
   intelligenceStrip: {
     chain: "Priority: Anthropic → external endpoint → on-device → basic memory",
@@ -1097,6 +1100,9 @@ const zhHans = {
       "设置了 Anthropic 密钥时优先使用 Anthropic — 移除该密钥后此服务商才会生效。",
     getKeyLink: "获取密钥 →",
     keyHint: "这看起来不像 {{vendor}} 密钥 — 应以 {{prefix}} 开头。",
+    localConnectedChip: "已连接到 {{name}} — {{modelCount}} 个模型",
+    localNotDetectedChip: "未在 {{host}} 检测到 — {{name}} 是否正在运行？",
+    localProbing: "正在检查 {{name}}…",
   },
   intelligenceStrip: {
     chain: "优先级：Anthropic → 外部端点 → 本机模型 → 基础记忆",
@@ -2044,6 +2050,9 @@ const zhHant = {
       "設定了 Anthropic 金鑰時優先使用 Anthropic — 移除該金鑰後此服務商才會生效。",
     getKeyLink: "取得金鑰 →",
     keyHint: "這看起來不像 {{vendor}} 金鑰 — 應以 {{prefix}} 開頭。",
+    localConnectedChip: "已連接到 {{name}} — {{modelCount}} 個模型",
+    localNotDetectedChip: "未在 {{host}} 偵測到 — {{name}} 是否正在執行？",
+    localProbing: "正在檢查 {{name}}…",
   },
   intelligenceStrip: {
     chain: "優先順序:Anthropic → 外部端點 → 本機模型 → 基礎記憶",
