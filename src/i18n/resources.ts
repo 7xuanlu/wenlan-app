@@ -997,6 +997,9 @@ const en = {
     claudeConnectorStepTitle: "Step 2 — Connect your memory",
     openConnectorSettings: "Open connector settings",
   },
+  status: {
+    notVerified: "Not verified yet",
+  },
 };
 
 const zhHans = {
@@ -1970,6 +1973,9 @@ const zhHans = {
     claudeConnectorStepTitle: "第 2 步 — 连接你的记忆",
     openConnectorSettings: "打开连接器设置",
   },
+  status: {
+    notVerified: "尚未验证",
+  },
 };
 
 const zhHant = {
@@ -2942,6 +2948,9 @@ const zhHant = {
     claudePluginNote: "外掛的技能可在聊天中使用；Cowork 支援完整外掛（含 MCP 連接器）。",
     claudeConnectorStepTitle: "第 2 步 — 連接你的記憶",
     openConnectorSettings: "開啟連接器設定",
+  },
+  status: {
+    notVerified: "尚未驗證",
   },
 };
 

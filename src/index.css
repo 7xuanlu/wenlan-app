@@ -129,6 +129,73 @@ body {
   --mem-font-heading: 'Fraunces', Georgia, serif;
   --mem-font-body: 'Instrument Sans', -apple-system, sans-serif;
   --mem-font-mono: 'JetBrains Mono', monospace;
+
+  /* ── Radius scale ─────────────────────────────────────────
+     Rule (shape-consistency lock): lg = top-level containers
+     (cards, panels, dialogs, toasts); md = controls and nested
+     surfaces (inputs, buttons, sub-cards, choice tiles);
+     sm = small controls (badges, compact buttons, selects);
+     full = pills, dots, toggles, progress bars. An element never
+     shares the radius of the container it sits in.
+     Tailwind equivalence (both remain legal): rounded-md=sm,
+     rounded-lg=md, rounded-xl=lg, rounded-full=full. */
+  --mem-radius-sm: 6px;
+  --mem-radius-md: 8px;
+  --mem-radius-lg: 12px;
+  --mem-radius-full: 999px;
+
+  /* ── Spacing scale (4px grid) ─────────────────────────────
+     Tailwind spacing utilities already sit on this grid and stay
+     the preferred vehicle in className. These tokens exist so the
+     ~285 inline style blocks can stop hand-typing numbers. */
+  --mem-space-1: 4px;
+  --mem-space-2: 8px;
+  --mem-space-3: 12px;
+  --mem-space-4: 16px;
+  --mem-space-5: 20px;
+  --mem-space-6: 24px;
+  --mem-space-8: 32px;
+  --mem-space-10: 40px;
+  --mem-space-12: 48px;
+
+  /* ── Type scale ───────────────────────────────────────────
+     Two bands. UI band (10–14px) uses 1px steps because a 13px-
+     base desktop UI needs finer granularity than a modular scale
+     gives. Display band (16→20→26) runs ~1.25–1.3 (major third),
+     which is where Fraunces starts earning its keep. */
+  --mem-text-2xs: 10px;  /* mono eyebrows, uppercase micro-labels */
+  --mem-text-xs: 11px;   /* captions, metadata, sidebar footer   */
+  --mem-text-sm: 12px;   /* descriptions, secondary body         */
+  --mem-text-base: 13px; /* control text: inputs, buttons, lists */
+  --mem-text-md: 14px;   /* row titles, primary body             */
+  --mem-text-lg: 16px;   /* card/dialog headings (sans)          */
+  --mem-text-xl: 20px;   /* page & section titles, stat numerals (serif) */
+  --mem-text-2xl: 26px;  /* wizard step titles (serif)           */
+
+  /* ── Motion ───────────────────────────────────────────────*/
+  --mem-dur-fast: 150ms;              /* hover, color, border   */
+  --mem-dur-enter: 400ms;             /* entrance only          */
+  --mem-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Entrance animation — referenced by className throughout
+   src/components/memory/settings/sections/*.tsx and by
+   UpdaterDialog.tsx:88, but never defined until now. */
+@keyframes mem-fade-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.mem-fade-up {
+  animation: mem-fade-up var(--mem-dur-enter) var(--mem-ease-out) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mem-fade-up { animation: none; }
+}
+
+/* Row hover utility — replaces JS onMouseEnter style mutation
+   (AgentsSection, SettingsSidebar). */
+.mem-row-hover:hover {
+  background: var(--mem-hover);
 }
 
 /* Dark (default — logo ink with a quiet reading cast) */
@@ -175,10 +242,27 @@ html[data-theme="dark"] {
   --mem-status-danger-bg: rgba(205, 92, 74, 0.16);
   --mem-status-danger-text: #D98A78;
   --mem-status-danger-border: rgba(205, 92, 74, 0.38);
-  /* Depth on dark: ink-black shadow so surfaces lift without a grey cast. */
-  --mem-shadow-toast:
+  /* Text on accent-filled surfaces. Dark accent-indigo #A9AEF2 is a
+     LIGHT periwinkle: white text on it measures 2.1:1 (AA fail).
+     Ink #11131A on it measures 8.8:1. */
+  --mem-text-on-accent: #11131A;
+  --mem-accent-indigo-hover: #B7BCF5;
+  /* Border tint for selected/active outlines. Replaces every raw
+     rgba(99,102,241,…) — which was Tailwind indigo-500, a *third*
+     indigo matching neither theme's brand accent. */
+  --mem-accent-indigo-border: rgba(169, 174, 242, 0.42);
+  /* Completes the status triplet — warning and danger have borders,
+     success never did. */
+  --mem-status-success-border: rgba(157, 169, 144, 0.36);
+  --mem-focus-ring: rgba(169, 174, 242, 0.55);
+  /* Elevation: borders carry structure; shadow only for hover-lift
+     and overlays. --mem-shadow-toast stays as a back-compat alias. */
+  --mem-shadow-raised: 0 2px 6px rgba(3, 4, 8, 0.38);
+  --mem-shadow-overlay:
     0 14px 36px rgba(3, 4, 8, 0.54),
     0 2px 6px rgba(3, 4, 8, 0.38);
+  /* Depth on dark: ink-black shadow so surfaces lift without a grey cast. */
+  --mem-shadow-toast: var(--mem-shadow-overlay);
 }
 
 /* Light (cool paper workspace with restrained brand warmth) */
@@ -226,11 +310,19 @@ html[data-theme="light"] {
   --mem-status-danger-bg: rgba(164, 68, 47, 0.10);
   --mem-status-danger-text: #A4442F;
   --mem-status-danger-border: rgba(164, 68, 47, 0.28);
-  /* Depth on light: a warm ink-toned shadow (anchored in the body text hue
-     rather than flat grey) so the toast feels letterpressed on cream. */
-  --mem-shadow-toast:
+  /* Light accent-indigo #5E58C8 is dark: white passes at 5.7:1. */
+  --mem-text-on-accent: #FFFFFF;
+  --mem-accent-indigo-hover: #524CB8;
+  --mem-accent-indigo-border: rgba(94, 88, 200, 0.34);
+  --mem-status-success-border: rgba(111, 143, 118, 0.28);
+  --mem-focus-ring: rgba(94, 88, 200, 0.45);
+  --mem-shadow-raised: 0 1px 3px rgba(26, 26, 46, 0.08);
+  --mem-shadow-overlay:
     0 14px 36px rgba(26, 26, 46, 0.10),
     0 2px 6px rgba(26, 26, 46, 0.06);
+  /* Depth on light: a warm ink-toned shadow (anchored in the body text hue
+     rather than flat grey) so the toast feels letterpressed on cream. */
+  --mem-shadow-toast: var(--mem-shadow-overlay);
 }
 
 .wiki-home {
