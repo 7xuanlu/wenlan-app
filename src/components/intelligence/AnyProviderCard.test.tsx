@@ -201,10 +201,42 @@ describe("AnyProviderCard", () => {
     // the chip and the model <select> must both read the single generic
     // `discovery` query for the selected endpoint, never a second fetch.
     renderCard();
-    await userEvent.selectOptions(await screen.findByLabelText("Provider"), "ollama");
+    await screen.findByLabelText("Provider");
+    // The default preset (openai) is version-locked at the mocked daemon
+    // 0.12, so discovery never fires at mount — but that's incidental to
+    // this test's property. Clear here so the count below is scoped to the
+    // ollama selection under test, not to whatever the default preset does.
+    mocks.listExternalModels.mockClear();
+    await userEvent.selectOptions(screen.getByLabelText("Provider"), "ollama");
     await screen.findByText(/Connected to Ollama/);
     expect(mocks.listExternalModels).toHaveBeenCalledTimes(1);
     expect(mocks.listExternalModels).toHaveBeenCalledWith("http://localhost:11434/v1", null);
+  });
+
+  it("settings card: hand-editing the endpoint off the selected local preset drops the chip's false claim and the local dropdown (live endpoint decides, not the preset id)", async () => {
+    // Task 5b review finding: the chip/select must follow the endpoint that
+    // `discovery` actually probed (`trimmedEndpoint`), not just the selected
+    // preset's group. Select Ollama, confirm the (correct) baseline chip,
+    // then hand-edit Endpoint to a cloud host discovery still answers — the
+    // stale "Connected to Ollama" claim and the Ollama-shaped <select> must
+    // both disappear, mirroring the wizard's `selectedProbe` invariant.
+    renderCard();
+    await userEvent.selectOptions(await screen.findByLabelText("Provider"), "ollama");
+    await screen.findByText(/Connected to Ollama/);
+    expect(screen.getByLabelText("Model").tagName).toBe("SELECT");
+
+    await userEvent.clear(screen.getByLabelText("Endpoint URL"));
+    await userEvent.type(screen.getByLabelText("Endpoint URL"), "https://api.groq.com/openai/v1");
+
+    await waitFor(() =>
+      expect(mocks.listExternalModels).toHaveBeenCalledWith("https://api.groq.com/openai/v1", null)
+    );
+    // The provider picker still shows "Ollama (local)" selected, but the live
+    // endpoint now resolves to Groq — no chip may claim a local connection to
+    // Ollama, and the model field must fall back to free text, not a
+    // dropdown implying these are Ollama's models.
+    expect(screen.queryByText(/Connected to Ollama/)).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Model").tagName).toBe("INPUT");
   });
 
   it("shows the Anthropic precedence warning when an Anthropic key is configured", async () => {

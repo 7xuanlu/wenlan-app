@@ -161,9 +161,22 @@ export default function AnyProviderCard({ groups, initialPresetId, hidePresetPic
   // §9.2 parity: the wizard local pane reads the fixed-endpoint probes; the
   // settings card (all groups) reuses the generic discovery query when a
   // local preset is selected. `localQuery` drives the chip and the <select>.
-  const isLocalPreset = preset.group === "local";
-  const localQuery = isLocalOnly ? selectedProbe : isLocalPreset ? discovery : null;
+  //
+  // Task 5b review finding: locality must be decided by the *live* endpoint
+  // (`trimmedEndpoint`, the same value `discovery` actually probes), never
+  // by the merely-selected preset id — otherwise picking "Ollama (local)"
+  // and then hand-editing Endpoint to a cloud host renders a chip claiming
+  // "Connected to Ollama" sourced from that cloud provider's models. This
+  // mirrors the wizard's `selectedProbe` invariant above (probe association
+  // drops the moment the endpoint no longer matches).
+  const endpointPreset = presetForEndpoint(trimmedEndpoint);
+  const isLocalEndpoint = endpointPreset.group === "local";
+  const localQuery = isLocalOnly ? selectedProbe : isLocalEndpoint ? discovery : null;
   const localQueryModels = localQuery?.data ?? [];
+  // The chip's vendor name must come from whichever preset the live endpoint
+  // resolves to (settings card) — the wizard pane keeps the selected preset
+  // and the endpoint in sync via its pills, so it can use `preset` directly.
+  const chipPreset = isLocalOnly ? preset : endpointPreset;
 
   // Auto-select the single responder, once both probes have settled.
   const autoSelectedRef = useRef(false);
@@ -332,15 +345,15 @@ export default function AnyProviderCard({ groups, initialPresetId, hidePresetPic
           }}
         >
           {localQuery.isLoading
-            ? t("externalProvider.localProbing", { name: localLabel(preset.name) })
+            ? t("externalProvider.localProbing", { name: localLabel(chipPreset.name) })
             : localQuery.isSuccess
             ? t("externalProvider.localConnectedChip", {
-                name: localLabel(preset.name),
+                name: localLabel(chipPreset.name),
                 modelCount: localQueryModels.length,
               })
             : t("externalProvider.localNotDetectedChip", {
-                name: localLabel(preset.name),
-                host: hostOf(isLocalOnly ? preset.endpoint : trimmedEndpoint),
+                name: localLabel(chipPreset.name),
+                host: hostOf(isLocalOnly ? chipPreset.endpoint : trimmedEndpoint),
               })}
         </p>
       )}
