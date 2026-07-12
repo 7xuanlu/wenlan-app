@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps } from "react";
 import "../../i18n";
+import { open as shellOpen } from "@tauri-apps/plugin-shell";
 
 const mocks = vi.hoisted(() => ({
   getDaemonVersion: vi.fn(),
@@ -181,5 +182,41 @@ describe("AnyProviderCard", () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["setup-status"] });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["external-llm"] });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["external-llm-key-configured"] });
+  });
+
+  it("shows the provider-shaped key placeholder on 0.13", async () => {
+    mocks.getDaemonVersion.mockResolvedValue("0.13.0");
+    renderCard();
+    await userEvent.selectOptions(await screen.findByLabelText("Provider"), "openai");
+    expect(await screen.findByLabelText("API key")).toHaveAttribute("placeholder", "sk-proj-...");
+  });
+
+  it("shows an amber soft hint for a key that matches no prefix, without blocking Save", async () => {
+    mocks.getDaemonVersion.mockResolvedValue("0.13.0");
+    renderCard();
+    await userEvent.selectOptions(await screen.findByLabelText("Provider"), "openai");
+    const keyField = await screen.findByLabelText("API key");
+    await userEvent.type(keyField, "nope-123");
+    await userEvent.type(screen.getByLabelText("Model"), "gpt-4o-mini");
+    expect(screen.getByText(/doesn't look like an? OpenAI key/i)).toBeInTheDocument();
+    // Soft only — Save stays enabled.
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+  });
+
+  it("shows no hint once the key matches a prefix", async () => {
+    mocks.getDaemonVersion.mockResolvedValue("0.13.0");
+    renderCard();
+    await userEvent.selectOptions(await screen.findByLabelText("Provider"), "openai");
+    await userEvent.type(await screen.findByLabelText("API key"), "sk-proj-abc");
+    expect(screen.queryByText(/doesn't look like/i)).not.toBeInTheDocument();
+  });
+
+  it("opens the provider console via the system browser from Get a key", async () => {
+    mocks.getDaemonVersion.mockResolvedValue("0.13.0");
+    vi.mocked(shellOpen).mockClear();
+    renderCard();
+    await userEvent.selectOptions(await screen.findByLabelText("Provider"), "openai");
+    await userEvent.click(await screen.findByRole("button", { name: /Get a key/ }));
+    expect(shellOpen).toHaveBeenCalledWith("https://platform.openai.com/api-keys");
   });
 });

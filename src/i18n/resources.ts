@@ -129,6 +129,9 @@ const en = {
     savedRestart: "Saved. Restart Wenlan to apply.",
     anthropicPrecedence:
       "Anthropic takes precedence while its key is set — this provider serves only when the Anthropic key is removed.",
+    getKeyLink: "Get a key →",
+    keyHint:
+      "This doesn't look like a {{vendor}} key — expected to start with {{prefix}}.",
   },
   intelligenceStrip: {
     chain: "Priority: Anthropic → external endpoint → on-device → basic memory",
@@ -1092,6 +1095,8 @@ const zhHans = {
     savedRestart: "已保存。重启 Wenlan 后生效。",
     anthropicPrecedence:
       "设置了 Anthropic 密钥时优先使用 Anthropic — 移除该密钥后此服务商才会生效。",
+    getKeyLink: "获取密钥 →",
+    keyHint: "这看起来不像 {{vendor}} 密钥 — 应以 {{prefix}} 开头。",
   },
   intelligenceStrip: {
     chain: "优先级：Anthropic → 外部端点 → 本机模型 → 基础记忆",
@@ -2037,6 +2042,8 @@ const zhHant = {
     savedRestart: "已儲存。重新啟動 Wenlan 後生效。",
     anthropicPrecedence:
       "設定了 Anthropic 金鑰時優先使用 Anthropic — 移除該金鑰後此服務商才會生效。",
+    getKeyLink: "取得金鑰 →",
+    keyHint: "這看起來不像 {{vendor}} 金鑰 — 應以 {{prefix}} 開頭。",
   },
   intelligenceStrip: {
     chain: "優先順序:Anthropic → 外部端點 → 本機模型 → 基礎記憶",

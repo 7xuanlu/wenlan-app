@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
+import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import {
   getExternalLlm,
   setExternalLlm,
@@ -14,6 +15,7 @@ import { useApiKeyStatus } from "./IntelligenceSetup";
 import {
   PROVIDER_PRESETS,
   presetForEndpoint,
+  keyPrefixMismatch,
   type PresetGroup,
 } from "./providerPresets";
 
@@ -219,9 +221,44 @@ export default function AnyProviderCard({ groups, initialPresetId, hidePresetPic
                 type="password"
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
-                placeholder={keyConfigured ? t("externalProvider.apiKeyConfiguredPlaceholder") : ""}
+                placeholder={
+                  keyConfigured
+                    ? t("externalProvider.apiKeyConfiguredPlaceholder")
+                    : (preset.keyPlaceholder ?? "")
+                }
                 style={fieldStyle}
               />
+              {keyPrefixMismatch(preset, apiKey) && (
+                <span
+                  style={{
+                    fontFamily: "var(--mem-font-body)",
+                    fontSize: "11px",
+                    color: "var(--mem-accent-amber)",
+                  }}
+                >
+                  {t("externalProvider.keyHint", {
+                    vendor: preset.name,
+                    prefix: (preset.keyPrefixes ?? []).join(" or "),
+                  })}
+                </span>
+              )}
+              {preset.getKeyUrl && (
+                <button
+                  type="button"
+                  onClick={() => shellOpen(preset.getKeyUrl!)}
+                  className="self-start text-xs"
+                  style={{
+                    fontFamily: "var(--mem-font-body)",
+                    color: "var(--mem-accent-indigo)",
+                    background: "none",
+                    border: "none",
+                    padding: 0,
+                    cursor: "pointer",
+                  }}
+                >
+                  {t("externalProvider.getKeyLink")}
+                </button>
+              )}
             </label>
           )}
         </>
