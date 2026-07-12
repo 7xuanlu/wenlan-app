@@ -62,6 +62,7 @@ import {
   writeMcpConfig,
   listAgents,
   setApiKey,
+  clipboardWrite,
 } from "../lib/tauri";
 
 function renderWizard(
@@ -282,6 +283,62 @@ describe("SetupWizard", () => {
       expect(screen.queryByText("Waiting for your first agent...")).not.toBeInTheDocument();
       expect(screen.getByText(/setup failed/i)).toBeInTheDocument();
     });
+  });
+
+  it("connect step leads detected CLI clients with the plugin path and unchecks their one-click default", async () => {
+    (detectMcpClients as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        name: "Claude Code",
+        client_type: "claude_code",
+        config_path: "/path/to/claude.json",
+        detected: true,
+        already_configured: false,
+      },
+      {
+        name: "Cursor",
+        client_type: "cursor",
+        config_path: "/path/to/cursor",
+        detected: true,
+        already_configured: false,
+      },
+    ]);
+
+    renderWizard({ initialStep: "connect" });
+
+    // Primary path: the plugin commands render inside the wizard row.
+    expect(
+      await screen.findByText("claude plugin marketplace add 7xuanlu/wenlan"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("claude plugin install wenlan@7xuanlu-wenlan")).toBeInTheDocument();
+
+    // One-click demoted for CLI clients: checkbox defaults OFF; GUI stays ON.
+    const cursorCheckbox = screen.getByRole("checkbox", { name: "Cursor" });
+    await waitFor(() => expect(cursorCheckbox).toBeChecked());
+    expect(screen.getByRole("checkbox", { name: "Claude Code" })).not.toBeChecked();
+    expect(screen.getByText("Or write the config for me")).toBeInTheDocument();
+  });
+
+  it("connect step Copy setup prompt copies the Codex prompt with the real command", async () => {
+    (detectMcpClients as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        name: "Codex CLI",
+        client_type: "codex_cli",
+        config_path: "/path/to/config.toml",
+        detected: true,
+        already_configured: false,
+      },
+    ]);
+
+    renderWizard({ initialStep: "connect" });
+
+    expect(
+      await screen.findByText("codex mcp add wenlan -- npx -y wenlan-mcp"),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Copy setup prompt" }));
+    await waitFor(() => expect(clipboardWrite).toHaveBeenCalledTimes(1));
+    expect(
+      (clipboardWrite as ReturnType<typeof vi.fn>).mock.calls[0][0],
+    ).toContain("codex mcp add wenlan -- npx -y wenlan-mcp");
   });
 
   it("verify step skips waiting UX when agents already wrote in the past", async () => {

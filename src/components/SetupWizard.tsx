@@ -12,6 +12,7 @@ import { ImportView } from "./memory/ImportView";
 import VaultConnectCard from "./memory/sources/VaultConnectCard";
 import { RemoteAccessPanel } from "./memory/RemoteAccessPanel";
 import WebPlatformCards from "./connect/WebPlatformCards";
+import CliPrimaryPath, { isCliPrimaryClient } from "./connect/CliPrimaryPath";
 import { ApiKeyCard, OnDeviceModelCard } from "./intelligence/IntelligenceSetup";
 import AnyProviderCard from "./intelligence/AnyProviderCard";
 import { PROVIDER_PRESETS, ANTHROPIC_VENDOR_NAME } from "./intelligence/providerPresets";
@@ -495,7 +496,12 @@ function ConnectStep({
       const next = { ...prev };
       for (const client of clients) {
         if (next[client.client_type] === undefined) {
-          next[client.client_type] = client.detected && !client.already_configured;
+          // §9.3: CLI clients lead with the plugin path; the one-click batch
+          // write is opt-in for them, so their checkbox starts unchecked.
+          next[client.client_type] =
+            client.detected &&
+            !client.already_configured &&
+            !isCliPrimaryClient(client.client_type);
         }
       }
       return next;
@@ -597,6 +603,119 @@ function ConnectStep({
         const error = connectErrors[client.client_type];
         const isSelected = !!selectedClients[client.client_type];
 
+        // §9.3: detected, not-yet-connected CLI clients lead with the shared
+        // plugin path instead of the generic description.
+        const isCliPrimary =
+          client.detected && !isConnected && isCliPrimaryClient(client.client_type);
+        const descId = `client-desc-${client.client_type}`;
+
+        const nameBadges = (
+          <div className="flex items-center gap-2 flex-wrap">
+            <span
+              style={{
+                fontFamily: "var(--mem-font-body)",
+                fontSize: "14px",
+                fontWeight: 500,
+                color: "var(--mem-text)",
+              }}
+            >
+              {client.name}
+            </span>
+            <span
+              className="px-2 py-0.5 rounded-full text-xs"
+              style={{
+                fontFamily: "var(--mem-font-body)",
+                backgroundColor: statusActive ? "rgba(99, 102, 241, 0.12)" : "var(--mem-hover)",
+                color: statusActive ? "var(--mem-accent-indigo)" : "var(--mem-text-tertiary)",
+              }}
+            >
+              {statusLabel}
+            </span>
+            {isConnected && (
+              <span
+                className="px-2 py-0.5 rounded-full text-xs"
+                style={{
+                  fontFamily: "var(--mem-font-body)",
+                  backgroundColor: "rgba(34,197,94,0.12)",
+                  color: "rgb(34,197,94)",
+                }}
+              >
+                {t("setup.connect.configured")}
+              </span>
+            )}
+          </div>
+        );
+
+        const checkbox = (
+          <input
+            type="checkbox"
+            aria-label={client.name}
+            aria-describedby={isCliPrimary ? descId : undefined}
+            checked={isSelected || isConnected}
+            disabled={!client.detected || isConnected || isConnectingAll}
+            onChange={(e) => setSelectedClients((prev) => ({ ...prev, [client.client_type]: e.target.checked }))}
+            style={{
+              width: "16px",
+              height: "16px",
+              accentColor: "var(--mem-accent-indigo)",
+              marginTop: "2px",
+            }}
+          />
+        );
+
+        // The CLI primary path renders a real <button> ("Copy setup
+        // prompt"). Nesting that inside the same <label> that toggles this
+        // row's checkbox risks the browser forwarding the click to the
+        // checkbox too, so hint/status content (commands, reload note,
+        // error) lives in a sibling node wired via aria-describedby instead
+        // of inside the <label> — the <label> only wraps the checkbox and
+        // its plain-text name/status badges.
+        if (isCliPrimary && isCliPrimaryClient(client.client_type)) {
+          return (
+            <div
+              key={client.client_type}
+              className="flex items-start gap-3 rounded-xl px-4 py-3"
+              style={{
+                backgroundColor: "var(--mem-surface)",
+                border: `1px solid ${isSelected ? "rgba(99, 102, 241, 0.4)" : "var(--mem-border)"}`,
+              }}
+            >
+              <label className="flex items-start gap-3" style={{ cursor: "pointer" }}>
+                {checkbox}
+                {nameBadges}
+              </label>
+
+              <div id={descId} style={{ flex: 1, display: "flex", flexDirection: "column", gap: "6px" }}>
+                <CliPrimaryPath clientType={client.client_type} />
+                <p
+                  style={{
+                    fontFamily: "var(--mem-font-body)",
+                    fontSize: "11px",
+                    color: "var(--mem-text-tertiary)",
+                    lineHeight: 1.5,
+                    margin: 0,
+                  }}
+                >
+                  {t("connectMatrix.oneClickAdvanced")}
+                </p>
+
+                {error && (
+                  <p
+                    style={{
+                      fontFamily: "var(--mem-font-body)",
+                      fontSize: "11px",
+                      color: "#ef4444",
+                      margin: 0,
+                    }}
+                  >
+                    {error}
+                  </p>
+                )}
+              </div>
+            </div>
+          );
+        }
+
         return (
           <label
             key={client.client_type}
@@ -607,55 +726,10 @@ function ConnectStep({
               cursor: client.detected && !isConnected ? "pointer" : "default",
             }}
           >
-            <input
-              type="checkbox"
-              aria-label={client.name}
-              checked={isSelected || isConnected}
-              disabled={!client.detected || isConnected || isConnectingAll}
-              onChange={(e) => setSelectedClients((prev) => ({ ...prev, [client.client_type]: e.target.checked }))}
-              style={{
-                width: "16px",
-                height: "16px",
-                accentColor: "var(--mem-accent-indigo)",
-                marginTop: "2px",
-              }}
-            />
+            {checkbox}
 
             <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "6px" }}>
-              <div className="flex items-center gap-2 flex-wrap">
-                <span
-                  style={{
-                    fontFamily: "var(--mem-font-body)",
-                    fontSize: "14px",
-                    fontWeight: 500,
-                    color: "var(--mem-text)",
-                  }}
-                >
-                  {client.name}
-                </span>
-                <span
-                  className="px-2 py-0.5 rounded-full text-xs"
-                  style={{
-                    fontFamily: "var(--mem-font-body)",
-                    backgroundColor: statusActive ? "rgba(99, 102, 241, 0.12)" : "var(--mem-hover)",
-                    color: statusActive ? "var(--mem-accent-indigo)" : "var(--mem-text-tertiary)",
-                  }}
-                >
-                  {statusLabel}
-                </span>
-                {isConnected && (
-                  <span
-                    className="px-2 py-0.5 rounded-full text-xs"
-                    style={{
-                      fontFamily: "var(--mem-font-body)",
-                      backgroundColor: "rgba(34,197,94,0.12)",
-                      color: "rgb(34,197,94)",
-                    }}
-                  >
-                    {t("setup.connect.configured")}
-                  </span>
-                )}
-              </div>
+              {nameBadges}
 
               <p
                 style={{
