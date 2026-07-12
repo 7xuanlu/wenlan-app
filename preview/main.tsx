@@ -220,9 +220,13 @@ function Harness() {
       )}
       {mode === "wizard" ? (
         // Full-bleed: the wizard owns the whole window in the real app.
+        // initialStep only when ?step= asked for one: the wizard sets
+        // hideDots = !!initialStep, so always passing it would hide the step
+        // dots and misreport a real first run as having no progress indicator.
+        // No ?step= → a natural run from welcome, dots and all.
         <SetupWizard
           key={wizardStep}
-          initialStep={wizardStep}
+          initialStep={params.get("step") ? wizardStep : undefined}
           onComplete={() => console.log("[preview] onComplete")}
         />
       ) : mode === "settings" ? (
