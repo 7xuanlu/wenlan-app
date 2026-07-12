@@ -37,7 +37,6 @@ const en = {
       chatPathTitle: "Chat history",
       chatPathDescription: "Import ChatGPT or Claude conversation exports.",
       chatPathCta: "Import chat history",
-      vaultPathTitle: "Obsidian vault / notes folder",
     },
     connect: {
       title: "Choose tools to connect",
@@ -47,8 +46,6 @@ const en = {
       supportedTools: "Supported tools",
       webTools: "Claude.ai & ChatGPT (web)",
       manualSetup: "Manual setup",
-      detected: "Detected",
-      installFirst: "Install first",
       configured: "Configured",
       connectedDescription:
         "Connected — this tool can already read and write your knowledge base.",
@@ -1104,7 +1101,6 @@ const zhHans = {
       chatPathTitle: "聊天记录",
       chatPathDescription: "导入 ChatGPT 或 Claude 的对话导出文件。",
       chatPathCta: "导入聊天记录",
-      vaultPathTitle: "Obsidian 仓库 / 笔记文件夹",
     },
     connect: {
       title: "选择要连接的工具",
@@ -1114,8 +1110,6 @@ const zhHans = {
       supportedTools: "支持的工具",
       webTools: "Claude.ai 和 ChatGPT 网页版",
       manualSetup: "手动设置",
-      detected: "已检测到",
-      installFirst: "先安装",
       configured: "已配置",
       connectedDescription: "已连接——该工具已经可以读写你的知识库。",
       detectedDescription: "已在此 Mac 上检测到——文澜可以一键连接它。",
@@ -2143,7 +2137,6 @@ const zhHant = {
       chatPathTitle: "聊天記錄",
       chatPathDescription: "匯入 ChatGPT 或 Claude 的對話匯出檔案。",
       chatPathCta: "匯入聊天記錄",
-      vaultPathTitle: "Obsidian 儲存庫 / 筆記資料夾",
     },
     connect: {
       title: "選擇要連接的工具",
@@ -2153,8 +2146,6 @@ const zhHant = {
       supportedTools: "支援的工具",
       webTools: "Claude.ai 和 ChatGPT 網頁版",
       manualSetup: "手動設定",
-      detected: "已偵測到",
-      installFirst: "先安裝",
       configured: "已設定",
       connectedDescription: "已連接——該工具已經可以讀寫你的知識庫。",
       detectedDescription: "已在此 Mac 上偵測到——文瀾可以一鍵連接它。",
