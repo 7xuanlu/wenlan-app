@@ -114,6 +114,36 @@ describe("ClientSetupList — §9.3 plugin-first matrix", () => {
         expect(value, `${locale}.connectMatrix.${key}`).not.toContain(".mcpb");
         expect(value, `${locale}.connectMatrix.${key}`).not.toContain(".codex-plugin");
       }
+
+      // These are shell commands, not prose — a locale/translation pass must
+      // never "localize" a slug. Pin the exact byte value in every locale so
+      // a drifted install string (e.g. zh-Hans slugging wenlan@7xuanlu-wenlan
+      // down to wenlan@7xuanlu) fails loudly instead of shipping silently.
+      expect(connectMatrix.claudeCodeCommand1, `${locale}.connectMatrix.claudeCodeCommand1`).toBe(
+        "claude plugin marketplace add 7xuanlu/wenlan",
+      );
+      expect(connectMatrix.claudeCodeCommand2, `${locale}.connectMatrix.claudeCodeCommand2`).toBe(
+        "claude plugin install wenlan@7xuanlu-wenlan",
+      );
+      expect(connectMatrix.codexCommand, `${locale}.connectMatrix.codexCommand`).toBe(
+        "codex mcp add wenlan -- {{cmd}}",
+      );
+
+      // The copy-pasteable setup-prompt strings embed these same commands
+      // verbatim (inside backticks) — pin them there too, so a translation
+      // pass can't drift the copy-pasted command while leaving the
+      // standalone key alone.
+      expect(
+        connectMatrix.claudeCodePrompt,
+        `${locale}.connectMatrix.claudeCodePrompt`,
+      ).toContain("claude plugin marketplace add 7xuanlu/wenlan");
+      expect(
+        connectMatrix.claudeCodePrompt,
+        `${locale}.connectMatrix.claudeCodePrompt`,
+      ).toContain("claude plugin install wenlan@7xuanlu-wenlan");
+      expect(connectMatrix.codexPrompt, `${locale}.connectMatrix.codexPrompt`).toContain(
+        "codex mcp add wenlan -- {{cmd}}",
+      );
     }
   });
 

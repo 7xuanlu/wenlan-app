@@ -335,6 +335,7 @@ export default function AnyProviderCard({ groups, initialPresetId, hidePresetPic
 
       {localQuery && (isLocalOnly || endpointValid) && (
         <p
+          role="status"
           style={{
             fontFamily: "var(--mem-font-body)",
             fontSize: "12px",

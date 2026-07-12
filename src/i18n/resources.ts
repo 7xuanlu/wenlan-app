@@ -132,7 +132,7 @@ const en = {
       "Anthropic takes precedence while its key is set — this provider serves only when the Anthropic key is removed.",
     getKeyLink: "Get a key →",
     keyHint:
-      "This doesn't look like a {{vendor}} key — expected to start with {{prefix}}.",
+      "Doesn't match the {{vendor}} key format — expected to start with {{prefix}}.",
     localConnectedChip: "Connected to {{name}} — {{modelCount}} models",
     localNotDetectedChip: "Not detected at {{host}} — is {{name}} running?",
     localProbing: "Checking {{name}}…",

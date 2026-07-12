@@ -174,6 +174,8 @@ describe("AnyProviderCard", () => {
     // No pills in settings: the Provider select is still the picker.
     expect(screen.getByLabelText("Provider")).toBeInTheDocument();
     expect(screen.getByLabelText("Model").tagName).toBe("SELECT");
+    // The probe result is announced to screen readers, not just shown visually.
+    expect(screen.getByRole("status")).toHaveTextContent("Connected to Ollama — 1 models");
   });
 
   it("settings card: local preset with discovery failure keeps free text and shows the not-detected chip", async () => {
@@ -243,6 +245,17 @@ describe("AnyProviderCard", () => {
     expect(screen.getByLabelText("Model").tagName).toBe("INPUT");
   });
 
+  it("disables Save and Test while the model field is empty, even with a valid endpoint (canAct guard)", async () => {
+    renderCard();
+    await userEvent.selectOptions(await screen.findByLabelText("Provider"), "ollama");
+    // Endpoint is valid (preset default) but no model has been chosen —
+    // Save/Test must stay disabled until a model is set.
+    expect(screen.getByLabelText("Endpoint URL")).toHaveValue("http://localhost:11434/v1");
+    expect(screen.getByLabelText("Model")).toHaveValue("");
+    expect(screen.getByRole("button", { name: "Test" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+  });
+
   it("shows the Anthropic precedence warning when an Anthropic key is configured", async () => {
     mocks.getApiKey.mockResolvedValue("sk-ant-configured");
     renderCard();
@@ -279,7 +292,7 @@ describe("AnyProviderCard", () => {
     const keyField = await screen.findByLabelText("API key");
     await userEvent.type(keyField, "nope-123");
     await userEvent.type(screen.getByLabelText("Model"), "gpt-4o-mini");
-    expect(screen.getByText(/doesn't look like an? OpenAI key/i)).toBeInTheDocument();
+    expect(screen.getByText(/doesn't match the OpenAI key format/i)).toBeInTheDocument();
     // Soft only — Save stays enabled.
     expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
   });
@@ -289,7 +302,7 @@ describe("AnyProviderCard", () => {
     renderCard();
     await userEvent.selectOptions(await screen.findByLabelText("Provider"), "openai");
     await userEvent.type(await screen.findByLabelText("API key"), "sk-proj-abc");
-    expect(screen.queryByText(/doesn't look like/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/doesn't match the .* key format/i)).not.toBeInTheDocument();
   });
 
   it("opens the provider console via the system browser from Get a key", async () => {
@@ -314,7 +327,7 @@ describe("AnyProviderCard", () => {
     // The hint must instead be wired as a description, not folded into the name.
     const describedbyId = exactField.getAttribute("aria-describedby");
     expect(describedbyId).toBeTruthy();
-    const hint = screen.getByText(/doesn't look like an? OpenAI key/i);
+    const hint = screen.getByText(/doesn't match the OpenAI key format/i);
     expect(hint.id).toBe(describedbyId);
   });
 
