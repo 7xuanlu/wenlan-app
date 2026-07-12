@@ -85,14 +85,18 @@ describe("WebPlatformCards", () => {
     expect(
       await screen.findByText("Step 1 — Add Wenlan to claude.ai"),
     ).toBeInTheDocument();
-    // Marketplace repo string, exact li copy. The repo MUST be
-    // 7xuanlu/claude-plugins: the wenlan repo's own .claude-plugin/marketplace.json
-    // was deleted on 2026-06-15 (backend 048d77a8, "retire self-marketplace"), so
-    // 7xuanlu/wenlan no longer resolves as a marketplace and this step dead-ends.
-    // This assertion previously pinned that dead string.
+    // Marketplace repo string, exact li copy. The repo MUST be 7xuanlu/wenlan —
+    // its self-hosted marketplace (name "7xuanlu-wenlan") installs the plugin
+    // UNPINNED, direct from source, so users track the latest release. Backend
+    // 048d77a8 briefly retired it in favour of the 7xuanlu/claude-plugins
+    // catalog, but ace7ae18 (2026-07-12) reinstated it deliberately.
+    //
+    // Do NOT "fix" this to 7xuanlu/claude-plugins. That catalog resolves too,
+    // but it pins wenlan to ref v0.12.1 (a frozen release) and describes it as
+    // "a personal AI memory layer" — copy this product does not use.
     expect(
       screen.getByText(
-        "Enter the marketplace repo 7xuanlu/claude-plugins and choose Sync",
+        "Enter the marketplace repo 7xuanlu/wenlan and choose Sync",
       ),
     ).toBeInTheDocument();
     // Honesty note: skills in chat, MCP connectors in Cowork. Never calls

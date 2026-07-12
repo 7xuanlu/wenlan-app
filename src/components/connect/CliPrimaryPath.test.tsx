@@ -13,8 +13,8 @@ vi.mock("../../lib/tauri", async (importOriginal) => {
 
 import CliPrimaryPath from "./CliPrimaryPath";
 
-const COMMAND1 = "/plugin marketplace add 7xuanlu/claude-plugins";
-const COMMAND2 = "/plugin install wenlan@7xuanlu";
+const COMMAND1 = "/plugin marketplace add 7xuanlu/wenlan";
+const COMMAND2 = "/plugin install wenlan@7xuanlu-wenlan";
 const COMMAND3 = "/setup";
 
 function renderPathWithCommandsOpen() {

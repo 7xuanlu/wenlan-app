@@ -26,8 +26,8 @@ const CLIENTS = [
   { name: "Gemini CLI", client_type: "gemini_cli", config_path: "~/.gemini/settings.json", detected: true, already_configured: false },
 ];
 
-const COMMAND1 = "/plugin marketplace add 7xuanlu/claude-plugins";
-const COMMAND2 = "/plugin install wenlan@7xuanlu";
+const COMMAND1 = "/plugin marketplace add 7xuanlu/wenlan";
+const COMMAND2 = "/plugin install wenlan@7xuanlu-wenlan";
 const COMMAND3 = "/setup";
 
 function renderList(qc: QueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
