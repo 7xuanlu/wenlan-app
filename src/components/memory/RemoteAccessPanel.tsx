@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { listen } from "@tauri-apps/api/event";
@@ -12,21 +12,18 @@ import {
 } from "../../lib/tauri";
 import { Button, StatusChip, Toggle } from "./settings/primitives";
 
-interface Props {
-  mode: "compact" | "full";
-}
-
 const REMOTE_QUERY_KEY = ["remote-access-status"] as const;
 
-/** Shared Remote Access control surface used by the onboarding wizard
- *  (compact mode) and the full Settings page (full mode). Owns the toggle,
- *  status indicator, URL copy affordance, test-connection probe, setup
- *  instructions, and — in full mode — reconnect controls plus tunnel-behavior
- *  context. Reads `RemoteAccessStatus` via React Query and invalidates on
- *  `remote-access-status` events so both consumers stay in sync. */
-export function RemoteAccessPanel({ mode }: Props) {
+/** Remote Access control surface, Settings-only (the wizard dropped its
+ *  compact copy — see docs/superpowers/plans/2026-07-12-connect-step-redesign.md
+ *  §4). Owns the toggle, status indicator, URL copy affordance,
+ *  test-connection probe, setup instructions, and reconnect controls plus
+ *  tunnel-behavior context. Reads `RemoteAccessStatus` via React Query and
+ *  invalidates on `remote-access-status` events. */
+export function RemoteAccessPanel() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const warningId = `${useId()}-remote-access-warning`;
 
   const { data: status = { status: "off" } as RemoteAccessStatus } = useQuery({
     queryKey: REMOTE_QUERY_KEY,
@@ -124,36 +121,57 @@ export function RemoteAccessPanel({ mode }: Props) {
       {/* Toggle row */}
       <div className="px-5 py-4">
         <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <div
-              style={{
-                fontFamily: "var(--mem-font-body)",
-                fontSize: "var(--mem-text-lg)",
-                fontWeight: 600,
-                color: "var(--mem-text)",
-              }}
-            >
-              {t("remoteAccess.title")}
-            </div>
-            <p
-              style={{
-                fontFamily: "var(--mem-font-body)",
-                fontSize: "12px",
-                color: "var(--mem-text-tertiary)",
-                marginTop: "2px",
-                lineHeight: "1.5",
-              }}
-            >
-              {t("remoteAccess.noAuthWarning")}
-            </p>
+          <div
+            style={{
+              fontFamily: "var(--mem-font-body)",
+              fontSize: "var(--mem-text-lg)",
+              fontWeight: 600,
+              color: "var(--mem-text)",
+            }}
+          >
+            {t("remoteAccess.title")}
           </div>
           <div className="mt-0.5">
             <Toggle
               enabled={isOn}
               onToggle={() => toggleMut.mutate(!isOn)}
               aria-label={t("remoteAccess.title")}
+              aria-describedby={warningId}
             />
           </div>
+        </div>
+
+        {/* No-auth warning — the single, louder surviving rendering (spec §6/§8:
+            was 3 renderings across this panel + WebPlatformCards ×2, now exactly
+            one). Always visible, never behind a disclosure, wired to the toggle
+            via aria-describedby so a screen reader hears the boundary at the
+            moment of toggling. */}
+        <div className="flex items-start gap-2 mt-2">
+          <svg
+            aria-hidden="true"
+            className="w-3.5 h-3.5 text-[var(--mem-status-warning-text)] shrink-0 mt-px"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.072 16.5c-.77.833.192 2.5 1.732 2.5z"
+            />
+          </svg>
+          <p
+            id={warningId}
+            style={{
+              fontFamily: "var(--mem-font-body)",
+              fontSize: "12px",
+              color: "var(--mem-status-warning-text)",
+              lineHeight: "1.5",
+            }}
+          >
+            {t("remoteAccess.noAuthWarning")}
+          </p>
         </div>
       </div>
 
@@ -276,51 +294,47 @@ export function RemoteAccessPanel({ mode }: Props) {
             onToggle={() => setShowInstructions((v) => !v)}
           />
 
-          {mode === "full" && (
-            <div className="flex items-center gap-3 pt-1">
-              <Button
-                variant="secondary"
-                size="sm"
-                loading={toggleMut.isPending}
-                onClick={handleReconnect}
-              >
-                {t("remoteAccess.reconnect")}
-              </Button>
-              <p
-                style={{
-                  fontFamily: "var(--mem-font-body)",
-                  fontSize: "11px",
-                  color: "var(--mem-text-tertiary)",
-                  lineHeight: "1.6",
-                  margin: 0,
-                }}
-              >
-                {status.relay_url
-                  ? t("remoteAccess.stableNote")
-                  : t("remoteAccess.tunnelChangesNote")}
-              </p>
-            </div>
-          )}
+          <div className="flex items-center gap-3 pt-1">
+            <Button
+              variant="secondary"
+              size="sm"
+              loading={toggleMut.isPending}
+              onClick={handleReconnect}
+            >
+              {t("remoteAccess.reconnect")}
+            </Button>
+            <p
+              style={{
+                fontFamily: "var(--mem-font-body)",
+                fontSize: "11px",
+                color: "var(--mem-text-tertiary)",
+                lineHeight: "1.6",
+                margin: 0,
+              }}
+            >
+              {status.relay_url
+                ? t("remoteAccess.stableNote")
+                : t("remoteAccess.tunnelChangesNote")}
+            </p>
+          </div>
         </div>
       )}
 
-      {/* Error / disabled reconnect (full mode shows reconnect button) */}
+      {/* Error / disabled reconnect */}
       {status.status === "error" && (
         <div className="px-5 pb-4 space-y-2">
           <div className="flex items-center gap-2 flex-wrap">
             <Button variant="secondary" size="sm" onClick={() => toggleMut.mutate(true)}>
               {t("remoteAccess.retry")}
             </Button>
-            {mode === "full" && (
-              <Button variant="secondary" size="sm" onClick={handleReconnect}>
-                {t("remoteAccess.reconnect")}
-              </Button>
-            )}
+            <Button variant="secondary" size="sm" onClick={handleReconnect}>
+              {t("remoteAccess.reconnect")}
+            </Button>
           </div>
         </div>
       )}
 
-      {mode === "full" && status.status === "off" && (
+      {status.status === "off" && (
         <div className="px-5 pb-4">
           <Button variant="secondary" size="sm" onClick={handleReconnect}>
             {t("remoteAccess.reconnect")}

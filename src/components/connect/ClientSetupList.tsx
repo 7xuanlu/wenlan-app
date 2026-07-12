@@ -1,15 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { detectMcpClients, writeMcpConfig, type McpClient } from "../../lib/tauri";
-import CliPrimaryPath, { isCliPrimaryClient, type CliClientType } from "./CliPrimaryPath";
+import CliPrimaryPath, { isCliPrimaryClient } from "./CliPrimaryPath";
+import ClientRow from "./ClientRow";
 import { Button } from "../memory/settings/primitives";
 
-/** Apps & CLIs group (spec §2a / §9.3). CLI clients lead with their primary
- *  plugin path (CliPrimaryPath: terminal commands + "Copy setup prompt");
- *  the one-click config write moves under Advanced. GUI clients keep the
- *  one-click "Set up". */
+/** Apps & CLIs group (spec §2a / §9.3), thinned per the redesign spec (§4)
+ *  to compose over the shared `ClientRow`. Claude Code leads with its
+ *  plugin-install path (`CliPrimaryPath`); its one-click config write stays
+ *  under Advanced here — unlike the wizard, which never writes Claude
+ *  Code's config at all (spec §12.2), Settings is a deliberate,
+ *  one-at-a-time destination the user chose to visit, and the Advanced
+ *  disclosure is itself the extra deliberate step. Every other client keeps
+ *  the one-click "Set up". */
 export default function ClientSetupList() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -31,36 +36,6 @@ export default function ClientSetupList() {
     }
   };
 
-  const rowShell = (client: McpClient, children: ReactNode) => (
-    <div
-      key={client.client_type}
-      className="rounded-lg px-3 py-2.5 flex flex-col gap-2"
-      style={{ border: "1px solid var(--mem-border)", backgroundColor: "var(--mem-surface)" }}
-    >
-      <div className="flex items-center gap-3">
-        <div className="flex-1 min-w-0">
-          <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "13px", fontWeight: 500, color: "var(--mem-text)", margin: 0 }}>
-            {client.name}
-          </p>
-          <p className="truncate" style={{ fontFamily: "var(--mem-font-mono)", fontSize: "10px", color: "var(--mem-text-tertiary)", margin: 0 }}>
-            {client.config_path}
-          </p>
-        </div>
-        {client.already_configured && (
-          <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-accent-sage)" }}>
-            {t("connectMatrix.configured")}
-          </span>
-        )}
-      </div>
-      {children}
-      {errors[client.client_type] && (
-        <p role="alert" style={{ fontFamily: "var(--mem-font-mono)", fontSize: "10px", margin: 0, color: "var(--mem-status-danger-text)" }}>
-          {errors[client.client_type]}
-        </p>
-      )}
-    </div>
-  );
-
   const advancedSetUp = (client: McpClient) => (
     <details>
       <summary style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)", cursor: "pointer" }}>
@@ -79,45 +54,64 @@ export default function ClientSetupList() {
     </details>
   );
 
-  const guiPrimary = (client: McpClient) =>
-    client.already_configured ? null : client.detected ? (
-      <Button
-        type="button"
-        variant="secondary"
-        size="sm"
-        onClick={() => setUp(client.client_type)}
-        disabled={busy === client.client_type}
-        className="self-start"
-      >
-        {busy === client.client_type ? t("connectMatrix.settingUp") : t("connectMatrix.setUp")}
-      </Button>
-    ) : (
-      <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)" }}>
-        {t("connectMatrix.notDetected")}
-      </span>
-    );
+  const notInstalled = (
+    <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)" }}>
+      {t("connectMatrix.notDetected")}
+    </span>
+  );
 
-  // A plugin-install command for a CLI that isn't on the machine can't
-  // succeed anyway — gate the CLI primary path on detection too, same as
-  // guiPrimary, so an undetected client always shows "Not detected".
-  const cliPrimary = (client: McpClient, clientType: CliClientType) =>
+  const guiTrailing = (client: McpClient) =>
+    client.already_configured
+      ? null
+      : client.detected
+        ? (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setUp(client.client_type)}
+              disabled={busy === client.client_type}
+            >
+              {busy === client.client_type ? t("connectMatrix.settingUp") : t("connectMatrix.setUp")}
+            </Button>
+          )
+        : notInstalled;
+
+  // A plugin-install command for a client that isn't on the machine can't
+  // succeed anyway — gate the CLI body on detection too, same as the GUI
+  // trailing action, so an undetected client always shows "Not installed".
+  const cliBody = (client: McpClient) =>
     client.detected ? (
       <>
-        <CliPrimaryPath clientType={clientType} />
+        <CliPrimaryPath />
         {advancedSetUp(client)}
       </>
-    ) : (
-      <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)" }}>
-        {t("connectMatrix.notDetected")}
-      </span>
-    );
+    ) : null;
 
   return (
     <div className="flex flex-col" style={{ gap: "8px" }}>
       {(clients ?? []).map((client) =>
-        isCliPrimaryClient(client.client_type)
-          ? rowShell(client, cliPrimary(client, client.client_type))
-          : rowShell(client, guiPrimary(client)),
+        isCliPrimaryClient(client.client_type) ? (
+          <ClientRow
+            key={client.client_type}
+            client={client}
+            showConfigPath
+            configured={client.already_configured}
+            error={errors[client.client_type]}
+            trailing={client.detected ? null : notInstalled}
+          >
+            {cliBody(client)}
+          </ClientRow>
+        ) : (
+          <ClientRow
+            key={client.client_type}
+            client={client}
+            showConfigPath
+            configured={client.already_configured}
+            error={errors[client.client_type]}
+            trailing={guiTrailing(client)}
+          />
+        ),
       )}
     </div>
   );

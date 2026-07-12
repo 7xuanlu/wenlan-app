@@ -10,12 +10,11 @@ import {
 } from "../lib/tauri";
 import { ImportView } from "./memory/ImportView";
 import VaultConnectCard from "./memory/sources/VaultConnectCard";
-import { RemoteAccessPanel } from "./memory/RemoteAccessPanel";
-import WebPlatformCards from "./connect/WebPlatformCards";
 import CliPrimaryPath, { isCliPrimaryClient } from "./connect/CliPrimaryPath";
+import ClientRow, { clientRowDescId } from "./connect/ClientRow";
 import { ApiKeyCard, OnDeviceModelCard } from "./intelligence/IntelligenceSetup";
 import AnyProviderCard from "./intelligence/AnyProviderCard";
-import { Button, StatusChip, Tag, SectionHeader } from "./memory/settings/primitives";
+import { Button, Tag, SectionHeader } from "./memory/settings/primitives";
 import { resolveAgentDisplayName } from "../lib/agents";
 
 export type WizardStep = "welcome" | "intelligence-choice" | "import" | "connect" | "verify" | "done";
@@ -495,8 +494,9 @@ function ConnectStep({
       const next = { ...prev };
       for (const client of clients) {
         if (next[client.client_type] === undefined) {
-          // §9.3: CLI clients lead with the plugin path; the one-click batch
-          // write is opt-in for them, so their checkbox starts unchecked.
+          // The CLI-primary client (Claude Code) leads with the plugin path
+          // and has no checkbox at all, so its selection state is never
+          // seeded true here.
           next[client.client_type] =
             client.detected &&
             !client.already_configured &&
@@ -520,8 +520,12 @@ function ConnectStep({
   useEffect(() => {
     if (isError) {
       setManualExpanded(true);
+      return;
     }
-  }, [isError]);
+    if (clients && clients.filter((client) => client.detected).length === 0) {
+      setManualExpanded(true);
+    }
+  }, [isError, clients]);
 
   const { data: wenlanMcpEntry } = useQuery({
     queryKey: ["wenlan-mcp-entry"],
@@ -535,6 +539,32 @@ function ConnectStep({
   }
 }`;
 
+  const detectedClients = (clients ?? []).filter((client) => client.detected);
+
+  // GUI rows first, then the CLI-primary row, then already-configured rows
+  // of either kind — they need no action, so they sink to the bottom.
+  // Array.prototype.sort is stable, so relative order within a tier holds.
+  const rowTier = (client: (typeof detectedClients)[number]) => {
+    if (client.already_configured) return 2;
+    if (isCliPrimaryClient(client.client_type)) return 1;
+    return 0;
+  };
+  const sortedClients = [...detectedClients].sort((a, b) => rowTier(a) - rowTier(b));
+
+  // The load-bearing invariant on this screen: Claude Code's config is never
+  // written from the wizard, because doing so would duplicate the MCP
+  // server the Wenlan Claude Code plugin already registers. Its row has no
+  // checkbox to check in the first place, but it is also explicitly
+  // excluded here and in handleContinue below — two independent guarantees,
+  // not one.
+  const connectCount = detectedClients.filter(
+    (client) =>
+      !isCliPrimaryClient(client.client_type) &&
+      selectedClients[client.client_type] &&
+      !client.already_configured &&
+      !connectedClients[client.client_type],
+  ).length;
+
   const handleContinue = async () => {
     if (!clients) {
       onNext();
@@ -543,6 +573,7 @@ function ConnectStep({
 
     const toConnect = clients.filter(
       (client) =>
+        !isCliPrimaryClient(client.client_type) &&
         selectedClients[client.client_type] &&
         client.detected &&
         !client.already_configured &&
@@ -588,169 +619,6 @@ function ConnectStep({
     }
   };
 
-  const detectedClients = (clients ?? []).filter((client) => client.detected);
-  const supportedClients = (clients ?? []).filter((client) => !client.detected);
-
-  const renderClientList = (
-    list: NonNullable<typeof clients>,
-  ) => (
-    <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-      {list.map((client) => {
-        const isConnected = connectedClients[client.client_type] || client.already_configured;
-        const error = connectErrors[client.client_type];
-        const isSelected = !!selectedClients[client.client_type];
-
-        // §9.3: detected, not-yet-connected CLI clients lead with the shared
-        // plugin path instead of the generic description.
-        const isCliPrimary =
-          client.detected && !isConnected && isCliPrimaryClient(client.client_type);
-        const descId = `client-desc-${client.client_type}`;
-
-        const nameBadges = (
-          <div className="flex items-center gap-2 flex-wrap">
-            <span
-              style={{
-                fontFamily: "var(--mem-font-body)",
-                fontSize: "var(--mem-text-md)",
-                fontWeight: 500,
-                color: "var(--mem-text)",
-              }}
-            >
-              {client.name}
-            </span>
-            {isConnected && (
-              <StatusChip state={{ kind: "up" }} label={t("setup.connect.configured")} />
-            )}
-          </div>
-        );
-
-        const checkbox = (
-          <input
-            type="checkbox"
-            aria-label={client.name}
-            aria-describedby={isCliPrimary ? descId : undefined}
-            checked={isSelected || isConnected}
-            disabled={!client.detected || isConnected || isConnectingAll}
-            onChange={(e) => setSelectedClients((prev) => ({ ...prev, [client.client_type]: e.target.checked }))}
-            style={{
-              width: "16px",
-              height: "16px",
-              accentColor: "var(--mem-accent-indigo)",
-              marginTop: "2px",
-            }}
-          />
-        );
-
-        // The CLI primary path renders a real <button> ("Copy setup
-        // prompt"). Nesting that inside the same <label> that toggles this
-        // row's checkbox risks the browser forwarding the click to the
-        // checkbox too, so hint/status content (commands, reload note,
-        // error) lives in a sibling node wired via aria-describedby instead
-        // of inside the <label> — the <label> only wraps the checkbox and
-        // its plain-text name/status badges.
-        //
-        // The row is stacked (flex-col), not side-by-side: the wizard's
-        // connect column is max-w-md, so a flex-row split left CliPrimaryPath
-        // with ~200px and its command line (a truncating <code>) unreadable.
-        // The description div gets left padding equal to checkbox width
-        // (16px) + the label's gap-3 (12px) so it aligns under the client
-        // name instead of under the checkbox.
-        if (isCliPrimary && isCliPrimaryClient(client.client_type)) {
-          return (
-            <div
-              key={client.client_type}
-              className="flex flex-col gap-2 rounded-xl px-4 py-3"
-              style={{
-                backgroundColor: "var(--mem-surface)",
-                border: `1px solid ${isSelected ? "var(--mem-accent-indigo-border)" : "var(--mem-border)"}`,
-              }}
-            >
-              <label className="flex items-start gap-3" style={{ cursor: "pointer" }}>
-                {checkbox}
-                {nameBadges}
-              </label>
-
-              <div
-                id={descId}
-                style={{ display: "flex", flexDirection: "column", gap: "6px", paddingLeft: "28px" }}
-              >
-                <CliPrimaryPath clientType={client.client_type} />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setManualExpanded((prev) => !prev)}
-                  className="self-start"
-                >
-                  {t("connectMatrix.oneClickAdvanced")}
-                </Button>
-
-                {error && (
-                  <p
-                    style={{
-                      fontFamily: "var(--mem-font-body)",
-                      fontSize: "var(--mem-text-xs)",
-                      color: "var(--mem-status-danger-text)",
-                      margin: 0,
-                    }}
-                  >
-                    {error}
-                  </p>
-                )}
-              </div>
-            </div>
-          );
-        }
-
-        return (
-          <label
-            key={client.client_type}
-            className="flex items-start gap-3 rounded-xl px-4 py-3"
-            style={{
-              backgroundColor: "var(--mem-surface)",
-              border: `1px solid ${isSelected ? "var(--mem-accent-indigo-border)" : "var(--mem-border)"}`,
-              cursor: client.detected && !isConnected ? "pointer" : "default",
-            }}
-          >
-            {checkbox}
-
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "6px" }}>
-              {nameBadges}
-
-              <p
-                style={{
-                  fontFamily: "var(--mem-font-body)",
-                  fontSize: "var(--mem-text-sm)",
-                  color: "var(--mem-text-secondary)",
-                  lineHeight: 1.5,
-                  margin: 0,
-                }}
-              >
-                {isConnected
-                  ? t("setup.connect.connectedDescription")
-                  : client.detected
-                    ? t("setup.connect.detectedDescription")
-                    : t("setup.connect.supportedDescription")}
-              </p>
-
-              {error && (
-                <p
-                  style={{
-                    fontFamily: "var(--mem-font-body)",
-                    fontSize: "var(--mem-text-xs)",
-                    color: "var(--mem-status-danger-text)",
-                    margin: 0,
-                  }}
-                >
-                  {error}
-                </p>
-              )}
-            </div>
-          </label>
-        );
-      })}
-    </div>
-  );
-
   return (
     <StepShell
       hideDots={hideDots}
@@ -760,7 +628,11 @@ function ConnectStep({
         { label: t("setup.skip"), onClick: onNext },
       ]}
       primaryAction={{
-        label: isConnectingAll ? t("setup.connect.connecting") : t("setup.continue"),
+        label: isConnectingAll
+          ? t("setup.connect.connecting")
+          : connectCount > 0
+            ? t("setup.connect.connectCta", { count: connectCount })
+            : t("setup.continue"),
         onClick: handleContinue,
         disabled: isConnectingAll,
         loading: isConnectingAll,
@@ -794,60 +666,121 @@ function ConnectStep({
         </p>
       </div>
 
-      {(isLoading || isError || detectedClients.length > 0) && (
+      {isLoading && (
         <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
           <SectionHeader label={t("setup.connect.detectedOnMac")} />
-
-          {isLoading && (
-            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-              {[0, 1].map((i) => (
-                <div
-                  key={i}
-                  className="rounded-xl"
-                  style={{
-                    height: "72px",
-                    backgroundColor: "var(--mem-surface)",
-                    border: "1px solid var(--mem-border)",
-                    opacity: 0.5,
-                    animation: "pulse 1.6s ease-in-out infinite",
-                  }}
-                />
-              ))}
-            </div>
-          )}
-
-          {isError && (
-            <p
-              style={{
-                fontFamily: "var(--mem-font-body)",
-                fontSize: "var(--mem-text-base)",
-                color: "var(--mem-text-secondary)",
-                lineHeight: 1.5,
-              }}
-            >
-              {t("setup.connect.detectionFailed")}
-            </p>
-          )}
-
-          {detectedClients.length > 0 && renderClientList(detectedClients)}
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            {[0, 1].map((i) => (
+              <div
+                key={i}
+                className="rounded-xl"
+                style={{
+                  height: "72px",
+                  backgroundColor: "var(--mem-surface)",
+                  border: "1px solid var(--mem-border)",
+                  opacity: 0.5,
+                  animation: "pulse 1.6s ease-in-out infinite",
+                }}
+              />
+            ))}
+          </div>
         </div>
       )}
 
-      {supportedClients.length > 0 && (
+      {!isLoading && isError && (
+        <p
+          style={{
+            fontFamily: "var(--mem-font-body)",
+            fontSize: "var(--mem-text-base)",
+            color: "var(--mem-text-secondary)",
+            lineHeight: 1.5,
+          }}
+        >
+          {t("setup.connect.detectionFailed")}
+        </p>
+      )}
+
+      {!isLoading && !isError && detectedClients.length === 0 && (
+        <p
+          style={{
+            fontFamily: "var(--mem-font-body)",
+            fontSize: "var(--mem-text-base)",
+            color: "var(--mem-text-secondary)",
+            lineHeight: 1.5,
+          }}
+        >
+          {t("setup.connect.emptyTitle")}
+        </p>
+      )}
+
+      {!isLoading && detectedClients.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-          <SectionHeader label={t("setup.connect.supportedTools")} />
-          {renderClientList(supportedClients)}
+          <SectionHeader label={t("setup.connect.detectedOnMac")} />
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            {sortedClients.map((client) => {
+              const isConfigured = connectedClients[client.client_type] || client.already_configured;
+              const error = connectErrors[client.client_type];
+              const isSelected = !!selectedClients[client.client_type];
+
+              if (isCliPrimaryClient(client.client_type)) {
+                return (
+                  <ClientRow
+                    key={client.client_type}
+                    client={client}
+                    configured={isConfigured}
+                    error={error}
+                  >
+                    <CliPrimaryPath />
+                  </ClientRow>
+                );
+              }
+
+              return (
+                <ClientRow
+                  key={client.client_type}
+                  client={client}
+                  configured={isConfigured}
+                  error={error}
+                  selected={isSelected}
+                  leading={
+                    <input
+                      type="checkbox"
+                      aria-label={client.name}
+                      aria-describedby={error ? clientRowDescId(client.client_type) : undefined}
+                      checked={isSelected || isConfigured}
+                      disabled={isConfigured || isConnectingAll}
+                      onChange={(e) =>
+                        setSelectedClients((prev) => ({ ...prev, [client.client_type]: e.target.checked }))
+                      }
+                      style={{
+                        width: "16px",
+                        height: "16px",
+                        accentColor: "var(--mem-accent-indigo)",
+                        marginTop: "2px",
+                      }}
+                    />
+                  }
+                />
+              );
+            })}
+          </div>
         </div>
       )}
 
-      <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-        <SectionHeader label={t("setup.connect.webTools")} />
-        <RemoteAccessPanel mode="compact" />
-        <WebPlatformCards />
-      </div>
+      {!isLoading && (
+        <p
+          style={{
+            fontFamily: "var(--mem-font-body)",
+            fontSize: "var(--mem-text-sm)",
+            color: "var(--mem-text-tertiary)",
+            lineHeight: "1.5",
+          }}
+        >
+          {t("setup.connect.settingsPointer")}
+        </p>
+      )}
 
       <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-        <SectionHeader label={t("setup.connect.manualSetup")} />
         <Button
           variant="ghost"
           size="sm"

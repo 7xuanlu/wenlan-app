@@ -9,7 +9,6 @@ import { resources } from "../../i18n/resources";
 const mocks = vi.hoisted(() => ({
   detectMcpClients: vi.fn(),
   writeMcpConfig: vi.fn(),
-  getWenlanMcpEntry: vi.fn(),
   clipboardWrite: vi.fn(),
 }));
 vi.mock("../../lib/tauri", async (importOriginal) => {
@@ -27,6 +26,10 @@ const CLIENTS = [
   { name: "Gemini CLI", client_type: "gemini_cli", config_path: "~/.gemini/settings.json", detected: true, already_configured: false },
 ];
 
+const COMMAND1 = "/plugin marketplace add 7xuanlu/claude-plugins";
+const COMMAND2 = "/plugin install wenlan@7xuanlu";
+const COMMAND3 = "/setup";
+
 function renderList(qc: QueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
   return render(
     <QueryClientProvider client={qc}>
@@ -35,69 +38,87 @@ function renderList(qc: QueryClient = new QueryClient({ defaultOptions: { querie
   );
 }
 
-/** Finds the row shell (ClientSetupList's `rounded-lg` wrapper div) for a
- *  given client name, so assertions can be scoped `within` a single card
- *  instead of matching anywhere in the document. */
+/** Finds the row shell (ClientRow's `rounded-xl` wrapper div) for a given
+ *  client name, so assertions can be scoped `within` a single card instead
+ *  of matching anywhere in the document. */
 function rowFor(name: string) {
-  return screen.getByText(name).closest("div.rounded-lg") as HTMLElement;
+  return screen.getByText(name).closest("div.rounded-xl") as HTMLElement;
 }
 
-describe("ClientSetupList — §9.3 plugin-first matrix", () => {
+function openCommands(row: HTMLElement) {
+  return userEvent.click(within(row).getByText("Show terminal commands"));
+}
+
+describe("ClientSetupList — plugin-first Claude Code, one-click everyone else", () => {
   afterEach(() => Object.values(mocks).forEach((m) => m.mockReset()));
   beforeEach(() => {
     mocks.detectMcpClients.mockResolvedValue(CLIENTS);
-    mocks.getWenlanMcpEntry.mockResolvedValue({ command: "npx", args: ["-y", "wenlan-mcp"] });
     mocks.writeMcpConfig.mockResolvedValue(undefined);
     mocks.clipboardWrite.mockResolvedValue(undefined);
   });
 
-  it("Claude Code leads with the plugin commands", async () => {
+  it("Claude Code leads with the plugin-install prompt, not a one-click Set up", async () => {
     renderList();
-    expect(await screen.findByText("claude plugin marketplace add 7xuanlu/wenlan")).toBeInTheDocument();
-    expect(screen.getByText("claude plugin install wenlan@7xuanlu-wenlan")).toBeInTheDocument();
+    await screen.findByRole("button", { name: "Copy setup prompt" });
+    const row = rowFor("Claude Code");
+    expect(within(row).getByRole("button", { name: "Copy setup prompt" })).toBeInTheDocument();
+    expect(within(row).queryByRole("button", { name: "Set up" })).not.toBeInTheDocument();
   });
 
-  it("Codex leads with codex mcp add using the real command+args", async () => {
+  it("expanding the disclosure shows all three commands", async () => {
     renderList();
-    expect(await screen.findByText("codex mcp add wenlan -- npx -y wenlan-mcp")).toBeInTheDocument();
+    await screen.findByRole("button", { name: "Copy setup prompt" });
+    const row = rowFor("Claude Code");
+    await openCommands(row);
+    expect(within(row).getByText(COMMAND1)).toBeInTheDocument();
+    expect(within(row).getByText(COMMAND2)).toBeInTheDocument();
+    expect(within(row).getByText(COMMAND3)).toBeInTheDocument();
   });
 
-  it("Copy setup prompt writes the full agent prompt to the clipboard", async () => {
+  it("Codex CLI behaves like an ordinary GUI client — one-click Set up, no plugin path", async () => {
     renderList();
-    const buttons = await screen.findAllByRole("button", { name: /Copy setup prompt/ });
-    await userEvent.click(buttons[0]); // Claude Code card
+    await screen.findByText("Codex CLI");
+    const row = rowFor("Codex CLI");
+    const setUp = within(row).getByRole("button", { name: "Set up" });
+    expect(setUp).toBeInTheDocument();
+    expect(within(row).queryByText("Show terminal commands")).not.toBeInTheDocument();
+    await userEvent.click(setUp);
+    expect(mocks.writeMcpConfig).toHaveBeenCalledWith("codex_cli");
+  });
+
+  it("'Copy setup prompt' writes the full agent-runnable prompt to the clipboard", async () => {
+    renderList();
+    await screen.findByRole("button", { name: "Copy setup prompt" });
+    const row = rowFor("Claude Code");
+    const button = within(row).getByRole("button", { name: "Copy setup prompt" });
+    await userEvent.click(button);
     expect(mocks.clipboardWrite).toHaveBeenCalledTimes(1);
-    expect(mocks.clipboardWrite.mock.calls[0][0]).toContain("claude plugin install wenlan@7xuanlu-wenlan");
+    const copied = mocks.clipboardWrite.mock.calls[0][0] as string;
+    expect(copied).toContain(COMMAND1);
+    expect(copied).toContain(COMMAND2);
+    expect(copied).toContain(COMMAND3);
   });
 
-  it("GUI clients keep the one-click Set up as their primary action, CLI clients demote it under Advanced", async () => {
+  it("GUI clients keep the one-click Set up as their primary action; Claude Code never gets one outside Advanced", async () => {
     renderList();
-    // Cursor / Claude Desktop / Gemini CLI → exactly 3 primary "Set up" buttons.
+    // Codex CLI / Cursor / Claude Desktop / Gemini CLI → 4 primary "Set up" buttons.
     const setUps = await screen.findAllByRole("button", { name: "Set up" });
-    expect(setUps).toHaveLength(3);
+    expect(setUps).toHaveLength(4);
 
-    // Claude Code / Codex CLI: config write demoted under an Advanced
-    // <details>, and no primary "Set up" button survives on either row —
-    // this is the exact regression a mutation deleting the demotion would
-    // reintroduce (it re-adds a primary "Set up" to both CLI cards).
-    await screen.findByText("claude plugin marketplace add 7xuanlu/wenlan");
-    for (const name of ["Claude Code", "Codex CLI"]) {
-      const row = rowFor(name);
-      expect(within(row).getByText("Advanced")).toBeInTheDocument();
-      expect(within(row).queryByRole("button", { name: "Set up" })).not.toBeInTheDocument();
-    }
+    const row = rowFor("Claude Code");
+    expect(within(row).queryByRole("button", { name: "Set up" })).not.toBeInTheDocument();
+    expect(within(row).getByText("Advanced")).toBeInTheDocument();
   });
 
   it("shipped copy never references .mcpb or .codex-plugin — DOM, the copied prompt, and every locale", async () => {
     const { container } = renderList();
-    await screen.findByText("claude plugin install wenlan@7xuanlu-wenlan");
+    await screen.findByRole("button", { name: "Copy setup prompt" });
     expect(container.textContent).not.toContain(".mcpb");
     expect(container.textContent).not.toContain(".codex-plugin");
 
-    // The setup prompt goes straight to the clipboard, never through the
-    // DOM — assert on what was actually copied, not just what rendered.
-    const buttons = await screen.findAllByRole("button", { name: /Copy setup prompt/ });
-    await userEvent.click(buttons[0]);
+    const row = rowFor("Claude Code");
+    const button = within(row).getByRole("button", { name: "Copy setup prompt" });
+    await userEvent.click(button);
     expect(mocks.clipboardWrite).toHaveBeenCalledTimes(1);
     const copiedPrompt = mocks.clipboardWrite.mock.calls[0][0] as string;
     expect(copiedPrompt).not.toContain(".mcpb");
@@ -117,16 +138,15 @@ describe("ClientSetupList — §9.3 plugin-first matrix", () => {
 
       // These are shell commands, not prose — a locale/translation pass must
       // never "localize" a slug. Pin the exact byte value in every locale so
-      // a drifted install string (e.g. zh-Hans slugging wenlan@7xuanlu-wenlan
-      // down to wenlan@7xuanlu) fails loudly instead of shipping silently.
+      // a drifted install string fails loudly instead of shipping silently.
       expect(connectMatrix.claudeCodeCommand1, `${locale}.connectMatrix.claudeCodeCommand1`).toBe(
-        "claude plugin marketplace add 7xuanlu/wenlan",
+        COMMAND1,
       );
       expect(connectMatrix.claudeCodeCommand2, `${locale}.connectMatrix.claudeCodeCommand2`).toBe(
-        "claude plugin install wenlan@7xuanlu-wenlan",
+        COMMAND2,
       );
-      expect(connectMatrix.codexCommand, `${locale}.connectMatrix.codexCommand`).toBe(
-        "codex mcp add wenlan -- {{cmd}}",
+      expect(connectMatrix.claudeCodeCommand3, `${locale}.connectMatrix.claudeCodeCommand3`).toBe(
+        COMMAND3,
       );
 
       // The copy-pasteable setup-prompt strings embed these same commands
@@ -136,18 +156,19 @@ describe("ClientSetupList — §9.3 plugin-first matrix", () => {
       expect(
         connectMatrix.claudeCodePrompt,
         `${locale}.connectMatrix.claudeCodePrompt`,
-      ).toContain("claude plugin marketplace add 7xuanlu/wenlan");
+      ).toContain(COMMAND1);
       expect(
         connectMatrix.claudeCodePrompt,
         `${locale}.connectMatrix.claudeCodePrompt`,
-      ).toContain("claude plugin install wenlan@7xuanlu-wenlan");
-      expect(connectMatrix.codexPrompt, `${locale}.connectMatrix.codexPrompt`).toContain(
-        "codex mcp add wenlan -- {{cmd}}",
-      );
+      ).toContain(COMMAND2);
+      expect(
+        connectMatrix.claudeCodePrompt,
+        `${locale}.connectMatrix.claudeCodePrompt`,
+      ).toContain(COMMAND3);
     }
   });
 
-  it("undetected CLI clients show Not detected, not install commands", async () => {
+  it("undetected clients show Not installed, not install commands or Set up", async () => {
     mocks.detectMcpClients.mockResolvedValue([
       { name: "Claude Code", client_type: "claude_code", config_path: "~/.claude.json", detected: false, already_configured: false },
       { name: "Codex CLI", client_type: "codex_cli", config_path: "~/.codex/config.toml", detected: false, already_configured: false },
@@ -155,42 +176,20 @@ describe("ClientSetupList — §9.3 plugin-first matrix", () => {
     renderList();
     for (const name of ["Claude Code", "Codex CLI"]) {
       const nameEl = await screen.findByText(name);
-      const row = nameEl.closest("div.rounded-lg") as HTMLElement;
+      const row = nameEl.closest("div.rounded-xl") as HTMLElement;
       expect(within(row).getByText("Not installed")).toBeInTheDocument();
       expect(within(row).queryByText("Advanced")).not.toBeInTheDocument();
-      expect(within(row).queryByText(/claude plugin marketplace add/)).not.toBeInTheDocument();
-      expect(within(row).queryByRole("button", { name: /Copy setup prompt/ })).not.toBeInTheDocument();
+      expect(within(row).queryByText(/plugin marketplace add/)).not.toBeInTheDocument();
+      expect(within(row).queryByRole("button", { name: "Copy setup prompt" })).not.toBeInTheDocument();
+      expect(within(row).queryByRole("button", { name: "Set up" })).not.toBeInTheDocument();
     }
-  });
-
-  it("Codex Copy setup prompt is disabled — never copies a broken command — while the MCP entry is unresolved", async () => {
-    mocks.getWenlanMcpEntry.mockImplementation(() => new Promise(() => {})); // never resolves
-    renderList();
-    const nameEl = await screen.findByText("Codex CLI");
-    const row = nameEl.closest("div.rounded-lg") as HTMLElement;
-    const copyButton = within(row).getByRole("button", { name: /Copy setup prompt/ });
-    expect(copyButton).toBeDisabled();
-    expect(within(row).queryByText(/^codex mcp add wenlan --\s*$/)).not.toBeInTheDocument();
-    await userEvent.click(copyButton);
-    expect(mocks.clipboardWrite).not.toHaveBeenCalled();
-  });
-
-  it("Codex Copy setup prompt is disabled when the MCP entry query fails", async () => {
-    mocks.getWenlanMcpEntry.mockRejectedValue(new Error("ipc failed"));
-    renderList();
-    const nameEl = await screen.findByText("Codex CLI");
-    const row = nameEl.closest("div.rounded-lg") as HTMLElement;
-    const copyButton = within(row).getByRole("button", { name: /Copy setup prompt/ });
-    expect(copyButton).toBeDisabled();
-    await userEvent.click(copyButton);
-    expect(mocks.clipboardWrite).not.toHaveBeenCalled();
   });
 
   it("a failed Set up shows the error in the danger-text token, not a raw Tailwind color", async () => {
     mocks.writeMcpConfig.mockRejectedValue(new Error("permission denied"));
     renderList();
     const setUps = await screen.findAllByRole("button", { name: "Set up" });
-    await userEvent.click(setUps[0]); // Cursor (first GUI client)
+    await userEvent.click(setUps[0]); // Codex CLI (first GUI-style client)
     const errorEl = await screen.findByRole("alert");
     expect(errorEl).toHaveTextContent(/permission denied/);
     expect(errorEl).toHaveStyle({ color: "var(--mem-status-danger-text)" });
@@ -199,7 +198,7 @@ describe("ClientSetupList — §9.3 plugin-first matrix", () => {
 
   it("the Advanced one-click button is the Button primitive (secondary/sm) and still writes the config", async () => {
     renderList();
-    await screen.findByText("claude plugin marketplace add 7xuanlu/wenlan");
+    await screen.findByRole("button", { name: "Copy setup prompt" });
     const row = rowFor("Claude Code");
     await userEvent.click(within(row).getByText("Advanced"));
     const advancedButton = within(row).getByRole("button", { name: "Or write the config for me" });

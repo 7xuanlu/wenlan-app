@@ -88,13 +88,6 @@ export default function WebPlatformCards() {
       </p>
     );
 
-  /* No-auth boundary (council change f, commit 3a272d0): always visible. */
-  const noAuthWarning = (
-    <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-accent-amber)", lineHeight: 1.5 }}>
-      {t("connectMatrix.noAuthWarning")}
-    </p>
-  );
-
   const cardShell = (platform: "claude" | "chatgpt", title: string, children: ReactNode) => (
     <div
       className="rounded-xl p-4 flex flex-col"
@@ -151,7 +144,6 @@ export default function WebPlatformCards() {
               {t("connectMatrix.openConnectorSettings")}
             </Button>
           )}
-          {noAuthWarning}
         </>,
       )}
       {cardShell(
@@ -164,7 +156,6 @@ export default function WebPlatformCards() {
             t("connectMatrix.chatgptStep3"),
           ])}
           {urlRow("chatgpt")}
-          {noAuthWarning}
         </>,
       )}
     </div>

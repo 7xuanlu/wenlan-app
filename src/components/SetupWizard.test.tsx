@@ -62,7 +62,6 @@ import {
   writeMcpConfig,
   listAgents,
   setApiKey,
-  clipboardWrite,
 } from "../lib/tauri";
 
 function renderWizard(
@@ -108,7 +107,7 @@ describe("SetupWizard", () => {
       "Your AI tools write what they learn into source-cited pages that refresh between sessions.",
     );
     expect(body).toBeInTheDocument();
-    expect(screen.getByText("Everything stays on your device")).toBeInTheDocument();
+    expect(screen.getByText("Your memories live on this machine.")).toBeInTheDocument();
     // R3 typography ladder: on-scale size only, never an off-scale 15px.
     expect(tagline).toHaveStyle({ fontSize: "var(--mem-text-lg)" });
     expect(body).toHaveStyle({ fontSize: "var(--mem-text-lg)" });
@@ -119,7 +118,7 @@ describe("SetupWizard", () => {
     renderWizard();
 
     expect(screen.getByText("欢迎使用文澜")).toBeInTheDocument();
-    expect(screen.getByText("所有内容都留在你的设备上")).toBeInTheDocument();
+    expect(screen.getByText("你的记忆保存在这台设备上。")).toBeInTheDocument();
   });
 
   it('advances from Welcome to intelligence choice on "Get started" click', () => {
@@ -214,11 +213,11 @@ describe("SetupWizard", () => {
     fireEvent.click(screen.getByText("Skip"));
 
     await waitFor(() => {
-      expect(screen.getByText("Choose tools to connect")).toBeInTheDocument();
+      expect(screen.getByText("Connect your AI tools")).toBeInTheDocument();
     });
   });
 
-  it("connect step separates detected and supported safe tools", async () => {
+  it("only detected tools render a row — an undetected tool is invisible, not a disabled row", async () => {
     (detectMcpClients as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
         name: "Cursor",
@@ -238,19 +237,21 @@ describe("SetupWizard", () => {
 
     renderWizard({ initialStep: "connect" });
 
-    await waitFor(() => {
-      expect(screen.getByText("Detected on your Mac")).toBeInTheDocument();
-      expect(screen.getByText("Supported tools")).toBeInTheDocument();
-    });
+    // "Found on this Mac" renders identically in both the loading skeleton
+    // and the loaded-data branch, so it can't signal load completion by
+    // itself — wait on "Cursor", which only exists once data has loaded.
+    await screen.findByText("Cursor");
 
-    expect(screen.getByText("Cursor")).toBeInTheDocument();
-    expect(screen.getByText("Claude Code")).toBeInTheDocument();
-    const [cursorCheckbox, claudeCheckbox] = screen.getAllByRole("checkbox");
-    expect(cursorCheckbox).toBeEnabled();
-    expect(claudeCheckbox).toBeDisabled();
+    expect(screen.getByText("Found on this Mac")).toBeInTheDocument();
+    expect(screen.queryByText("Claude Code")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("checkbox")).toHaveLength(1);
+    // The old per-row "Detected"/"Install first" pill duplicated the section
+    // header; the redesign has no such pill at all.
+    expect(screen.queryByText("Detected")).not.toBeInTheDocument();
+    expect(screen.queryByText("Install first")).not.toBeInTheDocument();
   });
 
-  it("undetected CLI clients render the disabled checkbox, not the plugin install path", async () => {
+  it("no detected tools at all shows the empty-state copy, not an empty section", async () => {
     (detectMcpClients as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
         name: "Claude Code",
@@ -264,19 +265,12 @@ describe("SetupWizard", () => {
     renderWizard({ initialStep: "connect" });
 
     await waitFor(() => {
-      expect(screen.getByText("Claude Code")).toBeInTheDocument();
+      expect(screen.getByText("No AI tools found on this Mac.")).toBeInTheDocument();
     });
-
-    // An undetected CLI client can't run a plugin-install command against a
-    // binary that isn't there — it must fall through to the generic
-    // description, never the plugin path or its Copy button.
-    expect(screen.queryByText(/claude plugin marketplace add/)).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /Copy setup prompt/ }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Found on this Mac")).not.toBeInTheDocument();
   });
 
-  it("connects selected detected tools on continue", async () => {
+  it("connects selected detected tools on continue; the CTA label counts down as tools get connected", async () => {
     (detectMcpClients as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
         name: "Cursor",
@@ -289,16 +283,13 @@ describe("SetupWizard", () => {
 
     renderWizard({ initialStep: "connect" });
 
+    const cursorCheckbox = await screen.findByRole("checkbox", { name: "Cursor" });
+    await waitFor(() => expect(cursorCheckbox).toBeChecked());
     await waitFor(() => {
-      expect(screen.getByText("Cursor")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Connect 1 tool" })).toBeInTheDocument();
     });
 
-    const [cursorCheckbox] = screen.getAllByRole("checkbox");
-    await waitFor(() => {
-      expect(cursorCheckbox).toBeChecked();
-    });
-
-    fireEvent.click(screen.getByText("Continue"));
+    fireEvent.click(screen.getByRole("button", { name: "Connect 1 tool" }));
 
     await waitFor(() => {
       expect(writeMcpConfig).toHaveBeenCalledWith("cursor");
@@ -306,7 +297,46 @@ describe("SetupWizard", () => {
     });
   });
 
-  it("stays on connect step when MCP setup fails", async () => {
+  it("the CTA count tracks the checkboxes — unchecking a tool drops it from the count and from what gets written", async () => {
+    (detectMcpClients as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        name: "Cursor",
+        client_type: "cursor",
+        config_path: "/path/to/cursor",
+        detected: true,
+        already_configured: false,
+      },
+      {
+        name: "Windsurf",
+        client_type: "windsurf",
+        config_path: "/path/to/windsurf.json",
+        detected: true,
+        already_configured: false,
+      },
+    ]);
+
+    renderWizard({ initialStep: "connect" });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Connect 2 tools" })).toBeInTheDocument();
+    });
+
+    const windsurfCheckbox = screen.getByRole("checkbox", { name: "Windsurf" });
+    fireEvent.click(windsurfCheckbox);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Connect 1 tool" })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Connect 1 tool" }));
+
+    await waitFor(() => {
+      expect(writeMcpConfig).toHaveBeenCalledWith("cursor");
+    });
+    expect(writeMcpConfig).not.toHaveBeenCalledWith("windsurf");
+  });
+
+  it("stays on connect step and surfaces the error when MCP setup fails", async () => {
     (detectMcpClients as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
         name: "Cursor",
@@ -321,20 +351,24 @@ describe("SetupWizard", () => {
     renderWizard({ initialStep: "connect" });
 
     await waitFor(() => {
-      expect(screen.getByText("Cursor")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Connect 1 tool" })).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByText("Continue"));
+    fireEvent.click(screen.getByRole("button", { name: "Connect 1 tool" }));
 
     await waitFor(() => {
       expect(writeMcpConfig).toHaveBeenCalledWith("cursor");
-      expect(screen.getByText("Choose tools to connect")).toBeInTheDocument();
       expect(screen.queryByText("Waiting for your first agent...")).not.toBeInTheDocument();
       expect(screen.getByText(/setup failed/i)).toBeInTheDocument();
     });
   });
 
-  it("connect step leads detected CLI clients with the plugin path and unchecks their one-click default", async () => {
+  // Binding adjudication (redesign spec §12.2): the wizard must NEVER write
+  // Claude Code's config — doing so would duplicate the MCP server the
+  // Wenlan Claude Code plugin already registers. Claude Code gets no
+  // checkbox and no write action of any kind here (unlike Settings, where
+  // an explicit Advanced disclosure still offers it).
+  it("Claude Code leads with the plugin-install path, has no checkbox, and offers no write action in the wizard", async () => {
     (detectMcpClients as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
         name: "Claude Code",
@@ -354,20 +388,31 @@ describe("SetupWizard", () => {
 
     renderWizard({ initialStep: "connect" });
 
-    // Primary path: the plugin commands render inside the wizard row.
+    await screen.findByText("Claude Code");
     expect(
-      await screen.findByText("claude plugin marketplace add 7xuanlu/wenlan"),
+      screen.getByText(
+        "Copy the setup prompt and paste it into Claude Code — it sets itself up.",
+      ),
     ).toBeInTheDocument();
-    expect(screen.getByText("claude plugin install wenlan@7xuanlu-wenlan")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Copy setup prompt" })).toBeInTheDocument();
 
-    // One-click demoted for CLI clients: checkbox defaults OFF; GUI stays ON.
+    expect(screen.queryByRole("checkbox", { name: "Claude Code" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Or write the config for me")).not.toBeInTheDocument();
+    expect(screen.queryByText("Advanced")).not.toBeInTheDocument();
+
+    // Cursor, the GUI client, is unaffected — it still gets the ordinary
+    // checked-by-default checkbox and drives the batch-write CTA.
     const cursorCheckbox = screen.getByRole("checkbox", { name: "Cursor" });
     await waitFor(() => expect(cursorCheckbox).toBeChecked());
-    expect(screen.getByRole("checkbox", { name: "Claude Code" })).not.toBeChecked();
-    expect(screen.getByText("Or write the config for me")).toBeInTheDocument();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Connect 1 tool" }));
+    await waitFor(() => {
+      expect(writeMcpConfig).toHaveBeenCalledWith("cursor");
+    });
+    expect(writeMcpConfig).not.toHaveBeenCalledWith("claude_code");
   });
 
-  it("connect step Copy setup prompt copies the Codex prompt with the real command", async () => {
+  it("Codex CLI is an ordinary GUI-style row now — a checkbox, no plugin path, batch-written like any other tool", async () => {
     (detectMcpClients as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
         name: "Codex CLI",
@@ -380,14 +425,14 @@ describe("SetupWizard", () => {
 
     renderWizard({ initialStep: "connect" });
 
-    expect(
-      await screen.findByText("codex mcp add wenlan -- npx -y wenlan-mcp"),
-    ).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Copy setup prompt" }));
-    await waitFor(() => expect(clipboardWrite).toHaveBeenCalledTimes(1));
-    expect(
-      (clipboardWrite as ReturnType<typeof vi.fn>).mock.calls[0][0],
-    ).toContain("codex mcp add wenlan -- npx -y wenlan-mcp");
+    const codexCheckbox = await screen.findByRole("checkbox", { name: "Codex CLI" });
+    await waitFor(() => expect(codexCheckbox).toBeChecked());
+    expect(screen.queryByRole("button", { name: "Copy setup prompt" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Connect 1 tool" }));
+    await waitFor(() => {
+      expect(writeMcpConfig).toHaveBeenCalledWith("codex_cli");
+    });
   });
 
   it("verify step skips waiting UX when agents already wrote in the past", async () => {
@@ -429,7 +474,7 @@ describe("SetupWizard", () => {
     fireEvent.click(screen.getByText("Skip"));
 
     await waitFor(() => {
-      expect(screen.getByText("Choose tools to connect")).toBeInTheDocument();
+      expect(screen.getByText("Connect your AI tools")).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByText("Skip"));
@@ -454,23 +499,27 @@ describe("SetupWizard", () => {
     expect(screen.queryByText("Back")).not.toBeInTheDocument();
   });
 
-  it("Connect step renders RemoteAccessPanel (compact)", async () => {
+  // Redesign spec §4/§12: Remote Access left the wizard entirely — it's a
+  // Settings-only surface now, alongside the single consolidated no-auth
+  // warning (see RemoteAccessPanel.test.tsx and AgentsSection.test.tsx).
+  // The wizard instead points at Settings → Agents for it and every other
+  // web tool (assertion lives in the settingsPointer test below).
+  it("does not render Remote Access — it lives only in Settings now", async () => {
     renderWizard({ initialStep: "connect" });
     await waitFor(() => {
-      expect(screen.getByText(/Share with web-based AI tools/i)).toBeInTheDocument();
+      expect(screen.getByText("Connect your AI tools")).toBeInTheDocument();
     });
+    expect(screen.queryByText(/Share with web-based AI tools/i)).not.toBeInTheDocument();
   });
 
-  it("Connect step remote toggle invokes toggleRemoteAccess", async () => {
-    const { toggleRemoteAccess } = await import("../lib/tauri");
+  it("points at Settings → Agents for Claude.ai, ChatGPT, and anything not listed", async () => {
     renderWizard({ initialStep: "connect" });
-    await screen.findByText(/Share with web-based AI tools/i);
-    // The toggle is a `<button aria-pressed>`, not `role="switch"` — and it is
-    // reachable BY NAME, which is the point: the knob is decorative, so without
-    // an aria-label a screen reader would only ever say "button, pressed".
-    fireEvent.click(screen.getByRole("button", { name: /Share with web-based AI tools/i, pressed: false }));
     await waitFor(() => {
-      expect(toggleRemoteAccess).toHaveBeenCalled();
+      expect(
+        screen.getByText(
+          "Claude.ai, ChatGPT, and more tools can be connected any time in Settings → Agents.",
+        ),
+      ).toBeInTheDocument();
     });
   });
 
@@ -494,7 +543,7 @@ describe("SetupWizard", () => {
     expect(scrollMain.contains(continueButton)).toBe(false);
   });
 
-  it("connect: a client that is detected and already connected shows the connected description and the Configured badge — never the detected-but-unconnected copy", async () => {
+  it("a client that is already configured shows the Configured badge and a disabled, checked checkbox — never a second badge on an unconfigured row", async () => {
     (detectMcpClients as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
         name: "Cursor",
@@ -518,22 +567,16 @@ describe("SetupWizard", () => {
       expect(screen.getByText("Cursor")).toBeInTheDocument();
     });
 
-    // Connected row: badge + connected copy, never the "detected, can
-    // connect in one click" copy that only applies pre-connection.
-    expect(screen.getByText("Configured")).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "Connected — this tool can already read and write your knowledge base.",
-      ),
-    ).toBeInTheDocument();
-
-    // Not-yet-connected row: detected copy, no badge.
-    expect(
-      screen.getByText("Detected on this Mac — Wenlan can connect it in one click."),
-    ).toBeInTheDocument();
-    // Exactly one badge exists (Cursor's) — getByText above already asserts
-    // that; the not-yet-connected row must not render a second one.
+    // Exactly one badge, on Cursor's row — Windsurf isn't configured yet and
+    // must not render a second one.
     expect(screen.getAllByText("Configured")).toHaveLength(1);
+    const cursorCheckbox = screen.getByRole("checkbox", { name: "Cursor" });
+    expect(cursorCheckbox).toBeChecked();
+    expect(cursorCheckbox).toBeDisabled();
+
+    const windsurfCheckbox = screen.getByRole("checkbox", { name: "Windsurf" });
+    await waitFor(() => expect(windsurfCheckbox).toBeChecked());
+    expect(windsurfCheckbox).toBeEnabled();
   });
 
   it("done: agent ids that resolve to the same display name collapse to one chip; raw ids never render", async () => {
@@ -579,7 +622,11 @@ describe("SetupWizard", () => {
     expect(deviceButton).toHaveAttribute("aria-pressed", "false");
   });
 
-  it("connect step: the group pill is gone — no per-row 'Detected'/'Install first' text duplicates the section header", async () => {
+  it("the manual config snippet is a standalone disclosure, independent of any specific client row", async () => {
+    // A non-empty detected-client list matters here: an empty list makes
+    // the wizard auto-expand this same disclosure (so a would-be
+    // detection-failure user sees the manual snippet immediately), which
+    // would race this test's own click and make the assertion flaky.
     (detectMcpClients as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
         name: "Cursor",
@@ -588,47 +635,14 @@ describe("SetupWizard", () => {
         detected: true,
         already_configured: false,
       },
-      {
-        name: "Claude Code",
-        client_type: "claude_code",
-        config_path: "/path/to/claude.json",
-        detected: false,
-        already_configured: false,
-      },
     ]);
 
     renderWizard({ initialStep: "connect" });
 
-    await waitFor(() => {
-      expect(screen.getByText("Detected on your Mac")).toBeInTheDocument();
-      expect(screen.getByText("Supported tools")).toBeInTheDocument();
-    });
-
-    // The per-row pill used to duplicate the section label on every row; the
-    // section header above the list already says it once.
-    expect(screen.queryByText("Detected")).not.toBeInTheDocument();
-    expect(screen.queryByText("Install first")).not.toBeInTheDocument();
-  });
-
-  it("escape hatch 'Or write the config for me' is a real button that reveals the manual config snippet", async () => {
-    (detectMcpClients as ReturnType<typeof vi.fn>).mockResolvedValue([
-      {
-        name: "Codex CLI",
-        client_type: "codex_cli",
-        config_path: "/path/to/config.toml",
-        detected: true,
-        already_configured: false,
-      },
-    ]);
-
-    renderWizard({ initialStep: "connect" });
-
-    await screen.findByText("codex mcp add wenlan -- npx -y wenlan-mcp");
-
+    await screen.findByText("Cursor");
     expect(screen.queryByText(/mcpServers/)).not.toBeInTheDocument();
 
-    const escapeHatch = screen.getByRole("button", { name: "Or write the config for me" });
-    await userEvent.click(escapeHatch);
+    await userEvent.click(screen.getByText("Using another MCP client? Show config"));
 
     expect(screen.getByText(/mcpServers/)).toBeInTheDocument();
   });

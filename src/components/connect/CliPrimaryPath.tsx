@@ -1,59 +1,39 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { clipboardWrite } from "../../lib/tauri";
 import { useTranslation } from "react-i18next";
-import { clipboardWrite, getWenlanMcpEntry } from "../../lib/tauri";
 
-/** Clients whose §9.3 primary path is terminal commands, not one-click. A
- *  tuple, not a bare Set<string>, so a third member (e.g. "gemini_cli") stays
- *  type-checked everywhere instead of silently falling through an unsafe
- *  `as CliClientType` cast at the call site. */
-export const CLI_PRIMARY_CLIENT_TYPES = ["claude_code", "codex_cli"] as const;
-export type CliClientType = (typeof CLI_PRIMARY_CLIENT_TYPES)[number];
+/** Claude Code is the only client left on this path (redesign spec §12.2):
+ *  writing its config programmatically would duplicate the MCP server the
+ *  Wenlan Claude Code plugin already registers, so it never gets a
+ *  one-click write — only this plugin-install path. Codex CLI moved to the
+ *  ordinary checkbox/batch-write path, since its config is safe to write. */
+export type CliClientType = "claude_code";
 
-/** Type guard for `McpClient.client_type` (a plain `string`) — replaces the
- *  unsafe cast so callers narrow instead of asserting. */
+/** Type guard for `McpClient.client_type` (a plain `string`). */
 export function isCliPrimaryClient(clientType: string): clientType is CliClientType {
-  return (CLI_PRIMARY_CLIENT_TYPES as readonly string[]).includes(clientType);
+  return clientType === "claude_code";
 }
 
-/** §9.3 primary path for CLI clients, shared by ClientSetupList (settings)
- *  and the wizard ConnectStep rows: lead line, terminal command(s), reload
- *  note, and a "Copy setup prompt" button. */
-export default function CliPrimaryPath({ clientType }: { clientType: CliClientType }) {
+/** Claude Code's plugin-install path, shared by ClientSetupList (settings)
+ *  and the wizard's ConnectStep: lead line, a primary "Copy setup prompt"
+ *  button, then the terminal commands + reload note behind a disclosure.
+ *  Takes no props — `CliClientType` has exactly one member. */
+export default function CliPrimaryPath() {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const [copiedCommandIndex, setCopiedCommandIndex] = useState<number | null>(null);
-  const { data: mcpEntry } = useQuery({
-    queryKey: ["wenlan-mcp-entry"],
-    queryFn: getWenlanMcpEntry,
-    staleTime: Infinity,
-  });
-  const cmd = mcpEntry ? `${mcpEntry.command} ${mcpEntry.args.join(" ")}` : "";
 
-  const isClaudeCode = clientType === "claude_code";
-  // Codex's command/prompt embed the resolved MCP entry; Claude Code's do
-  // not, so it never needs to wait on this query.
-  const ready = isClaudeCode || mcpEntry != null;
-  const lead = isClaudeCode
-    ? t("connectMatrix.claudeCodePrimary")
-    : t("connectMatrix.codexPrimary");
-  const commands = isClaudeCode
-    ? [t("connectMatrix.claudeCodeCommand1"), t("connectMatrix.claudeCodeCommand2")]
-    : ready
-      ? [t("connectMatrix.codexCommand", { cmd })]
-      : [];
-  const reload = isClaudeCode
-    ? t("connectMatrix.claudeCodeReload")
-    : t("connectMatrix.codexReload");
-  const prompt = isClaudeCode
-    ? t("connectMatrix.claudeCodePrompt")
-    : ready
-      ? t("connectMatrix.codexPrompt", { cmd })
-      : "";
+  const lead = t("connectMatrix.claudeCodePrimary");
+  const commands = [
+    t("connectMatrix.claudeCodeCommand1"),
+    t("connectMatrix.claudeCodeCommand2"),
+    t("connectMatrix.claudeCodeCommand3"),
+  ];
+  const reload = t("connectMatrix.claudeCodeReload");
+  const prompt = t("connectMatrix.claudeCodePrompt");
 
   const copyPrompt = async () => {
-    if (!ready) return;
     try {
       await clipboardWrite(prompt);
       setCopied(true);
@@ -78,40 +58,46 @@ export default function CliPrimaryPath({ clientType }: { clientType: CliClientTy
       <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-secondary)", margin: 0 }}>
         {lead}
       </p>
-      {ready &&
-        commands.map((c, i) => (
-          <div key={c} className="flex items-center gap-2">
-            <code
-              className="flex-1 whitespace-pre-wrap break-all rounded-md px-2 py-1.5"
-              style={{ fontFamily: "var(--mem-font-mono)", fontSize: "11px", backgroundColor: "var(--mem-bg)", border: "1px solid var(--mem-border)", color: "var(--mem-text)" }}
-            >
-              {c}
-            </code>
-            <button
-              type="button"
-              onClick={() => copyCommand(i, c)}
-              aria-label={t("connectMatrix.copyCommandAria", { cmd: c })}
-              className="shrink-0 rounded-md px-2 py-1 text-xs"
-              style={{ border: "1px solid var(--mem-border)", color: "var(--mem-text)", fontFamily: "var(--mem-font-body)" }}
-            >
-              {copiedCommandIndex === i
-                ? t("connectMatrix.commandCopied")
-                : t("connectMatrix.copyCommand")}
-            </button>
-          </div>
-        ))}
-      <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)", margin: 0 }}>
-        {reload}
-      </p>
       <button
         type="button"
         onClick={copyPrompt}
-        disabled={!ready}
-        className="self-start rounded-md px-3 py-1.5 text-xs disabled:opacity-50"
+        className="self-start rounded-md px-3 py-1.5 text-xs"
         style={{ border: "1px solid var(--mem-border)", color: "var(--mem-text)", fontFamily: "var(--mem-font-body)" }}
       >
         {copied ? t("connectMatrix.promptCopied") : t("connectMatrix.copySetupPrompt")}
       </button>
+
+      <details>
+        <summary style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)", cursor: "pointer" }}>
+          {t("connectMatrix.showCommands")}
+        </summary>
+        <div className="flex flex-col gap-2 mt-2">
+          {commands.map((c, i) => (
+            <div key={c} className="flex items-center gap-2">
+              <code
+                className="flex-1 whitespace-pre-wrap break-all rounded-md px-2 py-1.5"
+                style={{ fontFamily: "var(--mem-font-mono)", fontSize: "11px", backgroundColor: "var(--mem-bg)", border: "1px solid var(--mem-border)", color: "var(--mem-text)" }}
+              >
+                {c}
+              </code>
+              <button
+                type="button"
+                onClick={() => copyCommand(i, c)}
+                aria-label={t("connectMatrix.copyCommandAria", { cmd: c })}
+                className="shrink-0 rounded-md px-2 py-1 text-xs"
+                style={{ border: "1px solid var(--mem-border)", color: "var(--mem-text)", fontFamily: "var(--mem-font-body)" }}
+              >
+                {copiedCommandIndex === i
+                  ? t("connectMatrix.commandCopied")
+                  : t("connectMatrix.copyCommand")}
+              </button>
+            </div>
+          ))}
+          <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)", margin: 0 }}>
+            {reload}
+          </p>
+        </div>
+      </details>
     </div>
   );
 }

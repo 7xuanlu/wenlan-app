@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import "../../i18n";
 
 const mocks = vi.hoisted(() => ({
-  getWenlanMcpEntry: vi.fn(),
   clipboardWrite: vi.fn(),
 }));
 vi.mock("../../lib/tauri", async (importOriginal) => {
@@ -13,60 +11,81 @@ vi.mock("../../lib/tauri", async (importOriginal) => {
   return { ...actual, ...mocks };
 });
 
-import CliPrimaryPath, { type CliClientType } from "./CliPrimaryPath";
+import CliPrimaryPath from "./CliPrimaryPath";
 
-function renderPath(clientType: CliClientType) {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
-    <QueryClientProvider client={qc}>
-      <CliPrimaryPath clientType={clientType} />
-    </QueryClientProvider>,
-  );
+const COMMAND1 = "/plugin marketplace add 7xuanlu/claude-plugins";
+const COMMAND2 = "/plugin install wenlan@7xuanlu";
+const COMMAND3 = "/setup";
+
+function renderPathWithCommandsOpen() {
+  const result = render(<CliPrimaryPath />);
+  fireEvent.click(screen.getByText("Show terminal commands"));
+  return result;
 }
 
-const COMMAND1 = "claude plugin marketplace add 7xuanlu/wenlan";
-const COMMAND2 = "claude plugin install wenlan@7xuanlu-wenlan";
-
 describe("CliPrimaryPath", () => {
-  beforeEach(() => {
-    Object.values(mocks).forEach((m) => m.mockReset());
-    mocks.getWenlanMcpEntry.mockResolvedValue({ command: "npx", args: ["-y", "wenlan-mcp"] });
+  afterEach(() => {
+    vi.useRealTimers();
+    mocks.clipboardWrite.mockReset();
     mocks.clipboardWrite.mockResolvedValue(undefined);
   });
 
-  afterEach(() => {
-    vi.useRealTimers();
+  it("leads with the plugin-install prompt and a primary copy button", () => {
+    render(<CliPrimaryPath />);
+    expect(
+      screen.getByText(
+        "Copy the setup prompt and paste it into Claude Code — it sets itself up.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Copy setup prompt" })).toBeInTheDocument();
   });
 
-  it("renders one copy button per command", async () => {
-    renderPath("claude_code");
-    const commandCopyButtons = await screen.findAllByRole("button", {
-      name: /^Copy command:/,
-    });
-    expect(commandCopyButtons).toHaveLength(2);
+  it("clicking 'Copy setup prompt' copies the full agent-runnable prompt, not a single command", async () => {
+    render(<CliPrimaryPath />);
+    fireEvent.click(screen.getByRole("button", { name: "Copy setup prompt" }));
+    await waitFor(() => expect(mocks.clipboardWrite).toHaveBeenCalledTimes(1));
+    const copied = mocks.clipboardWrite.mock.calls[0][0] as string;
+    expect(copied).toContain(COMMAND1);
+    expect(copied).toContain(COMMAND2);
+    expect(copied).toContain(COMMAND3);
+  });
+
+  it("the terminal commands are collapsed behind a disclosure, not shown by default", () => {
+    render(<CliPrimaryPath />);
+    // jsdom doesn't apply the native `details:not([open]) > *` UA rule, so a
+    // text query alone can't tell open from closed — check the <details>
+    // element's own `open` property instead.
+    const details = screen.getByText(COMMAND1).closest("details");
+    expect(details).not.toBeNull();
+    expect(details).not.toHaveAttribute("open");
+    expect(screen.getByText("Show terminal commands")).toBeInTheDocument();
+  });
+
+  it("renders all three commands with one copy button each once expanded", () => {
+    renderPathWithCommandsOpen();
+    expect(screen.getByText(COMMAND1)).toBeInTheDocument();
+    expect(screen.getByText(COMMAND2)).toBeInTheDocument();
+    expect(screen.getByText(COMMAND3)).toBeInTheDocument();
+    const commandCopyButtons = screen.getAllByRole("button", { name: /^Copy command:/ });
+    expect(commandCopyButtons).toHaveLength(3);
   });
 
   it("clicking a command's copy button writes exactly that command's text", async () => {
-    renderPath("claude_code");
-    const buttons = await screen.findAllByRole("button", { name: /^Copy command:/ });
+    renderPathWithCommandsOpen();
+    const buttons = screen.getAllByRole("button", { name: /^Copy command:/ });
 
     fireEvent.click(buttons[1]);
     await waitFor(() => {
       expect(mocks.clipboardWrite).toHaveBeenCalledWith(COMMAND2);
     });
     expect(mocks.clipboardWrite).not.toHaveBeenCalledWith(COMMAND1);
-  });
-
-  it("does not truncate command text — it wraps instead of clipping", async () => {
-    renderPath("claude_code");
-    const code = await screen.findByText(COMMAND1);
-    expect(code.className).not.toContain("truncate");
+    expect(mocks.clipboardWrite).not.toHaveBeenCalledWith(COMMAND3);
   });
 
   it("a command's Copied state resets after ~2s without affecting a sibling command", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    renderPath("claude_code");
-    const buttons = await screen.findAllByRole("button", { name: /^Copy command:/ });
+    renderPathWithCommandsOpen();
+    const buttons = screen.getAllByRole("button", { name: /^Copy command:/ });
 
     fireEvent.click(buttons[0]);
     await waitFor(() => expect(mocks.clipboardWrite).toHaveBeenCalledWith(COMMAND1));
@@ -82,8 +101,8 @@ describe("CliPrimaryPath", () => {
 
   it("the 'Copy setup prompt' button's Copied state also resets after ~2s", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    renderPath("claude_code");
-    const promptButton = await screen.findByRole("button", { name: "Copy setup prompt" });
+    render(<CliPrimaryPath />);
+    const promptButton = screen.getByRole("button", { name: "Copy setup prompt" });
 
     fireEvent.click(promptButton);
     await waitFor(() => expect(promptButton).toHaveTextContent("Prompt copied"));

@@ -23,14 +23,14 @@ import {
   clipboardWrite,
 } from "../../lib/tauri";
 
-function renderPanel(mode: "compact" | "full") {
+function renderPanel() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   function Wrapper({ children }: { children: ReactNode }) {
     return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
   }
-  return render(<RemoteAccessPanel mode={mode} />, { wrapper: Wrapper });
+  return render(<RemoteAccessPanel />, { wrapper: Wrapper });
 }
 
 describe("RemoteAccessPanel", () => {
@@ -55,7 +55,7 @@ describe("RemoteAccessPanel", () => {
   // come from an observation, so "off" renders no chip at all (the Toggle
   // already communicates it).
   it("renders no status chip when disabled — the Toggle already says off", async () => {
-    renderPanel("compact");
+    renderPanel();
     await waitFor(() => {
       expect(screen.getByText("Share with web-based AI tools")).toBeInTheDocument();
     });
@@ -63,7 +63,7 @@ describe("RemoteAccessPanel", () => {
   });
 
   it("states the no-auth URL boundary before Remote Access is enabled", async () => {
-    renderPanel("compact");
+    renderPanel();
     await waitFor(() => {
       expect(screen.getByText("Share with web-based AI tools")).toBeInTheDocument();
     });
@@ -76,7 +76,7 @@ describe("RemoteAccessPanel", () => {
 
   it("renders 'Connecting…' when starting", async () => {
     (getRemoteAccessStatus as ReturnType<typeof vi.fn>).mockResolvedValue({ status: "starting" });
-    renderPanel("compact");
+    renderPanel();
     await waitFor(() => {
       expect(screen.getByText(/Connecting/i)).toBeInTheDocument();
     });
@@ -89,7 +89,7 @@ describe("RemoteAccessPanel", () => {
       token: "secret-token",
       relay_url: "https://relay.origin.dev/abcdef/mcp",
     });
-    renderPanel("compact");
+    renderPanel();
     await waitFor(() => {
       expect(screen.getByText("Connected")).toBeInTheDocument();
     });
@@ -97,7 +97,7 @@ describe("RemoteAccessPanel", () => {
   });
 
   it("clicking toggle calls toggleRemoteAccess", async () => {
-    renderPanel("compact");
+    renderPanel();
     await waitFor(() => {
       expect(screen.getByText("Share with web-based AI tools")).toBeInTheDocument();
     });
@@ -118,7 +118,7 @@ describe("RemoteAccessPanel", () => {
       token: "secret-token",
       relay_url: null,
     });
-    renderPanel("compact");
+    renderPanel();
     await waitFor(() => {
       expect(screen.getByText("Connected")).toBeInTheDocument();
     });
@@ -143,7 +143,7 @@ describe("RemoteAccessPanel", () => {
       token: "secret-token",
       relay_url: null,
     });
-    renderPanel("compact");
+    renderPanel();
     await waitFor(() => {
       expect(screen.getByText("Connected")).toBeInTheDocument();
     });
@@ -169,7 +169,7 @@ describe("RemoteAccessPanel", () => {
       token: "secret-token",
       relay_url: null,
     });
-    renderPanel("compact");
+    renderPanel();
     await waitFor(() => {
       expect(screen.getByText("Connected")).toBeInTheDocument();
     });
@@ -179,33 +179,18 @@ describe("RemoteAccessPanel", () => {
     });
   });
 
-  it("compact mode does NOT render Token section", async () => {
+  it("does not imply that the no-auth URL is token protected", async () => {
     (getRemoteAccessStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
       status: "connected",
       tunnel_url: "https://example.trycloudflare.com",
       token: "secret-token",
       relay_url: null,
     });
-    renderPanel("compact");
+    renderPanel();
     await waitFor(() => {
       expect(screen.getByText("Connected")).toBeInTheDocument();
     });
     expect(screen.queryByText(/Token/i)).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /^Rotate$/i })).not.toBeInTheDocument();
-  });
-
-  it("full mode does not imply that the no-auth URL is token protected", async () => {
-    (getRemoteAccessStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
-      status: "connected",
-      tunnel_url: "https://example.trycloudflare.com",
-      token: "secret-token",
-      relay_url: null,
-    });
-    renderPanel("full");
-    await waitFor(() => {
-      expect(screen.getByText("Connected")).toBeInTheDocument();
-    });
-    expect(screen.queryByText(/^Token$/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Rotate$/i })).not.toBeInTheDocument();
   });
 
@@ -216,7 +201,7 @@ describe("RemoteAccessPanel", () => {
   // must survive translation intact (commit 3a272d0).
   it("off state: renders translated title and warning, no status chip in any locale", async () => {
     await i18n.changeLanguage("zh-Hans");
-    renderPanel("compact");
+    renderPanel();
 
     await waitFor(() => {
       expect(screen.getByText("与网页版 AI 工具共享")).toBeInTheDocument();
@@ -236,7 +221,7 @@ describe("RemoteAccessPanel", () => {
   it("starting state: renders translated 'Connecting…' in zh-Hans", async () => {
     (getRemoteAccessStatus as ReturnType<typeof vi.fn>).mockResolvedValue({ status: "starting" });
     await i18n.changeLanguage("zh-Hans");
-    renderPanel("compact");
+    renderPanel();
 
     await waitFor(() => {
       expect(screen.getByText("正在连接…")).toBeInTheDocument();
@@ -244,7 +229,7 @@ describe("RemoteAccessPanel", () => {
     expect(screen.queryByText(/Connecting/i)).not.toBeInTheDocument();
   });
 
-  it("connected state (full mode): renders translated URL label, copy/test/reconnect controls, tunnel note, and instructions in zh-Hans", async () => {
+  it("connected state: renders translated URL label, copy/test/reconnect controls, tunnel note, and instructions in zh-Hans", async () => {
     (getRemoteAccessStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
       status: "connected",
       tunnel_url: "https://example.trycloudflare.com",
@@ -252,7 +237,7 @@ describe("RemoteAccessPanel", () => {
       relay_url: null,
     });
     await i18n.changeLanguage("zh-Hans");
-    renderPanel("full");
+    renderPanel();
 
     await waitFor(() => {
       expect(screen.getByText("已连接")).toBeInTheDocument();
@@ -303,7 +288,7 @@ describe("RemoteAccessPanel", () => {
       relay_url: "https://relay.origin.dev/abcdef/mcp",
     });
     await i18n.changeLanguage("zh-Hans");
-    renderPanel("full");
+    renderPanel();
 
     await waitFor(() => {
       expect(screen.getByText("已连接")).toBeInTheDocument();
@@ -314,13 +299,13 @@ describe("RemoteAccessPanel", () => {
     ).toBeInTheDocument();
   });
 
-  it("error state (full mode): renders translated Retry and Reconnect in zh-Hans", async () => {
+  it("error state: renders translated Retry and Reconnect in zh-Hans", async () => {
     (getRemoteAccessStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
       status: "error",
       error: "timeout after 5s",
     });
     await i18n.changeLanguage("zh-Hans");
-    renderPanel("full");
+    renderPanel();
 
     await waitFor(() => {
       expect(screen.getByText("重试")).toBeInTheDocument();
@@ -336,7 +321,7 @@ describe("RemoteAccessPanel", () => {
       status: "error",
       error: "connection refused: dial tcp 127.0.0.1:7878",
     });
-    renderPanel("full");
+    renderPanel();
     await waitFor(() => {
       expect(
         screen.getByText("connection refused: dial tcp 127.0.0.1:7878"),

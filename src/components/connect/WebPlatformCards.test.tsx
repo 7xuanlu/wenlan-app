@@ -33,14 +33,20 @@ describe("WebPlatformCards", () => {
     mocks.clipboardWrite.mockResolvedValue(undefined);
   });
 
-  it("both web cards carry the no-auth boundary warning (council change f)", async () => {
+  // Redesign spec §6/§8: the no-auth warning used to render 3 times (twice
+  // here, once in RemoteAccessPanel) — now it renders exactly once, in
+  // RemoteAccessPanel only (see RemoteAccessPanel.tsx and
+  // AgentsSection.test.tsx for the composed once-only proof). This card no
+  // longer carries its own copy of the warning at all.
+  it("does not duplicate the no-auth boundary warning — that lives solely in RemoteAccessPanel now", async () => {
     mocks.getRemoteAccessStatus.mockResolvedValue({
       status: "connected", tunnel_url: "https://x.trycloudflare.com", token: "t", relay_url: null,
     });
     renderCards();
     expect(await screen.findByText("Claude.ai")).toBeInTheDocument();
     expect(screen.getByText("ChatGPT.com")).toBeInTheDocument();
-    expect(screen.getAllByText(/treat it like a password/)).toHaveLength(2);
+    expect(screen.queryByText(/treat it like a password/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/no authentication/i)).not.toBeInTheDocument();
   });
 
   it("shows the connection URL when the tunnel is up", async () => {

@@ -292,7 +292,7 @@ export default function AgentsSection({ onSetupAgent }: { onSetupAgent?: () => v
           }
           label={t("settings.agents.remoteAccess")}
         />
-        <RemoteAccessPanel mode="full" />
+        <RemoteAccessPanel />
       </section>
 
       {/* ── Web — Claude.ai & ChatGPT ─────────────────────────────── */}

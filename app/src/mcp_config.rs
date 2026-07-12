@@ -66,6 +66,38 @@ fn has_configured_entry_toml(toml_str: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Whether a Claude Code `settings.json` blob has the Wenlan plugin enabled.
+/// `enabledPlugins` keys are `<plugin>@<marketplace>`, and the marketplace
+/// name varies by install (`wenlan@7xuanlu` fresh, `wenlan@7xuanlu-wenlan` on
+/// a machine that added the old self-marketplace) — match the `wenlan@`
+/// prefix, never a literal marketplace name, or the check breaks for exactly
+/// one of the two populations. Malformed JSON or a missing key is "no
+/// plugin", never an error: a user who has never touched plugins should not
+/// see this crash the detector.
+fn claude_code_plugin_enabled(settings_json: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(settings_json)
+        .ok()
+        .and_then(|v| v.get("enabledPlugins")?.as_object().cloned())
+        .map(|plugins| {
+            plugins
+                .iter()
+                .any(|(key, val)| key.starts_with("wenlan@") && val.as_bool() == Some(true))
+        })
+        .unwrap_or(false)
+}
+
+/// Reads the real `~/.claude/settings.json` and checks it via
+/// `claude_code_plugin_enabled`. Split out so the matching logic stays a pure,
+/// directly testable function.
+fn claude_code_plugin_enabled_on_disk() -> bool {
+    let Some(home) = dirs::home_dir() else {
+        return false;
+    };
+    std::fs::read_to_string(home.join(".claude").join("settings.json"))
+        .map(|s| claude_code_plugin_enabled(&s))
+        .unwrap_or(false)
+}
+
 /// Detect installed MCP-compatible tools and whether Wenlan is already configured.
 pub fn detect_mcp_clients() -> Vec<McpClient> {
     let clients = [
@@ -103,6 +135,15 @@ pub fn detect_mcp_clients() -> Vec<McpClient> {
                         .map(|h| h.join("Applications/Cursor.app").exists())
                         .unwrap_or(false);
                 (app_exists, config_has_entry())
+            } else if client_type == &"claude_code" {
+                // Claude Code also counts as configured via the Wenlan plugin
+                // (`enabledPlugins` in `~/.claude/settings.json`), which
+                // registers its own MCP server without touching
+                // `~/.claude.json` — see claude_code_plugin_enabled.
+                (
+                    config_path.exists(),
+                    config_has_entry() || claude_code_plugin_enabled_on_disk(),
+                )
             } else {
                 // Everything else: detect by config file existence
                 (config_path.exists(), config_has_entry())
@@ -119,14 +160,21 @@ pub fn detect_mcp_clients() -> Vec<McpClient> {
         .collect()
 }
 
-/// Search for a local wenlan-mcp binary (dev fallback).
+/// Search for a local wenlan-mcp binary. Order: dev checkout paths (unchanged),
+/// then the canonical `install.sh` location, then a sidecar bundled next to
+/// this binary (the only real path for a `.dmg`-only user who never ran
+/// `install.sh`). `npx -y wenlan-mcp` (unpinned) is the caller's last resort,
+/// not this function's.
 fn find_wenlan_mcp_binary() -> Option<PathBuf> {
-    let candidates = [
+    let mut candidates = vec![
         dirs::home_dir().map(|h| h.join(".cargo/bin/wenlan-mcp")),
         dirs::home_dir().map(|h| h.join("Repos/wenlan/target/release/wenlan-mcp")),
         dirs::home_dir().map(|h| h.join("Repos/wenlan/target/debug/wenlan-mcp")),
-        Some(PathBuf::from("/usr/local/bin/wenlan-mcp")),
+        dirs::home_dir().map(|h| h.join(".wenlan/bin/wenlan-mcp")),
     ];
+    if let Ok(exe) = std::env::current_exe() {
+        candidates.push(exe.parent().map(|dir| dir.join("wenlan-mcp")));
+    }
     candidates.into_iter().flatten().find(|p| p.exists())
 }
 
@@ -292,6 +340,45 @@ mod tests {
     #[test]
     fn test_check_already_configured_invalid_json() {
         assert!(!has_configured_entry("not json"));
+    }
+
+    #[test]
+    fn test_claude_code_plugin_enabled_matches_fresh_install_prefix() {
+        // Fresh install: marketplace name is the short form.
+        let json = r#"{"enabledPlugins": {"wenlan@7xuanlu": true}}"#;
+        assert!(claude_code_plugin_enabled(json));
+    }
+
+    #[test]
+    fn test_claude_code_plugin_enabled_matches_legacy_marketplace_name() {
+        // A machine that added the old self-hosted marketplace before it was
+        // deleted upstream (048d77a8) — must still match, since matching is
+        // by the `wenlan@` prefix, not a literal marketplace name.
+        let json = r#"{"enabledPlugins": {"wenlan@7xuanlu-wenlan": true}}"#;
+        assert!(claude_code_plugin_enabled(json));
+    }
+
+    #[test]
+    fn test_claude_code_plugin_enabled_false_when_disabled() {
+        let json = r#"{"enabledPlugins": {"wenlan@7xuanlu": false}}"#;
+        assert!(!claude_code_plugin_enabled(json));
+    }
+
+    #[test]
+    fn test_claude_code_plugin_enabled_false_when_no_wenlan_entry() {
+        let json = r#"{"enabledPlugins": {"other-plugin@somewhere": true}}"#;
+        assert!(!claude_code_plugin_enabled(json));
+    }
+
+    #[test]
+    fn test_claude_code_plugin_enabled_false_when_no_enabled_plugins_key() {
+        let json = r#"{"theme": "dark"}"#;
+        assert!(!claude_code_plugin_enabled(json));
+    }
+
+    #[test]
+    fn test_claude_code_plugin_enabled_false_on_malformed_json() {
+        assert!(!claude_code_plugin_enabled("not json"));
     }
 
     #[test]
