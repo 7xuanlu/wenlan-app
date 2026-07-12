@@ -462,15 +462,24 @@ classifies against a rule). Every slice leaves tests + ratchet green on its own.
 | `VaultConnectCard.tsx` | Browse → secondary; Connect → primary in settings, secondary in wizard variant | R4.1/4.2 · J |
 | `SourcesSection.tsx:7, 26–29` | `onImport` required; button unconditional, `secondary`; audit the section for exactly ≤1 primary | R4.2 · J |
 
-### S6 — Card grouping + Capture removal
+### S6 — Card grouping (Capture removal CUT — see override)
+
+> **COORDINATOR OVERRIDE — do not delete `CaptureSection`.** The spec's argument
+> (unreachable UI can't be reviewed) is sound, but `SettingsSidebar.tsx:109` records an
+> explicit intent to bring it back: *"Capture is hidden for now — ambient capture is
+> disabled as part of the memory-layer pivot. Re-enable when capture features are ready
+> for users."* Deleting the component, its toggles, its config-boundary test, and the
+> Rust commands behind them would reverse a documented product decision on an agent's
+> initiative. Whether ambient capture returns is the user's call, not ours, and the cost
+> of leaving it hidden is zero. It stays until they say otherwise. Escalated to the user.
 
 | File | Change | Rule |
 |---|---|---|
 | `GeneralSection.tsx:236, 246, 286` | merge three APP cards → one `Card padding="rows"`; theme + language become `SettingRow control={…}` rows | R5 · M |
-| `CaptureSection.tsx` | delete file | R5 · M |
-| `SettingsPage.tsx` | remove capture branch + import; drop `"capture"` from section-id type | R5 · M |
-| `SettingsSidebar.tsx:109–121` | remove the commented capture block | R5 · M |
-| `src/i18n/resources.ts` | delete `settings.capture.*` ×3 locales; prune any baseline rows with the file | R5, §4.4 · M |
+| ~~`CaptureSection.tsx`~~ | ~~delete file~~ — **cut, see override** | — |
+| ~~`SettingsPage.tsx`~~ | ~~remove capture branch~~ — **cut** | — |
+| ~~`SettingsSidebar.tsx:109–121`~~ | ~~remove commented block~~ — **cut** | — |
+| ~~`src/i18n/resources.ts`~~ | ~~delete `settings.capture.*`~~ — **cut** | — |
 
 ### S7 — RemoteAccessPanel conformance (`src/components/memory/RemoteAccessPanel.tsx`)
 
