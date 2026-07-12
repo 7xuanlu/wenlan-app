@@ -2065,9 +2065,9 @@ const zhHans = {
   remoteAccess: {
     title: "与网页版 AI 工具共享",
     noAuthWarning:
-      "将为 Claude.ai 与 ChatGPT 创建一个无需身份验证的公开 HTTPS 地址。任何拥有该地址的人都能访问 Wenlan;不使用时请关闭远程访问。",
+      "将为 Claude.ai 与 ChatGPT 创建一个无需身份验证的公开 HTTPS 地址。任何拥有该地址的人都能访问 Wenlan；不使用时请关闭远程访问。",
     urlLabel: "你的 MCP 地址",
-    urlLabelStable: "你的 MCP 地址(稳定)",
+    urlLabelStable: "你的 MCP 地址（稳定）",
     copyUrl: "复制地址",
     copied: "已复制!",
     testConnection: "测试连接",
@@ -2077,7 +2077,7 @@ const zhHans = {
     statusOff: "关闭",
     statusConnecting: "正在连接…",
     statusConnected: "已连接",
-    statusConnectedLatency: "已连接({{ms}} 毫秒)",
+    statusConnectedLatency: "已连接（{{ms}} 毫秒）",
     howTo: "如何连接 Claude.ai 与 ChatGPT",
     claudeAi: "Claude.ai",
     chatGpt: "ChatGPT",
@@ -2237,7 +2237,7 @@ const zhHant = {
     servingOnDevice: "目前使用:本機模型",
     servingBasic: "基礎記憶 — 未設定模型",
     externalRestartPending: "外部端點已設定 — 等待重新啟動",
-    externalUnverified: "外部端點已設定(未驗證)",
+    externalUnverified: "外部端點已設定（未驗證）",
   },
   main: {
     home: "首頁",
@@ -3099,9 +3099,9 @@ const zhHant = {
   remoteAccess: {
     title: "與網頁版 AI 工具共享",
     noAuthWarning:
-      "將為 Claude.ai 與 ChatGPT 建立一個無需身份驗證的公開 HTTPS 位址。任何擁有該位址的人都能存取 Wenlan;不使用時請關閉遠端存取。",
+      "將為 Claude.ai 與 ChatGPT 建立一個無需身份驗證的公開 HTTPS 位址。任何擁有該位址的人都能存取 Wenlan；不使用時請關閉遠端存取。",
     urlLabel: "你的 MCP 位址",
-    urlLabelStable: "你的 MCP 位址(穩定)",
+    urlLabelStable: "你的 MCP 位址（穩定）",
     copyUrl: "複製位址",
     copied: "已複製!",
     testConnection: "測試連線",
@@ -3111,7 +3111,7 @@ const zhHant = {
     statusOff: "關閉",
     statusConnecting: "正在連線…",
     statusConnected: "已連線",
-    statusConnectedLatency: "已連線({{ms}} 毫秒)",
+    statusConnectedLatency: "已連線（{{ms}} 毫秒）",
     howTo: "如何連接 Claude.ai 與 ChatGPT",
     claudeAi: "Claude.ai",
     chatGpt: "ChatGPT",
