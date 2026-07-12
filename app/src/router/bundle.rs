@@ -56,3 +56,30 @@ impl ContextBundle {
 // run_context_consumer in router/intent.rs during the thin-client conversion
 // (commit 42f74160), and the function is no longer called. Kept a note here
 // so future readers don't go hunting for it.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Quick Capture's whole data path: the text the user types becomes a
+    /// Thought bundle carrying that text verbatim. `run_router` hands
+    /// `QuickThought` straight to `from_text`, so if this breaks, typing into
+    /// Quick Capture silently stores nothing (or stores it as the wrong
+    /// source) with no compile error to catch it.
+    ///
+    /// Written when the ambient-capture subsystem was deleted out from under
+    /// this module: `from_text` had no test, and the deletion touched every
+    /// other producer in the file.
+    #[test]
+    fn quick_thought_text_survives_bundling() {
+        let bundle = ContextBundle::from_text("ship the connect redesign".to_string());
+
+        assert_eq!(
+            bundle.raw_text.as_deref(),
+            Some("ship the connect redesign")
+        );
+        assert_eq!(bundle.trigger_type, TriggerSource::Thought);
+        // The daemon keys ingestion off this string; "thought" is the wire value.
+        assert_eq!(bundle.trigger_type.as_str(), "thought");
+    }
+}
