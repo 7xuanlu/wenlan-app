@@ -92,8 +92,9 @@ const en = {
   },
   vaultConnect: {
     title: "Connect a notes folder",
-    description:
-      "Wenlan watches the folder and indexes your notes — Obsidian vaults, plain folders of .md, .txt, and .pdf files.",
+    description: "Wenlan watches the folder and keeps your notes indexed as they change.",
+    supportsObsidian: "Obsidian vaults — indexes your Markdown notes",
+    supportsFolder: "Any folder — indexes .md, .txt, and .pdf files",
     browse: "Browse…",
     placeholder: "Select a folder…",
     scanning: "Scanning folder…",
@@ -1132,8 +1133,9 @@ const zhHans = {
   },
   vaultConnect: {
     title: "连接笔记文件夹",
-    description:
-      "Wenlan 会监视该文件夹并索引你的笔记 — Obsidian 仓库或包含 .md、.txt、.pdf 文件的普通文件夹。",
+    description: "Wenlan 会监视该文件夹，并在笔记变化时保持索引更新。",
+    supportsObsidian: "Obsidian 仓库 — 索引你的 Markdown 笔记",
+    supportsFolder: "任意文件夹 — 索引 .md、.txt 和 .pdf 文件",
     browse: "浏览…",
     placeholder: "选择文件夹…",
     scanning: "正在扫描文件夹…",
@@ -2152,8 +2154,9 @@ const zhHant = {
   },
   vaultConnect: {
     title: "連接筆記資料夾",
-    description:
-      "Wenlan 會監看該資料夾並索引你的筆記 — Obsidian 儲存庫或包含 .md、.txt、.pdf 檔案的一般資料夾。",
+    description: "Wenlan 會監看該資料夾，並在筆記變動時保持索引更新。",
+    supportsObsidian: "Obsidian 儲存庫 — 索引你的 Markdown 筆記",
+    supportsFolder: "任意資料夾 — 索引 .md、.txt 和 .pdf 檔案",
     browse: "瀏覽…",
     placeholder: "選擇資料夾…",
     scanning: "正在掃描資料夾…",

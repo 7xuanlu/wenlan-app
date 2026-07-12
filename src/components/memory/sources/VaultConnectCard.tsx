@@ -115,6 +115,22 @@ export default function VaultConnectCard({ variant, onConnected }: Props) {
         <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-secondary)", lineHeight: 1.5, marginTop: "4px" }}>
           {t("vaultConnect.description")}
         </p>
+        {/* Obsidian support is stated ALWAYS, not only when a vault happens to be
+            detected — the chip row below is conditional, so without this a user
+            with Obsidian installed (but no registry entry we can read) has no way
+            to know it's supported at all. The two lines also carry the real
+            difference in what gets indexed, which used to appear only as a
+            post-detection hint. */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "2px", marginTop: "8px" }}>
+          {[t("vaultConnect.supportsObsidian"), t("vaultConnect.supportsFolder")].map((line) => (
+            <span
+              key={line}
+              style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)", lineHeight: 1.5 }}
+            >
+              {line}
+            </span>
+          ))}
+        </div>
       </div>
 
       {obsidianVaults && obsidianVaults.length > 0 && (

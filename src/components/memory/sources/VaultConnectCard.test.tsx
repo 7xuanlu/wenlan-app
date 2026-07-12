@@ -154,4 +154,20 @@ describe("VaultConnectCard", () => {
     await userEvent.click(screen.getByRole("button", { name: "Connect" }));
     await waitFor(() => expect(mocks.addSource).toHaveBeenCalledWith("directory", "/v"));
   });
+
+  // The chip row is conditional on detection, so it cannot be what tells a user
+  // that Obsidian is supported — someone with Obsidian installed but no readable
+  // registry entry would see no mention of it at all. Support is stated
+  // unconditionally, and this pins the case the chips do NOT cover.
+  it("states Obsidian support even when zero vaults are detected", async () => {
+    renderCard();
+    expect(
+      await screen.findByText("Obsidian vaults — indexes your Markdown notes"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Any folder — indexes .md, .txt, and .pdf files"),
+    ).toBeInTheDocument();
+    // ...and it is genuinely the no-vault case, not the chip row in disguise.
+    expect(screen.queryByText("Your Obsidian vaults")).not.toBeInTheDocument();
+  });
 });
