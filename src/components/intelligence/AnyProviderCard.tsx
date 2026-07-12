@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
@@ -12,13 +12,8 @@ import {
 } from "../../lib/tauri";
 import { useDaemonVersion } from "../../hooks/useDaemonVersion";
 import { useApiKeyStatus } from "./IntelligenceSetup";
-import { PROVIDER_PRESETS, presetForEndpoint, normalizeEndpoint, keyPrefixMismatch } from "./providerPresets";
+import { PROVIDER_PRESETS, presetForEndpoint, normalizeEndpoint, keyPrefixMismatch, visiblePresets } from "./providerPresets";
 import { Card, Field, Input, Button, Select, StatusChip, type ProbeState } from "../memory/settings/primitives";
-
-// The Local-server card (spec §5.2): only presets that need no key. Widening
-// to all of PROVIDER_PRESETS — with a key Field appearing per preset.keyRequired,
-// already wired below — is the entire §5.2a forward-compat diff.
-const LOCAL_PRESETS = PROVIDER_PRESETS.filter((p) => !p.keyRequired);
 
 // The preset table is the single source of truth for local endpoints — look
 // them up by id rather than restating the URLs here, so a future table edit
@@ -55,12 +50,18 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
 
 export default function AnyProviderCard() {
   const { t } = useTranslation();
-  const { supportsHotSwap } = useDaemonVersion();
+  const { supportsHotSwap, supportsExternalKey } = useDaemonVersion();
   const anthropic = useApiKeyStatus();
   const queryClient = useQueryClient();
 
-  const [presetId, setPresetId] = useState(LOCAL_PRESETS[0].id);
-  const preset = LOCAL_PRESETS.find((p) => p.id === presetId) ?? LOCAL_PRESETS[LOCAL_PRESETS.length - 1];
+  const presets = useMemo(() => visiblePresets(supportsExternalKey), [supportsExternalKey]);
+
+  // Always starts on Ollama, never `presets[0]` — once the gate is open,
+  // PROVIDER_PRESETS[0] is a paid cloud vendor (OpenAI), and defaulting a
+  // user into that would silently opt them into billing. Gate flipping open
+  // after mount must not move an already-made selection.
+  const [presetId, setPresetId] = useState("ollama");
+  const preset = presets.find((p) => p.id === presetId) ?? presets[presets.length - 1];
   const [endpoint, setEndpoint] = useState(preset.endpoint);
   const [model, setModel] = useState("");
   const [apiKey, setApiKey] = useState("");
@@ -178,7 +179,7 @@ export default function AnyProviderCard() {
 
   const selectPreset = (id: string) => {
     setPresetId(id);
-    const next = LOCAL_PRESETS.find((p) => p.id === id);
+    const next = presets.find((p) => p.id === id);
     if (next && next.endpoint) setEndpoint(next.endpoint);
     if (next && !next.endpoint) setEndpoint("");
     setModel("");
@@ -253,10 +254,10 @@ export default function AnyProviderCard() {
               color: "var(--mem-text)",
             }}
           >
-            {t("externalProvider.title")}
+            {t(supportsExternalKey ? "externalProvider.titleWithCloud" : "externalProvider.title")}
           </h3>
           <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-secondary)", lineHeight: 1.5, marginTop: "4px" }}>
-            {t("externalProvider.description")}
+            {t(supportsExternalKey ? "externalProvider.descriptionWithCloud" : "externalProvider.description")}
           </p>
         </div>
 
@@ -267,7 +268,7 @@ export default function AnyProviderCard() {
         )}
 
         <div className="flex flex-wrap gap-2" role="group" aria-label={t("externalProvider.presetLabel")}>
-          {LOCAL_PRESETS.map((p) => {
+          {presets.map((p) => {
             const probe = probeFor(p.id);
             const status = !probe ? null : probe.isLoading ? "probing" : probe.isSuccess ? "connected" : "notDetected";
             const dot = status === "connected" ? "●" : status === "notDetected" ? "○" : "…";

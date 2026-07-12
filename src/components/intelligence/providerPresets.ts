@@ -147,6 +147,21 @@ export function presetForEndpoint(endpoint: string | null): ProviderPreset {
   );
 }
 
+// Group render order for the widened (§5.2a) preset picker: local servers
+// first, then cloud vendors, then the free-text "Custom…" escape hatch last.
+const VISIBLE_GROUP_ORDER: PresetGroup[] = ["local", "cloud", "custom"];
+
+/** The presets AnyProviderCard should render (§5.2a). Below the daemon-0.13
+ *  key-auth floor, only the no-key-required presets appear — same set and
+ *  order as before cloud vendors existed. At/above the floor, every preset
+ *  appears, grouped local-first / cloud-second / custom-last. */
+export function visiblePresets(supportsExternalKey: boolean): ProviderPreset[] {
+  if (!supportsExternalKey) {
+    return PROVIDER_PRESETS.filter((p) => !p.keyRequired);
+  }
+  return VISIBLE_GROUP_ORDER.flatMap((group) => PROVIDER_PRESETS.filter((p) => p.group === group));
+}
+
 /** Soft key-format check (§9.1): true only when a non-empty key matches none
  *  of the preset's prefixes. Presets without prefixes (e.g. Mistral) never
  *  mismatch. Never used to block Save/Test — hint only. */

@@ -360,4 +360,54 @@ describe("AnyProviderCard — the Local-server card (spec §5.2)", () => {
     expect(mocks.listExternalModels).toHaveBeenCalledTimes(1);
     expect(mocks.listExternalModels).toHaveBeenCalledWith("http://localhost:9999/v1", null);
   });
+
+  // §5.2a: the widened preset picker (cloud vendors + key auth) is gated on
+  // the daemon-0.13 `supportsExternalKey` floor. Below the floor this card
+  // must behave exactly as before the widening.
+  describe("cloud preset gating (§5.2a)", () => {
+    it("gate CLOSED (0.12 daemon): no OpenAI pill renders and the title reads the local-only copy", async () => {
+      renderCard();
+      // Anchor to a positive, post-resolution signal before asserting an
+      // absence: the title and the preset list are both derived from the
+      // same `supportsExternalKey` value, so once the title has settled to
+      // the closed-gate copy the preset list has settled too.
+      await screen.findByText("Your own local server");
+      expect(screen.queryByRole("button", { name: "OpenAI" })).not.toBeInTheDocument();
+    });
+
+    it("gate OPEN (0.13 daemon): an OpenAI pill renders and the title switches to the cloud-aware copy", async () => {
+      mocks.getDaemonVersion.mockResolvedValue("0.13.0");
+      renderCard();
+      await screen.findByText("Bring your own model");
+      expect(screen.getByRole("button", { name: "OpenAI" })).toBeInTheDocument();
+    });
+
+    it("gate OPEN: the default selected pill stays Ollama, never OpenAI", async () => {
+      mocks.getDaemonVersion.mockResolvedValue("0.13.0");
+      renderCard();
+      await screen.findByText("Bring your own model");
+      expect(screen.getByRole("button", { name: "Ollama" })).toHaveAttribute("aria-pressed", "true");
+      expect(screen.getByRole("button", { name: "OpenAI" })).toHaveAttribute("aria-pressed", "false");
+    });
+
+    it("gate OPEN: selecting the OpenAI pill reveals the API key Field and the Get-a-key link", async () => {
+      mocks.getDaemonVersion.mockResolvedValue("0.13.0");
+      renderCard();
+      await screen.findByText("Bring your own model");
+      await userEvent.click(screen.getByRole("button", { name: "OpenAI" }));
+      expect(await screen.findByLabelText("API key")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Get a key →" })).toBeInTheDocument();
+    });
+
+    it("gate OPEN: local presets still render before cloud presets in DOM order", async () => {
+      mocks.getDaemonVersion.mockResolvedValue("0.13.0");
+      renderCard();
+      await screen.findByText("Bring your own model");
+      const lmStudioPill = screen.getByRole("button", { name: "LM Studio" });
+      const openAiPill = screen.getByRole("button", { name: "OpenAI" });
+      expect(
+        lmStudioPill.compareDocumentPosition(openAiPill) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+  });
 });
