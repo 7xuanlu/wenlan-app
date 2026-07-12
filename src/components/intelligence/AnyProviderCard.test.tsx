@@ -335,4 +335,38 @@ describe("AnyProviderCard", () => {
     expect(await screen.findByText(/type a model name/i)).toBeInTheDocument();
     expect(screen.getByLabelText("Model").tagName).toBe("INPUT");
   });
+
+  it("local pane: editing the endpoint away from the probed Ollama preset drops the stale dropdown and discovers against the live endpoint", async () => {
+    renderCard({ groups: ["local"] });
+    // Ollama pill is the default local selection and is probed/connected.
+    await screen.findByText(/Connected to Ollama/);
+    mocks.listExternalModels.mockClear();
+
+    await userEvent.clear(screen.getByLabelText("Endpoint URL"));
+    await userEvent.type(screen.getByLabelText("Endpoint URL"), "http://192.168.1.5:11434/v1");
+
+    // The edited endpoint no longer matches the Ollama preset's endpoint, so
+    // the probe association must drop: no dropdown of the WRONG server's
+    // models, and the generic discovery query must pick up the live value.
+    expect(screen.getByLabelText("Model").tagName).toBe("INPUT");
+    await waitFor(() =>
+      expect(mocks.listExternalModels).toHaveBeenCalledWith("http://192.168.1.5:11434/v1", null)
+    );
+  });
+
+  it("local pane: a saved model no longer discoverable stays visible and selectable, discovered ids still choosable", async () => {
+    mocks.getExternalLlm.mockResolvedValue(["http://localhost:11434/v1", "llama3.2:1b"]);
+    renderCard({ groups: ["local"] });
+    await screen.findByText(/Connected to Ollama/);
+
+    const modelField = await screen.findByLabelText("Model");
+    expect(modelField.tagName).toBe("SELECT");
+    // Saved model ("llama3.2:1b") isn't among the discovered ids
+    // (["llama3.2:3b"], from the beforeEach default) — it must still render
+    // as the selected value instead of a blank select.
+    expect(modelField).toHaveValue("llama3.2:1b");
+    // The discovered id must still be a choosable option.
+    await userEvent.selectOptions(modelField, "llama3.2:3b");
+    expect(modelField).toHaveValue("llama3.2:3b");
+  });
 });

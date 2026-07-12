@@ -130,7 +130,17 @@ export default function AnyProviderCard({ groups, initialPresetId, hidePresetPic
   });
   const probeFor = (id: string) =>
     id === "ollama" ? ollamaProbe : id === "lmstudio" ? lmStudioProbe : null;
-  const selectedProbe = probeFor(presetId);
+  // A probe is only "the" probe for the selected preset while the live
+  // (trimmed) endpoint still matches that preset's endpoint — once the user
+  // hand-edits Endpoint away from e.g. Ollama's default, the probed models
+  // belong to a different server than the one now in the field, so the
+  // association must drop (Task 5 review finding: never show a dropdown of
+  // the wrong server's models, and never leave the edited endpoint with no
+  // discovery at all).
+  const probedEndpointFor = (id: string) =>
+    id === "ollama" ? OLLAMA_ENDPOINT : id === "lmstudio" ? LMSTUDIO_ENDPOINT : null;
+  const selectedProbe =
+    probedEndpointFor(presetId) === trimmedEndpoint ? probeFor(presetId) : null;
   const localModels = selectedProbe?.data ?? [];
 
   // Model auto-discovery; silent fallback to free text on failure (spec §1).
@@ -346,6 +356,14 @@ export default function AnyProviderCard({ groups, initialPresetId, hidePresetPic
             {isLocalOnly && selectedProbe && localModels.length >= 1 ? (
               <select value={model} onChange={(e) => setModel(e.target.value)} style={fieldStyle}>
                 <option value="">{t("externalProvider.modelSelectPlaceholder")}</option>
+                {/* A saved model that's no longer among the discovered ids
+                    (e.g. removed from Ollama since it was saved) must still
+                    render as the visibly-selected value — never a blank
+                    select while Save/Test remain enabled on a value the user
+                    can't see. */}
+                {model !== "" && !localModels.includes(model) && (
+                  <option value={model}>{model}</option>
+                )}
                 {localModels.map((m) => (
                   <option key={m} value={m}>{m}</option>
                 ))}
