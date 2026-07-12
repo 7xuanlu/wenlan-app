@@ -79,6 +79,16 @@ describe("Field", () => {
     expect(label).not.toContainElement(errorEl);
     expect(screen.queryByText("helper")).not.toBeInTheDocument();
   });
+
+  it("uses the shared eyebrow tracking token, not a hardcoded letter-spacing", () => {
+    render(
+      <Field label="Endpoint" htmlFor="endpoint">
+        <Input />
+      </Field>,
+    );
+    const label = screen.getByText("Endpoint");
+    expect(label).toHaveStyle({ letterSpacing: "var(--mem-tracking-eyebrow)" });
+  });
 });
 
 describe("Toggle", () => {

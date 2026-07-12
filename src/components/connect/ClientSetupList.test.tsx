@@ -185,4 +185,29 @@ describe("ClientSetupList — §9.3 plugin-first matrix", () => {
     await userEvent.click(copyButton);
     expect(mocks.clipboardWrite).not.toHaveBeenCalled();
   });
+
+  it("a failed Set up shows the error in the danger-text token, not a raw Tailwind color", async () => {
+    mocks.writeMcpConfig.mockRejectedValue(new Error("permission denied"));
+    renderList();
+    const setUps = await screen.findAllByRole("button", { name: "Set up" });
+    await userEvent.click(setUps[0]); // Cursor (first GUI client)
+    const errorEl = await screen.findByRole("alert");
+    expect(errorEl).toHaveTextContent(/permission denied/);
+    expect(errorEl).toHaveStyle({ color: "var(--mem-status-danger-text)" });
+    expect(errorEl.className).not.toContain("text-red-500");
+  });
+
+  it("the Advanced one-click button is the Button primitive (secondary/sm) and still writes the config", async () => {
+    renderList();
+    await screen.findByText("claude plugin marketplace add 7xuanlu/wenlan");
+    const row = rowFor("Claude Code");
+    await userEvent.click(within(row).getByText("Advanced"));
+    const advancedButton = within(row).getByRole("button", { name: "Or write the config for me" });
+    // Button primitive's secondary/sm class markers (primitives.tsx BUTTON_VARIANT_CLASS.secondary / BUTTON_SIZE_CLASS.sm) —
+    // a mutation back to the old raw <button> loses these.
+    expect(advancedButton.className).toContain("border-[var(--mem-border)]");
+    expect(advancedButton.className).toContain("h-[26px]");
+    await userEvent.click(advancedButton);
+    expect(mocks.writeMcpConfig).toHaveBeenCalledWith("claude_code");
+  });
 });

@@ -138,7 +138,7 @@ export default function VaultConnectCard({ variant, onConnected }: Props) {
         </div>
       )}
 
-      {error && <p className="text-red-500" style={{ fontSize: "12px", fontFamily: "var(--mem-font-mono)" }}>{error}</p>}
+      {error && <p style={{ fontSize: "12px", fontFamily: "var(--mem-font-mono)", color: "var(--mem-status-danger-text)" }}>{error}</p>}
 
       {connectedId === null ? (
         <Button

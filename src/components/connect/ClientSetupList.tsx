@@ -54,7 +54,7 @@ export default function ClientSetupList() {
       </div>
       {children}
       {errors[client.client_type] && (
-        <p className="text-red-500" role="alert" style={{ fontFamily: "var(--mem-font-mono)", fontSize: "10px", margin: 0 }}>
+        <p role="alert" style={{ fontFamily: "var(--mem-font-mono)", fontSize: "10px", margin: 0, color: "var(--mem-status-danger-text)" }}>
           {errors[client.client_type]}
         </p>
       )}
@@ -66,15 +66,16 @@ export default function ClientSetupList() {
       <summary style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)", cursor: "pointer" }}>
         {t("connectMatrix.advanced")}
       </summary>
-      <button
+      <Button
         type="button"
+        variant="secondary"
+        size="sm"
         onClick={() => setUp(client.client_type)}
         disabled={busy === client.client_type}
-        className="mt-2 rounded-md px-3 py-1.5 text-xs disabled:opacity-50"
-        style={{ border: "1px solid var(--mem-border)", color: "var(--mem-text)", fontFamily: "var(--mem-font-body)" }}
+        className="mt-2"
       >
         {busy === client.client_type ? t("connectMatrix.settingUp") : t("connectMatrix.oneClickAdvanced")}
-      </button>
+      </Button>
     </details>
   );
 

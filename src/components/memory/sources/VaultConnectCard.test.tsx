@@ -96,8 +96,14 @@ describe("VaultConnectCard", () => {
     await userEvent.click(screen.getByText("Browse…"));
     await waitFor(() => expect(screen.getByText(/3 supported files/)).toBeInTheDocument());
     await userEvent.click(screen.getByRole("button", { name: "Connect" }));
-    await waitFor(() =>
-      expect(screen.getByText(/path does not exist: \/v/)).toBeInTheDocument()
-    );
+    let errorEl: HTMLElement;
+    await waitFor(() => {
+      errorEl = screen.getByText(/path does not exist: \/v/);
+      expect(errorEl).toBeInTheDocument();
+    });
+    // Danger-text token, not a raw Tailwind color (a mutation back to
+    // text-red-500 would fail this while leaving the text assertion green).
+    expect(errorEl!).toHaveStyle({ color: "var(--mem-status-danger-text)" });
+    expect(errorEl!.className).not.toContain("text-red-500");
   });
 });

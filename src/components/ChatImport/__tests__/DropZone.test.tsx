@@ -15,6 +15,13 @@ describe("DropZone", () => {
     ).toBeInTheDocument();
   });
 
+  it("marks the decorative upload icon aria-hidden", () => {
+    const { container } = render(<DropZone onFileSelected={() => {}} />);
+    const icon = container.querySelector("svg");
+    expect(icon).not.toBeNull();
+    expect(icon).toHaveAttribute("aria-hidden", "true");
+  });
+
   it("calls onFileSelected when a zip file is dropped", () => {
     const onFileSelected = vi.fn();
     render(<DropZone onFileSelected={onFileSelected} />);

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, act } from "@testing-library/react";
+import { open } from "@tauri-apps/plugin-dialog";
 
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(() => Promise.resolve(() => {})),
@@ -88,5 +89,49 @@ describe("ImportFlow", () => {
     await vi.advanceTimersByTimeAsync(100);
     expect(queryByText(/Refining/)).toBeNull();
     expect(queryByText(/Importing/)).toBeNull();
+  });
+
+  it("marks the dismiss icon aria-hidden while the dismiss button keeps its own accessible name", async () => {
+    const mockOpen = open as ReturnType<typeof vi.fn>;
+    mockOpen.mockResolvedValue("/tmp/export.zip");
+    mockImportChatExport.mockRejectedValue(new Error("boom"));
+
+    const { getByRole, container } = render(<ImportFlow />);
+    const chooseFile = getByRole("button", { name: /choose file/i });
+    await act(async () => {
+      chooseFile.click();
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    const dismissButton = getByRole("button", { name: "Dismiss" });
+    expect(dismissButton).toHaveAttribute("aria-label", "Dismiss");
+    container.querySelectorAll("svg").forEach((svg) => {
+      expect(svg).toHaveAttribute("aria-hidden", "true");
+    });
+  });
+
+  it("marks the success status icon aria-hidden", async () => {
+    const mockOpen = open as ReturnType<typeof vi.fn>;
+    mockOpen.mockResolvedValue("/tmp/export.zip");
+    mockImportChatExport.mockResolvedValue({
+      import_id: "imp_1",
+      vendor: "chatgpt",
+      conversations_total: 3,
+      conversations_new: 3,
+      conversations_skipped_existing: 0,
+      memories_stored: 5,
+    });
+
+    const { getByRole, getByText, container } = render(<ImportFlow />);
+    const chooseFile = getByRole("button", { name: /choose file/i });
+    await act(async () => {
+      chooseFile.click();
+      await vi.advanceTimersByTimeAsync(50);
+    });
+
+    expect(getByText(/imported/i)).toBeInTheDocument();
+    const icons = container.querySelectorAll("svg");
+    expect(icons.length).toBeGreaterThan(0);
+    icons.forEach((svg) => expect(svg).toHaveAttribute("aria-hidden", "true"));
   });
 });

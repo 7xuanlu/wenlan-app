@@ -281,7 +281,7 @@ export function Field({ label, htmlFor, description, error, children }: FieldPro
           fontSize: "var(--mem-text-2xs)",
           fontWeight: 500,
           lineHeight: 1.2,
-          letterSpacing: "0.14em",
+          letterSpacing: "var(--mem-tracking-eyebrow)",
           color: "var(--mem-text-tertiary)",
           textTransform: "uppercase" as const,
           marginBottom: "6px",
