@@ -973,6 +973,21 @@ const en = {
     appsTitle: "Apps & CLIs",
     webTitle: "Web — Claude.ai & ChatGPT",
     manualTitle: "Manual / anything else",
+    advanced: "Advanced",
+    oneClickAdvanced: "Or write the config for me",
+    copySetupPrompt: "Copy setup prompt",
+    promptCopied: "Prompt copied",
+    claudeCodePrimary: "Install the Wenlan plugin from your terminal:",
+    claudeCodeCommand1: "claude plugin marketplace add 7xuanlu/wenlan",
+    claudeCodeCommand2: "claude plugin install wenlan@7xuanlu",
+    claudeCodeReload: "Then run /reload-plugins or restart Claude Code.",
+    claudeCodePrompt:
+      "Install the Wenlan plugin for me. Run these shell commands directly (the /plugin menu can't be driven by an agent, so use the non-interactive commands): `claude plugin marketplace add 7xuanlu/wenlan` then `claude plugin install wenlan@7xuanlu`. Approve any permission prompts that appear. When it's done, run /reload-plugins or ask me to restart Claude Code.",
+    codexPrimary: "Add Wenlan to Codex from your terminal:",
+    codexCommand: "codex mcp add wenlan -- {{cmd}}",
+    codexReload: "Then restart Codex.",
+    codexPrompt:
+      "Add the Wenlan MCP server for me. Run this shell command directly (use the non-interactive command, not a menu): `codex mcp add wenlan -- {{cmd}}`. Approve any permission prompts that appear. When it's done, restart Codex.",
   },
 };
 
@@ -1924,6 +1939,21 @@ const zhHans = {
     appsTitle: "应用与命令行工具",
     webTitle: "网页 — Claude.ai 与 ChatGPT",
     manualTitle: "手动 / 其他工具",
+    advanced: "高级",
+    oneClickAdvanced: "或替我写入配置",
+    copySetupPrompt: "复制配置提示词",
+    promptCopied: "提示词已复制",
+    claudeCodePrimary: "在终端中安装 Wenlan 插件：",
+    claudeCodeCommand1: "claude plugin marketplace add 7xuanlu/wenlan",
+    claudeCodeCommand2: "claude plugin install wenlan@7xuanlu",
+    claudeCodeReload: "然后运行 /reload-plugins 或重启 Claude Code。",
+    claudeCodePrompt:
+      "帮我安装 Wenlan 插件。直接运行这些 shell 命令（/plugin 菜单无法由代理操作，请使用非交互式命令）：`claude plugin marketplace add 7xuanlu/wenlan`，然后 `claude plugin install wenlan@7xuanlu`。批准出现的任何权限提示。完成后运行 /reload-plugins 或让我重启 Claude Code。",
+    codexPrimary: "在终端中将 Wenlan 添加到 Codex：",
+    codexCommand: "codex mcp add wenlan -- {{cmd}}",
+    codexReload: "然后重启 Codex。",
+    codexPrompt:
+      "帮我添加 Wenlan MCP 服务器。直接运行这条 shell 命令（使用非交互式命令，而非菜单）：`codex mcp add wenlan -- {{cmd}}`。批准出现的任何权限提示。完成后重启 Codex。",
   },
 };
 
@@ -2875,6 +2905,21 @@ const zhHant = {
     appsTitle: "應用程式與命令列工具",
     webTitle: "網頁 — Claude.ai 與 ChatGPT",
     manualTitle: "手動 / 其他工具",
+    advanced: "進階",
+    oneClickAdvanced: "或替我寫入設定",
+    copySetupPrompt: "複製設定提示詞",
+    promptCopied: "提示詞已複製",
+    claudeCodePrimary: "在終端機中安裝 Wenlan 外掛：",
+    claudeCodeCommand1: "claude plugin marketplace add 7xuanlu/wenlan",
+    claudeCodeCommand2: "claude plugin install wenlan@7xuanlu",
+    claudeCodeReload: "然後執行 /reload-plugins 或重新啟動 Claude Code。",
+    claudeCodePrompt:
+      "幫我安裝 Wenlan 外掛。直接執行這些 shell 命令（/plugin 選單無法由代理操作，請使用非互動式命令）：`claude plugin marketplace add 7xuanlu/wenlan`，然後 `claude plugin install wenlan@7xuanlu`。核准出現的任何權限提示。完成後執行 /reload-plugins 或讓我重新啟動 Claude Code。",
+    codexPrimary: "在終端機中將 Wenlan 新增到 Codex：",
+    codexCommand: "codex mcp add wenlan -- {{cmd}}",
+    codexReload: "然後重新啟動 Codex。",
+    codexPrompt:
+      "幫我新增 Wenlan MCP 伺服器。直接執行這條 shell 命令（使用非互動式命令，而非選單）：`codex mcp add wenlan -- {{cmd}}`。核准出現的任何權限提示。完成後重新啟動 Codex。",
   },
 };
 
