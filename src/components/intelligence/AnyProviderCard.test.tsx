@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import "../../i18n";
@@ -307,5 +307,42 @@ describe("AnyProviderCard — the Local-server card (spec §5.2)", () => {
     // The discovered id must still be a choosable option.
     await userEvent.selectOptions(modelField, "llama3.2:3b");
     expect(modelField).toHaveValue("llama3.2:3b");
+  });
+
+  // Thread #5: the discovery query key is [trimmedEndpoint, apiKey], so
+  // every keystroke used to fire its own fetch. Debouncing must collapse a
+  // burst of rapid edits into exactly one fetch, fired only after the
+  // burst settles.
+  it("debounces discovery: a rapid burst of endpoint edits fires exactly one fetch, not one per edit", async () => {
+    renderCard();
+    await screen.findByText(/Connected to Ollama/);
+    // Grab references while still on real timers — findBy*/waitFor poll via
+    // setTimeout internally and must not run once fake timers take over.
+    const customButton = screen.getByRole("button", { name: "Custom…" });
+    const input = screen.getByLabelText("Endpoint URL");
+    mocks.listExternalModels.mockClear();
+
+    vi.useFakeTimers();
+    try {
+      // Switching to Custom also resets the endpoint (to "") through the
+      // same debounced state, so it must happen under fake time too — a
+      // debounce timer scheduled on real timers would fire mid-test.
+      fireEvent.click(customButton);
+      fireEvent.change(input, { target: { value: "h" } });
+      fireEvent.change(input, { target: { value: "http://localhost:9999" } });
+      fireEvent.change(input, { target: { value: "http://localhost:9999/v1" } });
+
+      // Still within the debounce window — no fetch yet.
+      expect(mocks.listExternalModels).not.toHaveBeenCalled();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(400);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(mocks.listExternalModels).toHaveBeenCalledTimes(1);
+    expect(mocks.listExternalModels).toHaveBeenCalledWith("http://localhost:9999/v1", null);
   });
 });

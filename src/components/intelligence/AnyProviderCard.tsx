@@ -33,6 +33,26 @@ const LMSTUDIO_ENDPOINT = presetEndpoint("lmstudio");
 const hostOf = (ep: string) => ep.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
 const localLabel = (name: string) => name.replace(/\s*\(local\)$/i, "");
 
+// Thread #5: the discovery query is keyed on live user input, so every
+// keystroke used to fire its own fetch. Delay only the value fed into that
+// query key/queryFn — form responsiveness (endpointValid, canAct) stays on
+// the live value.
+function useDebouncedValue<T>(value: T, delayMs: number): T {
+  const [debounced, setDebounced] = useState(value);
+  const isFirstRender = useRef(true);
+  useEffect(() => {
+    // Skip the mount run — there is nothing to debounce yet, and scheduling
+    // a timer that just resets the value to itself is wasted work.
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    const id = setTimeout(() => setDebounced(value), delayMs);
+    return () => clearTimeout(id);
+  }, [value, delayMs]);
+  return debounced;
+}
+
 const selectClassName =
   "h-[32px] px-[10px] py-[8px] rounded-[var(--mem-radius-md)] bg-[var(--mem-bg)] outline-none " +
   "border border-[var(--mem-border)] text-[var(--mem-text)] transition-[border-color] " +
@@ -112,10 +132,19 @@ export default function AnyProviderCard() {
   // would duplicate the fetch, so it stays off whenever their probe is the
   // active one. A hand-typed or "Custom…" endpoint has no dedicated probe, so
   // this query is the only discovery source for it.
+  // Endpoint and key are debounced 400ms so a fetch fires once a typing
+  // burst settles, not once per keystroke. `enabled` also requires the
+  // debounced values to have caught up to the live ones (not just
+  // endpointValid/selectedProbe, which react instantly) — otherwise a live
+  // condition flipping true mid-burst would fire a fetch against the
+  // still-stale debounced key.
+  const debouncedEndpoint = useDebouncedValue(trimmedEndpoint, 400);
+  const debouncedApiKey = useDebouncedValue(apiKey, 400);
+  const discoverySettled = debouncedEndpoint === trimmedEndpoint && debouncedApiKey === apiKey;
   const discovery = useQuery({
-    queryKey: ["external-models", trimmedEndpoint, apiKey],
-    queryFn: () => listExternalModels(trimmedEndpoint, apiKey || null),
-    enabled: endpointValid && !selectedProbe,
+    queryKey: ["external-models", debouncedEndpoint, debouncedApiKey],
+    queryFn: () => listExternalModels(debouncedEndpoint, debouncedApiKey || null),
+    enabled: endpointValid && !selectedProbe && discoverySettled,
     retry: false,
     staleTime: 30_000,
   });
