@@ -24,7 +24,7 @@ _Every task's requirements implicitly include this section. Values copied verbat
 - **Preset renames (ids never change):** `gemini` display name → `Gemini` (was "Google Gemini"); `xai` display name → `xAI (Grok)` (was "xAI"). Preset `id`s stay `gemini` / `xai`. Endpoints unchanged.
 - **Soft validation only:** a non-empty key that matches no `keyPrefixes` shows a non-blocking amber hint; Save/Test are NEVER disabled by key format. Empty key → no hint. Mistral (no prefixes) → never hints. Gemini accepts either `AIzaSy` or `AQ.`.
 - **Local probe:** probe BOTH local presets (Ollama `http://localhost:11434/v1`, LM Studio `http://localhost:1234/v1`) on the wizard Local-server pane mount via `list_external_models` (existing 5s timeout); auto-select the single responder. The settings card with a local preset selected probes that single preset's endpoint and shows the same connected/not-detected chip (spec §9.2 "the wizard 'Local server' pane (or the settings card with a local preset selected)"). On both surfaces the model field becomes a real `<select>` when discovery returns ≥1 model; free-text only on discovery failure or Custom. Pills are wizard-only; the settings Provider `<select>` stays.
-- **Connect matrix (§9.3):** primary path first, on BOTH surfaces (settings Apps & CLIs list AND the wizard connect step — shared components, same i18n keys). Shipped copy must NOT reference `.mcpb` or `.codex-plugin` (those ship in a later daemon-repo PR). The claude.ai Directory/plugin line is OMITTED because Wenlan is not yet in the Claude Directory (submission is backlog; claude.ai itself does support plugins — spec §9.3 as updated at commit 11e7fad). "Copy setup prompt" prompts must mention: the agent uses non-interactive shell commands (the `/plugin` TUI is not agent-drivable), a reload/restart is needed after install, and permission prompts will appear.
+- **Connect matrix (§9.3):** primary path first, on BOTH surfaces (settings Apps & CLIs list AND the wizard connect step — shared components, same i18n keys). Shipped copy must NOT reference `.mcpb` or `.codex-plugin` (those ship in a later daemon-repo PR). Shipped copy MAY — and the Claude card DOES — reference the claude.ai plugin install: it is actionable today via Directory → Plugins → + Add marketplace → `7xuanlu/wenlan` (screenshot-verified 2026-07-11; spec §9.3 claude.ai row, re-read it from disk). "Copy setup prompt" prompts must mention: the agent uses non-interactive shell commands (the `/plugin` TUI is not agent-drivable), a reload/restart is needed after install, and permission prompts will appear.
 - **Gates:** `pnpm exec tsc -b`, `pnpm test` (`vitest run`), and `pnpm test:i18n` all green. Run a single test file with `pnpm exec vitest run <path>`.
 
 ---
@@ -44,8 +44,8 @@ _Every task's requirements implicitly include this section. Values copied verbat
 | `src/components/connect/ClientSetupList.test.tsx` (new) | Connect card copy + setup-prompt tests | T6 |
 | `src/components/SetupWizard.tsx` | Wizard ConnectStep rows consume the shared CLI primary path (§9.3, wizard) | T6b |
 | `src/components/SetupWizard.test.tsx` | Wizard connect-step plugin-first tests | T6b |
-| `src/components/connect/WebPlatformCards.tsx` | claude.ai connector deep-link (§9.3) | T7 |
-| `src/components/connect/WebPlatformCards.test.tsx` | Deep-link test | T7 |
+| `src/components/connect/WebPlatformCards.tsx` | claude.ai plugin-first card + connector deep-link (§9.3) | T7 |
+| `src/components/connect/WebPlatformCards.test.tsx` | Plugin-first card + deep-link tests | T7 |
 | `src/i18n/resources.ts` | All new copy in en / zh-Hans / zh-Hant | T2–T7 (T5b/T6b reuse earlier keys; no new keys) |
 
 **Reference — exact current i18n anchors** (blocks repeat once per locale; add the same keys to all three):
@@ -1762,59 +1762,230 @@ Claude-Session: https://claude.ai/code/session_01QTSrd2Uwd6Lg1QqDbX6P53"
 
 ---
 
-## Task 7: claude.ai connector deep-link (§9.3)
+## Task 7: claude.ai plugin-first card + connector deep-link (§9.3)
 
-_Derived from the §9.3 table's claude.ai row ("copy tunnel URL + deep link `https://claude.ai/settings/connectors?modal=add-custom-connector`"). No Directory/plugin line ships in this card's copy — omitted because Wenlan is not yet in the Claude Directory (submission is backlog, spec §9.3 claude.ai row as updated at commit 11e7fad), NOT because claude.ai lacks plugin support (it has it: Directory installs on web, skills activate in chat; Cowork has full plugin support incl. MCP connectors — claude.com/docs/plugins/overview). The Directory line lands with the backlog submission, not this round._
+_Coordinator adjudication #2, 2026-07-11 (screenshot-verified by the user; spec §9.3 claude.ai row updated on disk — re-read it): claude.ai's Directory → Plugins tab has an **Add marketplace** dialog accepting "a GitHub owner/repo or a git repository URL" (Anthropic / Partners / Personal tabs), so individuals CAN sync `7xuanlu/wenlan` today. The Claude card is therefore plugin-first and actionable now: **step 1** installs the Wenlan plugin (Directory → Plugins → + Add marketplace → `7xuanlu/wenlan` → Sync → install; skills activate in chat, Cowork gets the full plugin); **step 2** wires memory access via the custom connector (copy tunnel URL + deep link) — a public plugin cannot carry a user-specific tunnel URL, so chat still needs the connector. The existing no-auth tunnel warning stays untouched. ChatGPT card unchanged (connector only)._
 
 **Files:**
-- Modify: `src/components/connect/WebPlatformCards.tsx`
+- Modify: `src/components/connect/WebPlatformCards.tsx` (full-body restructure shown below)
 - Modify: `src/components/connect/WebPlatformCards.test.tsx`
 - Modify: `src/i18n/resources.ts` (3 locales)
 
 **Interfaces:**
-- Consumes: `import { open as shellOpen } from "@tauri-apps/plugin-shell"`.
-- Produces: i18n key `connectMatrix.openConnectorSettings`.
+- Consumes: `import { open as shellOpen } from "@tauri-apps/plugin-shell"` (globally mocked in `src/test/setup.ts`).
+- Produces: i18n keys `connectMatrix.claudePluginStepTitle`, `.claudePluginStep1`, `.claudePluginStep2`, `.claudePluginStep3`, `.claudePluginNote`, `.claudeConnectorStepTitle`, `.openConnectorSettings`.
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Write the failing tests**
 
-Add to `src/components/connect/WebPlatformCards.test.tsx`. Add the import if absent:
+In `src/components/connect/WebPlatformCards.test.tsx`, add the shell-opener import below the existing imports (the global mock in `src/test/setup.ts` provides `open: vi.fn()`):
+
 ```ts
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
 ```
-Add a case (reuse the file's existing render helper + remote-connected mock so the card body renders):
+
+Then add these cases inside the existing `describe("WebPlatformCards", ...)` block (this file uses `fireEvent` + the hoisted `mocks` object + `renderCards()` — reuse them; exact-string `getByText` is deliberate: it matches only the leaf element AND throws if the copy leaks onto the ChatGPT card):
+
 ```ts
-  it("opens the Claude connector settings via the deep link", async () => {
-    vi.mocked(shellOpen).mockClear();
-    // (use this file's existing setup that mocks getRemoteAccessStatus →
-    //  connected so the URL/actions render)
+  it("Claude card leads with the plugin install steps (Claude card only)", async () => {
+    mocks.getRemoteAccessStatus.mockResolvedValue({
+      status: "connected", tunnel_url: "https://x.trycloudflare.com", token: "t", relay_url: null,
+    });
     renderCards();
-    await userEvent.click(await screen.findByRole("button", { name: /Open connector settings/ }));
+    expect(
+      await screen.findByText("Step 1 — Install the Wenlan plugin"),
+    ).toBeInTheDocument();
+    // Marketplace repo string, exact li copy.
+    expect(
+      screen.getByText("Enter the marketplace repo 7xuanlu/wenlan and choose Sync"),
+    ).toBeInTheDocument();
+    // Honesty note: skills in chat, full plugin in Cowork.
+    expect(
+      screen.getByText(
+        "The plugin's skills work in chat; Cowork gets the full plugin, including MCP connectors.",
+      ),
+    ).toBeInTheDocument();
+    // Step 2 framing of the existing connector flow.
+    expect(screen.getByText("Step 2 — Connect your memory")).toBeInTheDocument();
+  });
+
+  it("plugin steps render even when the tunnel is off (install is independent of the connector)", async () => {
+    mocks.getRemoteAccessStatus.mockResolvedValue({ status: "off" });
+    renderCards();
+    expect(
+      await screen.findByText("Step 1 — Install the Wenlan plugin"),
+    ).toBeInTheDocument();
+    expect((await screen.findAllByText(/Turn on Remote Access/)).length).toBeGreaterThan(0);
+  });
+
+  it("opens the Claude connector settings via the deep link (step 2)", async () => {
+    mocks.getRemoteAccessStatus.mockResolvedValue({
+      status: "connected", tunnel_url: "https://x.trycloudflare.com", token: "t", relay_url: null,
+    });
+    vi.mocked(shellOpen).mockClear();
+    renderCards();
+    fireEvent.click(await screen.findByRole("button", { name: "Open connector settings" }));
     expect(shellOpen).toHaveBeenCalledWith(
       "https://claude.ai/settings/connectors?modal=add-custom-connector",
     );
   });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **Step 2: Run tests to verify they fail**
 
 Run: `pnpm exec vitest run src/components/connect/WebPlatformCards.test.tsx`
-Expected: FAIL — no "Open connector settings" button.
+Expected: FAIL — no plugin-step copy, no "Open connector settings" button. The four pre-existing cases still pass.
 
 - [ ] **Step 3: Write minimal implementation**
 
-In `src/components/connect/WebPlatformCards.tsx`:
+Replace the entire body of `src/components/connect/WebPlatformCards.tsx` with (the state, queries, `copy` flow, URL row, connected hint, and no-auth warning are byte-identical to the current file — the restructure splits the old `card()` helper into `cardShell`/`stepList`/`urlRow` so the Claude card can carry two step sections):
 
-3a. Add the import:
-```ts
-import { open as shellOpen } from "@tauri-apps/plugin-shell";
-```
-3b. Add a module-level constant below the imports:
-```ts
-const CLAUDE_CONNECTOR_URL = "https://claude.ai/settings/connectors?modal=add-custom-connector";
-```
-3c. Inside the `card(...)` render, in the `{url ? (…) : (…)}` connected branch, add a deep-link button for the Claude card only. Insert it right after the closing `</div>` of the copy-URL `flex` row (after line ~86, still inside the `url ?` branch):
 ```tsx
-          {platform === "claude" && (
+// SPDX-License-Identifier: AGPL-3.0-only
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
+import { open as shellOpen } from "@tauri-apps/plugin-shell";
+import { clipboardWrite, getRemoteAccessStatus, listAgents } from "../../lib/tauri";
+
+const CLAUDE_CONNECTOR_URL = "https://claude.ai/settings/connectors?modal=add-custom-connector";
+
+/** Per-platform web connect cards (spec §2a group 1; §9.3 round 2: the
+ *  Claude card is plugin-first — step 1 installs the Wenlan plugin via the
+ *  Directory's Add-marketplace dialog, step 2 wires memory access via the
+ *  custom connector). Verification is the existing listAgents delta poll —
+ *  best-effort attribution: a new agent in the poll window flips the
+ *  last-copied card (hint, not proof). */
+export default function WebPlatformCards() {
+  const { t } = useTranslation();
+  const [copiedPlatform, setCopiedPlatform] = useState<string | null>(null);
+  const [connectedPlatform, setConnectedPlatform] = useState<string | null>(null);
+  const baselineCount = useRef<number | null>(null);
+
+  const { data: remote } = useQuery({
+    queryKey: ["remote-access-status"],
+    queryFn: getRemoteAccessStatus,
+    refetchInterval: 3000,
+  });
+  const url =
+    remote?.status === "connected" ? (remote.relay_url ?? `${remote.tunnel_url}/mcp`) : null;
+
+  const { data: agents } = useQuery({
+    queryKey: ["web-connect-agents"],
+    queryFn: listAgents,
+    refetchInterval: copiedPlatform !== null && connectedPlatform === null ? 3000 : false,
+  });
+  useEffect(() => {
+    if (!agents) return;
+    if (baselineCount.current === null) {
+      baselineCount.current = agents.length;
+      return;
+    }
+    if (copiedPlatform !== null && agents.length > baselineCount.current) {
+      setConnectedPlatform(copiedPlatform);
+    }
+  }, [agents, copiedPlatform]);
+
+  const copy = async (platform: string) => {
+    if (!url) return;
+    try {
+      await clipboardWrite(url);
+    } catch {
+      return;
+    }
+    baselineCount.current = agents?.length ?? baselineCount.current;
+    setCopiedPlatform(platform);
+  };
+
+  const stepHeading = (text: string) => (
+    <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", fontWeight: 600, color: "var(--mem-text)", margin: 0 }}>
+      {text}
+    </p>
+  );
+
+  const stepList = (steps: string[]) => (
+    <ol style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-secondary)", lineHeight: 1.7, paddingLeft: "18px", listStyle: "decimal", margin: 0 }}>
+      {steps.map((s) => (
+        <li key={s}>{s}</li>
+      ))}
+    </ol>
+  );
+
+  const urlRow = (platform: string) =>
+    url ? (
+      <div className="flex items-center gap-2">
+        <code
+          className="flex-1 truncate rounded-md px-2 py-1.5"
+          style={{ fontFamily: "var(--mem-font-mono)", fontSize: "11px", backgroundColor: "var(--mem-bg)", border: "1px solid var(--mem-border)", color: "var(--mem-text)" }}
+        >
+          {url}
+        </code>
+        <button
+          onClick={() => copy(platform)}
+          className="rounded-md px-3 py-1.5 text-xs shrink-0"
+          style={{ border: "1px solid var(--mem-border)", color: "var(--mem-text)", fontFamily: "var(--mem-font-body)" }}
+        >
+          {copiedPlatform === platform ? t("connectMatrix.copied") : t("connectMatrix.copyUrl")}
+        </button>
+      </div>
+    ) : (
+      <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-tertiary)" }}>
+        {t("connectMatrix.tunnelOff")}
+      </p>
+    );
+
+  /* No-auth boundary (council change f, commit 3a272d0): always visible. */
+  const noAuthWarning = (
+    <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-accent-amber)", lineHeight: 1.5 }}>
+      {t("connectMatrix.noAuthWarning")}
+    </p>
+  );
+
+  const cardShell = (platform: "claude" | "chatgpt", title: string, children: ReactNode) => (
+    <div
+      className="rounded-xl p-4 flex flex-col"
+      style={{ border: "1px solid var(--mem-border)", backgroundColor: "var(--mem-surface)", gap: "10px" }}
+    >
+      <div className="flex items-center justify-between">
+        <h3 style={{ fontFamily: "var(--mem-font-heading)", fontSize: "15px", fontWeight: 500, color: "var(--mem-text)" }}>
+          {title}
+        </h3>
+        {connectedPlatform === platform && (
+          <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-accent-sage)" }}>
+            {t("connectMatrix.connectedHint")}
+          </span>
+        )}
+      </div>
+      {children}
+    </div>
+  );
+
+  return (
+    <div className="flex flex-col" style={{ gap: "12px" }}>
+      {cardShell(
+        "claude",
+        t("connectMatrix.claudeTitle"),
+        <>
+          {/* Step 1 — install the Wenlan plugin (§9.3: actionable today via
+              Directory → Plugins → + Add marketplace, Personal tab). */}
+          {stepHeading(t("connectMatrix.claudePluginStepTitle"))}
+          {stepList([
+            t("connectMatrix.claudePluginStep1"),
+            t("connectMatrix.claudePluginStep2"),
+            t("connectMatrix.claudePluginStep3"),
+          ])}
+          <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)", lineHeight: 1.5, margin: 0 }}>
+            {t("connectMatrix.claudePluginNote")}
+          </p>
+          {/* Step 2 — memory access: a public plugin cannot carry a
+              user-specific tunnel URL, so chat still needs the connector. */}
+          {stepHeading(t("connectMatrix.claudeConnectorStepTitle"))}
+          {stepList([
+            t("connectMatrix.claudeStep1"),
+            t("connectMatrix.claudeStep2"),
+            t("connectMatrix.claudeStep3"),
+          ])}
+          {urlRow("claude")}
+          {url && (
             <button
               type="button"
               onClick={() => shellOpen(CLAUDE_CONNECTOR_URL)}
@@ -1824,20 +1995,69 @@ const CLAUDE_CONNECTOR_URL = "https://claude.ai/settings/connectors?modal=add-cu
               {t("connectMatrix.openConnectorSettings")}
             </button>
           )}
+          {noAuthWarning}
+        </>,
+      )}
+      {cardShell(
+        "chatgpt",
+        t("connectMatrix.chatgptTitle"),
+        <>
+          {stepList([
+            t("connectMatrix.chatgptStep1"),
+            t("connectMatrix.chatgptStep2"),
+            t("connectMatrix.chatgptStep3"),
+          ])}
+          {urlRow("chatgpt")}
+          {noAuthWarning}
+        </>,
+      )}
+    </div>
+  );
+}
 ```
 
-- [ ] **Step 4: Add i18n key (all three locales)**
+- [ ] **Step 4: Add i18n keys (all three locales)**
 
-Add to the `connectMatrix` block in each locale:
+Add to the `connectMatrix` block in each locale (before the closing `},`):
 
-en: `openConnectorSettings: "Open connector settings",`
-zh-Hans: `openConnectorSettings: "打开连接器设置",`
-zh-Hant: `openConnectorSettings: "開啟連接器設定",`
+en:
+```ts
+    claudePluginStepTitle: "Step 1 — Install the Wenlan plugin",
+    claudePluginStep1: "Open Directory → Plugins → + Add marketplace",
+    claudePluginStep2: "Enter the marketplace repo 7xuanlu/wenlan and choose Sync",
+    claudePluginStep3: "Install Wenlan from the marketplace",
+    claudePluginNote:
+      "The plugin's skills work in chat; Cowork gets the full plugin, including MCP connectors.",
+    claudeConnectorStepTitle: "Step 2 — Connect your memory",
+    openConnectorSettings: "Open connector settings",
+```
+zh-Hans:
+```ts
+    claudePluginStepTitle: "第 1 步 — 安装 Wenlan 插件",
+    claudePluginStep1: "打开 Directory → 插件 → 「+ 添加市场」",
+    claudePluginStep2: "输入市场仓库 7xuanlu/wenlan，然后选择同步",
+    claudePluginStep3: "从市场安装 Wenlan",
+    claudePluginNote: "插件的技能可在聊天中使用；Cowork 支持完整插件（含 MCP 连接器）。",
+    claudeConnectorStepTitle: "第 2 步 — 连接你的记忆",
+    openConnectorSettings: "打开连接器设置",
+```
+zh-Hant:
+```ts
+    claudePluginStepTitle: "第 1 步 — 安裝 Wenlan 外掛",
+    claudePluginStep1: "開啟 Directory → 外掛 → 「+ 新增市集」",
+    claudePluginStep2: "輸入市集儲存庫 7xuanlu/wenlan，然後選擇同步",
+    claudePluginStep3: "從市集安裝 Wenlan",
+    claudePluginNote: "外掛的技能可在聊天中使用；Cowork 支援完整外掛（含 MCP 連接器）。",
+    claudeConnectorStepTitle: "第 2 步 — 連接你的記憶",
+    openConnectorSettings: "開啟連接器設定",
+```
 
 - [ ] **Step 5: Run tests to verify they pass**
 
 Run: `pnpm exec vitest run src/components/connect/WebPlatformCards.test.tsx`
-Expected: PASS.
+Expected: PASS — three new cases plus the four pre-existing ones (no-auth warning ×2, URL shown, tunnel-off prompt, `/mcp`-suffix copy — all preserved by the byte-identical `urlRow`/warning markup).
+Run: `pnpm exec vitest run src/components/SetupWizard.test.tsx`
+Expected: PASS — the wizard renders WebPlatformCards on its connect step; its assertions (exact command-string matches, checkbox names) do not collide with the new card copy.
 Run: `pnpm test:i18n` → PASS.
 
 - [ ] **Step 6: Run gates + Commit**
@@ -1845,7 +2065,7 @@ Run: `pnpm test:i18n` → PASS.
 Run: `pnpm exec tsc -b` → no errors.
 ```bash
 git add src/components/connect/WebPlatformCards.tsx src/components/connect/WebPlatformCards.test.tsx src/i18n/resources.ts
-git commit -m "feat(connect): claude.ai custom-connector deep link (§9.3)
+git commit -m "feat(connect): claude.ai plugin-first card + connector deep link (§9.3)
 
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01QTSrd2Uwd6Lg1QqDbX6P53"
@@ -1867,12 +2087,12 @@ Claude-Session: https://claude.ai/code/session_01QTSrd2Uwd6Lg1QqDbX6P53"
 **1. Spec coverage:**
 - §9.1 preset extension + renames → T1. Placeholder → T2 (AnyProviderCard), T3 (Anthropic). Soft hint → T1 (logic) + T2 (UI). Get-a-key link → T2 + T3. ✅
 - §9.2 BOTH surfaces: wizard pane probe-both + status pills + auto-select + chip → T4; wizard dropdown vs free-text → T5; settings card with local preset selected: single probe + chip + dropdown, Provider `<select>` stays, existing ollama tests rewritten → T5b. Cloud presets unchanged → datalist branch kept in T5/T5b (asserted by T5b's cloud-preset test). ✅
-- §9.3 BOTH surfaces: shared `CliPrimaryPath` (Claude Code plugin commands / Codex `codex mcp add` + Copy setup prompt) → T6; settings list with one-click demoted to Advanced → T6; wizard ConnectStep rows lead with the same component, CLI checkbox default off → T6b. Claude Desktop / Gemini CLI / Cursor one-click → T6 (GUI primary), wizard unchanged for them (T6b). claude.ai deep link → T7 (Directory line omitted: not yet in the Directory — backlog). ChatGPT connector-only + no-auth warning → unchanged (already shipped in WebPlatformCards; no `.mcpb`/`.codex-plugin` copy anywhere — asserted in T6). ✅
-- §9.4 tests → data-shape/soft-hint (T1), placeholder/hint/link (T2/T3), dual-probe render + auto-select (T4), dropdown vs free-text wizard (T5) and settings (T5b), primary-path copy + setup-prompt clipboard in settings (T6) and wizard (T6b), deep-link (T7), i18n parity via `pnpm test:i18n` in every copy-touching task. No Rust. ✅
+- §9.3 BOTH surfaces: shared `CliPrimaryPath` (Claude Code plugin commands / Codex `codex mcp add` + Copy setup prompt) → T6; settings list with one-click demoted to Advanced → T6; wizard ConnectStep rows lead with the same component, CLI checkbox default off → T6b. Claude Desktop / Gemini CLI / Cursor one-click → T6 (GUI primary), wizard unchanged for them (T6b). claude.ai plugin-first two-step card (step 1: Add-marketplace plugin install, actionable today; step 2: connector — copy URL + deep link; no-auth warning untouched) → T7. ChatGPT connector-only + no-auth warning → unchanged (no `.mcpb`/`.codex-plugin` copy anywhere — asserted in T6). ✅
+- §9.4 tests → data-shape/soft-hint (T1), placeholder/hint/link (T2/T3), dual-probe render + auto-select (T4), dropdown vs free-text wizard (T5) and settings (T5b), primary-path copy + setup-prompt clipboard in settings (T6) and wizard (T6b), claude.ai plugin-step copy + repo string + deep-link + tunnel-off independence (T7), i18n parity via `pnpm test:i18n` in every copy-touching task. No Rust. ✅
 
 **2. Placeholder scan:** No "TBD"/"handle edge cases"/"similar to Task N"/"write tests for the above" — every code and test step carries complete code, including T5b's full rewrites of the three pre-existing ollama tests and T6b's wizard row branch. ✅
 
-**3. Type consistency:** `keyPrefixMismatch(preset, key)` (T1) is consumed with the same signature in T2. `isLocalOnly`/`selectedProbe`/`ollamaProbe`/`lmStudioProbe`/`localLabel`/`hostOf` are defined in T4, consumed in T5, and generalized in T5b to `isLocalPreset`/`localQuery`/`localQueryModels` (T5b step 4 shows the exact before→after blocks it replaces). `CliPrimaryPath` props `{ clientType: CliClientType }` and `CLI_PRIMARY_CLIENTS` are defined in T6 and consumed with identical names in T6b. `getWenlanMcpEntry()` returns `{ command, args }` used to build `cmd` in T6's `CliPrimaryPath` matching `src/lib/tauri.ts:1991`. `McpClient` fields (`client_type`, `already_configured`, `detected`, `config_path`, `name`) match `src/lib/tauri.ts:1948`. i18n keys referenced in components (`externalProvider.getKeyLink`, `.keyHint`, `.localConnectedChip`, `.localNotDetectedChip`, `.localProbing`, `.modelSelectPlaceholder`; `connectMatrix.advanced`, `.oneClickAdvanced`, `.copySetupPrompt`, `.promptCopied`, `.claudeCodePrimary`, `.claudeCodeCommand1/2`, `.claudeCodeReload`, `.claudeCodePrompt`, `.codexPrimary`, `.codexCommand`, `.codexReload`, `.codexPrompt`, `.openConnectorSettings`) are all added in en/zh-Hans/zh-Hant; T5b and T6b add none. ✅
+**3. Type consistency:** `keyPrefixMismatch(preset, key)` (T1) is consumed with the same signature in T2. `isLocalOnly`/`selectedProbe`/`ollamaProbe`/`lmStudioProbe`/`localLabel`/`hostOf` are defined in T4, consumed in T5, and generalized in T5b to `isLocalPreset`/`localQuery`/`localQueryModels` (T5b step 4 shows the exact before→after blocks it replaces). `CliPrimaryPath` props `{ clientType: CliClientType }` and `CLI_PRIMARY_CLIENTS` are defined in T6 and consumed with identical names in T6b. `getWenlanMcpEntry()` returns `{ command, args }` used to build `cmd` in T6's `CliPrimaryPath` matching `src/lib/tauri.ts:1991`. `McpClient` fields (`client_type`, `already_configured`, `detected`, `config_path`, `name`) match `src/lib/tauri.ts:1948`. i18n keys referenced in components (`externalProvider.getKeyLink`, `.keyHint`, `.localConnectedChip`, `.localNotDetectedChip`, `.localProbing`, `.modelSelectPlaceholder`; `connectMatrix.advanced`, `.oneClickAdvanced`, `.copySetupPrompt`, `.promptCopied`, `.claudeCodePrimary`, `.claudeCodeCommand1/2`, `.claudeCodeReload`, `.claudeCodePrompt`, `.codexPrimary`, `.codexCommand`, `.codexReload`, `.codexPrompt`, `.claudePluginStepTitle`, `.claudePluginStep1/2/3`, `.claudePluginNote`, `.claudeConnectorStepTitle`, `.openConnectorSettings`) are all added in en/zh-Hans/zh-Hant; T5b and T6b add none; T7's card reuses the pre-existing `.claudeTitle`/`.claudeStep1-3`/`.copyUrl`/`.copied`/`.tunnelOff`/`.noAuthWarning`/`.connectedHint` unchanged. ✅
 
 ## Execution Handoff
 
