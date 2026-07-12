@@ -189,20 +189,19 @@ export default function AgentsSection({ onSetupAgent }: { onSetupAgent?: () => v
                             both the display and the editor. */}
                       </div>
                       <div className="flex items-center gap-3 mt-1 flex-wrap">
-                        {/* Canonical technical ID (secondary, only if it differs from display) */}
-                        {resolveAgentDisplayName(agent.name, agents) !== agent.name && (
-                          <span
-                            title={t("settings.agents.canonicalIdTitle")}
-                            style={{
-                              fontFamily: "var(--mem-font-mono)",
-                              fontSize: "var(--mem-text-2xs)",
-                              color: "var(--mem-text-tertiary)",
-                              opacity: 0.75,
-                            }}
-                          >
-                            {agent.name}
-                          </span>
-                        )}
+                        {/* Canonical technical ID — always shown as a mono
+                            subtitle, every row gets identical anatomy. */}
+                        <span
+                          title={t("settings.agents.canonicalIdTitle")}
+                          style={{
+                            fontFamily: "var(--mem-font-mono)",
+                            fontSize: "var(--mem-text-2xs)",
+                            color: "var(--mem-text-tertiary)",
+                            opacity: 0.75,
+                          }}
+                        >
+                          {agent.name}
+                        </span>
                         <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", color: "var(--mem-text-tertiary)" }}>
                           {t("settings.agents.memories", { count: agent.memory_count })}
                         </span>

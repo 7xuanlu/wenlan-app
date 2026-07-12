@@ -532,11 +532,16 @@ describe("SetupWizard", () => {
       expect(screen.getByText("You're all set.")).toBeInTheDocument();
     });
 
+    // Unrecognized slugs are prettified (word-split + title-case), not shown raw.
     for (const id of ids.slice(0, 6)) {
-      expect(screen.getByText(id)).toBeInTheDocument();
+      const prettified = id
+        .split("-")
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(" ");
+      expect(screen.getByText(prettified)).toBeInTheDocument();
     }
     expect(screen.getByText("+2 more")).toBeInTheDocument();
-    expect(screen.queryByText("tool-g")).not.toBeInTheDocument();
-    expect(screen.queryByText("tool-h")).not.toBeInTheDocument();
+    expect(screen.queryByText("Tool G")).not.toBeInTheDocument();
+    expect(screen.queryByText("Tool H")).not.toBeInTheDocument();
   });
 });
