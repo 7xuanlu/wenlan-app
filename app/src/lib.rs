@@ -392,9 +392,6 @@ pub fn run() {
             let spotlight_shortcut = "CmdOrCtrl+Shift+K"
                 .parse::<tauri_plugin_global_shortcut::Shortcut>()
                 .unwrap();
-            let capture_shortcut = "CmdOrCtrl+Shift+M"
-                .parse::<tauri_plugin_global_shortcut::Shortcut>()
-                .unwrap();
             let quick_capture_shortcut = "CmdOrCtrl+Shift+N"
                 .parse::<tauri_plugin_global_shortcut::Shortcut>()
                 .unwrap();
@@ -441,13 +438,11 @@ pub fn run() {
             // Register all global shortcuts
             {
                 let handle_for_shortcuts = handle.clone();
-                let trigger_tx_shortcut = trigger_tx;
                 let toggle = toggle_shortcut;
                 let spotlight = spotlight_shortcut;
-                let capture = capture_shortcut;
                 let quick_capture = quick_capture_shortcut;
                 app.global_shortcut().on_shortcuts(
-                    [toggle, spotlight, capture, quick_capture],
+                    [toggle, spotlight, quick_capture],
                     move |_app, shortcut, event| {
                         use tauri::Emitter;
                         use tauri_plugin_global_shortcut::ShortcutState;
@@ -467,11 +462,6 @@ pub fn run() {
                                     let _ = window.set_focus();
                                     let _ = handle_for_shortcuts.emit("show-memory", ());
                                 }
-                            }
-                        } else if *shortcut == capture {
-                            if crate::config::load_config().screen_capture_enabled {
-                                let _ = trigger_tx_shortcut
-                                    .try_send(trigger::types::TriggerEvent::ManualHotkey);
                             }
                         } else if *shortcut == quick_capture {
                             if let Some(window) =
@@ -751,7 +741,7 @@ pub fn run() {
                 // Initialize local state (activities, config, file sources)
                 let paths = {
                     let mut state = init_state.write().await;
-                    match state.initialize_local(daemon_config.as_ref()).await {
+                    match state.initialize_local().await {
                         Ok(paths) => paths,
                         Err(e) => {
                             log::error!("Failed to initialize local state: {}", e);
@@ -837,15 +827,12 @@ pub fn run() {
             search::ingest_webpage,
             search::distill_review,
             search::redistill_page,
-            search::get_clipboard_enabled,
-            search::set_clipboard_enabled,
             search::get_api_key,
             search::set_api_key,
             search::get_chunks,
             search::update_chunk,
             search::list_activities,
             search::rebuild_activities,
-            search::trigger_manual_capture,
             search::get_capture_stats,
             search::get_pipeline_status,
             search::list_all_tags,
@@ -859,12 +846,6 @@ pub fn run() {
             search::get_snapshot_captures,
             search::get_snapshot_captures_with_content,
             search::delete_snapshot,
-            search::get_skip_apps,
-            search::set_skip_apps,
-            search::get_skip_title_patterns,
-            search::set_skip_title_patterns,
-            search::get_private_browsing_detection,
-            search::set_private_browsing_detection,
             search::list_spaces,
             search::get_space,
             search::create_space,
@@ -991,10 +972,6 @@ pub fn run() {
             search::export_page_to_obsidian,
             search::get_knowledge_path,
             search::count_knowledge_files,
-            search::get_screen_capture_enabled,
-            search::set_screen_capture_enabled,
-            search::check_screen_permission,
-            search::request_screen_permission,
             // Decision log commands
             search::list_decisions_cmd,
             search::list_decision_domains_cmd,

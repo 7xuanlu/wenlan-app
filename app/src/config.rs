@@ -13,35 +13,7 @@ use serde_json::Value;
 use std::path::PathBuf;
 use wenlan_types::sources::{Source, SourceType, SyncStatus};
 
-fn default_true() -> bool {
-    true
-}
-
-fn default_skip_apps() -> Vec<String> {
-    vec![
-        "Window Server".into(),
-        "Dock".into(),
-        "SystemUIServer".into(),
-        "Control Center".into(),
-        "Notification Center".into(),
-        "loginwindow".into(),
-        "Spotlight".into(),
-        "Origin".into(),
-        "Wenlan".into(),
-        "1Password".into(),
-        "Keychain Access".into(),
-        "LastPass".into(),
-        "Bitwarden".into(),
-        "Dashlane".into(),
-        "KeePass".into(),
-    ]
-}
-
-fn default_skip_title_patterns() -> Vec<String> {
-    vec![]
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Config {
     /// Legacy field — kept for backward compat with old config files.
     /// Use `sources` instead. Migrated to Source structs by `migrate()`.
@@ -51,14 +23,6 @@ pub struct Config {
     pub sources: Vec<Source>,
     #[serde(default)]
     pub knowledge_path: Option<PathBuf>,
-    #[serde(default)]
-    pub clipboard_enabled: bool,
-    #[serde(default = "default_skip_apps")]
-    pub skip_apps: Vec<String>,
-    #[serde(default = "default_skip_title_patterns")]
-    pub skip_title_patterns: Vec<String>,
-    #[serde(default = "default_true")]
-    pub private_browsing_detection: bool,
     #[serde(default)]
     pub setup_completed: bool,
     #[serde(default)]
@@ -70,36 +34,11 @@ pub struct Config {
     #[serde(default)]
     pub remote_access_enabled: bool,
     #[serde(default)]
-    pub screen_capture_enabled: bool,
-    #[serde(default)]
     pub on_device_model: Option<String>,
     #[serde(default)]
     pub external_llm_endpoint: Option<String>,
     #[serde(default)]
     pub external_llm_model: Option<String>,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            watch_paths: Vec::new(),
-            sources: Vec::new(),
-            knowledge_path: None,
-            clipboard_enabled: false,
-            skip_apps: default_skip_apps(),
-            skip_title_patterns: default_skip_title_patterns(),
-            private_browsing_detection: default_true(),
-            setup_completed: false,
-            anthropic_api_key: None,
-            routine_model: None,
-            synthesis_model: None,
-            remote_access_enabled: false,
-            screen_capture_enabled: false,
-            on_device_model: None,
-            external_llm_endpoint: None,
-            external_llm_model: None,
-        }
-    }
 }
 
 /// Generate a source ID slug from a directory path (last component, lowercased, sanitized).
@@ -114,12 +53,6 @@ impl Config {
     /// Migrate legacy `watch_paths` entries into `sources` vec.
     /// Idempotent — only converts paths not already represented in `sources`.
     pub fn migrate(&mut self) {
-        if self.skip_apps.iter().any(|app| app == "Origin")
-            && !self.skip_apps.iter().any(|app| app == "Wenlan")
-        {
-            self.skip_apps.push("Wenlan".into());
-        }
-
         if self.watch_paths.is_empty() {
             return;
         }
@@ -306,55 +239,20 @@ mod tests {
     fn test_config_default_values() {
         let config = Config::default();
         assert!(config.watch_paths.is_empty());
-        assert!(!config.clipboard_enabled);
-    }
-
-    #[test]
-    fn default_skip_apps_excludes_current_and_legacy_app_names() {
-        let config = Config::default();
-        assert!(config.skip_apps.contains(&"Origin".to_string()));
-        assert!(config.skip_apps.contains(&"Wenlan".to_string()));
-    }
-
-    #[test]
-    fn migrate_appends_wenlan_to_legacy_origin_skip_apps() {
-        let mut config = Config {
-            skip_apps: vec!["Origin".into(), "1Password".into()],
-            ..Config::default()
-        };
-
-        config.migrate();
-
-        assert_eq!(
-            config.skip_apps,
-            vec![
-                "Origin".to_string(),
-                "1Password".to_string(),
-                "Wenlan".to_string()
-            ]
-        );
     }
 
     #[test]
     fn test_config_roundtrip_serde() {
         let mut config = Config {
-            clipboard_enabled: true,
-            skip_apps: vec!["TestApp".into()],
-            skip_title_patterns: vec!["secret*".into()],
-            private_browsing_detection: false,
             setup_completed: false,
             anthropic_api_key: None,
             remote_access_enabled: false,
-            screen_capture_enabled: false,
             ..Config::default()
         };
         config.watch_paths = vec![PathBuf::from("/tmp/test")];
         let json = serde_json::to_string(&config).unwrap();
         let restored: Config = serde_json::from_str(&json).unwrap();
         assert_eq!(restored.watch_paths, config.watch_paths);
-        assert!(restored.clipboard_enabled);
-        assert_eq!(restored.skip_apps, vec!["TestApp".to_string()]);
-        assert!(!restored.private_browsing_detection);
     }
 
     #[test]
@@ -362,8 +260,6 @@ mod tests {
         let json = r#"{"watch_paths": ["/tmp/a"]}"#;
         let config: Config = serde_json::from_str(json).unwrap();
         assert_eq!(config.watch_paths, vec![PathBuf::from("/tmp/a")]);
-        assert!(config.private_browsing_detection);
-        assert!(!config.skip_apps.is_empty());
     }
 
     #[test]
@@ -384,15 +280,13 @@ mod tests {
         // that read or write ORIGIN_DATA_DIR.
         std::env::remove_var("WENLAN_DATA_DIR");
         std::env::set_var("ORIGIN_DATA_DIR", tmp.path());
-        let mut config = Config {
-            clipboard_enabled: true,
+        let config = Config {
+            watch_paths: vec![PathBuf::from("/test/path")],
             ..Config::default()
         };
-        config.watch_paths = vec![PathBuf::from("/test/path")];
         save_config(&config).unwrap();
         let loaded = load_config();
         // After load_config, migrate() runs: watch_paths -> sources, watch_paths cleared.
-        assert!(loaded.clipboard_enabled);
         assert_eq!(loaded.sources.len(), 1);
         assert_eq!(loaded.sources[0].path, PathBuf::from("/test/path"));
         assert!(loaded.watch_paths.is_empty());
@@ -409,19 +303,20 @@ mod tests {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(
             &path,
-            r#"{"clipboard_enabled":false,"reranker_mode":"hybrid","future_flag":{"enabled":true}}"#,
+            r#"{"private_browsing_detection":true,"reranker_mode":"hybrid","future_flag":{"enabled":true}}"#,
         )
         .unwrap();
 
         let mut config = load_config();
-        config.private_browsing_detection = false;
+        config.setup_completed = true;
         save_config(&config).unwrap();
 
         let saved: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        assert_eq!(saved["private_browsing_detection"], false);
+        assert_eq!(saved["private_browsing_detection"], true);
         assert_eq!(saved["reranker_mode"], "hybrid");
         assert_eq!(saved["future_flag"], serde_json::json!({ "enabled": true }));
+        assert_eq!(saved["setup_completed"], true);
     }
 
     // --- setup_completed ---
@@ -474,32 +369,6 @@ mod tests {
         let json = r#"{"clipboard_enabled": true}"#;
         let config: Config = serde_json::from_str(json).unwrap();
         assert!(!config.remote_access_enabled);
-    }
-
-    // --- screen_capture_enabled ---
-
-    #[test]
-    fn test_screen_capture_enabled_defaults_to_false() {
-        let config = Config::default();
-        assert!(!config.screen_capture_enabled);
-    }
-
-    #[test]
-    fn test_screen_capture_enabled_roundtrip() {
-        let config = Config {
-            screen_capture_enabled: true,
-            ..Config::default()
-        };
-        let json = serde_json::to_string(&config).unwrap();
-        let restored: Config = serde_json::from_str(&json).unwrap();
-        assert!(restored.screen_capture_enabled);
-    }
-
-    #[test]
-    fn test_screen_capture_enabled_missing_in_json_defaults_false() {
-        let json = r#"{"clipboard_enabled": true}"#;
-        let config: Config = serde_json::from_str(json).unwrap();
-        assert!(!config.screen_capture_enabled);
     }
 
     // --- migrate() / watch_paths / sources / knowledge_path ---

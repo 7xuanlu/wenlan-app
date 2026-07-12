@@ -210,80 +210,6 @@ pub async fn position_quick_capture(app: tauri::AppHandle) -> Result<(), String>
     Ok(())
 }
 
-// ── Permission commands (kept as-is) ──────────────────────────────────
-
-#[tauri::command]
-pub fn check_screen_permission() -> bool {
-    #[cfg(target_os = "macos")]
-    {
-        #[link(name = "CoreGraphics", kind = "framework")]
-        extern "C" {
-            fn CGPreflightScreenCaptureAccess() -> bool;
-        }
-        unsafe { CGPreflightScreenCaptureAccess() }
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        true
-    }
-}
-
-#[tauri::command]
-pub fn request_screen_permission() -> bool {
-    #[cfg(target_os = "macos")]
-    {
-        #[link(name = "CoreGraphics", kind = "framework")]
-        extern "C" {
-            fn CGRequestScreenCaptureAccess() -> bool;
-        }
-        unsafe { CGRequestScreenCaptureAccess() }
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        true
-    }
-}
-
-// ── Config and settings commands ──────────────────────────────────────
-
-#[tauri::command]
-pub async fn get_clipboard_enabled(state: tauri::State<'_, State>) -> Result<bool, String> {
-    let client = {
-        let s = state.read().await;
-        s.client.clone()
-    };
-    let enabled = client.get_clipboard_enabled().await?;
-    {
-        let mut app_state = state.write().await;
-        app_state.clipboard_enabled = enabled;
-    }
-    Ok(enabled)
-}
-
-#[tauri::command]
-pub async fn set_clipboard_enabled(
-    state: tauri::State<'_, State>,
-    enabled: bool,
-) -> Result<(), String> {
-    let client = {
-        let s = state.read().await;
-        s.client.clone()
-    };
-    let resp = set_clipboard_enabled_config_response(&client, enabled).await?;
-    {
-        let mut app_state = state.write().await;
-        app_state.clipboard_enabled = resp.clipboard_enabled;
-    }
-    Ok(())
-}
-
-async fn set_clipboard_enabled_config_response(
-    client: &crate::api::WenlanClient,
-    enabled: bool,
-) -> Result<responses::ConfigResponse, String> {
-    client.set_clipboard_enabled(enabled).await
-}
-
 #[tauri::command]
 pub async fn get_api_key() -> Result<Option<String>, String> {
     let config = config::load_config();
@@ -368,26 +294,6 @@ mod setup_key_response_tests {
 }
 
 #[cfg(test)]
-mod capture_config_response_tests {
-    use super::*;
-
-    #[allow(dead_code)]
-    async fn clipboard_toggle_uses_daemon_config_response(client: crate::api::WenlanClient) {
-        let _: Result<responses::ConfigResponse, String> =
-            set_clipboard_enabled_config_response(&client, true).await;
-    }
-
-    #[allow(dead_code)]
-    async fn screen_capture_toggle_uses_daemon_config_response(client: crate::api::WenlanClient) {
-        let _: Result<responses::ConfigResponse, String> =
-            set_screen_capture_enabled_config_response(&client, false).await;
-    }
-
-    #[test]
-    fn capture_config_response_types_are_checked() {}
-}
-
-#[cfg(test)]
 mod ingest_command_tests {
     use super::*;
 
@@ -404,82 +310,6 @@ mod ingest_command_tests {
 
     #[test]
     fn webpage_ingest_command_response_type_is_checked() {}
-}
-
-// Phase 5-D Phase 4: route config reads/writes through the daemon so the
-// daemon's in-memory cache stays consistent with on-disk config.json.
-// Direct `crate::config::load_config()` calls here would let app and daemon
-// drift (the daemon caches at startup; sensors keep using stale skip lists
-// after a local-only write).
-
-#[tauri::command]
-pub async fn get_skip_apps(state: tauri::State<'_, State>) -> Result<Vec<String>, String> {
-    let client = {
-        let s = state.read().await;
-        s.client.clone()
-    };
-    client.get_skip_apps().await
-}
-
-#[tauri::command]
-pub async fn set_skip_apps(
-    state: tauri::State<'_, State>,
-    apps: Vec<String>,
-) -> Result<(), String> {
-    let client = {
-        let s = state.read().await;
-        s.client.clone()
-    };
-    client.set_skip_apps(apps).await
-}
-
-#[tauri::command]
-pub async fn get_skip_title_patterns(
-    state: tauri::State<'_, State>,
-) -> Result<Vec<String>, String> {
-    let client = {
-        let s = state.read().await;
-        s.client.clone()
-    };
-    client.get_skip_title_patterns().await
-}
-
-#[tauri::command]
-pub async fn set_skip_title_patterns(
-    state: tauri::State<'_, State>,
-    patterns: Vec<String>,
-) -> Result<(), String> {
-    let client = {
-        let s = state.read().await;
-        s.client.clone()
-    };
-    client.set_skip_title_patterns(patterns).await
-}
-
-#[tauri::command]
-pub async fn get_private_browsing_detection(
-    state: tauri::State<'_, State>,
-) -> Result<bool, String> {
-    let client = {
-        let s = state.read().await;
-        s.client.clone()
-    };
-    client.get_private_browsing_detection().await
-}
-
-#[tauri::command]
-pub async fn set_private_browsing_detection(
-    state: tauri::State<'_, State>,
-    enabled: bool,
-) -> Result<(), String> {
-    let client = {
-        let s = state.read().await;
-        s.client.clone()
-    };
-    client
-        .set_private_browsing_detection(enabled)
-        .await
-        .map(|_| ())
 }
 
 #[tauri::command]
@@ -549,44 +379,6 @@ pub async fn get_wenlan_mcp_entry() -> Result<crate::mcp_config::WenlanMcpEntry,
     Ok(crate::mcp_config::wenlan_mcp_entry())
 }
 
-#[tauri::command]
-pub async fn get_screen_capture_enabled(state: tauri::State<'_, State>) -> Result<bool, String> {
-    let client = {
-        let s = state.read().await;
-        s.client.clone()
-    };
-    let enabled = client.get_screen_capture_enabled().await?;
-    {
-        let mut app_state = state.write().await;
-        app_state.screen_capture_enabled = enabled;
-    }
-    Ok(enabled)
-}
-
-#[tauri::command]
-pub async fn set_screen_capture_enabled(
-    state: tauri::State<'_, State>,
-    enabled: bool,
-) -> Result<(), String> {
-    let client = {
-        let s = state.read().await;
-        s.client.clone()
-    };
-    let resp = set_screen_capture_enabled_config_response(&client, enabled).await?;
-    {
-        let mut app_state = state.write().await;
-        app_state.screen_capture_enabled = resp.screen_capture_enabled;
-    }
-    Ok(())
-}
-
-async fn set_screen_capture_enabled_config_response(
-    client: &crate::api::WenlanClient,
-    enabled: bool,
-) -> Result<responses::ConfigResponse, String> {
-    client.set_screen_capture_enabled(enabled).await
-}
-
 // ── Activity commands (file-based, local) ─────────────────────────────
 
 #[tauri::command]
@@ -636,19 +428,6 @@ mod pipeline_status_command_type_tests {
 
     #[test]
     fn pipeline_status_command_response_type_is_checked() {}
-}
-
-// ── Trigger/sensor commands ───────────────────────────────────────────
-
-#[tauri::command]
-pub async fn trigger_manual_capture(state: tauri::State<'_, State>) -> Result<(), String> {
-    let s = state.read().await;
-    if let Some(ref tx) = s.trigger_tx {
-        tx.send(crate::trigger::types::TriggerEvent::ManualHotkey)
-            .await
-            .map_err(|e| format!("{}", e))?;
-    }
-    Ok(())
 }
 
 // ── Remote access commands ────────────────────────────────────────────

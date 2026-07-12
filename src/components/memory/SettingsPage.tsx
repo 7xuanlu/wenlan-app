@@ -3,7 +3,6 @@ import { useTranslation } from "react-i18next";
 import type { SettingsSection } from "./settings/SettingsSidebar";
 import { SETTINGS_GROUPS } from "./settings/SettingsSidebar";
 import GeneralSection from "./settings/sections/GeneralSection";
-import CaptureSection from "./settings/sections/CaptureSection";
 import SourcesSection from "./settings/sections/SourcesSection";
 import AgentsSection from "./settings/sections/AgentsSection";
 import IntelligenceSection from "./settings/sections/IntelligenceSection";
@@ -48,7 +47,6 @@ export default function SettingsPage({
       </div>
 
       {section === "general" && <GeneralSection />}
-      {section === "capture" && <CaptureSection />}
       {section === "sources" && <SourcesSection onImport={onImport} />}
       {section === "agents" && <AgentsSection onSetupAgent={onSetupAgent} />}
       {section === "intelligence" && <IntelligenceSection delay={0} />}

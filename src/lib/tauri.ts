@@ -296,25 +296,9 @@ export async function quickCapture(req: QuickCaptureRequest): Promise<number> {
   return invoke("quick_capture", { req });
 }
 
-// Skip flag to prevent re-ingesting content we just wrote to the clipboard
-let _skipNextClipboardChange = false;
-
-export function shouldSkipClipboardChange(): boolean {
-  if (_skipNextClipboardChange) {
-    _skipNextClipboardChange = false;
-    return true;
-  }
-  return false;
-}
-
 export async function clipboardWrite(text: string): Promise<void> {
   const { writeText } = await import("tauri-plugin-clipboard-x-api");
-  _skipNextClipboardChange = true;
   await writeText(text);
-}
-
-export async function ingestClipboard(content: string): Promise<number> {
-  return invoke("ingest_clipboard", { content });
 }
 
 export interface IngestWebpageRequest {
@@ -331,30 +315,6 @@ export interface IngestResponse {
 
 export async function ingestWebpage(req: IngestWebpageRequest): Promise<IngestResponse> {
   return invoke("ingest_webpage", { req });
-}
-
-export async function getClipboardEnabled(): Promise<boolean> {
-  return invoke("get_clipboard_enabled");
-}
-
-export async function setClipboardEnabled(enabled: boolean): Promise<void> {
-  return invoke("set_clipboard_enabled", { enabled });
-}
-
-export async function getScreenCaptureEnabled(): Promise<boolean> {
-  return invoke("get_screen_capture_enabled");
-}
-
-export async function setScreenCaptureEnabled(enabled: boolean): Promise<void> {
-  return invoke("set_screen_capture_enabled", { enabled });
-}
-
-export async function checkScreenPermission(): Promise<boolean> {
-  return invoke("check_screen_permission");
-}
-
-export async function requestScreenPermission(): Promise<boolean> {
-  return invoke("request_screen_permission");
 }
 
 export async function getApiKey(): Promise<string | null> {
@@ -725,32 +685,6 @@ export async function getSnapshotCapturesWithContent(snapshotId: string): Promis
 
 export async function deleteSnapshot(snapshotId: string): Promise<void> {
   return invoke("delete_snapshot", { snapshotId });
-}
-
-// ── Capture Quality ─────────────────────────────────────────────────────
-
-export async function getSkipApps(): Promise<string[]> {
-  return invoke("get_skip_apps");
-}
-
-export async function setSkipApps(apps: string[]): Promise<void> {
-  return invoke("set_skip_apps", { apps });
-}
-
-export async function getSkipTitlePatterns(): Promise<string[]> {
-  return invoke("get_skip_title_patterns");
-}
-
-export async function setSkipTitlePatterns(patterns: string[]): Promise<void> {
-  return invoke("set_skip_title_patterns", { patterns });
-}
-
-export async function getPrivateBrowsingDetection(): Promise<boolean> {
-  return invoke("get_private_browsing_detection");
-}
-
-export async function setPrivateBrowsingDetection(enabled: boolean): Promise<void> {
-  return invoke("set_private_browsing_detection", { enabled });
 }
 
 // ── Memory Facets ───────────────────────────────────────────────────

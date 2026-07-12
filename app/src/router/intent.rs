@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-use crate::privacy::redact_pii;
-use crate::router::bundle::{assemble_bundle_with_intent, ContextBundle, TriggerSource};
-use crate::router::keywords;
-use crate::sensor;
+use crate::router::bundle::{ContextBundle, TriggerSource};
 use crate::state::AppState;
 use crate::trigger::types::TriggerEvent;
 
@@ -16,8 +13,6 @@ use wenlan_types::requests::IngestTextRequest;
 use wenlan_types::responses::IngestResponse;
 use wenlan_types::working_memory::{WorkingMemoryEntry, MAX_SNIPPET_CHARS};
 
-/// Default keyword classification threshold (matches TuningConfig default).
-const DEFAULT_KEYWORD_MIN_THRESHOLD: f64 = 0.005;
 /// Default consumer dedup threshold (matches TuningConfig default).
 const DEFAULT_CONSUMER_DEDUP_THRESHOLD: f64 = 0.85;
 /// Default consumer dedup window in seconds (matches TuningConfig default).
@@ -65,7 +60,6 @@ fn text_similarity(a: &str, b: &str) -> f64 {
 /// The smart router — core of the unified trigger architecture.
 ///
 /// Pattern-matches on TriggerEvent to apply the right optimization strategy:
-/// - ManualHotkey: force OCR all windows, classify intent, send to consumer
 /// - QuickThought: bypass vision entirely, send to consumer
 pub async fn run_router(
     mut event_rx: Receiver<TriggerEvent>,
@@ -85,74 +79,6 @@ pub async fn run_router(
 
     while let Some(event) = event_rx.recv().await {
         match event {
-            // ── HOTKEY: force OCR all windows, classify intent, send to consumer ──
-            TriggerEvent::ManualHotkey => {
-                log::info!("[router] hotkey trigger — forcing OCR");
-
-                // Immediately notify frontend
-                let s = state.read().await;
-                s.emit_capture_event(crate::state::CaptureEvent {
-                    source: "hotkey".to_string(),
-                    source_id: String::new(),
-                    summary: String::new(),
-                    chunks: 0,
-                    processing: true,
-                });
-                drop(s);
-
-                // Capture + OCR all windows (no filtering, no frame compare)
-                let client = {
-                    let s = state.read().await;
-                    s.client.clone()
-                };
-                let cfg = match client.get_config().await {
-                    Ok(config) => config,
-                    Err(e) => {
-                        log::warn!("[router] hotkey: daemon config unavailable: {}", e);
-                        continue;
-                    }
-                };
-                if !cfg.screen_capture_enabled {
-                    log::debug!("[router] hotkey: screen capture disabled, skipping");
-                    continue;
-                }
-
-                let captures = match sensor::vision::capture_windows(
-                    &cfg.skip_apps,
-                    &cfg.skip_title_patterns,
-                    cfg.private_browsing_detection,
-                ) {
-                    Ok(c) if !c.is_empty() => c,
-                    Ok(_) => {
-                        log::debug!("[router] hotkey: no windows captured");
-                        continue;
-                    }
-                    Err(e) => {
-                        log::warn!("[router] hotkey capture failed: {}", e);
-                        continue;
-                    }
-                };
-
-                let ocr = match sensor::vision::ocr_per_window(&captures) {
-                    Ok(results) if !results.is_empty() => results,
-                    Ok(_) => {
-                        log::debug!("[router] hotkey: OCR returned no text");
-                        continue;
-                    }
-                    Err(e) => {
-                        log::warn!("[router] hotkey OCR failed: {}", e);
-                        continue;
-                    }
-                };
-
-                let ocr = redact_all(ocr);
-
-                // Classify + send to consumer
-                let intent = keywords::classify(&ocr, DEFAULT_KEYWORD_MIN_THRESHOLD);
-                let bundle = assemble_bundle_with_intent(ocr, &event, intent);
-                let _ = bundle_tx.send(bundle).await;
-            }
-
             // ── QUICK THOUGHT: bypass vision entirely ──
             TriggerEvent::QuickThought { ref text } => {
                 log::info!("[router] quick thought: {} chars", text.len());
@@ -163,18 +89,6 @@ pub async fn run_router(
     }
 
     log::info!("[router] stopped (channel closed)");
-}
-
-/// Apply PII redaction to all OCR results.
-fn redact_all(
-    ocr: Vec<crate::sensor::vision::WindowOcrResult>,
-) -> Vec<crate::sensor::vision::WindowOcrResult> {
-    ocr.into_iter()
-        .map(|mut r| {
-            r.text = redact_pii(&r.text);
-            r
-        })
-        .collect()
 }
 
 /// Context consumer task — receives bundles and sends them to the daemon
@@ -205,29 +119,16 @@ pub async fn run_context_consumer(
         let (source, source_id, title, content, url, metadata) = extract_ingest_fields(&bundle);
 
         // Snapshot working-memory metadata from the bundle before it's moved.
-        // For QuickThought (raw_text Some), synthesize a "Wenlan / Quick Thought"
-        // entry; otherwise use the focused (or first) window.
+        // Quick Thought is the only bundle producer today, so this always
+        // synthesizes a "Wenlan / Quick Thought" entry.
         let wm_entry_data: Option<(String, String, String)> =
-            if let Some(ref text) = bundle.raw_text {
-                Some((
+            bundle.raw_text.as_ref().map(|text| {
+                (
                     "Wenlan".to_string(),
                     "Quick Thought".to_string(),
                     text.chars().take(MAX_SNIPPET_CHARS).collect(),
-                ))
-            } else {
-                bundle
-                    .windows
-                    .iter()
-                    .find(|w| w.focused)
-                    .or(bundle.windows.first())
-                    .map(|w| {
-                        (
-                            w.app_name.clone(),
-                            w.window_title.clone(),
-                            w.text.chars().take(MAX_SNIPPET_CHARS).collect(),
-                        )
-                    })
-            };
+                )
+            });
 
         // Consumer dedup: if same content as last capture within time window, skip it
         let now_ts = chrono::Utc::now().timestamp();
@@ -343,47 +244,24 @@ fn extract_ingest_fields(
 
     let source_id = format!("ctx_{}", bundle.timestamp.timestamp());
 
-    let title = if let Some(ref text) = bundle.raw_text {
-        let first_line = text.lines().next().unwrap_or("Quick Thought");
-        if first_line.len() > 60 {
-            format!("{}...", &first_line[..first_line.floor_char_boundary(60)])
-        } else {
-            first_line.to_string()
-        }
-    } else {
-        bundle
-            .windows
-            .iter()
-            .find(|w| w.focused)
-            .or(bundle.windows.first())
-            .map(|w| {
-                let t = format!("{} — {}", w.app_name, w.window_title);
-                if t.len() > 80 {
-                    format!("{}...", &t[..t.floor_char_boundary(80)])
-                } else {
-                    t
-                }
-            })
-            .unwrap_or_else(|| "Context Capture".to_string())
-    };
+    let title = bundle
+        .raw_text
+        .as_deref()
+        .map(|text| {
+            let first_line = text.lines().next().unwrap_or("Quick Thought");
+            if first_line.len() > 60 {
+                format!("{}...", &first_line[..first_line.floor_char_boundary(60)])
+            } else {
+                first_line.to_string()
+            }
+        })
+        .unwrap_or_else(|| "Quick Thought".to_string());
 
-    let content = if let Some(ref text) = bundle.raw_text {
-        text.clone()
-    } else {
-        bundle
-            .windows
-            .iter()
-            .map(|w| format!("## {} — {}\n{}", w.app_name, w.window_title, w.text))
-            .collect::<Vec<_>>()
-            .join("\n\n")
-    };
+    let content = bundle.raw_text.clone().unwrap_or_default();
 
-    let url = bundle.windows.iter().find_map(|w| w.url.clone());
+    let url = None;
 
-    let mut metadata = std::collections::HashMap::new();
-    if bundle.raw_text.is_none() {
-        metadata.insert("screen_capture".to_string(), "true".to_string());
-    }
+    let metadata = std::collections::HashMap::new();
 
     (source, source_id, title, content, url, metadata)
 }

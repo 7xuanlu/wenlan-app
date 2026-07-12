@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { startListening, stopListening, onClipboardChange } from "tauri-plugin-clipboard-x-api";
 import { emit, listen } from "@tauri-apps/api/event";
 import { resizeWindow, resizeWindowCentered } from "./lib/resizeWindow";
-import { ingestClipboard, getClipboardEnabled, shouldSkipClipboardChange, setTrafficLightsVisible, shouldShowWizard, setSetupCompleted, type IndexedFileInfo } from "./lib/tauri";
+import { setTrafficLightsVisible, shouldShowWizard, setSetupCompleted, type IndexedFileInfo } from "./lib/tauri";
 import { markProcessing, clearProcessing } from "./lib/processingStore";
 import { recordCapture } from "./lib/captureHeartbeat";
 import Spotlight from "./components/Spotlight";
@@ -17,16 +16,6 @@ import UpdaterDialog from "./components/UpdaterDialog";
 
 const MEMORY_WIDTH = 1280;
 const MEMORY_HEIGHT = 720;
-
-// Start clipboard watcher once at module level — must not run inside React
-// effects because StrictMode double-invokes them, creating duplicate watchers.
-// stopListening() first to clear any stale watcher from a previous HMR cycle.
-const clipboardReady = stopListening().catch(() => {}).then(() => startListening());
-
-// Clean up watcher when Vite hot-reloads this module
-if (import.meta.hot) {
-  import.meta.hot.dispose(() => { stopListening(); });
-}
 
 type Page = "spotlight" | "home" | "memory" | "recap" | "entity";
 
@@ -51,52 +40,11 @@ export default function App() {
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
   const [initialView, setInitialView] = useState<"import" | null>(null);
   const [prevPage, setPrevPage] = useState<Page>("spotlight");
-  const clipboardEnabledRef = useRef(true);
 
   // Signal backend that the webview has loaded, so it can focus the already
   // visible main window after the frontend is ready.
   useEffect(() => {
     emit("app-ready");
-  }, []);
-
-  // Keep clipboard enabled state in sync
-  useEffect(() => {
-    getClipboardEnabled().then((enabled) => {
-      clipboardEnabledRef.current = enabled;
-    });
-  }, [page]); // re-check when leaving settings
-
-  // Clipboard change listener
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    let cancelled = false;
-
-    async function setup() {
-      await clipboardReady;
-      if (cancelled) return;
-      unlisten = await onClipboardChange(async (result) => {
-        if (cancelled) return;
-        if (!clipboardEnabledRef.current) return;
-        if (shouldSkipClipboardChange()) return;
-        const text = result.text?.value;
-        if (text && text.trim().length >= 4) {
-          try {
-            const chunks = await ingestClipboard(text);
-            if (chunks > 0) {
-              const firstLine = text.trim().split("\n")[0];
-              const summary = firstLine.length > 50 ? firstLine.slice(0, 50) + "..." : firstLine;
-              await emit("capture-event", { source: "clipboard", summary, chunks });
-            }
-          } catch (e) {
-            console.error("Failed to ingest clipboard:", e);
-          }
-        }
-      });
-      if (cancelled) unlisten?.();
-    }
-
-    setup();
-    return () => { cancelled = true; unlisten?.(); };
   }, []);
 
   // Embedding migration progress overlay
