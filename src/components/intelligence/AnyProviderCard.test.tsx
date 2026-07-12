@@ -142,6 +142,16 @@ describe("AnyProviderCard — the Local-server card (spec §5.2)", () => {
     expect(await screen.findByText("Connected to Ollama — 2 models")).toBeInTheDocument();
   });
 
+  // Thread #3: the probe genuinely succeeded (server reachable — chip stays
+  // "up", never red) but a server with zero models can't serve anything, so
+  // the label must not read as success.
+  it("zero models: reachable server with no models installed gets the no-models label, not the connected label", async () => {
+    mocks.listExternalModels.mockResolvedValue([]);
+    renderCard();
+    expect(await screen.findByText("Ollama is running — no models installed yet")).toBeInTheDocument();
+    expect(screen.queryByText(/Connected to Ollama/)).not.toBeInTheDocument();
+  });
+
   // Endpoint normalization: a hand-typed endpoint missing a scheme and a
   // /v1 path must still resolve to the same probe target as the canonical
   // form, not silently drop to a no-match (component-level integration

@@ -207,10 +207,12 @@ export default function AnyProviderCard() {
     : localQuery.isLoading
       ? t("externalProvider.localProbing", { name: localLabel(preset.name) })
       : localQuery.isSuccess
-        ? t("externalProvider.localConnectedChip", {
-            name: localLabel(preset.name),
-            count: localQueryModels.length,
-          })
+        ? localQueryModels.length === 0
+          ? t("externalProvider.localNoModelsChip", { name: localLabel(preset.name) })
+          : t("externalProvider.localConnectedChip", {
+              name: localLabel(preset.name),
+              count: localQueryModels.length,
+            })
         : t("externalProvider.localNotDetectedChip", {
             name: localLabel(preset.name),
             host: hostOf(preset.endpoint),
