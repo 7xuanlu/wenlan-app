@@ -218,7 +218,19 @@ const DEFAULTS: Record<string, unknown> = {
   },
   get_system_info: null,
   get_remote_access_status: { status: "off" },
-  detect_mcp_clients_cmd: [],
+  // The five clients a real machine actually reports (this is verbatim what
+  // detect_mcp_clients_cmd returns on the maintainer's Mac, incl. one already
+  // configured). This used to be `[]`, which meant the preview only ever showed
+  // the wizard's EMPTY state — so the redesigned common case, which IS the
+  // screen, could not be pixel-reviewed at all. An empty fixture doesn't render
+  // "nothing to see"; it renders a different, misleading screen.
+  detect_mcp_clients_cmd: [
+    { name: "Cursor", client_type: "cursor", config_path: "~/.cursor/mcp.json", detected: true, already_configured: false },
+    { name: "Claude Desktop", client_type: "claude_desktop", config_path: "~/Library/Application Support/Claude/claude_desktop_config.json", detected: true, already_configured: false },
+    { name: "Gemini CLI", client_type: "gemini_cli", config_path: "~/.gemini/settings.json", detected: true, already_configured: false },
+    { name: "Codex CLI", client_type: "codex_cli", config_path: "~/.codex/config.toml", detected: true, already_configured: true },
+    { name: "Claude Code", client_type: "claude_code", config_path: "~/.claude.json", detected: true, already_configured: false },
+  ],
   get_wenlan_mcp_entry: null,
   get_avatar_data_url: null,
   get_knowledge_path: null,
