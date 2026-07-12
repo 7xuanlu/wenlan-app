@@ -38,3 +38,44 @@ describe("translation resources", () => {
     );
   });
 });
+
+// Standing rule: never announce that Wenlan itself is a plugin. The only
+// exceptions are real CLI commands/slash-commands and claude.ai's own menu
+// names, referenced verbatim while walking the user through its UI.
+function flattenStringEntries(
+  value: unknown,
+  prefix = "",
+): Array<[string, string]> {
+  if (typeof value === "string") return [[prefix, value]];
+  if (!value || typeof value !== "object") return [];
+  return Object.entries(value as Record<string, unknown>).flatMap(
+    ([key, child]) =>
+      flattenStringEntries(child, prefix ? `${prefix}.${key}` : key),
+  );
+}
+
+const PLUGIN_WORD_ALLOWLIST = new Set([
+  "connectMatrix.claudeCodeCommand1",
+  "connectMatrix.claudeCodeCommand2",
+  "connectMatrix.claudeCodeReload",
+  "connectMatrix.claudeCodePrompt", // real `/plugin` menu + `claude plugin` CLI commands
+  "connectMatrix.claudePluginStep1",
+  "connectMatrix.claudePluginStep2",
+  "connectMatrix.claudePluginStep3",
+]);
+const BANNED_PLUGIN_WORDS = ["plugin", "插件", "外掛"];
+
+describe("banned self-referential 'plugin' copy", () => {
+  it.each(supportedAppLocales)(
+    "%s never describes Wenlan itself as a plugin",
+    (locale) => {
+      const entries = flattenStringEntries(resources[locale].translation);
+      const offenders = entries.filter(
+        ([key, value]) =>
+          !PLUGIN_WORD_ALLOWLIST.has(key) &&
+          BANNED_PLUGIN_WORDS.some((word) => value.includes(word)),
+      );
+      expect(offenders).toEqual([]);
+    },
+  );
+});
