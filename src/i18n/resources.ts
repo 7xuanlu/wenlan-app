@@ -1028,6 +1028,39 @@ const en = {
   status: {
     notVerified: "Not verified yet",
   },
+  remoteAccess: {
+    title: "Share with web-based AI tools",
+    noAuthWarning:
+      "Creates a public HTTPS URL with no authentication for Claude.ai and ChatGPT. Anyone with the URL can access Wenlan; turn Remote Access off when unused.",
+    urlLabel: "Your MCP URL",
+    urlLabelStable: "Your MCP URL (stable)",
+    copyUrl: "Copy URL",
+    copied: "Copied!",
+    testConnection: "Test connection",
+    testing: "Testing…",
+    reconnect: "Reconnect",
+    retry: "Retry",
+    statusOff: "Off",
+    statusConnecting: "Connecting…",
+    statusConnected: "Connected",
+    statusConnectedLatency: "Connected ({{ms}} ms)",
+    howTo: "How to connect Claude.ai and ChatGPT",
+    claudeAi: "Claude.ai",
+    chatGpt: "ChatGPT",
+    claudeSteps: "Settings → Connectors → Add Custom Connector → Paste URL",
+    chatgptSteps:
+      "Settings → Apps → Advanced settings → Enable Developer mode → Back → Create app → Paste URL (No Auth)",
+    tunnelChangesNote:
+      "This tunnel URL changes when your Mac sleeps or restarts. Enable a stable relay in Settings → Agents to avoid reconnecting.",
+    stableNote: "This URL is stable — it won't change when your Mac sleeps or restarts.",
+  },
+  addMemory: {
+    placeholder: "What do you want to remember?",
+    spaceLabel: "Space:",
+    noSpace: "No space",
+    cancel: "Cancel",
+    save: "Save",
+  },
 };
 
 const zhHans = {
@@ -2029,6 +2062,39 @@ const zhHans = {
   status: {
     notVerified: "尚未验证",
   },
+  remoteAccess: {
+    title: "与网页版 AI 工具共享",
+    noAuthWarning:
+      "将为 Claude.ai 与 ChatGPT 创建一个无需身份验证的公开 HTTPS 地址。任何拥有该地址的人都能访问 Wenlan;不使用时请关闭远程访问。",
+    urlLabel: "你的 MCP 地址",
+    urlLabelStable: "你的 MCP 地址(稳定)",
+    copyUrl: "复制地址",
+    copied: "已复制!",
+    testConnection: "测试连接",
+    testing: "正在测试…",
+    reconnect: "重新连接",
+    retry: "重试",
+    statusOff: "关闭",
+    statusConnecting: "正在连接…",
+    statusConnected: "已连接",
+    statusConnectedLatency: "已连接({{ms}} 毫秒)",
+    howTo: "如何连接 Claude.ai 与 ChatGPT",
+    claudeAi: "Claude.ai",
+    chatGpt: "ChatGPT",
+    claudeSteps: "Settings → Connectors → Add Custom Connector → Paste URL",
+    chatgptSteps:
+      "Settings → Apps → Advanced settings → Enable Developer mode → Back → Create app → Paste URL (No Auth)",
+    tunnelChangesNote:
+      "此隧道地址会在 Mac 休眠或重启后变化。可在“设置 → Agents”中启用稳定中继,免去重新连接。",
+    stableNote: "此地址是稳定的——不会在 Mac 休眠或重启后变化。",
+  },
+  addMemory: {
+    placeholder: "你想记住什么?",
+    spaceLabel: "空间:",
+    noSpace: "无空间",
+    cancel: "取消",
+    save: "保存",
+  },
 };
 
 const zhHant = {
@@ -3029,6 +3095,39 @@ const zhHant = {
   },
   status: {
     notVerified: "尚未驗證",
+  },
+  remoteAccess: {
+    title: "與網頁版 AI 工具共享",
+    noAuthWarning:
+      "將為 Claude.ai 與 ChatGPT 建立一個無需身份驗證的公開 HTTPS 位址。任何擁有該位址的人都能存取 Wenlan;不使用時請關閉遠端存取。",
+    urlLabel: "你的 MCP 位址",
+    urlLabelStable: "你的 MCP 位址(穩定)",
+    copyUrl: "複製位址",
+    copied: "已複製!",
+    testConnection: "測試連線",
+    testing: "正在測試…",
+    reconnect: "重新連線",
+    retry: "重試",
+    statusOff: "關閉",
+    statusConnecting: "正在連線…",
+    statusConnected: "已連線",
+    statusConnectedLatency: "已連線({{ms}} 毫秒)",
+    howTo: "如何連接 Claude.ai 與 ChatGPT",
+    claudeAi: "Claude.ai",
+    chatGpt: "ChatGPT",
+    claudeSteps: "Settings → Connectors → Add Custom Connector → Paste URL",
+    chatgptSteps:
+      "Settings → Apps → Advanced settings → Enable Developer mode → Back → Create app → Paste URL (No Auth)",
+    tunnelChangesNote:
+      "此隧道位址會在 Mac 休眠或重啟後變化。可在「設定 → Agents」中啟用穩定中繼,免去重新連線。",
+    stableNote: "此位址是穩定的——不會在 Mac 休眠或重啟後變化。",
+  },
+  addMemory: {
+    placeholder: "你想記住什麼?",
+    spaceLabel: "空間:",
+    noSpace: "無空間",
+    cancel: "取消",
+    save: "儲存",
   },
 };
 

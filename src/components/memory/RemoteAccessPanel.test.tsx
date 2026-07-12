@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
+import { i18n } from "../../i18n";
 import { RemoteAccessPanel } from "./RemoteAccessPanel";
 
 vi.mock("@tauri-apps/api/event", () => ({
@@ -44,8 +45,9 @@ describe("RemoteAccessPanel", () => {
     });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     vi.useRealTimers();
+    await i18n.changeLanguage("en");
   });
 
   it("renders 'Off' status when disabled", async () => {
@@ -126,7 +128,7 @@ describe("RemoteAccessPanel", () => {
     });
   });
 
-  it("Test connection button calls testRemoteMcpConnection and shows 'Connected (NNNms)'", async () => {
+  it("Test connection button calls testRemoteMcpConnection and shows 'Connected (NNN ms)'", async () => {
     (getRemoteAccessStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
       status: "connected",
       tunnel_url: "https://example.trycloudflare.com",
@@ -143,7 +145,7 @@ describe("RemoteAccessPanel", () => {
       expect(testRemoteMcpConnection).toHaveBeenCalled();
     });
     await waitFor(() => {
-      expect(screen.getByText(/Connected \(42ms\)/i)).toBeInTheDocument();
+      expect(screen.getByText(/Connected \(42 ms\)/i)).toBeInTheDocument();
     });
   });
 
@@ -197,5 +199,123 @@ describe("RemoteAccessPanel", () => {
     });
     expect(screen.queryByText(/^Token$/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Rotate$/i })).not.toBeInTheDocument();
+  });
+
+  // i18n (S7): every string in this file used to be hardcoded English, so a
+  // zh-Hans/zh-Hant user saw an English panel. These tests pin that the panel
+  // actually renders translated text — not a coincidence of English being the
+  // fallback locale — including the security-critical no-auth warning, which
+  // must survive translation intact (commit 3a272d0).
+  it("off state: renders translated title and status, not the hardcoded English", async () => {
+    await i18n.changeLanguage("zh-Hans");
+    renderPanel("compact");
+
+    await waitFor(() => {
+      expect(screen.getByText("关闭")).toBeInTheDocument();
+    });
+    expect(screen.getByText("与网页版 AI 工具共享")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "将为 Claude.ai 与 ChatGPT 创建一个无需身份验证的公开 HTTPS 地址。任何拥有该地址的人都能访问 Wenlan;不使用时请关闭远程访问。",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Share with web-based AI tools")).not.toBeInTheDocument();
+    expect(screen.queryByText("Off")).not.toBeInTheDocument();
+  });
+
+  it("starting state: renders translated 'Connecting…' in zh-Hans", async () => {
+    (getRemoteAccessStatus as ReturnType<typeof vi.fn>).mockResolvedValue({ status: "starting" });
+    await i18n.changeLanguage("zh-Hans");
+    renderPanel("compact");
+
+    await waitFor(() => {
+      expect(screen.getByText("正在连接…")).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/Connecting/i)).not.toBeInTheDocument();
+  });
+
+  it("connected state (full mode): renders translated URL label, copy/test/reconnect controls, tunnel note, and instructions in zh-Hans", async () => {
+    (getRemoteAccessStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
+      status: "connected",
+      tunnel_url: "https://example.trycloudflare.com",
+      token: "secret-token",
+      relay_url: null,
+    });
+    await i18n.changeLanguage("zh-Hans");
+    renderPanel("full");
+
+    await waitFor(() => {
+      expect(screen.getByText("已连接")).toBeInTheDocument();
+    });
+    expect(screen.getByText("你的 MCP 地址")).toBeInTheDocument();
+
+    const copyBtn = screen.getByRole("button", { name: /^复制地址$/ });
+    fireEvent.click(copyBtn);
+    await waitFor(() => {
+      expect(clipboardWrite).toHaveBeenCalledWith("https://example.trycloudflare.com/mcp");
+    });
+    expect(screen.getByText("已复制!")).toBeInTheDocument();
+
+    const testBtn = screen.getByRole("button", { name: "测试连接" });
+    fireEvent.click(testBtn);
+    await waitFor(() => {
+      expect(testRemoteMcpConnection).toHaveBeenCalled();
+    });
+    await waitFor(() => {
+      expect(screen.getByText("已连接(42 毫秒)")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("重新连接")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "此隧道地址会在 Mac 休眠或重启后变化。可在“设置 → Agents”中启用稳定中继,免去重新连接。",
+      ),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "如何连接 Claude.ai 与 ChatGPT" }));
+    expect(screen.getByText("Claude.ai")).toBeInTheDocument();
+    expect(screen.getByText("ChatGPT")).toBeInTheDocument();
+    expect(
+      screen.getByText("Settings → Connectors → Add Custom Connector → Paste URL"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Settings → Apps → Advanced settings → Enable Developer mode → Back → Create app → Paste URL (No Auth)",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("connected + stable relay: renders the stable URL label and stable note in zh-Hans", async () => {
+    (getRemoteAccessStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
+      status: "connected",
+      tunnel_url: "https://example.trycloudflare.com",
+      token: "secret-token",
+      relay_url: "https://relay.origin.dev/abcdef/mcp",
+    });
+    await i18n.changeLanguage("zh-Hans");
+    renderPanel("full");
+
+    await waitFor(() => {
+      expect(screen.getByText("已连接")).toBeInTheDocument();
+    });
+    expect(screen.getByText("你的 MCP 地址(稳定)")).toBeInTheDocument();
+    expect(
+      screen.getByText("此地址是稳定的——不会在 Mac 休眠或重启后变化。"),
+    ).toBeInTheDocument();
+  });
+
+  it("error state (full mode): renders translated Retry and Reconnect in zh-Hans", async () => {
+    (getRemoteAccessStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
+      status: "error",
+      error: "timeout after 5s",
+    });
+    await i18n.changeLanguage("zh-Hans");
+    renderPanel("full");
+
+    await waitFor(() => {
+      expect(screen.getByText("重试")).toBeInTheDocument();
+    });
+    expect(screen.getByText("重新连接")).toBeInTheDocument();
+    expect(screen.queryByText("Retry")).not.toBeInTheDocument();
   });
 });

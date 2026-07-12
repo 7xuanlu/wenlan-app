@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { listen } from "@tauri-apps/api/event";
 import {
   clipboardWrite,
@@ -23,6 +24,7 @@ const REMOTE_QUERY_KEY = ["remote-access-status"] as const;
  *  context. Reads `RemoteAccessStatus` via React Query and invalidates on
  *  `remote-access-status` events so both consumers stay in sync. */
 export function RemoteAccessPanel({ mode }: Props) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
 
   const { data: status = { status: "off" } as RemoteAccessStatus } = useQuery({
@@ -130,7 +132,7 @@ export function RemoteAccessPanel({ mode }: Props) {
                 color: "var(--mem-text)",
               }}
             >
-              Share with web-based AI tools
+              {t("remoteAccess.title")}
             </div>
             <p
               style={{
@@ -141,8 +143,7 @@ export function RemoteAccessPanel({ mode }: Props) {
                 lineHeight: "1.5",
               }}
             >
-              Creates a public HTTPS URL with no authentication for Claude.ai and ChatGPT.
-              Anyone with the URL can access Wenlan; turn Remote Access off when unused.
+              {t("remoteAccess.noAuthWarning")}
             </p>
           </div>
           <div className="mt-0.5">
@@ -183,7 +184,7 @@ export function RemoteAccessPanel({ mode }: Props) {
                 letterSpacing: "0.05em",
               }}
             >
-              {status.relay_url ? "Your MCP URL (stable)" : "Your MCP URL"}
+              {status.relay_url ? t("remoteAccess.urlLabelStable") : t("remoteAccess.urlLabel")}
             </label>
             <div className="flex items-center gap-2 mt-1">
               <pre
@@ -203,7 +204,7 @@ export function RemoteAccessPanel({ mode }: Props) {
                 {displayUrl}
               </pre>
               <button
-                aria-label="Copy URL"
+                aria-label={t("remoteAccess.copyUrl")}
                 onClick={handleCopyUrl}
                 className="px-2 py-1 rounded text-xs font-medium transition-colors shrink-0"
                 style={{
@@ -214,7 +215,7 @@ export function RemoteAccessPanel({ mode }: Props) {
                     : "rgba(123, 123, 232, 0.1)",
                 }}
               >
-                {urlCopied ? "Copied!" : "Copy URL"}
+                {urlCopied ? t("remoteAccess.copied") : t("remoteAccess.copyUrl")}
               </button>
             </div>
           </div>
@@ -253,10 +254,10 @@ export function RemoteAccessPanel({ mode }: Props) {
                       strokeLinecap="round"
                     />
                   </svg>
-                  <span>Testing…</span>
+                  <span>{t("remoteAccess.testing")}</span>
                 </>
               ) : (
-                <>Test connection</>
+                <>{t("remoteAccess.testConnection")}</>
               )}
             </button>
             {testResult.kind === "ok" && (
@@ -282,7 +283,7 @@ export function RemoteAccessPanel({ mode }: Props) {
                     d="M5 13l4 4L19 7"
                   />
                 </svg>
-                Connected ({testResult.latency_ms ?? "?"}ms)
+                {t("remoteAccess.statusConnectedLatency", { ms: testResult.latency_ms ?? "?" })}
               </span>
             )}
             {testResult.kind === "err" && (
@@ -331,7 +332,7 @@ export function RemoteAccessPanel({ mode }: Props) {
                   opacity: toggleMut.isPending ? 0.5 : 1,
                 }}
               >
-                Reconnect
+                {t("remoteAccess.reconnect")}
               </button>
               <p
                 style={{
@@ -343,8 +344,8 @@ export function RemoteAccessPanel({ mode }: Props) {
                 }}
               >
                 {status.relay_url
-                  ? "This URL is stable — it won't change when your Mac sleeps or restarts."
-                  : "This tunnel URL changes when your Mac sleeps or restarts. Enable a stable relay in Settings → Agents to avoid reconnecting."}
+                  ? t("remoteAccess.stableNote")
+                  : t("remoteAccess.tunnelChangesNote")}
               </p>
             </div>
           )}
@@ -364,7 +365,7 @@ export function RemoteAccessPanel({ mode }: Props) {
                 color: "white",
               }}
             >
-              Retry
+              {t("remoteAccess.retry")}
             </button>
             {mode === "full" && (
               <button
@@ -376,7 +377,7 @@ export function RemoteAccessPanel({ mode }: Props) {
                   backgroundColor: "var(--mem-hover)",
                 }}
               >
-                Reconnect
+                {t("remoteAccess.reconnect")}
               </button>
             )}
           </div>
@@ -394,7 +395,7 @@ export function RemoteAccessPanel({ mode }: Props) {
               backgroundColor: "var(--mem-hover)",
             }}
           >
-            Reconnect
+            {t("remoteAccess.reconnect")}
           </button>
         </div>
       )}
@@ -403,6 +404,7 @@ export function RemoteAccessPanel({ mode }: Props) {
 }
 
 function StatusRow({ status }: { status: RemoteAccessStatus }) {
+  const { t } = useTranslation();
   if (status.status === "off") {
     return (
       <span
@@ -412,7 +414,7 @@ function StatusRow({ status }: { status: RemoteAccessStatus }) {
           color: "var(--mem-text-secondary)",
         }}
       >
-        Off
+        {t("remoteAccess.statusOff")}
       </span>
     );
   }
@@ -427,7 +429,7 @@ function StatusRow({ status }: { status: RemoteAccessStatus }) {
             color: "var(--mem-text-secondary)",
           }}
         >
-          Connecting…
+          {t("remoteAccess.statusConnecting")}
         </span>
       </span>
     );
@@ -443,7 +445,7 @@ function StatusRow({ status }: { status: RemoteAccessStatus }) {
             color: "var(--mem-accent-sage)",
           }}
         >
-          Connected
+          {t("remoteAccess.statusConnected")}
         </span>
       </span>
     );
@@ -473,6 +475,7 @@ function InstructionsBlock({
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div>
       <button
@@ -500,7 +503,7 @@ function InstructionsBlock({
             d="M9 5l7 7-7 7"
           />
         </svg>
-        How to connect Claude.ai and ChatGPT
+        {t("remoteAccess.howTo")}
       </button>
       {expanded && (
         <div
@@ -514,18 +517,18 @@ function InstructionsBlock({
         >
           <div>
             <div style={{ color: "var(--mem-text)", fontWeight: 500 }}>
-              Claude.ai
+              {t("remoteAccess.claudeAi")}
             </div>
             <div style={{ color: "var(--mem-text-secondary)" }}>
-              Settings &rarr; Connectors &rarr; Add Custom Connector &rarr; Paste URL
+              {t("remoteAccess.claudeSteps")}
             </div>
           </div>
           <div>
             <div style={{ color: "var(--mem-text)", fontWeight: 500 }}>
-              ChatGPT
+              {t("remoteAccess.chatGpt")}
             </div>
             <div style={{ color: "var(--mem-text-secondary)" }}>
-              Settings &rarr; Apps &rarr; Advanced settings &rarr; Enable Developer mode &rarr; Back &rarr; Create app &rarr; Paste URL (No Auth)
+              {t("remoteAccess.chatgptSteps")}
             </div>
           </div>
         </div>

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { quickCapture, type Space } from "../../lib/tauri";
 
 interface AddMemoryFormProps {
@@ -9,6 +10,7 @@ interface AddMemoryFormProps {
 }
 
 export default function AddMemoryForm({ spaces, onClose }: AddMemoryFormProps) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [content, setContent] = useState("");
   const [domain, setDomain] = useState("");
@@ -51,7 +53,7 @@ export default function AddMemoryForm({ spaces, onClose }: AddMemoryFormProps) {
           value={content}
           onChange={(e) => setContent(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="What do you want to remember?"
+          placeholder={t("addMemory.placeholder")}
           autoFocus
           rows={3}
           className="w-full bg-transparent resize-none outline-none placeholder:text-[var(--mem-text-tertiary)]"
@@ -65,7 +67,7 @@ export default function AddMemoryForm({ spaces, onClose }: AddMemoryFormProps) {
         <div className="flex items-center justify-between mt-3 pt-3" style={{ borderTop: "1px solid var(--mem-border)" }}>
           <div className="flex items-center gap-2">
             <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-tertiary)" }}>
-              Space:
+              {t("addMemory.spaceLabel")}
             </span>
             <select
               value={domain}
@@ -77,7 +79,7 @@ export default function AddMemoryForm({ spaces, onClose }: AddMemoryFormProps) {
                 color: "var(--mem-text-secondary)",
               }}
             >
-              <option value="">No space</option>
+              <option value="">{t("addMemory.noSpace")}</option>
               {spaces.map((s) => (
                 <option key={s.id} value={s.name}>{s.name}</option>
               ))}
@@ -92,7 +94,7 @@ export default function AddMemoryForm({ spaces, onClose }: AddMemoryFormProps) {
                 color: "var(--mem-text-tertiary)",
               }}
             >
-              Cancel
+              {t("addMemory.cancel")}
             </button>
             <button
               onClick={() => content.trim() && mutation.mutate()}
@@ -105,7 +107,7 @@ export default function AddMemoryForm({ spaces, onClose }: AddMemoryFormProps) {
                 backgroundColor: "var(--mem-accent-indigo)",
               }}
             >
-              Save
+              {t("addMemory.save")}
             </button>
           </div>
         </div>
