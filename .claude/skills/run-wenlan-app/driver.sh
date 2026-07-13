@@ -33,6 +33,20 @@ case "${1:-}" in
     curl -s -o /dev/null -w 'vite: %{http_code}\n' http://localhost:1420/
     ;;
   launch)
+    # The app inherits this shell's seatbelt sandbox, and the sandbox denies
+    # the mach lookup for the ViewBridge XPC service that backs NSOpenPanel.
+    # The app starts fine and dies hours later, on the first file/folder
+    # picker: +[NSOpenPanel openPanel] returns NULL and objc2 panics, taking
+    # the whole process with it — far enough from the launch to look like a
+    # product bug. pbpaste needs the same class of mach lookup, so it is a
+    # free canary for "this shell is sandboxed".
+    if ! /usr/bin/pbpaste >/dev/null 2>&1; then
+      echo "REFUSING TO LAUNCH: this shell is sandboxed." >&2
+      echo "The app would inherit the sandbox and hard-crash on the first" >&2
+      echo "file/folder picker (NSOpenPanel -> NULL -> panic). Re-run this" >&2
+      echo "command with the sandbox disabled." >&2
+      exit 1
+    fi
     "$0" vite
     [ -x "$BIN" ] || "$0" build
     # Launch the binary directly: spawning through the pnpm/tauri chain in a
