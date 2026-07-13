@@ -276,3 +276,106 @@ carry `aria-pressed`.
 Every load-bearing test must be mutation-proven: break the product code, watch the test
 fail, paste the failure, revert with a **targeted edit** — never
 `git checkout HEAD -- <file>`.
+
+---
+
+# Round 2 (2026-07-13): decide → do → prove
+
+Round 1 split Connect (ask) from Setting up (act). Reviewing it, Lucian asked the
+obvious question: if step 5 only redoes what step 4 selected, why is it a step at
+all? The answer is that step 5 was scoped too narrowly. The wizard was internally
+inconsistent — **step 2 acted (and blocked), step 3 pretended, step 4 asked, step 5
+acted.** Round 2 makes every step 2–4 a pure choice and step 5 the only place work
+happens, with each row proving itself.
+
+## The flow
+
+```
+Welcome → Intelligence (choose) → Import (choose) → Connect (choose) → Setting up (do + prove) → Done
+```
+
+Steps 2–4 all now share one shape: **detect what the user has, offer it, write nothing.**
+Step 4 already did this. Step 2 and 3 now do too.
+
+## Step 5's rows, and what each one actually proves
+
+| Row | Proves | How |
+| --- | --- | --- |
+| Wenlan runtime | daemon is *running*, with a version | `wire_state().daemon` |
+| On-device model | model is **loaded**, not merely downloaded | `OnDeviceModelResponse.loaded` is `Some(id)` (`api.rs:96`) |
+| Import (vault/folder) | N files actually ingested | `SyncStats { files_found, ingested, skipped, errors }` |
+| Each tool | plugin installed / config written | `wire_state().clients[].route` + `has_plugin` / `has_raw_entry` |
+| First agent write | **the whole chain works end to end** | an agent's `last_seen_at > wizardEnteredAt` |
+
+The last row is the only one that proves the product, rather than proving we made a
+call. It is the row nobody else's onboarding has. Keep it last, keep it honest.
+
+## Three findings that shaped this, all verified, one of them a correction
+
+**1. The model download can be deferred cheaply, and CAN be verified.**
+`download_on_device_model` (`search.rs:3673` → `api.rs:618`) is a plain awaited POST
+returning `()`. No progress events are emitted anywhere in the app;
+`IntelligenceSetup.tsx:273` just flips a `downloading` boolean into a spinner. So
+there is no percentage today and none is lost by moving it. But
+`OnDeviceModelResponse` carries `loaded: Option<String>`, so the daemon *does* tell
+us which model is live — the row can assert **loaded**, not just cached.
+
+**2. Import is a real capability. The step was hollow, not the feature.**
+`detectObsidianVaults()` reads Obsidian's own registry and returns the user's actual
+vaults by name; `addSource(type, path)` → `syncRegisteredSource(id)` returns
+`SyncStats`. So step 3 can do exactly what step 4 does — show you *your* vaults —
+and step 5 can report "1,247 indexed, 13 skipped". The step was never wired to any
+of it: its Continue and its Skip were literally the same handler (`onClick: onSkip`).
+
+**3. CORRECTION — import cannot show a real progress bar.**
+An earlier claim in this thread said it could. It cannot. `files_total` is written in
+exactly ONE place, `indexer.rs:67` (the app's own Obsidian push path), and
+`merge_daemon_status` (`search.rs:681`) overwrites `files_indexed` from the daemon
+but **never sets `files_total`**. For a daemon-driven `syncRegisteredSource` the
+denominator stays 0, and the sync is a single await that only yields `SyncStats` at
+the end — so there is no numerator mid-flight either. **The import row is a spinner
+plus honest final counts.** A real bar needs the daemon to stream progress, which is
+the other repo. Do not fake it: the task list IS the progress indicator, and it tells
+the user *what* is happening rather than a made-up *how much*.
+
+## Why there is a "Wenlan runtime" row at all
+
+Found live, on Lucian's machine, mid-design: **the daemon was not running.** No
+process, no listener on `:7878`, no LaunchAgent, nothing loaded in `launchctl` —
+while `~/.wenlan/bin/wenlan-server` sat installed on disk. `doctor` confirmed:
+"Wenlan daemon is not reachable." Every Wenlan MCP tool on the machine was dead.
+
+The wizard had been connecting clients to a daemon it never ensured was running.
+`doctor` even names the missing step (`wenlan install`), and onboarding never did it.
+That is precisely the "we wrote the config" vs "it works" gap this whole redesign
+exists to close, so the runtime row goes **first** — nothing downstream can be true
+if it is false.
+
+## `wire_state()`: one query, two surfaces
+
+The wizard's verification and the "what is actually wired?" dev question are the same
+query. Build it once:
+
+- `daemon` — base_url, reachable, version, error
+- `mcp_binary` — the resolved command/args **plus the candidate trail**: every path
+  tried, in order, each with `exists: true|false`
+- `clients[]` — detected, config_path, has_raw_entry, has_plugin, and `route`
+  (`plugin` | `config` | `skip`)
+
+**Step 5 renders it as live progress. Settings → Diagnostics renders it as a report**
+the user can read any time or paste into a bug.
+
+The candidate *trail* is the point, not the answer. The bug that started this round —
+`wenlan-mcp` resolved to a `cargo clean`-ed build artifact and written into a real
+user's `claude_desktop_config.json` — was invisible precisely because the app only
+ever knew the answer. A trail renders it as
+`~/Repos/wenlan/target/release/wenlan-mcp (MISSING)` in red, and the debugging session
+that cost an evening becomes five seconds.
+
+## Scope judgment: chat export is secondary
+
+Chat-history import requires the user to have *already exported* their data from
+OpenAI/Anthropic, which can take days to arrive. Leading with it sets up a dead end.
+The detected-vault/folder path is primary (instant, and it is where the user's
+knowledge actually lives); chat export stays as an "if you already have the file"
+option, with Settings as the place to do it later.
