@@ -1951,6 +1951,52 @@ export async function installClientPlugin(clientType: PluginInstallClientType): 
   return invoke("install_client_plugin", { clientType });
 }
 
+// ===== Wire State (real, resolved wiring — wizard progress + Diagnostics) =====
+
+export interface DaemonWire {
+  base_url: string;
+  reachable: boolean;
+  version: string | null;
+  error: string | null;
+}
+
+export interface BinaryCandidate {
+  path: string;
+  exists: boolean;
+  source: "WENLAN_MCP_DEV_BIN" | "installed" | "bundled" | "cargo";
+}
+
+export interface BinaryWire {
+  command: string;
+  args: string[];
+  candidates: BinaryCandidate[];
+}
+
+export interface ClientWire {
+  client_type: string;
+  name: string;
+  detected: boolean;
+  config_path: string;
+  has_raw_entry: boolean;
+  has_plugin: boolean;
+  route: "plugin" | "config" | "skip";
+}
+
+export interface WireState {
+  daemon: DaemonWire;
+  mcp_binary: BinaryWire;
+  clients: ClientWire[];
+}
+
+/** The real, resolved wiring of Wenlan on this machine: daemon
+ *  reachability, the `wenlan-mcp` binary that would actually be written into
+ *  a client config (with the full candidate trail — missing paths included,
+ *  never silently dropped), and per-client MCP routing. Never rejects on a
+ *  down daemon (`daemon.reachable: false` instead). */
+export async function getWireState(): Promise<WireState> {
+  return invoke("wire_state");
+}
+
 // ===== Onboarding Journey Milestones =====
 
 export type MilestoneId =

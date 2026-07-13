@@ -24,6 +24,7 @@ pub mod system_info;
 #[allow(dead_code)]
 pub(crate) mod tray_health;
 mod updater;
+pub mod wire_state;
 
 use state::AppState;
 use std::sync::Arc;
@@ -913,6 +914,7 @@ pub fn run() {
             search::write_mcp_config,
             search::get_wenlan_mcp_entry,
             search::install_client_plugin,
+            search::wire_state,
             // Entity suggestion commands
             search::get_entity_suggestions_cmd,
             search::approve_entity_suggestion_cmd,

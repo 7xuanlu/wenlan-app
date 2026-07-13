@@ -393,6 +393,23 @@ pub async fn install_client_plugin(client_type: String) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+/// The real, resolved wiring of Wenlan on this machine — daemon
+/// reachability, the `wenlan-mcp` binary that would actually be written into
+/// a client config (with the full candidate trail, missing paths included),
+/// and per-client MCP routing. Backs the wizard's "Setting up" step and
+/// Settings → Diagnostics. Never rejects on a down daemon — see
+/// `wire_state::compute`.
+#[tauri::command]
+pub async fn wire_state(
+    state: tauri::State<'_, State>,
+) -> Result<crate::wire_state::WireState, String> {
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+    Ok(crate::wire_state::compute(&client).await)
+}
+
 // ── Activity commands (file-based, local) ─────────────────────────────
 
 #[tauri::command]

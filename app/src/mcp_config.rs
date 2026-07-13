@@ -257,6 +257,42 @@ fn codex_cli_detected(
             .any(|p| exists(p.as_path()))
 }
 
+/// Whether `client_type`'s own config file has a raw wenlan/origin
+/// `mcpServers` (or Codex's `[mcp_servers.*]`) entry — the file-based half of
+/// what `detect_mcp_clients` folds into a single `already_configured` bool.
+/// `wire_state` needs the two halves kept apart: a raw entry and a missing
+/// plugin point at different fixes. Same "exists + parses + has the key"
+/// logic as `detect_mcp_clients`'s own `config_has_entry` closure — sharing
+/// `has_configured_entry`/`has_configured_entry_toml` keeps the two readings
+/// from drifting.
+pub(crate) fn client_config_has_raw_entry(client_type: &str, config_path: &Path) -> bool {
+    if !config_path.exists() {
+        return false;
+    }
+    std::fs::read_to_string(config_path)
+        .map(|s| {
+            if client_type == "codex_cli" {
+                has_configured_entry_toml(&s)
+            } else {
+                has_configured_entry(&s)
+            }
+        })
+        .unwrap_or(false)
+}
+
+/// Whether `client_type`'s Wenlan plugin is enabled — the plugin half of
+/// `already_configured` for the three clients that support one. `cursor` and
+/// `gemini_cli` have no plugin path, so they're always `false` here (and
+/// route to `"config"` in `wire_state`, never `"plugin"`).
+pub(crate) fn client_plugin_enabled(client_type: &str) -> bool {
+    match client_type {
+        "claude_code" => claude_code_plugin_enabled_on_disk(),
+        "codex_cli" => codex_cli_plugin_enabled_on_disk(),
+        "claude_desktop" => claude_desktop_plugin_enabled_on_disk(),
+        _ => false,
+    }
+}
+
 /// Detect installed MCP-compatible tools and whether Wenlan is already configured.
 pub fn detect_mcp_clients() -> Vec<McpClient> {
     let clients = [
@@ -369,32 +405,47 @@ fn pinned_wenlan_mcp_package(pin_file: &str) -> String {
     format!("wenlan-mcp@^{version}")
 }
 
-/// Where a real `wenlan-mcp` binary can live, most-specific first. Mirrors the
-/// plugin's own `wenlan-mcp-runner.sh` resolution order.
+/// Each `wenlan-mcp` candidate paired with where it came from, most-specific
+/// first — the single source of truth `wenlan_mcp_candidates` (the plain
+/// path list `find_wenlan_mcp_binary` resolves against) and `wire_state`'s
+/// candidate trail both derive from, so the two can never disagree about
+/// what was tried. Mirrors the plugin's own `wenlan-mcp-runner.sh`
+/// resolution order.
 ///
 /// Deliberately does *not* probe a cargo target dir. `~/Repos/wenlan/target/release`
 /// used to rank above the installed binary here, so the wizard baked a maintainer's
 /// build-artifact path into real users' client configs — and the entry died the next
 /// `cargo clean`. A target dir is a build output, not an install location.
+pub(crate) fn wenlan_mcp_candidate_sources(
+    home: Option<&Path>,
+    dev_bin: Option<&str>,
+    exe_dir: Option<&Path>,
+) -> Vec<(PathBuf, &'static str)> {
+    let mut candidates = Vec::new();
+    if let Some(dev_bin) = dev_bin.filter(|p| !p.trim().is_empty()) {
+        candidates.push((PathBuf::from(dev_bin), "WENLAN_MCP_DEV_BIN"));
+    }
+    if let Some(home) = home {
+        candidates.push((home.join(".wenlan/bin/wenlan-mcp"), "installed"));
+    }
+    if let Some(exe_dir) = exe_dir {
+        candidates.push((exe_dir.join("wenlan-mcp"), "bundled"));
+    }
+    if let Some(home) = home {
+        candidates.push((home.join(".cargo/bin/wenlan-mcp"), "cargo"));
+    }
+    candidates
+}
+
 fn wenlan_mcp_candidates(
     home: Option<&Path>,
     dev_bin: Option<&str>,
     exe_dir: Option<&Path>,
 ) -> Vec<PathBuf> {
-    let mut candidates = Vec::new();
-    if let Some(dev_bin) = dev_bin.filter(|p| !p.trim().is_empty()) {
-        candidates.push(PathBuf::from(dev_bin));
-    }
-    if let Some(home) = home {
-        candidates.push(home.join(".wenlan/bin/wenlan-mcp"));
-    }
-    if let Some(exe_dir) = exe_dir {
-        candidates.push(exe_dir.join("wenlan-mcp"));
-    }
-    if let Some(home) = home {
-        candidates.push(home.join(".cargo/bin/wenlan-mcp"));
-    }
-    candidates
+    wenlan_mcp_candidate_sources(home, dev_bin, exe_dir)
+        .into_iter()
+        .map(|(path, _source)| path)
+        .collect()
 }
 
 fn find_wenlan_mcp_binary() -> Option<PathBuf> {

@@ -188,6 +188,25 @@ impl WenlanClient {
         format!("{}{}", self.base_url, path)
     }
 
+    /// The base URL a reachability check runs against — exposed for
+    /// `wire_state`, which reports it verbatim in `DaemonWire`.
+    pub fn base_url(&self) -> &str {
+        &self.base_url
+    }
+
+    /// Points a client at an arbitrary `base_url` instead of the real daemon
+    /// port. Test-only: lets `wire_state`'s tests exercise an unreachable
+    /// daemon without touching the process-global `WENLAN_PORT`/`ORIGIN_PORT`
+    /// env vars `WenlanClient::new()` reads (shared with every other test in
+    /// this binary — see `env_lock` below).
+    #[cfg(test)]
+    pub(crate) fn with_base_url(base_url: String) -> Self {
+        Self {
+            client: build_http_client(CONNECT_TIMEOUT, REQUEST_TIMEOUT),
+            base_url,
+        }
+    }
+
     // ── Generic helpers ─────────────────────────────────────────────
 
     pub async fn get_json<T: DeserializeOwned>(&self, path: &str) -> Result<T, String> {
