@@ -438,6 +438,15 @@ export async function downloadOnDeviceModel(modelId: string): Promise<void> {
   return invoke("download_on_device_model", { modelId });
 }
 
+/** Bytes downloaded so far for an in-flight on-device model download, read
+ *  from the hf-hub cache's in-progress `.part` file. `null` when no download
+ *  is in progress. There is no reliable total to compare this against — see
+ *  callers for how the estimated file size is used only as a rough, always
+ *  under-run, denominator. */
+export async function onDeviceModelDownloadBytes(): Promise<number | null> {
+  return invoke("on_device_model_download_bytes");
+}
+
 export interface ActivitySummary {
   id: string;
   started_at: number;

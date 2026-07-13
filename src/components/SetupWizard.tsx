@@ -9,6 +9,7 @@ import {
   getWireState,
   downloadOnDeviceModel,
   getOnDeviceModel,
+  onDeviceModelDownloadBytes,
   addSource,
   syncRegisteredSource,
   type McpClient,
@@ -751,6 +752,30 @@ function taskRowDescId(rowId: string): string {
   return `setting-up-desc-${rowId}`;
 }
 
+function modelProgressDescId(rowId: string): string {
+  return `setting-up-progress-${rowId}`;
+}
+
+/** One {time, bytes} sample from the download-bytes poll. */
+interface ByteSample {
+  t: number;
+  bytes: number;
+}
+
+/** Bytes/sec between the oldest and newest kept sample, or `null` when there
+ *  aren't at least two distinct samples yet, or the elapsed time or delta
+ *  isn't positive (a stall or a clock/poll hiccup — never divide by ~0 or
+ *  report a negative rate). */
+function downloadRateBytesPerSec(samples: ByteSample[]): number | null {
+  if (samples.length < 2) return null;
+  const first = samples[0];
+  const last = samples[samples.length - 1];
+  const elapsedSec = (last.t - first.t) / 1000;
+  if (elapsedSec <= 0) return null;
+  const rate = (last.bytes - first.bytes) / elapsedSec;
+  return rate > 0 ? rate : null;
+}
+
 const STATUS_COLOR: Record<TaskStatus, string> = {
   pending: "var(--mem-text-tertiary)",
   running: "var(--mem-text-secondary)",
@@ -941,20 +966,31 @@ function SettingUpStep({
   }, [rows, runRow]);
 
   // On-device model proof: poll until `loaded` matches what was chosen.
-  // No percentage — the daemon reports no progress fraction mid-download,
-  // so a spinner is the only honest signal until `loaded` flips.
+  //
+  // Runs from the moment the row starts, NOT from when downloadOnDeviceModel()
+  // resolves. That call is a single blocking request that only returns once the
+  // download AND engine init have finished — minutes later. Gating this poll on
+  // it meant `modelPoll` was undefined for the entire download, so `modelEntry`
+  // was too, and every screen that needs the catalog mid-download (the size, the
+  // Downloading-vs-Loading split, the byte progress bar) silently fell back to
+  // generic copy. The download phase was unreachable in the app while rendering
+  // fine under a mocked query in tests.
   const { data: modelPoll } = useQuery({
     queryKey: ["onDeviceModel", "wizard-setup-proof"],
     queryFn: getOnDeviceModel,
-    enabled: modelDownloadStarted,
+    enabled: statuses[MODEL_ROW_ID] === "running" || modelDownloadStarted,
     refetchInterval: 1500,
   });
   useEffect(() => {
-    if (!pendingModelId || !modelPoll) return;
+    // The done-flip stays gated on modelDownloadStarted — that is what the gate
+    // above was actually protecting: a poll landing before the download call
+    // returns could otherwise see a `loaded` left over from a previous model and
+    // mark the row done without this download ever finishing.
+    if (!pendingModelId || !modelPoll || !modelDownloadStarted) return;
     if (modelPoll.loaded === pendingModelId) {
       setStatuses((prev) => (prev[MODEL_ROW_ID] === "done" ? prev : { ...prev, [MODEL_ROW_ID]: "done" }));
     }
-  }, [modelPoll, pendingModelId]);
+  }, [modelPoll, pendingModelId, modelDownloadStarted]);
 
   const { data: agents } = useQuery({
     queryKey: ["agents"],
@@ -992,6 +1028,51 @@ function SettingUpStep({
   const modelEntry = modelPoll?.models.find((m) => m.id === pendingModelId);
   const modelDownloading = statuses[MODEL_ROW_ID] === "running" && !modelEntry?.cached;
 
+  // The registry's `file_size_gb` is a rounded-up hand estimate, not the real
+  // blob size — so it can only ever make the bar run early, never overshoot.
+  // We read the true numerator (bytes actually on disk, from the hf-hub
+  // cache's in-progress `.part` file) but must never claim a total: no "of
+  // 2.7 GB" label, no bar that reaches 100% off this estimate alone. The row
+  // only ever flips to done from the real `loaded` poll above, never because
+  // this bar reached its end.
+  const { data: downloadBytes } = useQuery({
+    queryKey: ["onDeviceModel", "download-bytes"],
+    queryFn: onDeviceModelDownloadBytes,
+    enabled: modelDownloading,
+    refetchInterval: 1000,
+  });
+
+  // A short rolling window, not the whole history: an average diluted by
+  // stale samples from a slow start would lag a rate change. Cleared the
+  // moment the phase ends so a re-download never opens on stale samples.
+  const [byteSamples, setByteSamples] = useState<ByteSample[]>([]);
+  useEffect(() => {
+    if (!modelDownloading) {
+      setByteSamples([]);
+      return;
+    }
+    if (downloadBytes == null) return;
+    setByteSamples((prev) => [...prev, { t: Date.now(), bytes: downloadBytes }].slice(-5));
+  }, [modelDownloading, downloadBytes]);
+
+  const downloadedGB = downloadBytes != null ? downloadBytes / 1e9 : null;
+  // Gated on modelEntry the same way modelDownloadingSub already is below:
+  // without it we have no estimated total, so there's nothing to derive a
+  // fraction or an ETA from — only the existing modelSub/modelDownloadingSub
+  // fallback copy applies there.
+  const estimatedTotalBytes = modelEntry ? modelEntry.file_size_gb * 1e9 : null;
+  const downloadRate = downloadRateBytesPerSec(byteSamples);
+  const downloadEtaSeconds =
+    downloadRate != null && estimatedTotalBytes != null && downloadBytes != null
+      ? Math.max(0, (estimatedTotalBytes - downloadBytes) / downloadRate)
+      : null;
+  // Clamped below 100% even though the estimate can only run early: an
+  // honest bar never visually finishes on an estimate, only on `loaded`.
+  const downloadProgressFraction =
+    estimatedTotalBytes && downloadBytes != null
+      ? Math.min(downloadBytes / estimatedTotalBytes, 0.97)
+      : null;
+
   const labelOf = (row: TaskRow): string => {
     if (row.kind === "daemon") return t("setup.settingUp.daemonLabel");
     if (row.kind === "model") return t("setup.settingUp.modelLabel");
@@ -1010,6 +1091,16 @@ function SettingUpStep({
         return t("setup.settingUp.modelDoneSub", { model: pendingModelId ?? "" });
       }
       if (modelDownloading) {
+        if (modelEntry && downloadedGB != null) {
+          const done = downloadedGB.toFixed(1);
+          if (downloadEtaSeconds != null) {
+            const minutes = Math.round(downloadEtaSeconds / 60);
+            return minutes < 1
+              ? t("setup.settingUp.modelProgressSoon", { done })
+              : t("setup.settingUp.modelProgressMinutes", { done, minutes });
+          }
+          return t("setup.settingUp.modelProgress", { done });
+        }
         return modelEntry
           ? t("setup.settingUp.modelDownloadingSub", { size: modelEntry.file_size_gb })
           : t("setup.settingUp.modelSub");
@@ -1212,6 +1303,7 @@ function SettingUpStep({
                     {/* Prose, not data — these are sentences. Mono is reserved
                         for the machine-state column on the right. */}
                     <p
+                      id={row.kind === "model" ? modelProgressDescId(row.id) : undefined}
                       style={{
                         fontFamily: "var(--mem-font-body)",
                         fontSize: "var(--mem-text-sm)",
@@ -1222,6 +1314,41 @@ function SettingUpStep({
                     >
                       {subOf(row)}
                     </p>
+                    {/* Only once we have a real numerator AND an estimated
+                        total (both gated above) — never a bar with nothing
+                        behind it. Bytes-unavailable falls back to exactly
+                        today's indeterminate rail glint further left, not to
+                        a bar stuck at 0%. */}
+                    {row.kind === "model" &&
+                      modelDownloading &&
+                      downloadProgressFraction != null && (
+                        <div
+                          role="progressbar"
+                          aria-valuemin={0}
+                          aria-valuemax={100}
+                          aria-valuenow={Math.round(downloadProgressFraction * 100)}
+                          aria-valuetext={subOf(row)}
+                          aria-describedby={modelProgressDescId(row.id)}
+                          style={{
+                            marginTop: "8px",
+                            height: "4px",
+                            borderRadius: "var(--mem-radius-full)",
+                            backgroundColor: "var(--mem-border)",
+                            overflow: "hidden",
+                          }}
+                        >
+                          <div
+                            aria-hidden="true"
+                            style={{
+                              height: "100%",
+                              width: `${downloadProgressFraction * 100}%`,
+                              borderRadius: "var(--mem-radius-full)",
+                              backgroundColor: "var(--mem-accent-sage)",
+                              transition: "width var(--mem-dur-fast) ease",
+                            }}
+                          />
+                        </div>
+                      )}
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <span

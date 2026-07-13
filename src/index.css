@@ -225,10 +225,13 @@ body {
 }
 
 /* A running task's rail segment carries a travelling highlight. The daemon
-   reports no fraction for a model download or a folder ingest, so there is no
-   honest numerator to fill a progress bar with — a moving glint says "this is
-   alive" without claiming to know how far along it is. Reduced motion keeps a
-   static tint, so the row still reads as active rather than stalled. */
+   itself reports no fraction for a model download or a folder ingest — a
+   model download's own byte progress, when available, gets a dedicated
+   determinate bar instead (see SetupWizard's model row) — so this remains
+   the fallback for every row that has no numerator at all: a moving glint
+   says "this is alive" without claiming to know how far along it is.
+   Reduced motion keeps a static tint, so the row still reads as active
+   rather than stalled. */
 @keyframes mem-rail-flow {
   from { background-position: 0 0; }
   to   { background-position: 0 52px; }

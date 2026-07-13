@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, within, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, within, fireEvent, waitFor, act } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SetupWizard } from "./SetupWizard";
 import { i18n } from "../i18n";
@@ -39,6 +39,7 @@ vi.mock("../lib/tauri", () => ({
     }],
   }),
   downloadOnDeviceModel: vi.fn().mockResolvedValue(undefined),
+  onDeviceModelDownloadBytes: vi.fn().mockResolvedValue(null),
   getSystemInfo: vi.fn().mockResolvedValue({
     total_ram_gb: 16,
     available_ram_gb: 10,
@@ -87,6 +88,7 @@ import {
   getWireState,
   getOnDeviceModel,
   downloadOnDeviceModel,
+  onDeviceModelDownloadBytes,
   detectObsidianVaults,
   addSource,
   syncRegisteredSource,
@@ -143,6 +145,7 @@ describe("SetupWizard", () => {
       clients: [],
     });
     (detectObsidianVaults as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (onDeviceModelDownloadBytes as ReturnType<typeof vi.fn>).mockResolvedValue(null);
   });
 
   it("renders Welcome step by default", () => {
@@ -1036,6 +1039,38 @@ describe("SetupWizard", () => {
     expect(screen.getByTestId("task-status-on-device-model")).toHaveTextContent("Loading…");
   });
 
+  // REACHABILITY, not just behavior. Every other test here mocks
+  // downloadOnDeviceModel as resolving immediately — but the real command is a
+  // single blocking request that only returns once the download AND engine init
+  // have finished, minutes later. The model catalog poll used to be gated on
+  // that promise resolving, so for the whole download `modelPoll` was undefined,
+  // `modelEntry` with it, and the progress bar could never render in the app —
+  // while every mocked test rendered it fine. This drives the state the user
+  // actually sits in: the download PENDING, forever.
+  it("renders byte progress while the download request is still pending (never resolves)", async () => {
+    (downloadOnDeviceModel as ReturnType<typeof vi.fn>).mockReturnValue(new Promise(() => {}));
+    (getOnDeviceModel as ReturnType<typeof vi.fn>).mockResolvedValue({
+      loaded: null,
+      selected: "qwen3-4b-instruct-2507",
+      models: [{
+        id: "qwen3-4b-instruct-2507",
+        display_name: "Qwen3 4B",
+        param_count: "4B",
+        ram_required_gb: 8,
+        file_size_gb: 2.7,
+        cached: false,
+      }],
+    });
+    (onDeviceModelDownloadBytes as ReturnType<typeof vi.fn>).mockResolvedValue(1_400_000_000);
+
+    renderWizard({ initialStep: "setting-up", initialPendingModelId: "qwen3-4b-instruct-2507" });
+
+    await waitFor(() => {
+      expect(screen.getByText("1.4 GB downloaded")).toBeInTheDocument();
+    });
+    expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "52");
+  });
+
   // Nothing on this step is a gate, but a model download made the screen feel
   // like one until the walk-away note said otherwise. It must track whether
   // any row is actually running, not render unconditionally.
@@ -1079,6 +1114,114 @@ describe("SetupWizard", () => {
       expect(screen.getByTestId("task-status-on-device-model")).toHaveTextContent("Downloading…");
     });
     expect(screen.getByTestId("setting-up-walk-away")).toBeInTheDocument();
+  });
+
+  // ── Byte-based download progress + ETA ──────────────────────────────────
+  // The daemon's own download call reports nothing until it finishes, but the
+  // hf-hub cache's in-progress `.part` file gives a real byte count. These
+  // tests drive that signal through `onDeviceModelDownloadBytes` and check
+  // the exact rendered strings — never just "a progress element exists".
+
+  it("no bytes available: falls back to exactly today's copy, with no progressbar rendered", async () => {
+    (getOnDeviceModel as ReturnType<typeof vi.fn>).mockResolvedValue({
+      loaded: null,
+      selected: "qwen3-4b-instruct-2507",
+      models: [{
+        id: "qwen3-4b-instruct-2507",
+        display_name: "Qwen3 4B",
+        param_count: "4B",
+        ram_required_gb: 8,
+        file_size_gb: 2.7,
+        cached: false,
+      }],
+    });
+    (onDeviceModelDownloadBytes as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+
+    renderWizard({ initialStep: "setting-up", initialPendingModelId: "qwen3-4b-instruct-2507" });
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("Fetching 2.7 GB. Leave it running; it keeps going if you continue."),
+      ).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+  });
+
+  it("bytes available: renders the downloaded amount, then the derived ETA once a second sample lands", async () => {
+    (getOnDeviceModel as ReturnType<typeof vi.fn>).mockResolvedValue({
+      loaded: null,
+      selected: "qwen3-4b-instruct-2507",
+      models: [{
+        id: "qwen3-4b-instruct-2507",
+        display_name: "Qwen3 4B",
+        param_count: "4B",
+        ram_required_gb: 8,
+        file_size_gb: 2.7,
+        cached: false,
+      }],
+    });
+    // 500 MB, then 520 MB one second later — a clean 20 MB/s so the expected
+    // ETA comes out to a round number: (2.7GB - 0.52GB) / 20MB/s = 109s -> 2min.
+    (onDeviceModelDownloadBytes as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(500_000_000)
+      .mockResolvedValueOnce(520_000_000)
+      .mockResolvedValue(520_000_000);
+
+    renderWizard({ initialStep: "setting-up", initialPendingModelId: "qwen3-4b-instruct-2507" });
+
+    // One sample only: a real numerator, but not yet two points to derive a
+    // rate from, so no ETA yet — never a fabricated one from a single sample.
+    await waitFor(() => {
+      expect(screen.getByText("0.5 GB downloaded")).toBeInTheDocument();
+    });
+    let bar = screen.getByRole("progressbar");
+    expect(bar).toHaveAttribute("aria-valuenow", "19"); // round(500e6 / 2.7e9 * 100)
+
+    vi.useFakeTimers();
+    try {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    await waitFor(() => {
+      expect(screen.getByText("0.5 GB downloaded · about 2 min left")).toBeInTheDocument();
+    });
+    bar = screen.getByRole("progressbar");
+    expect(bar).toHaveAttribute("aria-valuenow", "19"); // round(520e6 / 2.7e9 * 100)
+    expect(bar).toHaveAttribute("aria-valuetext", "0.5 GB downloaded · about 2 min left");
+  });
+
+  it("bytes at or past the estimated total: the bar clamps below 100%, never claims done off the estimate alone", async () => {
+    (getOnDeviceModel as ReturnType<typeof vi.fn>).mockResolvedValue({
+      loaded: null,
+      selected: "qwen3-4b-instruct-2507",
+      models: [{
+        id: "qwen3-4b-instruct-2507",
+        display_name: "Qwen3 4B",
+        param_count: "4B",
+        ram_required_gb: 8,
+        file_size_gb: 2.7,
+        cached: false,
+      }],
+    });
+    // Past the registry's rounded-up 2.7 GB estimate — this happens because
+    // the estimate is a hand-rounded number, not the real blob size.
+    (onDeviceModelDownloadBytes as ReturnType<typeof vi.fn>).mockResolvedValue(3_000_000_000);
+
+    renderWizard({ initialStep: "setting-up", initialPendingModelId: "qwen3-4b-instruct-2507" });
+
+    await waitFor(() => {
+      expect(screen.getByRole("progressbar")).toBeInTheDocument();
+    });
+    const bar = screen.getByRole("progressbar");
+    expect(bar).toHaveAttribute("aria-valuenow", "97");
+    expect(bar.firstElementChild).toHaveStyle({ width: "97%" });
+    // Still just "downloaded", never "done" — only the real `loaded` poll
+    // (asserted elsewhere) is allowed to flip the row's own status to Ready.
+    expect(screen.getByTestId("task-status-on-device-model")).toHaveTextContent("Downloading…");
   });
 
   // The first-agent-write moment used to be a task row (WAITING_ROW_ID) inside

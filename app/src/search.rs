@@ -14,6 +14,7 @@ use crate::sources::SourceStatus;
 use crate::state::{AppState, IndexStatus};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -3709,6 +3710,94 @@ mod on_device_model_command_type_tests {
 
     #[test]
     fn on_device_model_command_response_type_is_checked() {}
+}
+
+/// Bytes downloaded so far for an in-flight on-device model download.
+///
+/// The daemon's `/api/on-device-model/download` is one blocking HTTP call
+/// that reports nothing until it finishes, so there is no progress endpoint
+/// to poll. But the daemon downloads via hf-hub's sync API, which streams
+/// each blob into `<blob-etag>.part` with `OpenOptions::append(true)` and no
+/// preallocation, renaming it to `<blob-etag>` only on completion. That
+/// means the `.part` file's size on disk is the true number of bytes
+/// downloaded so far, even though we don't know the file's final size.
+///
+/// This walks the whole hub cache rather than resolving the exact repo id
+/// for the model being downloaded: `OnDeviceModelEntry` carries no repo_id,
+/// and hardcoding the daemon's model registry here would duplicate it. This
+/// is safe because exactly one on-device model download is ever in flight
+/// during the setup wizard.
+fn largest_part_file(hub_dir: &Path) -> Option<u64> {
+    let mut largest: Option<u64> = None;
+    for model_dir in std::fs::read_dir(hub_dir).ok()?.flatten() {
+        let blobs_dir = model_dir.path().join("blobs");
+        let Ok(blob_entries) = std::fs::read_dir(&blobs_dir) else {
+            continue;
+        };
+        for blob_entry in blob_entries.flatten() {
+            let path = blob_entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("part") {
+                continue;
+            }
+            let Ok(metadata) = blob_entry.metadata() else {
+                continue;
+            };
+            let size = metadata.len();
+            largest = Some(largest.map_or(size, |current: u64| current.max(size)));
+        }
+    }
+    largest
+}
+
+/// Returns bytes downloaded so far for an in-flight on-device model
+/// download, or `None` if no download is in progress (or the hf-hub cache
+/// layout has changed). See [`largest_part_file`] for why this is honest
+/// about the numerator (bytes so far) but says nothing about a total.
+#[tauri::command]
+pub fn on_device_model_download_bytes() -> Option<u64> {
+    let hub_dir = dirs::home_dir()?.join(".cache/huggingface/hub");
+    largest_part_file(&hub_dir)
+}
+
+#[cfg(test)]
+mod on_device_model_download_bytes_tests {
+    use super::*;
+
+    #[test]
+    fn returns_none_for_empty_hub_dir() {
+        let hub = tempfile::tempdir().unwrap();
+        assert_eq!(largest_part_file(hub.path()), None);
+    }
+
+    #[test]
+    fn returns_none_when_no_part_files_exist() {
+        let hub = tempfile::tempdir().unwrap();
+        let blobs = hub.path().join("models--org--model").join("blobs");
+        std::fs::create_dir_all(&blobs).unwrap();
+        std::fs::write(blobs.join("completed-etag"), vec![0u8; 999_999]).unwrap();
+
+        assert_eq!(largest_part_file(hub.path()), None);
+    }
+
+    #[test]
+    fn returns_size_of_largest_part_file_across_models() {
+        let hub = tempfile::tempdir().unwrap();
+        let blobs_a = hub.path().join("models--org--model-a").join("blobs");
+        let blobs_b = hub.path().join("models--org--model-b").join("blobs");
+        std::fs::create_dir_all(&blobs_a).unwrap();
+        std::fs::create_dir_all(&blobs_b).unwrap();
+        std::fs::write(blobs_a.join("abc123.part"), vec![0u8; 100]).unwrap();
+        std::fs::write(blobs_b.join("def456.part"), vec![0u8; 500]).unwrap();
+        // A completed blob (no `.part` suffix) must never be counted.
+        std::fs::write(blobs_b.join("completed-etag"), vec![0u8; 999_999]).unwrap();
+
+        assert_eq!(largest_part_file(hub.path()), Some(500));
+    }
+
+    #[test]
+    fn on_device_model_download_bytes_returns_option_u64() {
+        let _: Option<u64> = on_device_model_download_bytes();
+    }
 }
 
 // ── Home delta feed ─────────────────────────────────────────────────────

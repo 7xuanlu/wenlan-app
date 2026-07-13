@@ -36,7 +36,25 @@ const qs = (obj: Record<string, unknown>) => {
   return parts.length ? `?${parts.join("&")}` : "";
 };
 
-const HANDLERS: Record<string, (a: any) => Promise<unknown>> = {
+// --- on-device model download simulation ---
+// Real hf-hub downloads take minutes; the wizard's "setting up" row only
+// needs to prove the honest state machine (running -> cached, loaded set)
+// plays out, so this compresses it to ~25s. Module-level so `get_on_device_model`
+// and `on_device_model_download_bytes` (a separate poll) can both read it.
+const MODEL_DOWNLOAD_DURATION_MS = 25_000;
+// The real Qwen3-4B GGUF blob size in bytes (hf-hub `.part` file), used to cap
+// the simulated byte ramp just under the real total rather than at a round number.
+const MODEL_BLOB_BYTES = 2_497_281_120;
+let downloadStartedAt: number | null = null;
+let downloadingModelId: string | null = null;
+
+function downloadComplete(): boolean {
+  return downloadStartedAt !== null && Date.now() - downloadStartedAt >= MODEL_DOWNLOAD_DURATION_MS;
+}
+
+// Exported (not just module-local) so the parity test below can read the
+// covered-command key sets without re-parsing this file.
+export const HANDLERS: Record<string, (a: any) => Promise<unknown>> = {
   // --- pages (mirrors search.rs exactly) ---
   get_page: async (a) => {
     try {
@@ -169,11 +187,64 @@ const HANDLERS: Record<string, (a: any) => Promise<unknown>> = {
   get_pipeline_status: () => get("/api/debug/pipeline"),
   list_onboarding_milestones: () =>
     get("/api/onboarding/milestones").then((r) => r.milestones ?? r),
+
+  // --- setup wizard: import row (RegisteredSource / SyncStats shapes,
+  // src/lib/tauri.ts) — synthesized rather than proxied to the real daemon,
+  // since a preview click-through must not register a real source or ingest
+  // real files into the maintainer's local database. ---
+  add_source: (a) =>
+    Promise.resolve({
+      id: `preview-source-${enc(a.path)}`,
+      source_type: a.sourceType,
+      path: a.path,
+      status: "Active",
+      last_sync: null,
+      file_count: 0,
+      memory_count: 0,
+    }),
+  sync_registered_source: () =>
+    Promise.resolve({
+      files_found: 12,
+      ingested: 12,
+      skipped: 0,
+      errors: 0,
+    }),
+
+  // --- setup wizard: on-device model row (OnDeviceModelResponse shape,
+  // src/lib/tauri.ts). Dynamic, not a DEFAULTS literal: the download-progress
+  // state below has to be visible through here for the ramp to render at all
+  // — see MODEL_DOWNLOAD_DURATION_MS above. ---
+  download_on_device_model: async (a) => {
+    downloadStartedAt = Date.now();
+    downloadingModelId = String(a.modelId);
+    await new Promise((resolve) => setTimeout(resolve, MODEL_DOWNLOAD_DURATION_MS));
+  },
+  get_on_device_model: async () => {
+    const complete = downloadComplete();
+    const cachedFor = (id: string) => (id === downloadingModelId ? complete : true);
+    return {
+      loaded: complete ? downloadingModelId : null,
+      selected: downloadingModelId,
+      models: [
+        { id: "qwen3-4b", display_name: "Qwen 3 4B", param_count: "4B", ram_required_gb: 3.0, file_size_gb: 2.7, cached: cachedFor("qwen3-4b") },
+        { id: "qwen3.5-9b", display_name: "Qwen 3.5 9B", param_count: "9B", ram_required_gb: 6.0, file_size_gb: 5.5, cached: cachedFor("qwen3.5-9b") },
+      ],
+    };
+  },
+  // The byte count an in-flight hf-hub download has written so far (stats
+  // `~/.cache/huggingface/hub/models--*/blobs/<etag>.part`), or null when
+  // nothing is downloading. Ramps so a progress bar has something to show;
+  // reaches the cap right around when the download above resolves.
+  on_device_model_download_bytes: async () => {
+    if (downloadStartedAt === null) return null;
+    const elapsedSeconds = (Date.now() - downloadStartedAt) / 1000;
+    return Math.min(elapsedSeconds * 100e6, MODEL_BLOB_BYTES);
+  },
 };
 
 // App-local commands (no daemon route) → static defaults that route the UI
 // to the main screen and render panels empty rather than crashing.
-const DEFAULTS: Record<string, unknown> = {
+export const DEFAULTS: Record<string, unknown> = {
   should_show_wizard: false,
   get_setup_completed: true,
   // Shapes below mirror src/lib/tauri.ts exactly. A stub that returns null or the
@@ -204,14 +275,6 @@ const DEFAULTS: Record<string, unknown> = {
   get_api_key: null,
   get_model_choice: [null, null],
   get_external_llm: [null, null],
-  get_on_device_model: {
-    loaded: null,
-    selected: null,
-    models: [
-      { id: "qwen3-4b", display_name: "Qwen 3 4B", param_count: "4B", ram_required_gb: 3.0, file_size_gb: 2.7, cached: true },
-      { id: "qwen3.5-9b", display_name: "Qwen 3.5 9B", param_count: "9B", ram_required_gb: 6.0, file_size_gb: 5.5, cached: true },
-    ],
-  },
   get_system_info: null,
   get_remote_access_status: { status: "off" },
   // The five clients a real machine actually reports (this is verbatim what
@@ -227,6 +290,40 @@ const DEFAULTS: Record<string, unknown> = {
     { name: "Codex CLI", client_type: "codex_cli", config_path: "~/.codex/config.toml", detected: true, already_configured: true },
     { name: "Claude Code", client_type: "claude_code", config_path: "~/.claude.json", detected: true, already_configured: false },
   ],
+  // WireState (src/lib/tauri.ts) — the "setting up" step's daemon row reads
+  // `wire.daemon.reachable` unguarded (app/src/wire_state.rs never returns
+  // null, so the frontend never null-checks it either); a stub that omits
+  // the field crashes the step instead of rendering it. `mcp_binary` and
+  // `clients` mirror a real resolved machine: an installed binary (plus the
+  // rest of app/src/mcp_config.rs's candidate trail, missing paths included
+  // per wire_state.rs's own docs), and the same 5 clients as
+  // `detect_mcp_clients_cmd` above, routed the way app/src/wire_state.rs's
+  // `route_for` actually routes them (`claude_code`/`codex_cli` always to
+  // "plugin", the rest to "config" unless already configured).
+  wire_state: {
+    daemon: {
+      base_url: "http://127.0.0.1:7878",
+      reachable: true,
+      version: "0.12.0",
+      error: null,
+    },
+    mcp_binary: {
+      command: "/Users/preview/.wenlan/bin/wenlan-mcp",
+      args: [],
+      candidates: [
+        { path: "/Users/preview/.wenlan/bin/wenlan-mcp", exists: true, source: "installed" },
+        { path: "/Applications/Wenlan.app/Contents/MacOS/wenlan-mcp", exists: false, source: "bundled" },
+        { path: "/Users/preview/.cargo/bin/wenlan-mcp", exists: false, source: "cargo" },
+      ],
+    },
+    clients: [
+      { client_type: "cursor", name: "Cursor", detected: true, config_path: "~/.cursor/mcp.json", has_raw_entry: false, has_plugin: false, route: "config" },
+      { client_type: "claude_desktop", name: "Claude Desktop", detected: true, config_path: "~/Library/Application Support/Claude/claude_desktop_config.json", has_raw_entry: false, has_plugin: false, route: "config" },
+      { client_type: "gemini_cli", name: "Gemini CLI", detected: true, config_path: "~/.gemini/settings.json", has_raw_entry: false, has_plugin: false, route: "config" },
+      { client_type: "codex_cli", name: "Codex CLI", detected: true, config_path: "~/.codex/config.toml", has_raw_entry: false, has_plugin: true, route: "plugin" },
+      { client_type: "claude_code", name: "Claude Code", detected: true, config_path: "~/.claude.json", has_raw_entry: false, has_plugin: false, route: "plugin" },
+    ],
+  },
   get_wenlan_mcp_entry: null,
   get_avatar_data_url: null,
   get_knowledge_path: null,

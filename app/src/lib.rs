@@ -967,6 +967,7 @@ pub fn run() {
             // On-device model commands
             search::get_on_device_model,
             search::download_on_device_model,
+            search::on_device_model_download_bytes,
             // Lifecycle commands
             search::is_run_at_login_enabled,
             search::set_run_at_login,
