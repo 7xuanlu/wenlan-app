@@ -188,11 +188,22 @@ export default function AnyProviderCard({ groups }: { groups?: PresetGroup[] }) 
     ? localQueryModels.length >= 1
     : preset.keyRequired && models.length >= 1;
   const effectiveModels = localQuery ? localQueryModels : models;
-  // A keyed cloud vendor's /models call is a guaranteed failure with no key
-  // at all — expected, not worth surfacing as an error. "A key" means either
-  // typed right now or already stored server-side; presets with no key
-  // requirement (local/custom) are never held back by this.
-  const keyPresent = !preset.keyRequired || apiKey.trim() !== "" || keyConfigured === true;
+  // The daemon never exposes a stored key's VALUE to the frontend (security
+  // posture, not a gap) — only a presence flag, `keyConfigured`, scoped to
+  // the single external-llm slot rather than to any one vendor. So only a
+  // key TYPED into the field right now can actually drive model discovery;
+  // a stored key cannot. `keyConfigured === true` must never be read as "we
+  // have a key to discover with" — it may belong to a different vendor
+  // entirely (paste an OpenAI key, click the Groq chip, and `keyConfigured`
+  // still reads true).
+  const typedKey = apiKey.trim() !== "";
+  // Which vendor the daemon's currently-stored key/endpoint actually
+  // belongs to — `keyConfigured` alone can't say that, so cross-reference
+  // it against the saved endpoint's preset.
+  const savedPresetId = presetForEndpoint(current?.[0] ?? null).id;
+  // True only when the stored key belongs to THIS card's selected vendor
+  // and the user hasn't typed a fresh key over it.
+  const storedKeyForThisVendor = keyConfigured === true && preset.id === savedPresetId && !typedKey;
 
   // Auto-select, once both in-scope probes and the key queries have settled.
   // Precedence: 1. a saved endpoint already adopted by the prefill effect
@@ -306,16 +317,28 @@ export default function AnyProviderCard({ groups }: { groups?: PresetGroup[] }) 
   // "loading" covers both an in-flight discovery fetch AND the debounce
   // window right after a keystroke, before discoverySettled catches up —
   // otherwise a stale settled state could flash the free-text fallback for
-  // a moment between "key just typed" and "fetch actually started".
+  // a moment between "key just typed" and "fetch actually started". Gated
+  // on `typedKey`, not a stored key — a stored key never drives discovery
+  // (see the comment above), so it must never land here either.
   const cloudModelsPending =
-    knownCloudEndpoint && keyPresent && !showModelSelect && (!discoverySettled || discovery.isFetching);
-  const modelFieldMode: "needsKey" | "loading" | "select" | "input" = !keyPresent && knownCloudEndpoint
-    ? "needsKey"
-    : cloudModelsPending
-      ? "loading"
-      : showModelSelect
-        ? "select"
-        : "input";
+    knownCloudEndpoint && typedKey && !showModelSelect && (!discoverySettled || discovery.isFetching);
+  // Priority: a stored key for the vendor actually selected wins first —
+  // the one case where a real model can be shown with no live discovery at
+  // all. Then "no usable key yet" (covers both no-key and wrong-vendor-key,
+  // and a stored key with no saved model to show). Then the ordinary
+  // discovery states. `storedKeyForThisVendor` already implies `!typedKey`,
+  // so it can never race with "loading"/"select" below — typing a fresh key
+  // flips it false and falls through to them on the next render.
+  const modelFieldMode: "needsKey" | "storedKey" | "loading" | "select" | "input" =
+    knownCloudEndpoint && storedKeyForThisVendor && model.trim() !== ""
+      ? "storedKey"
+      : knownCloudEndpoint && !typedKey
+        ? "needsKey"
+        : cloudModelsPending
+          ? "loading"
+          : showModelSelect
+            ? "select"
+            : "input";
 
   // Scope drives both copy and the Anthropic-fields no-key-guidance prop:
   // cloud-only is the wizard's Cloud model tile, which already shows its own
@@ -461,7 +484,13 @@ export default function AnyProviderCard({ groups }: { groups?: PresetGroup[] }) 
               </Button>
             )}
 
-            <Field label={t("externalProvider.modelLabel")} htmlFor="any-provider-model">
+            <Field
+              label={t("externalProvider.modelLabel")}
+              htmlFor="any-provider-model"
+              description={
+                modelFieldMode === "storedKey" ? t("externalProvider.modelSelectStoredKeyHint") : undefined
+              }
+            >
               {modelFieldMode === "select" ? (
                 <Select mono value={model} onChange={(e) => setModel(e.target.value)}>
                   <option value="">{t("externalProvider.modelSelectPlaceholder")}</option>
@@ -480,6 +509,17 @@ export default function AnyProviderCard({ groups }: { groups?: PresetGroup[] }) 
                 // key to discover one with.
                 <Select mono disabled value="">
                   <option value="">{t("externalProvider.modelSelectNeedsKey")}</option>
+                </Select>
+              ) : modelFieldMode === "storedKey" ? (
+                // Honestly disabled: the daemon never hands the stored key's
+                // value back to the frontend, so re-listing models here is
+                // genuinely impossible without the user retyping it — this
+                // shows the last-saved model rather than pretending to offer
+                // a dropdown it can't populate. The Field description above
+                // (modelSelectStoredKeyHint) tells the user how to get an
+                // editable one back.
+                <Select mono disabled value={model}>
+                  <option value={model}>{model}</option>
                 </Select>
               ) : modelFieldMode === "loading" ? (
                 <Select mono disabled value="">
@@ -508,7 +548,12 @@ export default function AnyProviderCard({ groups }: { groups?: PresetGroup[] }) 
                 ))}
               </datalist>
             )}
-            {keyPresent && (discovery.isError || localQuery?.isError) && (
+            {/* Discovery with no typed key is a guaranteed 401 for a cloud
+                vendor — expected, not worth surfacing. Local probes
+                (localQuery) keep their own error path unconditionally: they
+                have no key requirement at all, so there's no "expected
+                failure" case to suppress. */}
+            {(((!knownCloudEndpoint || typedKey) && discovery.isError) || localQuery?.isError) && (
               <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)" }}>
                 {t("externalProvider.modelDiscoveryFailed")}
               </span>

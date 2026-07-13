@@ -631,5 +631,61 @@ describe("AnyProviderCard — the Local-server card (spec §5.2)", () => {
       await userEvent.click(screen.getByRole("button", { name: "Anthropic" }));
       await waitFor(() => expect(screen.queryByText(/Anthropic takes precedence/)).not.toBeInTheDocument());
     });
+
+    // Defect fix (returning user): `list_external_models` talks to the
+    // provider directly and only sends a key when the frontend passes one —
+    // a STORED key never reaches it. `keyConfigured` is only a presence
+    // flag, so it must never be read as "we have a key to discover with".
+    // Reopening Settings with a saved OpenAI key must show the saved model,
+    // not brick into the free-text "couldn't list models" hatch (which used
+    // to happen because a null-keyed discovery call 401'd).
+    describe("returning user / stored key (no live discovery)", () => {
+      it("a saved OpenAI key+model renders a disabled select showing the saved model, the stored-key hint, and no discovery-error noise", async () => {
+        mocks.getDaemonVersion.mockResolvedValue("0.13.0");
+        mocks.getExternalLlm.mockResolvedValue(["https://api.openai.com/v1", "gpt-4o-mini"]);
+        mocks.getExternalLlmKeyConfigured.mockResolvedValue(true);
+        // A null-keyed discovery call is a guaranteed 401 — this is what
+        // actually happens on this path; the assertion is that it stays
+        // silent, not that it doesn't happen.
+        mocks.listExternalModels.mockRejectedValue(new Error("401 Unauthorized"));
+        renderCard(undefined, CLOUD_GROUPS);
+
+        // Positive settle-anchor: the saved endpoint must move the selected
+        // chip off the mount-time default (Anthropic, cloud scope's first
+        // preset) onto OpenAI before any absence check is meaningful.
+        await waitFor(() =>
+          expect(screen.getByRole("button", { name: "OpenAI" })).toHaveAttribute("aria-pressed", "true"),
+        );
+
+        const modelField = screen.getByLabelText("Model");
+        expect(modelField.tagName).toBe("SELECT");
+        expect(modelField).toBeDisabled();
+        expect(modelField).toHaveValue("gpt-4o-mini");
+        expect(screen.getByText("Re-enter your API key to choose a different model")).toBeInTheDocument();
+        expect(screen.queryByText(/Couldn.t list models/)).not.toBeInTheDocument();
+      });
+
+      it("wrong-vendor: a stored OpenAI key does not carry over to the Groq chip — needsKey disabled select, no discovery-error noise", async () => {
+        mocks.getDaemonVersion.mockResolvedValue("0.13.0");
+        mocks.getExternalLlm.mockResolvedValue(["https://api.openai.com/v1", "gpt-4o-mini"]);
+        mocks.getExternalLlmKeyConfigured.mockResolvedValue(true);
+        mocks.listExternalModels.mockRejectedValue(new Error("401 Unauthorized"));
+        renderCard(undefined, CLOUD_GROUPS);
+
+        // Positive settle-anchor before switching chips.
+        await waitFor(() =>
+          expect(screen.getByRole("button", { name: "OpenAI" })).toHaveAttribute("aria-pressed", "true"),
+        );
+
+        await userEvent.click(screen.getByRole("button", { name: "Groq" }));
+
+        const modelField = screen.getByLabelText("Model");
+        expect(modelField.tagName).toBe("SELECT");
+        expect(modelField).toBeDisabled();
+        expect(screen.getByText("Add your API key to see available models")).toBeInTheDocument();
+        expect(screen.queryByText("Re-enter your API key to choose a different model")).not.toBeInTheDocument();
+        expect(screen.queryByText(/Couldn.t list models/)).not.toBeInTheDocument();
+      });
+    });
   });
 });
