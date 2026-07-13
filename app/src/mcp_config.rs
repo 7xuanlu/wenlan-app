@@ -129,6 +129,105 @@ fn codex_cli_plugin_enabled_on_disk() -> bool {
         .unwrap_or(false)
 }
 
+/// Whether a Claude Desktop chat-side plugin manifest (`rpm/manifest.json`
+/// under a session directory) lists the Wenlan plugin. True iff `plugins[]`
+/// contains an entry whose `name` field is exactly `"wenlan"` — matching
+/// `marketplaceName` instead would be wrong, since a user's own upload
+/// marketplace can be named anything (`marketplaceName` values seen in the
+/// wild: `"My Uploads"`, `"knowledge-work-plugins"`). Malformed JSON or a
+/// missing `plugins` key is "no plugin", never an error — same policy as
+/// `claude_code_plugin_enabled`.
+fn claude_desktop_plugin_enabled(manifest_json: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(manifest_json)
+        .ok()
+        .and_then(|v| v.get("plugins")?.as_array().cloned())
+        .map(|plugins| {
+            plugins
+                .iter()
+                .any(|p| p.get("name").and_then(|n| n.as_str()) == Some("wenlan"))
+        })
+        .unwrap_or(false)
+}
+
+/// Extract the pinned account id (`lastKnownAccountUuid`) from a Claude
+/// Desktop `config.json` blob. `None` on malformed JSON or a missing key.
+fn claude_desktop_account_id(config_json: &str) -> Option<String> {
+    serde_json::from_str::<serde_json::Value>(config_json)
+        .ok()?
+        .get("lastKnownAccountUuid")?
+        .as_str()
+        .map(String::from)
+}
+
+/// The directory holding one subdirectory per chat-side session id for a
+/// given account: `<support_dir>/local-agent-mode-sessions/<account_id>`.
+/// Pure path construction, so a typo in either hardcoded segment fails a
+/// test that reads the returned path directly, rather than surfacing as an
+/// unexplained `false` several calls downstream. Scoping to the pinned
+/// account id also means the `skills-plugin` sentinel directory that lives
+/// alongside real account-id directories under `local-agent-mode-sessions/`
+/// is never visited — it isn't a UUID, so it can never be `account_id`.
+fn claude_desktop_account_sessions_dir(support_dir: &Path, account_id: &str) -> PathBuf {
+    support_dir
+        .join("local-agent-mode-sessions")
+        .join(account_id)
+}
+
+/// Whether any session under `account_sessions_dir` has a
+/// `rpm/manifest.json` listing the Wenlan plugin. One directory per session
+/// id; any single session counting is enough (a user can have several open
+/// at once). A session directory without `rpm/manifest.json`, or with one
+/// that fails to parse, is silently skipped — never a panic, never treated
+/// as a match.
+fn claude_desktop_plugin_enabled_in_sessions_dir(account_sessions_dir: &Path) -> bool {
+    let Ok(entries) = std::fs::read_dir(account_sessions_dir) else {
+        return false;
+    };
+    entries.flatten().any(|entry| {
+        std::fs::read_to_string(entry.path().join("rpm").join("manifest.json"))
+            .map(|s| claude_desktop_plugin_enabled(&s))
+            .unwrap_or(false)
+    })
+}
+
+/// Whether the Wenlan plugin is enabled for Claude Desktop, given the
+/// already-resolved support directory (normally
+/// `~/Library/Application Support/Claude`). Composes
+/// `claude_desktop_account_id` + `claude_desktop_account_sessions_dir` +
+/// `claude_desktop_plugin_enabled_in_sessions_dir` end to end, so the full
+/// real-world path — `config.json` -> account id -> sessions dir -> manifest
+/// scan — is exercised under test with a tempdir standing in for
+/// `support_dir`. That leaves nothing for `claude_desktop_plugin_enabled_on_disk`
+/// or its `detect_mcp_clients` call site to quietly sever.
+fn claude_desktop_plugin_enabled_for_support_dir(support_dir: &Path) -> bool {
+    let Some(account_id) = std::fs::read_to_string(support_dir.join("config.json"))
+        .ok()
+        .and_then(|s| claude_desktop_account_id(&s))
+    else {
+        return false;
+    };
+    claude_desktop_plugin_enabled_in_sessions_dir(&claude_desktop_account_sessions_dir(
+        support_dir,
+        &account_id,
+    ))
+}
+
+/// Reads the real Claude Desktop support directory
+/// (`~/Library/Application Support/Claude`) and checks it via
+/// `claude_desktop_plugin_enabled_for_support_dir`. Split out so the
+/// matching/composition logic stays directly testable — mirrors
+/// `claude_code_plugin_enabled_on_disk` and `codex_cli_plugin_enabled_on_disk`.
+/// Missing home dir is "no plugin", never an error: a user who has never
+/// opened Claude Desktop must not see this break detection. READ-ONLY: never
+/// creates, writes, or modifies anything under Claude Desktop's support
+/// directory — that state belongs to another vendor's app.
+fn claude_desktop_plugin_enabled_on_disk() -> bool {
+    let Some(support_dir) = dirs::config_dir().map(|d| d.join("Claude")) else {
+        return false;
+    };
+    claude_desktop_plugin_enabled_for_support_dir(&support_dir)
+}
+
 /// Where ChatGPT desktop can be installed. Its Codex pane reads the same
 /// `~/.codex/config.toml` as Codex CLI (OpenAI merged Codex into the ChatGPT
 /// app), so finding the bundle means the `codex_cli` row applies.
@@ -221,6 +320,17 @@ pub fn detect_mcp_clients() -> Vec<McpClient> {
                         p.exists()
                     }),
                     config_has_entry() || codex_cli_plugin_enabled_on_disk(),
+                )
+            } else if client_type == &"claude_desktop" {
+                // Claude Desktop also counts as configured via the chat-side
+                // Wenlan plugin (`rpm/manifest.json` under a session
+                // directory in `local-agent-mode-sessions/<account_id>/`),
+                // which registers its own MCP server without touching
+                // `claude_desktop_config.json` — see
+                // claude_desktop_plugin_enabled_on_disk.
+                (
+                    config_path.exists(),
+                    config_has_entry() || claude_desktop_plugin_enabled_on_disk(),
                 )
             } else {
                 // Everything else: detect by config file existence
@@ -495,6 +605,244 @@ mod tests {
     #[test]
     fn test_codex_cli_plugin_enabled_false_on_malformed_toml() {
         assert!(!codex_cli_plugin_enabled("not toml ["));
+    }
+
+    /// Manifest fixture matching the real shape seen on a live machine:
+    /// `wenlan` present, plus another entry whose `marketplaceName` ("My
+    /// Uploads") deliberately differs from its `name` ("social-media-skills")
+    /// — a name/marketplaceName mixup would false-positive on this fixture.
+    fn manifest_with_wenlan() -> &'static str {
+        r#"{"plugins": [
+            {"id": "plugin_1", "name": "social-media-skills", "marketplaceId": "m1", "marketplaceName": "My Uploads"},
+            {"id": "plugin_2", "name": "wenlan", "marketplaceId": "m2", "marketplaceName": "wenlan"}
+        ]}"#
+    }
+
+    #[test]
+    fn test_claude_desktop_plugin_enabled_true_for_exact_name() {
+        assert!(claude_desktop_plugin_enabled(manifest_with_wenlan()));
+    }
+
+    #[test]
+    fn test_claude_desktop_plugin_enabled_false_for_similar_name() {
+        // Guards against a `starts_with`/`contains` match instead of exact
+        // equality: "wenlan-old" must not count as "wenlan".
+        let json =
+            r#"{"plugins": [{"id": "p1", "name": "wenlan-old", "marketplaceName": "wenlan"}]}"#;
+        assert!(!claude_desktop_plugin_enabled(json));
+    }
+
+    #[test]
+    fn test_claude_desktop_plugin_enabled_false_when_only_marketplace_name_matches() {
+        // The entry's `name` is "other-plugin"; only `marketplaceName` says
+        // "wenlan". Matching the wrong field would false-positive here.
+        let json =
+            r#"{"plugins": [{"id": "p1", "name": "other-plugin", "marketplaceName": "wenlan"}]}"#;
+        assert!(!claude_desktop_plugin_enabled(json));
+    }
+
+    #[test]
+    fn test_claude_desktop_plugin_enabled_false_case_mismatch() {
+        let json = r#"{"plugins": [{"id": "p1", "name": "Wenlan"}]}"#;
+        assert!(!claude_desktop_plugin_enabled(json));
+    }
+
+    #[test]
+    fn test_claude_desktop_plugin_enabled_false_when_no_plugins_key() {
+        assert!(!claude_desktop_plugin_enabled(r#"{"lastUpdated": 1}"#));
+    }
+
+    #[test]
+    fn test_claude_desktop_plugin_enabled_false_on_malformed_json() {
+        assert!(!claude_desktop_plugin_enabled("not json"));
+    }
+
+    #[test]
+    fn test_claude_desktop_account_id_extracts_last_known_account_uuid() {
+        let json = r#"{"lastKnownAccountUuid": "acct-123", "locale": "en-US"}"#;
+        assert_eq!(
+            claude_desktop_account_id(json),
+            Some("acct-123".to_string())
+        );
+    }
+
+    #[test]
+    fn test_claude_desktop_account_id_none_when_key_missing() {
+        assert_eq!(claude_desktop_account_id(r#"{"locale": "en-US"}"#), None);
+    }
+
+    #[test]
+    fn test_claude_desktop_account_id_none_on_malformed_json() {
+        assert_eq!(claude_desktop_account_id("not json"), None);
+    }
+
+    #[test]
+    fn test_claude_desktop_account_sessions_dir_joins_expected_segments() {
+        let support_dir = Path::new("/support");
+        let dir = claude_desktop_account_sessions_dir(support_dir, "acct-1");
+        assert_eq!(dir, Path::new("/support/local-agent-mode-sessions/acct-1"));
+    }
+
+    #[test]
+    fn test_sessions_dir_true_when_one_session_has_wenlan() {
+        let tmp = tempfile::tempdir().unwrap();
+        let session_dir = tmp.path().join("sess-1").join("rpm");
+        std::fs::create_dir_all(&session_dir).unwrap();
+        std::fs::write(session_dir.join("manifest.json"), manifest_with_wenlan()).unwrap();
+        assert!(claude_desktop_plugin_enabled_in_sessions_dir(tmp.path()));
+    }
+
+    #[test]
+    fn test_sessions_dir_true_when_second_of_two_sessions_has_wenlan() {
+        let tmp = tempfile::tempdir().unwrap();
+        let no_wenlan = tmp.path().join("sess-a").join("rpm");
+        std::fs::create_dir_all(&no_wenlan).unwrap();
+        std::fs::write(
+            no_wenlan.join("manifest.json"),
+            r#"{"plugins": [{"id": "p1", "name": "engineering"}]}"#,
+        )
+        .unwrap();
+
+        let with_wenlan = tmp.path().join("sess-b").join("rpm");
+        std::fs::create_dir_all(&with_wenlan).unwrap();
+        std::fs::write(with_wenlan.join("manifest.json"), manifest_with_wenlan()).unwrap();
+
+        assert!(claude_desktop_plugin_enabled_in_sessions_dir(tmp.path()));
+    }
+
+    #[test]
+    fn test_sessions_dir_false_when_dir_missing() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert!(!claude_desktop_plugin_enabled_in_sessions_dir(
+            &tmp.path().join("does-not-exist")
+        ));
+    }
+
+    #[test]
+    fn test_sessions_dir_false_when_no_rpm_subdir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let session_dir = tmp.path().join("sess-1");
+        std::fs::create_dir_all(&session_dir).unwrap();
+        // manifest.json exists but not under rpm/
+        std::fs::write(session_dir.join("manifest.json"), manifest_with_wenlan()).unwrap();
+        assert!(!claude_desktop_plugin_enabled_in_sessions_dir(tmp.path()));
+    }
+
+    #[test]
+    fn test_sessions_dir_tolerates_malformed_manifest_alongside_a_valid_one() {
+        let tmp = tempfile::tempdir().unwrap();
+        let broken = tmp.path().join("sess-broken").join("rpm");
+        std::fs::create_dir_all(&broken).unwrap();
+        std::fs::write(broken.join("manifest.json"), "not json").unwrap();
+
+        let good = tmp.path().join("sess-good").join("rpm");
+        std::fs::create_dir_all(&good).unwrap();
+        std::fs::write(good.join("manifest.json"), manifest_with_wenlan()).unwrap();
+
+        assert!(claude_desktop_plugin_enabled_in_sessions_dir(tmp.path()));
+    }
+
+    /// Builds `<tmp>/config.json` (with `lastKnownAccountUuid`) plus
+    /// `<tmp>/local-agent-mode-sessions/<account_id>/<session_id>/rpm/manifest.json`
+    /// — the exact shape verified on a live Claude Desktop install — so
+    /// `claude_desktop_plugin_enabled_for_support_dir` is exercised
+    /// end-to-end against a fake `support_dir`.
+    fn write_support_dir_fixture(root: &Path, account_id: &str, session_id: &str, manifest: &str) {
+        std::fs::write(
+            root.join("config.json"),
+            format!(r#"{{"lastKnownAccountUuid": "{account_id}"}}"#),
+        )
+        .unwrap();
+        let rpm_dir = root
+            .join("local-agent-mode-sessions")
+            .join(account_id)
+            .join(session_id)
+            .join("rpm");
+        std::fs::create_dir_all(&rpm_dir).unwrap();
+        std::fs::write(rpm_dir.join("manifest.json"), manifest).unwrap();
+    }
+
+    #[test]
+    fn test_support_dir_true_when_pinned_account_session_has_wenlan() {
+        let tmp = tempfile::tempdir().unwrap();
+        write_support_dir_fixture(tmp.path(), "acct-1", "sess-1", manifest_with_wenlan());
+        assert!(claude_desktop_plugin_enabled_for_support_dir(tmp.path()));
+    }
+
+    #[test]
+    fn test_support_dir_false_when_wenlan_only_under_a_different_account() {
+        let tmp = tempfile::tempdir().unwrap();
+        // config.json pins "acct-1", but the manifest with wenlan lives
+        // under a *different* account id — must not count.
+        std::fs::write(
+            tmp.path().join("config.json"),
+            r#"{"lastKnownAccountUuid": "acct-1"}"#,
+        )
+        .unwrap();
+        let rpm_dir = tmp
+            .path()
+            .join("local-agent-mode-sessions")
+            .join("acct-2")
+            .join("sess-1")
+            .join("rpm");
+        std::fs::create_dir_all(&rpm_dir).unwrap();
+        std::fs::write(rpm_dir.join("manifest.json"), manifest_with_wenlan()).unwrap();
+
+        assert!(!claude_desktop_plugin_enabled_for_support_dir(tmp.path()));
+    }
+
+    #[test]
+    fn test_support_dir_false_when_config_json_missing() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert!(!claude_desktop_plugin_enabled_for_support_dir(tmp.path()));
+    }
+
+    #[test]
+    fn test_support_dir_never_reads_skills_plugin_sentinel() {
+        // The `skills-plugin` sentinel sits alongside the real account-id
+        // directory under `local-agent-mode-sessions/` on a real machine.
+        // It is not a UUID, so it can never be `lastKnownAccountUuid` — a
+        // manifest planted only under it must never count.
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("config.json"),
+            r#"{"lastKnownAccountUuid": "acct-1"}"#,
+        )
+        .unwrap();
+        let sentinel_rpm = tmp
+            .path()
+            .join("local-agent-mode-sessions")
+            .join("skills-plugin")
+            .join("sess-1")
+            .join("rpm");
+        std::fs::create_dir_all(&sentinel_rpm).unwrap();
+        std::fs::write(sentinel_rpm.join("manifest.json"), manifest_with_wenlan()).unwrap();
+
+        assert!(!claude_desktop_plugin_enabled_for_support_dir(tmp.path()));
+    }
+
+    /// Live-machine sanity check, not part of the default gating suite (this
+    /// machine's Claude Desktop state is not portable to CI or other dev
+    /// machines) — run explicitly with `cargo test --lib -- --ignored
+    /// claude_desktop_detected_via_real_plugin_manifest`. This machine's
+    /// `rpm/manifest.json`, under the account pinned by
+    /// `~/Library/Application Support/Claude/config.json`, lists a plugin
+    /// named "wenlan" (verified by hand before writing this test). If
+    /// `detect_mcp_clients`'s `claude_desktop` branch is ever severed from
+    /// `claude_desktop_plugin_enabled_on_disk`, this is the one test in this
+    /// file that will catch it — everything else here exercises the logic
+    /// against a fake `support_dir`, never the real one.
+    #[test]
+    #[ignore]
+    fn claude_desktop_detected_via_real_plugin_manifest() {
+        let claude_desktop = detect_mcp_clients()
+            .into_iter()
+            .find(|c| c.client_type == "claude_desktop")
+            .expect("claude_desktop row always present");
+        assert!(
+            claude_desktop.already_configured,
+            "expected already_configured=true: this machine has the Wenlan chat-side plugin installed"
+        );
     }
 
     #[test]
