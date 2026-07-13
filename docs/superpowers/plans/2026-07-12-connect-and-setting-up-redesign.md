@@ -200,9 +200,34 @@ So the GitHub marketplace registration went **to Anthropic's server**, not to di
 
 Therefore **there is no local file Wenlan can write to register the chat-side plugin.** The
 marketplace is an account-level object whose `marketplace_01…` ID only Anthropic's server
-mints; a forged row would dangle. There is no supported entry point either: `Claude.app`
-registers only the `claude://` and MSAL URL schemes (no plugin-install route) and ships no
-CLI. **We read this state; we never author it.**
+mints; a forged row would dangle. **We read this state; we never author it.**
+
+#### The one promising path, tested and dead
+
+`Claude.app` embeds Claude Code, and the `claude` CLI has a cowork mode:
+`CLAUDE_CODE_USE_COWORK_PLUGINS=1` switches its user-settings file to `cowork_settings.json`,
+and `CLAUDE_CONFIG_DIR` can be aimed at Desktop's session directory. That directory holds
+`.claude.json`, `backups/`, `cowork_settings.json` and `cowork_plugins/` — byte-for-byte the
+layout the CLI produces, i.e. Desktop really does run Claude Code with `CLAUDE_CONFIG_DIR`
+set there. So this looked like a supported, non-UI install path:
+
+```
+CLAUDE_CONFIG_DIR=<session dir> CLAUDE_CODE_USE_COWORK_PLUGINS=1 claude plugin marketplace add 7xuanlu/wenlan
+CLAUDE_CONFIG_DIR=<session dir> CLAUDE_CODE_USE_COWORK_PLUGINS=1 claude plugin install wenlan@7xuanlu-wenlan
+```
+
+Run against the real app on 2026-07-12, it wrote `extraKnownMarketplaces` +
+`enabledPlugins: {"wenlan@7xuanlu-wenlan": true}` and cloned the marketplace — merging
+cleanly beside `knowledge-work-plugins`, and **surviving a Desktop restart uncloberred**.
+
+**And Desktop ignored it.** After restart the chat plugin list still showed exactly one
+Wenlan, sourced from the server marketplace `wenlan`; the skill list showed `/brief`,
+`/capture`, `/distill` once, not twice. Desktop rewrote `rpm/manifest.json` *after* our write
+and did not promote our local marketplace into it.
+
+So: the CLI writes those files faithfully, Desktop preserves them, and Desktop's chat agent
+does not consume them. The server ledger is the only road in. **Do not retry this.** (There
+is no URL-scheme route either — `Claude.app` registers only `claude://` and MSAL.)
 
 ### But the chat-side plugin *does* collide with our MCP write — plugin wins
 
