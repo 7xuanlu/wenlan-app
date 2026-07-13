@@ -174,38 +174,56 @@ side resolves its plugin dir to `<session>/rpm/` instead. Two consequences:
   `mcpServers`, which the wizard already writes. A chat-side *plugin* would add skills and
   slash-commands on top; it is not what carries the tools.
 
-### Why we do not auto-install the chat-side plugin
+### Why we cannot auto-install the chat-side plugin: the registration is server-side
 
-The chat-side installed-plugin ledger is `<session>/rpm/manifest.json`, and every row is
-keyed to **server-issued IDs**:
+Settled empirically 2026-07-12 — the user added `7xuanlu/wenlan` through Claude Desktop's
+chat-side "add marketplace from GitHub" UI, and we diffed the on-disk state before/after.
 
-```json
-{ "id": "plugin_01NbQzzX9cYT4ephnPRCmfpZ",
-  "marketplaceId": "marketplace_011ZnJdx77P3kkAgU9cVw8d3",
-  "marketplaceName": "My Uploads", "installedBy": "user" }
-```
-
-Those are Anthropic API object IDs — the app receives them from the server on install.
-Wenlan cannot mint them, so it cannot forge an installed row. There is also no supported
-entry point to ask the app to do it: `Claude.app` registers only the `claude://` and MSAL
-URL schemes (no plugin-install route), and ships no CLI.
-
-**The one lever that does exist**, and it needs no IDs — `<session>/cowork_settings.json`:
+**What changed:** `<session>/rpm/manifest.json` gained one row —
 
 ```json
-{ "extraKnownMarketplaces": {
-    "knowledge-work-plugins": { "source": { "source": "github", "repo": "anthropics/knowledge-work-plugins" } } } }
+{ "id": "plugin_01FhUCuja4uzJBGs1oXQ9x3Q", "name": "wenlan",
+  "marketplaceId": "marketplace_01QqKemZC8JJUvcEJfeBCqs4",
+  "marketplaceName": "wenlan", "installedBy": "user" }
 ```
 
-Merging a `7xuanlu/wenlan` entry there would surface Wenlan in the chat-side plugin
-browser, GitHub-sourced — so it tracks the repo and stays current, which is the whole
-reason the GitHub option exists — and the user installs with one click instead of pasting
-a repo URL or uploading a folder.
+— and the plugin content materialized under `<session>/rpm/plugin_01FhUC…/`.
 
-**Deferred, not rejected.** It buys skills, not tools; the tools already flow. And the file
-is undocumented and account-UUID-scoped (`config.json`'s `lastKnownAccountUuid` pins the
-account half; the session half needs a glob). A dot-5 row for it could not honestly say
-*configured*. Revisit if Anthropic ships a supported entry point.
+**What did *not* change:** `cowork_settings.json` and `cowork_plugins/known_marketplaces.json`
+were both **untouched**. No wenlan entry, no git clone under `marketplaces/`. Grepping the
+whole `Claude/` tree for `marketplace_01QqKemZC8JJUvcEJfeBCqs4` finds it only in the
+manifest row it produced.
+
+So the GitHub marketplace registration went **to Anthropic's server**, not to disk.
+`known_marketplaces.json` / `extraKnownMarketplaces` are a *different, older* path (how
+`knowledge-work-plugins` is pre-seeded), not what the GitHub-add button uses.
+
+Therefore **there is no local file Wenlan can write to register the chat-side plugin.** The
+marketplace is an account-level object whose `marketplace_01…` ID only Anthropic's server
+mints; a forged row would dangle. There is no supported entry point either: `Claude.app`
+registers only the `claude://` and MSAL URL schemes (no plugin-install route) and ships no
+CLI. **We read this state; we never author it.**
+
+### But the chat-side plugin *does* collide with our MCP write — plugin wins
+
+The installed chat-side plugin ships its own MCP server:
+
+```json
+{ "mcpServers": { "wenlan": { "command": "${CLAUDE_PLUGIN_ROOT}/bin/wenlan-mcp-runner.sh" } } }
+```
+
+and the wizard writes `claude_desktop_config.json` with `mcpServers.wenlan` too. A user with
+both gets Wenlan registered **twice**, from two different binaries. Verified live.
+
+This makes one invariant uniform across every surface:
+
+> **The plugin wins. If a client has the Wenlan plugin, never also write it a raw MCP entry.**
+
+Claude Code and Codex already work this way. Claude Desktop now does too: detect the
+chat-side plugin **read-only** (any `<session>/rpm/manifest.json` row with `name == "wenlan"`;
+`config.json`'s `lastKnownAccountUuid` pins the account half of the path, the session half is
+globbed), count it as already-configured, and skip the `mcpServers` write. Missing file,
+missing dir, or malformed JSON means "no plugin" — never an error.
 
 ## Also fixed here
 
