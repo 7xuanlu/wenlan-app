@@ -21,10 +21,20 @@ type Page = "spotlight" | "home" | "memory" | "recap" | "entity";
 
 export default function App() {
   const queryClient = useQueryClient();
-  const { data: showWizard, isLoading: wizardLoading } = useQuery({
+  const { data: showWizard, isPending: wizardPending, isError: wizardError } = useQuery({
     queryKey: ["shouldShowWizard"],
     queryFn: shouldShowWizard,
     staleTime: Infinity,
+    // Overrides main.tsx's global retry:false — the first-run daemon install
+    // (app/src/lib.rs) is spawned async and races this query, so it needs to
+    // survive that window (~12s) instead of failing on the first miss.
+    retry: 5,
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 3000),
+    // This is a Tauri IPC call to a daemon on localhost, not a network request.
+    // The default "online" mode would PAUSE it whenever navigator.onLine is
+    // false (fetchStatus "paused", never "fetching"), so an offline machine
+    // would strand the gate below with no data and no error.
+    networkMode: "always",
   });
 
   async function handleWizardComplete() {
@@ -145,11 +155,19 @@ export default function App() {
     prevPageRef.current = page;
   }, [page]);
 
-  if (wizardLoading) {
+  // isPending, not isLoading: isLoading is (isPending && isFetching), which goes
+  // false whenever the query is paused rather than fetching — that would fall
+  // through to Home with no answer. isPending is true until we actually have one.
+  if (wizardPending) {
     return <div className="w-screen min-h-screen bg-[var(--bg-secondary)]" />;
   }
 
-  if (showWizard) {
+  // ponytail: fail CLOSED. If the daemon is still unreachable after retries,
+  // show the wizard rather than silently falling through to Home — an
+  // existing user whose daemon is dead for 15s+ sees the wizard too, but its
+  // step-5 task thread already surfaces "daemon isn't reachable" + Retry,
+  // which is the intended repair surface for that tradeoff.
+  if (showWizard || wizardError) {
     return <SetupWizard onComplete={handleWizardComplete} />;
   }
 
