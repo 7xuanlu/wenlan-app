@@ -39,7 +39,7 @@ vi.mock("../sources/SourcesSection", () => ({ default: () => <div /> }));
 vi.mock("../../ChatImport/ImportFlow", () => ({ ImportFlow: () => <div /> }));
 vi.mock("../RemoteAccessPanel", () => ({ RemoteAccessPanel: () => <div /> }));
 vi.mock("../../intelligence/IntelligenceSetup", () => ({
-  ApiKeyCard: () => <div />,
+  AnthropicFields: () => <div />,
   OnDeviceModelCard: () => <div />,
   useApiKeyStatus: () => ({ isConfigured: false }),
 }));

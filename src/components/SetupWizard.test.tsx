@@ -170,8 +170,10 @@ describe("SetupWizard", () => {
     fireEvent.click(screen.getByText("Cloud model"));
 
     expect(screen.getByPlaceholderText("sk-ant-api03-...")).toBeInTheDocument();
-    // The 7 keyed cloud vendors the daemon can't actually authenticate must
-    // never appear — no vendor pill row exists in this pane at all.
+    // The 7 keyed cloud vendors the daemon can't actually authenticate on
+    // this (sub-0.13) daemon must never appear — the pill row exists (it now
+    // always includes Anthropic, unified with the other cloud vendors), but
+    // on a closed gate Anthropic is the only chip in it.
     expect(screen.queryByText("OpenAI")).not.toBeInTheDocument();
     expect(screen.queryByText("Groq")).not.toBeInTheDocument();
   });

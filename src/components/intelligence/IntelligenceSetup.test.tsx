@@ -19,18 +19,18 @@ vi.mock("../../lib/tauri", async (importOriginal) => {
   return { ...actual, ...mocks };
 });
 
-import { ApiKeyCard, OnDeviceModelCard } from "./IntelligenceSetup";
+import { AnthropicFields, OnDeviceModelCard } from "./IntelligenceSetup";
 
 function renderCard(qc: QueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
   render(
     <QueryClientProvider client={qc}>
-      <ApiKeyCard />
+      <AnthropicFields />
     </QueryClientProvider>
   );
   return qc;
 }
 
-describe("ApiKeyCard", () => {
+describe("AnthropicFields", () => {
   // NOTE: reset runs in afterEach, not beforeEach — see
   // src/hooks/useDaemonVersion.test.tsx for why. Resetting a vi.fn() in
   // beforeEach immediately before it's reconfigured with a resolved value

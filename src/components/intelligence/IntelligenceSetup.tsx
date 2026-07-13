@@ -40,7 +40,12 @@ export function useApiKeyStatus() {
   };
 }
 
-export function ApiKeyCard({
+/** The native Anthropic key form: StatusChip, masked-key/clear or key-input
+ *  branch, get-key link, error line, no-key guidance, and (once configured)
+ *  the routine/synthesis model pickers. No <Card> wrapper and no <h3> title
+ *  — every host (the Settings card, AnyProviderCard's Anthropic chip)
+ *  supplies its own title, so this is just the body. */
+export function AnthropicFields({
   showModelChoice = true,
   showNoKeyGuidance = true,
 }: {
@@ -90,92 +95,87 @@ export function ApiKeyCard({
   };
 
   return (
-    <Card padding="card">
-      <div className="flex flex-col" style={{ gap: "10px" }}>
-        <div className="flex items-center justify-between">
-          <h3 style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-lg)", fontWeight: 600, color: "var(--mem-text)" }}>
-            {t("intelligence.apiKeyTitle")}
-          </h3>
-          <StatusChip
-            state={isConfigured ? { kind: "up" } : { kind: "idle" }}
-            label={isConfigured ? t("intelligence.connected") : t("intelligence.notConfigured")}
-          />
-        </div>
-        <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)" }}>
-          {t("intelligence.apiKeyDescription")}
-        </p>
+    <div className="flex flex-col" style={{ gap: "10px" }}>
+      <div className="flex items-center justify-end">
+        <StatusChip
+          state={isConfigured ? { kind: "up" } : { kind: "idle" }}
+          label={isConfigured ? t("intelligence.connected") : t("intelligence.notConfigured")}
+        />
+      </div>
+      <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)" }}>
+        {t("intelligence.apiKeyDescription")}
+      </p>
 
-        {isConfigured ? (
-          <div className="flex items-center gap-2">
-            <span
-              className="flex-1 px-3 py-1.5 rounded-md"
-              style={{
-                fontFamily: "var(--mem-font-mono)",
-                fontSize: "12px",
-                color: "var(--mem-text-secondary)",
-                backgroundColor: "var(--mem-hover)",
-              }}
-            >
-              {maskedKey}
-            </span>
-            <Button variant="ghost" size="sm" onClick={handleClear} disabled={saving}>
-              {t("intelligence.clear")}
-            </Button>
-          </div>
-        ) : (
-          <div className="flex items-end gap-2">
-            <div className="flex-1">
-              <Field label={t("externalProvider.apiKeyLabel")} htmlFor="anthropic-api-key">
-                <Input
-                  type="password"
-                  mono
-                  value={keyInput}
-                  onChange={(e) => setKeyInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter" && keyInput) handleSave(); }}
-                  placeholder="sk-ant-api03-..."
-                />
-              </Field>
-            </div>
-            <Button variant="primary" size="sm" onClick={handleSave} disabled={saving || !keyInput} loading={saving}>
-              {t("intelligence.save")}
-            </Button>
-          </div>
-        )}
-
-        {!isConfigured && (
-          <Button variant="ghost" size="sm" onClick={() => shellOpen("https://console.anthropic.com/settings/keys")} className="self-start">
-            {t("externalProvider.getKeyLink")}
-          </Button>
-        )}
-
-        {error && (
-          <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-status-danger-text)" }}>
-            {error}
-          </p>
-        )}
-
-        {!isConfigured && showNoKeyGuidance && (
-          <div
-            className="rounded-lg"
+      {isConfigured ? (
+        <div className="flex items-center gap-2">
+          <span
+            className="flex-1 px-3 py-1.5 rounded-md"
             style={{
-              padding: "10px 14px",
-              backgroundColor: "var(--mem-hover)",
+              fontFamily: "var(--mem-font-mono)",
               fontSize: "12px",
               color: "var(--mem-text-secondary)",
-              lineHeight: 1.6,
+              backgroundColor: "var(--mem-hover)",
             }}
           >
-            <div style={{ fontWeight: 500, color: "var(--mem-text)", marginBottom: 2, fontSize: "12px" }}>
-              {t("intelligence.pageSynthesisRequiresCloud")}
-            </div>
-            <div>{t("intelligence.memorySafe")}</div>
-            <div style={{ marginTop: 6 }}>{t("intelligence.addApiKey")}</div>
+            {maskedKey}
+          </span>
+          <Button variant="ghost" size="sm" onClick={handleClear} disabled={saving}>
+            {t("intelligence.clear")}
+          </Button>
+        </div>
+      ) : (
+        <div className="flex items-end gap-2">
+          <div className="flex-1">
+            <Field label={t("externalProvider.apiKeyLabel")} htmlFor="anthropic-api-key">
+              <Input
+                type="password"
+                mono
+                value={keyInput}
+                onChange={(e) => setKeyInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && keyInput) handleSave(); }}
+                placeholder="sk-ant-api03-..."
+              />
+            </Field>
           </div>
-        )}
+          <Button variant="primary" size="sm" onClick={handleSave} disabled={saving || !keyInput} loading={saving}>
+            {t("intelligence.save")}
+          </Button>
+        </div>
+      )}
 
-        {isConfigured && showModelChoice && <ModelChoiceSection />}
-      </div>
-    </Card>
+      {!isConfigured && (
+        <Button variant="ghost" size="sm" onClick={() => shellOpen("https://console.anthropic.com/settings/keys")} className="self-start">
+          {t("externalProvider.getKeyLink")}
+        </Button>
+      )}
+
+      {error && (
+        <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-status-danger-text)" }}>
+          {error}
+        </p>
+      )}
+
+      {!isConfigured && showNoKeyGuidance && (
+        <div
+          className="rounded-lg"
+          style={{
+            padding: "10px 14px",
+            backgroundColor: "var(--mem-hover)",
+            fontSize: "12px",
+            color: "var(--mem-text-secondary)",
+            lineHeight: 1.6,
+          }}
+        >
+          <div style={{ fontWeight: 500, color: "var(--mem-text)", marginBottom: 2, fontSize: "12px" }}>
+            {t("intelligence.pageSynthesisRequiresCloud")}
+          </div>
+          <div>{t("intelligence.memorySafe")}</div>
+          <div style={{ marginTop: 6 }}>{t("intelligence.addApiKey")}</div>
+        </div>
+      )}
+
+      {isConfigured && showModelChoice && <ModelChoiceSection />}
+    </div>
   );
 }
 

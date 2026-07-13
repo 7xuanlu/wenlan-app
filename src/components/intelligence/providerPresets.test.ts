@@ -5,6 +5,7 @@ import {
   keyPrefixMismatch,
   normalizeEndpoint,
   presetForEndpoint,
+  visiblePresets,
   type ProviderPreset,
 } from "./providerPresets";
 
@@ -137,5 +138,62 @@ describe("presetForEndpoint — host-alias matching (Thread #2: 127.0.0.1/[::1] 
   });
   it("boundary: normalizeEndpoint does NOT rewrite 127.0.0.1 to localhost — the probed endpoint stays exactly as typed", () => {
     expect(normalizeEndpoint("127.0.0.1:11434")).toBe("http://127.0.0.1:11434/v1");
+  });
+});
+
+describe("Anthropic — the native preset (unified chip row)", () => {
+  it("is first in PROVIDER_PRESETS, native, cloud-grouped, with no endpoint", () => {
+    expect(PROVIDER_PRESETS[0]).toMatchObject({
+      id: "anthropic",
+      name: "Anthropic",
+      endpoint: "",
+      keyRequired: true,
+      group: "cloud",
+      native: true,
+    });
+  });
+
+  it("does not disturb the custom-preset fallback (still the last entry)", () => {
+    expect(PROVIDER_PRESETS[PROVIDER_PRESETS.length - 1].id).toBe("custom");
+  });
+
+  it("presetForEndpoint never matches Anthropic's empty endpoint — an empty saved endpoint still falls back to custom", () => {
+    expect(presetForEndpoint("").id).toBe("custom");
+    expect(presetForEndpoint(null).id).toBe("custom");
+  });
+});
+
+describe("visiblePresets — native exemption and groups scoping", () => {
+  it("includes Anthropic even when supportsExternalKey is false (native bypasses the gate)", () => {
+    const ids = visiblePresets(false).map((p) => p.id);
+    expect(ids).toContain("anthropic");
+    expect(ids).not.toContain("openai");
+  });
+
+  it("includes every keyed vendor once the gate is open", () => {
+    const ids = visiblePresets(true).map((p) => p.id);
+    expect(ids).toEqual(expect.arrayContaining(["anthropic", "openai", "gemini", "groq", "openrouter", "mistral", "deepseek", "xai"]));
+  });
+
+  it("a cloud-only scope excludes every local/custom preset, gate open or closed", () => {
+    expect(visiblePresets(false, ["cloud"]).map((p) => p.id)).toEqual(["anthropic"]);
+    const openIds = visiblePresets(true, ["cloud"]).map((p) => p.id);
+    expect(openIds).not.toContain("ollama");
+    expect(openIds).not.toContain("lmstudio");
+    expect(openIds).not.toContain("custom");
+  });
+
+  it("a local+custom scope excludes Anthropic and every keyed cloud vendor", () => {
+    const ids = visiblePresets(true, ["local", "custom"]).map((p) => p.id);
+    expect(ids).toEqual(["ollama", "lmstudio", "custom"]);
+  });
+
+  it("group render order is local, then cloud, then custom, regardless of which groups are requested", () => {
+    const ids = visiblePresets(true).map((p) => p.id);
+    const lastLocalIdx = Math.max(ids.indexOf("ollama"), ids.indexOf("lmstudio"));
+    const firstCloudIdx = ids.indexOf("anthropic");
+    const customIdx = ids.indexOf("custom");
+    expect(lastLocalIdx).toBeLessThan(firstCloudIdx);
+    expect(customIdx).toBe(ids.length - 1);
   });
 });

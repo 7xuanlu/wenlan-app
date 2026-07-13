@@ -2,9 +2,10 @@
 
 export type PresetGroup = "cloud" | "local" | "custom";
 
-/** Anthropic isn't an AnyProviderCard preset — it has native handling via
- *  ApiKeyCard — but the wizard's cloud-pane vendor pill still needs this
- *  untranslated proper noun (same convention as ProviderPreset.name below). */
+/** Name for the native Anthropic preset entry below. Kept as its own export
+ *  (rather than inlined) so other call sites can reference the proper noun
+ *  without importing the whole preset table — same convention as every
+ *  other ProviderPreset.name, none of which are translated. */
 export const ANTHROPIC_VENDOR_NAME = "Anthropic";
 
 export interface ProviderPreset {
@@ -14,6 +15,12 @@ export interface ProviderPreset {
   endpoint: string;
   keyRequired: boolean;
   group: PresetGroup;
+  /** True for the Anthropic preset: not an OpenAI-compatible endpoint, no
+   *  external-llm slot involved — it's handled by the pre-existing native
+   *  Anthropic key path (setApiKey/getApiKey). A native preset is never
+   *  gated by the daemon's external-key floor, and AnyProviderCard renders
+   *  it as AnthropicFields instead of the generic endpoint/model/key form. */
+  native?: boolean;
   /** Provider-shaped example shown when no key is stored (§9.1). */
   keyPlaceholder?: string;
   /** Soft-check prefixes; absent = no format check (§9.1). */
@@ -28,6 +35,22 @@ export interface ProviderPreset {
 // already falls back to free text when discovery fails, so no code change —
 // just note the finding in the PR description).
 export const PROVIDER_PRESETS: ProviderPreset[] = [
+  {
+    id: "anthropic",
+    name: ANTHROPIC_VENDOR_NAME,
+    // No external-llm endpoint — the native Anthropic key path has none.
+    // presetForEndpoint skips empty-endpoint presets when matching a saved
+    // endpoint back to a preset, and its custom-preset fallback depends on
+    // PROVIDER_PRESETS[length-1] staying "custom" — inserting Anthropic
+    // here, at index 0, preserves both.
+    endpoint: "",
+    keyRequired: true,
+    group: "cloud",
+    native: true,
+    keyPlaceholder: "sk-ant-api03-...",
+    keyPrefixes: ["sk-ant-"],
+    getKeyUrl: "https://console.anthropic.com/settings/keys",
+  },
   {
     id: "openai",
     name: "OpenAI",
@@ -149,17 +172,27 @@ export function presetForEndpoint(endpoint: string | null): ProviderPreset {
 
 // Group render order for the widened (§5.2a) preset picker: local servers
 // first, then cloud vendors, then the free-text "Custom…" escape hatch last.
+// Within "cloud", Anthropic renders first because it's PROVIDER_PRESETS[0].
 const VISIBLE_GROUP_ORDER: PresetGroup[] = ["local", "cloud", "custom"];
 
-/** The presets AnyProviderCard should render (§5.2a). Below the daemon-0.13
- *  key-auth floor, only the no-key-required presets appear — same set and
- *  order as before cloud vendors existed. At/above the floor, every preset
- *  appears, grouped local-first / cloud-second / custom-last. */
-export function visiblePresets(supportsExternalKey: boolean): ProviderPreset[] {
-  if (!supportsExternalKey) {
-    return PROVIDER_PRESETS.filter((p) => !p.keyRequired);
-  }
-  return VISIBLE_GROUP_ORDER.flatMap((group) => PROVIDER_PRESETS.filter((p) => p.group === group));
+/** The presets AnyProviderCard should render. Anthropic (native) is never
+ *  gated — it works on every daemon version via the pre-existing native key
+ *  path, so the closed-gate result set is never empty even on a sub-0.13
+ *  daemon. Below the daemon-0.13 key-auth floor, the other 7 keyed cloud
+ *  vendors are excluded (they need a real external-key slot to
+ *  authenticate); at/above the floor every preset is eligible.
+ *
+ *  An optional `groups` further scopes the result to a subset of
+ *  PresetGroup — e.g. a wizard pane that must show only cloud vendors, or
+ *  only local servers. Final order is always local-first / cloud-second /
+ *  custom-last, regardless of which groups are included. */
+export function visiblePresets(
+  supportsExternalKey: boolean,
+  groups?: PresetGroup[],
+): ProviderPreset[] {
+  const gated = PROVIDER_PRESETS.filter((p) => p.native || !p.keyRequired || supportsExternalKey);
+  const scoped = groups ? gated.filter((p) => groups.includes(p.group)) : gated;
+  return VISIBLE_GROUP_ORDER.flatMap((group) => scoped.filter((p) => p.group === group));
 }
 
 /** Soft key-format check (§9.1): true only when a non-empty key matches none

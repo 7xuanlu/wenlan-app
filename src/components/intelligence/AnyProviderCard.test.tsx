@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor, fireEvent, act } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, act, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import "../../i18n";
@@ -13,6 +13,9 @@ const mocks = vi.hoisted(() => ({
   listExternalModels: vi.fn(),
   getExternalLlmKeyConfigured: vi.fn(),
   getApiKey: vi.fn(),
+  setApiKey: vi.fn(),
+  getModelChoice: vi.fn(),
+  setModelChoice: vi.fn(),
 }));
 vi.mock("../../lib/tauri", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../lib/tauri")>();
@@ -20,8 +23,28 @@ vi.mock("../../lib/tauri", async (importOriginal) => {
 });
 
 import AnyProviderCard from "./AnyProviderCard";
+import type { PresetGroup } from "./providerPresets";
 
-function renderCard(qc: QueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
+const CLOUD_GROUPS: PresetGroup[] = ["cloud"];
+const LOCAL_GROUPS: PresetGroup[] = ["local", "custom"];
+
+// This suite's describe block predates the unified chip row and exercises
+// local-server behavior specifically, so its default keeps that scope —
+// Anthropic isn't in LOCAL_GROUPS, so none of these calls see it. Tests that
+// need the cloud row or the unscoped (Settings) card pass `groups` explicitly.
+function renderCard(
+  qc: QueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+  groups: PresetGroup[] | undefined = LOCAL_GROUPS,
+) {
+  render(
+    <QueryClientProvider client={qc}>
+      <AnyProviderCard groups={groups} />
+    </QueryClientProvider>
+  );
+  return qc;
+}
+
+function renderAllScope(qc: QueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
   render(
     <QueryClientProvider client={qc}>
       <AnyProviderCard />
@@ -49,6 +72,9 @@ describe("AnyProviderCard — the Local-server card (spec §5.2)", () => {
     mocks.listExternalModels.mockResolvedValue(["llama3.2:3b"]);
     mocks.setExternalLlm.mockResolvedValue(undefined);
     mocks.testExternalLlm.mockResolvedValue({ response: "pong" });
+    mocks.setApiKey.mockResolvedValue(undefined);
+    mocks.getModelChoice.mockResolvedValue([null, null]);
+    mocks.setModelChoice.mockResolvedValue(undefined);
   });
 
   // Defect 1 (spec §5.2/§5.2a): the 7 keyed cloud vendors the daemon cannot
@@ -363,51 +389,135 @@ describe("AnyProviderCard — the Local-server card (spec §5.2)", () => {
 
   // §5.2a: the widened preset picker (cloud vendors + key auth) is gated on
   // the daemon-0.13 `supportsExternalKey` floor. Below the floor this card
-  // must behave exactly as before the widening.
+  // must behave exactly as before the widening. These tests exercise the
+  // unscoped (Settings) card, since `groups` is what now decides which
+  // vendors are eligible — the gate alone no longer determines cloud
+  // presence (Anthropic, native, is exempt from the gate entirely).
   describe("cloud preset gating (§5.2a)", () => {
-    it("gate CLOSED (0.12 daemon): no OpenAI pill renders and the title reads the local-only copy", async () => {
-      renderCard();
-      // Anchor to a positive, post-resolution signal before asserting an
-      // absence: the title and the preset list are both derived from the
-      // same `supportsExternalKey` value, so once the title has settled to
-      // the closed-gate copy the preset list has settled too.
-      await screen.findByText("Your own local server");
+    it("gate CLOSED (0.12 daemon): no OpenAI pill renders, but Anthropic still does (native bypasses the gate)", async () => {
+      renderAllScope();
+      await screen.findByRole("button", { name: "Anthropic" });
       expect(screen.queryByRole("button", { name: "OpenAI" })).not.toBeInTheDocument();
     });
 
-    it("gate OPEN (0.13 daemon): an OpenAI pill renders and the title switches to the cloud-aware copy", async () => {
+    it("gate OPEN (0.13 daemon): an OpenAI pill renders alongside Anthropic", async () => {
       mocks.getDaemonVersion.mockResolvedValue("0.13.0");
-      renderCard();
-      await screen.findByText("Bring your own model");
-      expect(screen.getByRole("button", { name: "OpenAI" })).toBeInTheDocument();
+      renderAllScope();
+      expect(await screen.findByRole("button", { name: "OpenAI" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Anthropic" })).toBeInTheDocument();
     });
 
-    it("gate OPEN: the default selected pill stays Ollama, never OpenAI", async () => {
+    it("gate OPEN: the default selected pill stays Ollama, never OpenAI or Anthropic", async () => {
       mocks.getDaemonVersion.mockResolvedValue("0.13.0");
-      renderCard();
-      await screen.findByText("Bring your own model");
+      renderAllScope();
+      await screen.findByRole("button", { name: "OpenAI" });
       expect(screen.getByRole("button", { name: "Ollama" })).toHaveAttribute("aria-pressed", "true");
       expect(screen.getByRole("button", { name: "OpenAI" })).toHaveAttribute("aria-pressed", "false");
+      expect(screen.getByRole("button", { name: "Anthropic" })).toHaveAttribute("aria-pressed", "false");
     });
 
     it("gate OPEN: selecting the OpenAI pill reveals the API key Field and the Get-a-key link", async () => {
       mocks.getDaemonVersion.mockResolvedValue("0.13.0");
-      renderCard();
-      await screen.findByText("Bring your own model");
-      await userEvent.click(screen.getByRole("button", { name: "OpenAI" }));
+      renderAllScope();
+      await userEvent.click(await screen.findByRole("button", { name: "OpenAI" }));
       expect(await screen.findByLabelText("API key")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Get a key →" })).toBeInTheDocument();
     });
 
     it("gate OPEN: local presets still render before cloud presets in DOM order", async () => {
       mocks.getDaemonVersion.mockResolvedValue("0.13.0");
-      renderCard();
-      await screen.findByText("Bring your own model");
+      renderAllScope();
+      await screen.findByRole("button", { name: "OpenAI" });
       const lmStudioPill = screen.getByRole("button", { name: "LM Studio" });
       const openAiPill = screen.getByRole("button", { name: "OpenAI" });
       expect(
         lmStudioPill.compareDocumentPosition(openAiPill) & Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy();
+    });
+  });
+
+  // §Unified chip row: Anthropic is now a chip in the SAME row as the other
+  // cloud vendors (no separate Anthropic-only card), scoped per host via
+  // `groups`. These pin the 6 behaviors the redesign depends on: dispatch
+  // never crosses the native/external-llm boundary, scope never leaks a
+  // vendor from the wrong tile, and the daemon-version gate never empties
+  // the cloud row (Anthropic is exempt from it).
+  describe("unified chip row — Anthropic as a cloud-scoped chip", () => {
+    it("cloud-scoped card: Anthropic renders in the same chip row as OpenAI and friends, no local-server pills", async () => {
+      mocks.getDaemonVersion.mockResolvedValue("0.13.0");
+      renderCard(undefined, CLOUD_GROUPS);
+      // Anthropic (native) renders on the very first synchronous paint, before
+      // the daemon-version query resolves — it's not a valid "gate is open"
+      // anchor. OpenAI only appears once the gate opens, so wait on it instead.
+      await screen.findByRole("button", { name: "OpenAI" });
+      expect(screen.getByRole("button", { name: "Anthropic" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Gemini" })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Ollama" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "LM Studio" })).not.toBeInTheDocument();
+    });
+
+    it("cloud-scoped card: selecting Anthropic shows the key field with no Endpoint field, and Save calls setApiKey — never setExternalLlm", async () => {
+      mocks.getDaemonVersion.mockResolvedValue("0.13.0");
+      renderCard(undefined, CLOUD_GROUPS);
+      await userEvent.click(await screen.findByRole("button", { name: "OpenAI" }));
+      expect(screen.getByLabelText("Endpoint URL")).toBeInTheDocument();
+
+      await userEvent.click(screen.getByRole("button", { name: "Anthropic" }));
+      expect(screen.queryByLabelText("Endpoint URL")).not.toBeInTheDocument();
+      await userEvent.type(screen.getByLabelText("API key"), "sk-ant-test-key");
+      await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+      await waitFor(() => expect(mocks.setApiKey).toHaveBeenCalledWith("sk-ant-test-key"));
+      expect(mocks.setExternalLlm).not.toHaveBeenCalled();
+    });
+
+    it("cloud-scoped card: selecting OpenAI shows Endpoint + key fields, and Save calls setExternalLlm — never setApiKey", async () => {
+      mocks.getDaemonVersion.mockResolvedValue("0.13.0");
+      renderCard(undefined, CLOUD_GROUPS);
+      await userEvent.click(await screen.findByRole("button", { name: "OpenAI" }));
+      expect(screen.getByLabelText("Endpoint URL")).toHaveValue("https://api.openai.com/v1");
+
+      await userEvent.type(screen.getByLabelText("API key"), "sk-proj-test-key");
+      await userEvent.type(screen.getByLabelText("Model"), "gpt-4o-mini");
+      await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+      await waitFor(() =>
+        expect(mocks.setExternalLlm).toHaveBeenCalledWith(
+          "https://api.openai.com/v1", "gpt-4o-mini", "sk-proj-test-key",
+        )
+      );
+      expect(mocks.setApiKey).not.toHaveBeenCalled();
+    });
+
+    it("cloud-scoped card on a sub-0.13 daemon shows Anthropic only — never an empty chip row", async () => {
+      // getDaemonVersion resolves "0.12.0" from the outer beforeEach (gate closed).
+      renderCard(undefined, CLOUD_GROUPS);
+      const chipRow = await screen.findByRole("group", { name: "Provider" });
+      expect(within(chipRow).getByRole("button", { name: "Anthropic" })).toBeInTheDocument();
+      expect(within(chipRow).getAllByRole("button")).toHaveLength(1);
+    });
+
+    it("local-scoped card shows Ollama, LM Studio, and Custom — no cloud vendors — and defaults to Ollama", async () => {
+      mocks.getDaemonVersion.mockResolvedValue("0.13.0"); // gate open — scope must still exclude cloud vendors
+      renderCard(undefined, LOCAL_GROUPS);
+      await screen.findByText(/Connected to Ollama/);
+      expect(screen.getByRole("button", { name: "Ollama" })).toHaveAttribute("aria-pressed", "true");
+      expect(screen.getByRole("button", { name: "LM Studio" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Custom…" })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Anthropic" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "OpenAI" })).not.toBeInTheDocument();
+    });
+
+    it("precedence warning: shown when Anthropic is configured and a non-Anthropic chip is selected, absent when the Anthropic chip is selected", async () => {
+      mocks.getDaemonVersion.mockResolvedValue("0.13.0");
+      mocks.getApiKey.mockResolvedValue("sk-ant-***configured");
+      renderCard(undefined, CLOUD_GROUPS);
+
+      await userEvent.click(await screen.findByRole("button", { name: "OpenAI" }));
+      expect(await screen.findByText(/Anthropic takes precedence/)).toBeInTheDocument();
+
+      await userEvent.click(screen.getByRole("button", { name: "Anthropic" }));
+      await waitFor(() => expect(screen.queryByText(/Anthropic takes precedence/)).not.toBeInTheDocument());
     });
   });
 });

@@ -17,7 +17,7 @@ const en = {
     intelligence: {
       title: "Choose how Wenlan thinks",
       description:
-        "An Anthropic API key, your own local server, or an on-device model — you can change this later in Settings.",
+        "A cloud provider API key, your own local server, or an on-device model — you can change this later in Settings.",
       deviceOption: "On-device model",
       cloudOption: "Cloud model",
       localOption: "Your own local server",
@@ -25,7 +25,7 @@ const en = {
       deviceNote:
         "Local models keep inference on your Mac. If you skip this now, Wenlan can still store memories and you can download a model later from Settings.",
       cloudNote:
-        "Your Anthropic API key powers page synthesis. Nothing else leaves your machine unless you also connect a local server.",
+        "Your cloud provider API key powers page synthesis. Nothing else leaves your machine unless you also connect a local server.",
       localNote:
         "Point Wenlan at a local server like Ollama or LM Studio. No key, no cloud — inference stays on your machine.",
     },
@@ -118,6 +118,9 @@ const en = {
     titleWithCloud: "Bring your own model",
     descriptionWithCloud:
       "Route synthesis through a local server like Ollama or LM Studio, or a cloud provider with your own API key.",
+    cloudTitle: "Choose a cloud provider",
+    cloudDescription:
+      "Route synthesis through Anthropic or another cloud provider, using your own API key.",
     presetLabel: "Provider",
     endpointLabel: "Endpoint URL",
     modelLabel: "Model",
@@ -1068,7 +1071,7 @@ const zhHans = {
     intelligence: {
       title: "选择文澜的智能方式",
       description:
-        "Anthropic API key、你自己的本地服务器，或本地模型 — 稍后可在设置中更改。",
+        "云服务商 API key、你自己的本地服务器，或本地模型 — 稍后可在设置中更改。",
       deviceOption: "本地模型",
       cloudOption: "云端模型",
       localOption: "你自己的本地服务器",
@@ -1076,7 +1079,7 @@ const zhHans = {
       deviceNote:
         "本地模型会在你的 Mac 上完成推理。现在跳过也没关系，文澜仍可存储记忆，稍后可在设置中下载模型。",
       cloudNote:
-        "你的 Anthropic API key 用于页面综合。除非你还连接了本地服务器，否则不会有其他内容离开你的设备。",
+        "你的云服务商 API key 用于页面综合。除非你还连接了本地服务器，否则不会有其他内容离开你的设备。",
       localNote:
         "将 Wenlan 指向 Ollama 或 LM Studio 等本地服务器。无需密钥、不上云 — 推理保留在你的设备上。",
     },
@@ -1161,6 +1164,8 @@ const zhHans = {
     titleWithCloud: "自带模型",
     descriptionWithCloud:
       "通过本地服务器（如 Ollama、LM Studio）或使用你自己 API 密钥的云服务商进行合成。",
+    cloudTitle: "选择云服务商",
+    cloudDescription: "通过 Anthropic 或其他云服务商进行合成，使用你自己的 API 密钥。",
     presetLabel: "服务商",
     endpointLabel: "端点 URL",
     modelLabel: "模型",
@@ -2092,7 +2097,7 @@ const zhHant = {
     intelligence: {
       title: "選擇文瀾的智慧方式",
       description:
-        "Anthropic API key、你自己的本機伺服器，或本機模型 — 稍後可在設定中更改。",
+        "雲端服務商 API key、你自己的本機伺服器，或本機模型 — 稍後可在設定中更改。",
       deviceOption: "本機模型",
       cloudOption: "雲端模型",
       localOption: "你自己的本機伺服器",
@@ -2100,7 +2105,7 @@ const zhHant = {
       deviceNote:
         "本機模型會在你的 Mac 上完成推理。現在略過也沒關係，文瀾仍可儲存記憶，稍後可在設定中下載模型。",
       cloudNote:
-        "你的 Anthropic API key 用於頁面綜合。除非你還連接了本機伺服器，否則不會有其他內容離開你的裝置。",
+        "你的雲端服務商 API key 用於頁面綜合。除非你還連接了本機伺服器，否則不會有其他內容離開你的裝置。",
       localNote:
         "將 Wenlan 指向 Ollama 或 LM Studio 等本機伺服器。無需金鑰、不上雲 — 推理保留在你的裝置上。",
     },
@@ -2185,6 +2190,8 @@ const zhHant = {
     titleWithCloud: "自帶模型",
     descriptionWithCloud:
       "透過本機伺服器（如 Ollama、LM Studio）或使用你自己 API 金鑰的雲端服務商進行合成。",
+    cloudTitle: "選擇雲端服務商",
+    cloudDescription: "透過 Anthropic 或其他雲端服務商進行合成，使用你自己的 API 金鑰。",
     presetLabel: "服務商",
     endpointLabel: "端點 URL",
     modelLabel: "模型",

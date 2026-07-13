@@ -12,10 +12,17 @@ import { ImportView } from "./memory/ImportView";
 import VaultConnectCard from "./memory/sources/VaultConnectCard";
 import CliPrimaryPath, { isCliPrimaryClient } from "./connect/CliPrimaryPath";
 import ClientRow, { clientRowDescId } from "./connect/ClientRow";
-import { ApiKeyCard, OnDeviceModelCard } from "./intelligence/IntelligenceSetup";
+import { OnDeviceModelCard } from "./intelligence/IntelligenceSetup";
+import type { PresetGroup } from "./intelligence/providerPresets";
 import AnyProviderCard from "./intelligence/AnyProviderCard";
 import { Button, Tag, SectionHeader } from "./memory/settings/primitives";
 import { resolveAgentDisplayName } from "../lib/agents";
+
+// Module-level so each is a stable reference across renders — AnyProviderCard
+// memoizes its preset list on these, and a fresh array literal per render
+// would defeat that memo (see the `groupsKey` comment in AnyProviderCard).
+const CLOUD_GROUPS: PresetGroup[] = ["cloud"];
+const LOCAL_GROUPS: PresetGroup[] = ["local", "custom"];
 
 export type WizardStep = "welcome" | "intelligence-choice" | "import" | "connect" | "verify" | "done";
 
@@ -354,14 +361,14 @@ function IntelligenceChoiceStep({
 
       {mode === "cloud" && (
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-          <ApiKeyCard showNoKeyGuidance={false} />
+          <AnyProviderCard groups={CLOUD_GROUPS} />
           {note("setup.intelligence.cloudNote")}
         </div>
       )}
 
       {mode === "local" && (
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-          <AnyProviderCard />
+          <AnyProviderCard groups={LOCAL_GROUPS} />
           {note("setup.intelligence.localNote")}
         </div>
       )}
