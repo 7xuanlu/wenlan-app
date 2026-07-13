@@ -196,6 +196,34 @@ body {
   .mem-fade-up { animation: none; }
 }
 
+/* Setting-up step: a running task's node ring breathes. */
+@keyframes mem-node-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.55; transform: scale(1.2); }
+}
+.mem-node-pulse {
+  animation: mem-node-pulse 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mem-node-pulse { animation: none; }
+}
+
+/* Setting-up step: a task's rail segment inks in top-down when it completes.
+   The settled `transform` below is the real (non-animated) property value —
+   under reduced motion `animation: none` leaves it in force, so the inked
+   state stays visible even with the draw-in suppressed. */
+@keyframes mem-rail-ink {
+  from { transform: scaleY(0); }
+  to   { transform: scaleY(1); }
+}
+.mem-rail-ink {
+  transform: scaleY(1);
+  animation: mem-rail-ink 420ms var(--mem-ease-out) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mem-rail-ink { animation: none; }
+}
+
 /* Row hover utility — replaces JS onMouseEnter style mutation
    (AgentsSection, SettingsSidebar). */
 .mem-row-hover:hover {

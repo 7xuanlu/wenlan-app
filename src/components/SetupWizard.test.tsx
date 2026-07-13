@@ -587,7 +587,7 @@ describe("SetupWizard", () => {
     // Even with nothing chosen, the runtime row still runs and proves itself —
     // it's unconditional, not gated on any pick.
     await waitFor(() => {
-      expect(screen.getByTestId("task-status-daemon")).toHaveTextContent("Configured");
+      expect(screen.getByTestId("task-status-daemon")).toHaveTextContent("Running");
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
@@ -965,7 +965,7 @@ describe("SetupWizard", () => {
 
     await waitFor(
       () => {
-        expect(screen.getByTestId("task-status-on-device-model")).toHaveTextContent("Configured");
+        expect(screen.getByTestId("task-status-on-device-model")).toHaveTextContent("Ready");
       },
       { timeout: 4000 },
     );
@@ -1007,7 +1007,7 @@ describe("SetupWizard", () => {
       expect(syncRegisteredSource).toHaveBeenCalledWith("src-1");
     });
     await waitFor(() => {
-      expect(screen.getByTestId("task-status-import")).toHaveTextContent("Configured");
+      expect(screen.getByTestId("task-status-import")).toHaveTextContent("Imported");
     });
     expect(screen.getByText("1247 indexed, 13 skipped")).toBeInTheDocument();
   });
@@ -1035,7 +1035,7 @@ describe("SetupWizard", () => {
     fireEvent.click(screen.getByTestId("task-retry-daemon"));
 
     await waitFor(() => {
-      expect(screen.getByTestId("task-status-daemon")).toHaveTextContent("Configured");
+      expect(screen.getByTestId("task-status-daemon")).toHaveTextContent("Running");
     });
     expect(screen.queryByText("connection refused")).not.toBeInTheDocument();
   });
@@ -1088,5 +1088,66 @@ describe("SetupWizard", () => {
       screen.getByTestId("setting-up-tasks").querySelectorAll("[data-testid^='task-status-']"),
     ).map((el) => el.getAttribute("data-testid"));
     expect(ids).toEqual(["task-status-daemon", "task-status-cursor", "task-status-waiting-for-agent"]);
+  });
+
+  // The user's actual complaint: step 5 looked like step 4 — "boxes by
+  // boxes". This pins the redesign so a regression can't silently bring the
+  // card treatment back. Guarded by a preceding positive assertion so it
+  // cannot pass before the rows exist at all.
+  it("the task rows are not cards — no card background, border, or radius on any row", async () => {
+    renderWizard({ initialStep: "setting-up" });
+
+    await screen.findByTestId("setting-up-tasks");
+
+    const rows = screen.getAllByTestId(/^task-row-/);
+    expect(rows.length).toBeGreaterThan(0);
+
+    for (const row of rows) {
+      expect(row.style.backgroundColor).toBe("");
+      expect(row.style.border).toBe("");
+      expect(row.style.borderRadius).toBe("");
+    }
+  });
+
+  // A daemon is not "Configured" — it runs. One flat done-word for every row
+  // kind said the wrong thing about the runtime, the model and the import.
+  // Caught by looking at the running app, not by any test, so pin it now.
+  it("each finished row says what it actually finished — the runtime runs, it is not 'Configured'", async () => {
+    (getWireState as ReturnType<typeof vi.fn>).mockResolvedValue({
+      daemon: {
+        base_url: "http://127.0.0.1:7878",
+        reachable: true,
+        version: "0.13.0",
+        error: null,
+      },
+      mcp_binary: { command: "wenlan-mcp", args: [], candidates: [] },
+      clients: [],
+    });
+    (detectMcpClients as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        name: "Cursor",
+        client_type: "cursor",
+        config_path: "/path/to/cursor",
+        detected: true,
+        already_configured: false,
+      },
+    ]);
+    (writeMcpConfig as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+
+    renderWizard({ initialStep: "connect" });
+
+    await screen.findByRole("checkbox", { name: "Cursor" });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("task-status-daemon")).toHaveTextContent("Running");
+    });
+    expect(screen.getByTestId("task-status-daemon")).not.toHaveTextContent("Configured");
+
+    // And a client that IS configured stops claiming it is still being added.
+    await waitFor(() => {
+      expect(screen.getByTestId("task-status-cursor")).toHaveTextContent("Configured");
+    });
+    expect(screen.getByText("Wenlan is in Cursor's configuration file.")).toBeInTheDocument();
   });
 });

@@ -744,6 +744,14 @@ const STATUS_COLOR: Record<TaskStatus, string> = {
   failed: "var(--mem-status-danger-text)",
 };
 
+/** Rail-node ring color per status — the inking-thread's node states. */
+const NODE_RING_COLOR: Record<TaskStatus, string> = {
+  pending: "var(--mem-border)",
+  running: "var(--mem-accent-indigo)",
+  done: "var(--mem-accent-sage)",
+  failed: "var(--mem-status-danger-text)",
+};
+
 function SettingUpStep({
   selected,
   pendingModelId,
@@ -996,8 +1004,12 @@ function SettingUpStep({
       return t("setup.settingUp.importSub", { name: pendingImportPick?.label ?? "" });
     }
     if (row.id === "codex_cli") return t("setup.settingUp.codexSub");
+    if (row.kind === "plugin") {
+      return t("setup.settingUp.pluginSub", { name: row.client!.name });
+    }
+    // "Adding Wenlan to X's configuration file" is a lie once it's added.
     return t(
-      row.kind === "plugin" ? "setup.settingUp.pluginSub" : "setup.settingUp.configSub",
+      statusOf(row) === "done" ? "setup.settingUp.configDoneSub" : "setup.settingUp.configSub",
       { name: row.client!.name },
     );
   };
@@ -1011,7 +1023,15 @@ function SettingUpStep({
     }
     if (status === "pending") return t("setup.settingUp.statusPending");
     if (status === "running") return t("setup.settingUp.statusRunning");
-    if (status === "done") return t("setup.settingUp.statusDone");
+    if (status === "done") {
+      // A daemon is not "configured" — it runs. A model is ready; an import is
+      // imported. One flat done-word for every row kind said the wrong thing
+      // about three of them.
+      if (row.kind === "daemon") return t("setup.settingUp.statusDoneDaemon");
+      if (row.kind === "model") return t("setup.settingUp.statusDoneModel");
+      if (row.kind === "import") return t("setup.settingUp.statusDoneImport");
+      return t("setup.settingUp.statusDone");
+    }
     return t("setup.settingUp.statusFailed");
   };
 
@@ -1055,87 +1075,146 @@ function SettingUpStep({
         role="status"
         aria-live="polite"
         data-testid="setting-up-tasks"
-        style={{ display: "flex", flexDirection: "column", gap: "8px" }}
+        style={{ display: "flex", flexDirection: "column" }}
       >
-        {rows.map((row) => {
+        {rows.map((row, index) => {
           const status = statusOf(row);
           const error = errors[row.id];
           const canRetry = row.kind !== "waiting" && status === "failed";
+          const isDone = status === "done";
+          const isLast = index === rows.length - 1;
 
           return (
             <div
               key={row.id}
-              className="rounded-xl px-4 py-3"
-              style={{
-                backgroundColor: "var(--mem-surface)",
-                border: "1px solid var(--mem-border)",
-              }}
+              data-testid={`task-row-${row.id}`}
+              className="flex items-start"
+              style={{ gap: "var(--mem-space-3)" }}
             >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p
-                    style={{
-                      fontFamily: "var(--mem-font-body)",
-                      fontSize: "var(--mem-text-base)",
-                      fontWeight: 500,
-                      color: "var(--mem-text)",
-                    }}
-                  >
-                    {labelOf(row)}
-                  </p>
-                  <p
-                    style={{
-                      fontFamily: "var(--mem-font-body)",
-                      fontSize: "var(--mem-text-sm)",
-                      color: "var(--mem-text-tertiary)",
-                      lineHeight: "1.5",
-                      marginTop: "2px",
-                    }}
-                  >
-                    {subOf(row)}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <span
-                    data-testid={`task-status-${row.id}`}
-                    aria-describedby={error ? taskRowDescId(row.id) : undefined}
-                    style={{
-                      fontFamily: "var(--mem-font-body)",
-                      fontSize: "var(--mem-text-sm)",
-                      color: STATUS_COLOR[status],
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {statusTextOf(row)}
-                  </span>
-                  {canRetry && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => runRow(row)}
-                      data-testid={`task-retry-${row.id}`}
-                    >
-                      {t("setup.settingUp.retry")}
-                    </Button>
-                  )}
-                </div>
+              {/* Rail + node: purely decorative — the row's own status text
+                  and testids carry the meaning for assistive tech. Each row
+                  owns only the segment through/below its own node, inked
+                  independently of its siblings — rows finish concurrently and
+                  out of order, so this is never a contiguous top-down fill. */}
+              <div
+                aria-hidden="true"
+                style={{ position: "relative", width: "9px", alignSelf: "stretch", flexShrink: 0 }}
+              >
+                {!isLast && (
+                  <>
+                    <div
+                      style={{
+                        position: "absolute",
+                        left: "4px",
+                        top: 0,
+                        bottom: 0,
+                        width: "1px",
+                        backgroundColor: "var(--mem-border)",
+                      }}
+                    />
+                    <div
+                      className={isDone ? "mem-rail-ink" : undefined}
+                      style={{
+                        position: "absolute",
+                        left: "4px",
+                        top: 0,
+                        bottom: 0,
+                        width: "1px",
+                        transformOrigin: "top",
+                        transform: isDone ? undefined : "scaleY(0)",
+                        backgroundColor: "var(--mem-accent-sage)",
+                      }}
+                    />
+                  </>
+                )}
+                <div
+                  className={status === "running" ? "mem-node-pulse" : undefined}
+                  style={{
+                    position: "absolute",
+                    left: 0,
+                    top: "5px",
+                    width: "9px",
+                    height: "9px",
+                    borderRadius: "var(--mem-radius-full)",
+                    border: `1.5px solid ${NODE_RING_COLOR[status]}`,
+                    backgroundColor: isDone ? "var(--mem-accent-sage)" : "transparent",
+                  }}
+                />
               </div>
 
-              {error && (
-                <p
-                  id={taskRowDescId(row.id)}
-                  role="alert"
-                  style={{
-                    fontFamily: "var(--mem-font-body)",
-                    fontSize: "var(--mem-text-sm)",
-                    color: "var(--mem-status-danger-text)",
-                    lineHeight: "1.5",
-                    marginTop: "8px",
-                  }}
-                >
-                  {error}
-                </p>
-              )}
+              <div
+                className="min-w-0 flex-1"
+                style={{ paddingBottom: isLast ? 0 : "var(--mem-space-5)" }}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p
+                      style={{
+                        fontFamily: "var(--mem-font-body)",
+                        fontSize: "var(--mem-text-base)",
+                        fontWeight: 500,
+                        color: isDone ? "var(--mem-text)" : "var(--mem-text-secondary)",
+                        transition: "color var(--mem-dur-fast) ease",
+                      }}
+                    >
+                      {labelOf(row)}
+                    </p>
+                    {/* Prose, not data — these are sentences. Mono is reserved
+                        for the machine-state column on the right. */}
+                    <p
+                      style={{
+                        fontFamily: "var(--mem-font-body)",
+                        fontSize: "var(--mem-text-sm)",
+                        color: "var(--mem-text-tertiary)",
+                        lineHeight: "1.5",
+                        marginTop: "2px",
+                      }}
+                    >
+                      {subOf(row)}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span
+                      data-testid={`task-status-${row.id}`}
+                      aria-describedby={error ? taskRowDescId(row.id) : undefined}
+                      style={{
+                        fontFamily: "var(--mem-font-mono)",
+                        fontSize: "var(--mem-text-sm)",
+                        color: STATUS_COLOR[status],
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {statusTextOf(row)}
+                    </span>
+                    {canRetry && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => runRow(row)}
+                        data-testid={`task-retry-${row.id}`}
+                      >
+                        {t("setup.settingUp.retry")}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
+                {error && (
+                  <p
+                    id={taskRowDescId(row.id)}
+                    role="alert"
+                    style={{
+                      fontFamily: "var(--mem-font-body)",
+                      fontSize: "var(--mem-text-sm)",
+                      color: "var(--mem-status-danger-text)",
+                      lineHeight: "1.5",
+                      marginTop: "8px",
+                    }}
+                  >
+                    {error}
+                  </p>
+                )}
+              </div>
             </div>
           );
         })}
