@@ -154,6 +154,59 @@ selector at runtime** — `plugin marketplace add`, then read the `wenlan@…` r
 `plugin list` — with a per-client hardcoded default only as a fallback. That makes the
 installer correct on both sides of the rename, and immune to the next one.
 
+## Claude Desktop: two surfaces, and only one of them is ours
+
+Claude Desktop has a **Code side** and a **Chat side**, and they share nothing.
+
+- **Code side** = `~/.claude/plugins/`, the same store the `claude` CLI writes. So
+  `claude plugin install` already covers it — no extra work.
+- **Chat side** ("cowork" / local-agent-mode) keeps its own account-scoped store at
+  `~/Library/Application Support/Claude/local-agent-mode-sessions/<accountId>/<sessionId>/`.
+
+Verified 2026-07-12 against the shipped app bundle: **the chat side never reads the code
+side.** `.claude/plugins` does not appear anywhere in `Claude.app`'s `app.asar`; the chat
+side resolves its plugin dir to `<session>/rpm/` instead. Two consequences:
+
+- **The double-registration risk is closed.** Installing the Code-side plugin and writing
+  `claude_desktop_config.json` `mcpServers` cannot duplicate the Wenlan MCP server in
+  Claude Desktop — they are disjoint surfaces. The wizard may keep doing both.
+- **Claude Desktop chat is already connected today** via `claude_desktop_config.json`
+  `mcpServers`, which the wizard already writes. A chat-side *plugin* would add skills and
+  slash-commands on top; it is not what carries the tools.
+
+### Why we do not auto-install the chat-side plugin
+
+The chat-side installed-plugin ledger is `<session>/rpm/manifest.json`, and every row is
+keyed to **server-issued IDs**:
+
+```json
+{ "id": "plugin_01NbQzzX9cYT4ephnPRCmfpZ",
+  "marketplaceId": "marketplace_011ZnJdx77P3kkAgU9cVw8d3",
+  "marketplaceName": "My Uploads", "installedBy": "user" }
+```
+
+Those are Anthropic API object IDs — the app receives them from the server on install.
+Wenlan cannot mint them, so it cannot forge an installed row. There is also no supported
+entry point to ask the app to do it: `Claude.app` registers only the `claude://` and MSAL
+URL schemes (no plugin-install route), and ships no CLI.
+
+**The one lever that does exist**, and it needs no IDs — `<session>/cowork_settings.json`:
+
+```json
+{ "extraKnownMarketplaces": {
+    "knowledge-work-plugins": { "source": { "source": "github", "repo": "anthropics/knowledge-work-plugins" } } } }
+```
+
+Merging a `7xuanlu/wenlan` entry there would surface Wenlan in the chat-side plugin
+browser, GitHub-sourced — so it tracks the repo and stays current, which is the whole
+reason the GitHub option exists — and the user installs with one click instead of pasting
+a repo URL or uploading a folder.
+
+**Deferred, not rejected.** It buys skills, not tools; the tools already flow. And the file
+is undocumented and account-UUID-scoped (`config.json`'s `lastKnownAccountUuid` pins the
+account half; the session half needs a glob). A dot-5 row for it could not honestly say
+*configured*. Revisit if Anthropic ships a supported entry point.
+
 ## Also fixed here
 
 The `>` chevron in "Using another MCP client? Show config" renders on its own line above
