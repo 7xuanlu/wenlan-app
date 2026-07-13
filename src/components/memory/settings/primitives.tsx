@@ -201,7 +201,9 @@ export function Button({
         ...style,
       }}
     >
-      <span className={loading ? "invisible" : undefined}>{children}</span>
+      <span className={["inline-flex items-center gap-1.5", loading ? "invisible" : ""].filter(Boolean).join(" ")}>
+        {children}
+      </span>
       {loading && (
         <svg
           aria-hidden="true"

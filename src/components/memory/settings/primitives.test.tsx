@@ -120,6 +120,19 @@ describe("Button", () => {
       expect(screen.getByRole("button", { name: variant })).toBeInTheDocument();
     }
   });
+
+  it("wraps icon+text children in a flex span, so preflight's svg{display:block} can't force a line break", () => {
+    render(
+      <Button>
+        <svg data-testid="btn-icon" />
+        <span>Show config</span>
+      </Button>,
+    );
+    const icon = screen.getByTestId("btn-icon");
+    const wrapper = icon.parentElement as HTMLElement;
+    expect(wrapper.className).toContain("inline-flex");
+    expect(wrapper.className).toContain("items-center");
+  });
 });
 
 describe("Select", () => {

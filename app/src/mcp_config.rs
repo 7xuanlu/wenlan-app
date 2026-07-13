@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 use crate::error::AppError;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpClient {
@@ -129,6 +129,35 @@ fn codex_cli_plugin_enabled_on_disk() -> bool {
         .unwrap_or(false)
 }
 
+/// Where ChatGPT desktop can be installed. Its Codex pane reads the same
+/// `~/.codex/config.toml` as Codex CLI (OpenAI merged Codex into the ChatGPT
+/// app), so finding the bundle means the `codex_cli` row applies.
+fn chatgpt_app_candidates(home: Option<&Path>) -> Vec<PathBuf> {
+    let mut out = vec![PathBuf::from("/Applications/ChatGPT.app")];
+    if let Some(home) = home {
+        out.push(home.join("Applications/ChatGPT.app"));
+    }
+    out
+}
+
+/// Whether the Codex CLI row should be detected: either its shared
+/// `~/.codex/config.toml` exists, or ChatGPT desktop is installed. Feeds the
+/// single `codex_cli` row — never a second row for ChatGPT.
+///
+/// `exists` is injected so the bundle paths themselves are under test: a typo
+/// in a candidate path fails `codex_cli_detected_finds_chatgpt_in_*`, and the
+/// call site cannot silently opt out of the probe (there is no bool to pass).
+fn codex_cli_detected(
+    config_exists: bool,
+    home: Option<&Path>,
+    exists: impl Fn(&Path) -> bool,
+) -> bool {
+    config_exists
+        || chatgpt_app_candidates(home)
+            .iter()
+            .any(|p| exists(p.as_path()))
+}
+
 /// Detect installed MCP-compatible tools and whether Wenlan is already configured.
 pub fn detect_mcp_clients() -> Vec<McpClient> {
     let clients = [
@@ -181,8 +210,16 @@ pub fn detect_mcp_clients() -> Vec<McpClient> {
                 // `~/.codex/config.toml`), which registers its own MCP
                 // server without a separate `[mcp_servers.wenlan]` entry —
                 // see codex_cli_plugin_enabled.
+                //
+                // Detection also fires off ChatGPT desktop's app bundle:
+                // ChatGPT desktop's Codex pane reads the same
+                // `~/.codex/config.toml` as Codex CLI, so a user who only
+                // has ChatGPT desktop (never ran Codex CLI) still gets this
+                // row — see codex_cli_detected.
                 (
-                    config_path.exists(),
+                    codex_cli_detected(config_path.exists(), dirs::home_dir().as_deref(), |p| {
+                        p.exists()
+                    }),
                     config_has_entry() || codex_cli_plugin_enabled_on_disk(),
                 )
             } else {
@@ -575,6 +612,74 @@ mod tests {
     fn test_client_config_path_codex_cli() {
         let path = client_config_path("codex_cli").unwrap();
         assert!(path.to_string_lossy().ends_with(".codex/config.toml"));
+    }
+
+    /// `exists` that answers true for exactly one path — so a test failure
+    /// means the probed path is wrong, not merely that some boolean was false.
+    fn only(hit: &str) -> impl Fn(&Path) -> bool + '_ {
+        move |p: &Path| p == Path::new(hit)
+    }
+
+    #[test]
+    fn codex_cli_detected_finds_chatgpt_in_applications() {
+        let home = PathBuf::from("/Users/someone");
+        assert!(codex_cli_detected(
+            false,
+            Some(&home),
+            only("/Applications/ChatGPT.app")
+        ));
+    }
+
+    #[test]
+    fn codex_cli_detected_finds_chatgpt_in_user_applications() {
+        let home = PathBuf::from("/Users/someone");
+        assert!(codex_cli_detected(
+            false,
+            Some(&home),
+            only("/Users/someone/Applications/ChatGPT.app")
+        ));
+    }
+
+    #[test]
+    fn codex_cli_detected_via_config_when_chatgpt_absent() {
+        let home = PathBuf::from("/Users/someone");
+        assert!(codex_cli_detected(true, Some(&home), |_| false));
+    }
+
+    #[test]
+    fn codex_cli_not_detected_when_neither_present() {
+        let home = PathBuf::from("/Users/someone");
+        assert!(!codex_cli_detected(false, Some(&home), |_| false));
+        // A *different* Mac app must not be mistaken for ChatGPT desktop.
+        assert!(!codex_cli_detected(
+            false,
+            Some(&home),
+            only("/Applications/Cursor.app")
+        ));
+    }
+
+    #[test]
+    fn codex_cli_detected_survives_missing_home() {
+        assert!(codex_cli_detected(
+            false,
+            None,
+            only("/Applications/ChatGPT.app")
+        ));
+    }
+
+    #[test]
+    fn test_detect_mcp_clients_has_exactly_one_codex_cli_row() {
+        // ChatGPT desktop shares ~/.codex/config.toml with Codex CLI — it
+        // must fold into the existing codex_cli row, never add a second row.
+        let codex_rows: Vec<_> = detect_mcp_clients()
+            .into_iter()
+            .filter(|c| c.client_type == "codex_cli")
+            .collect();
+        assert_eq!(
+            codex_rows.len(),
+            1,
+            "ChatGPT.app detection must reuse the codex_cli row, not add a second one"
+        );
     }
 
     #[test]
