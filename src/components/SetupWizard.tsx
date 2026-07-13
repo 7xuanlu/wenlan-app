@@ -6,11 +6,17 @@ import {
   writeMcpConfig,
   installClientPlugin,
   listAgents,
+  getWireState,
+  downloadOnDeviceModel,
+  getOnDeviceModel,
+  addSource,
+  syncRegisteredSource,
   type McpClient,
   type ImportResult,
+  type SyncStats,
 } from "../lib/tauri";
 import { ImportView } from "./memory/ImportView";
-import VaultConnectCard from "./memory/sources/VaultConnectCard";
+import VaultConnectCard, { type VaultPick } from "./memory/sources/VaultConnectCard";
 import { isPluginClient } from "./connect/pluginClients";
 import ClientRow, { clientRowDescId } from "./connect/ClientRow";
 import { OnDeviceModelCard } from "./intelligence/IntelligenceSetup";
@@ -254,12 +260,20 @@ function IntelligenceChoiceStep({
   onBack,
   hideDots,
 }: {
-  onNext: () => void;
+  // Carries the on-device model id iff the user is on the device path and
+  // picked one — this step only records the choice; step 5 downloads it and
+  // proves it loaded. Cloud/local API-key and local-server saves are instant
+  // today and stay that way (unaffected).
+  onNext: (deviceModelId: string | null) => void;
   onBack: () => void;
   hideDots: boolean;
 }) {
   const { t } = useTranslation();
   const [mode, setMode] = useState<"device" | "cloud" | "local">("device");
+  const [deviceModelId, setDeviceModelId] = useState<string | null>(null);
+
+  const handleContinue = () => onNext(mode === "device" ? deviceModelId : null);
+  const handleSkip = () => onNext(null);
 
   const choiceButtonStyle = (active: boolean): React.CSSProperties => ({
     flex: 1,
@@ -301,9 +315,9 @@ function IntelligenceChoiceStep({
       activeStep="intelligence-choice"
       leftActions={[
         { label: t("setup.back"), onClick: onBack },
-        { label: t("setup.skip"), onClick: onNext },
+        { label: t("setup.skip"), onClick: handleSkip },
       ]}
-      primaryAction={{ label: t("setup.continue"), onClick: onNext }}
+      primaryAction={{ label: t("setup.continue"), onClick: handleContinue }}
     >
     <div
       className="flex flex-col"
@@ -361,7 +375,7 @@ function IntelligenceChoiceStep({
 
       {mode === "device" && (
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-          <OnDeviceModelCard />
+          <OnDeviceModelCard deferDownload onModelChosen={setDeviceModelId} />
           {note("setup.intelligence.deviceNote")}
         </div>
       )}
@@ -388,14 +402,16 @@ function IntelligenceChoiceStep({
 
 function ImportStep({
   onBack,
-  onSkip,
+  onAdvance,
   onComplete,
   onPhaseChange,
   importHint,
   hideDots,
 }: {
   onBack: () => void;
-  onSkip: () => void;
+  // This step only records a pick (or null); step 5 runs addSource +
+  // syncRegisteredSource and shows the real SyncStats it gets back.
+  onAdvance: (pick: VaultPick | null) => void;
   onComplete: (source: string, result: ImportResult) => void;
   onPhaseChange: (phase: string) => void;
   importHint: React.ReactNode;
@@ -403,6 +419,7 @@ function ImportStep({
 }) {
   const { t } = useTranslation();
   const [pathChoice, setPathChoice] = useState<"none" | "chat">("none");
+  const [pick, setPick] = useState<VaultPick | null>(null);
 
   if (pathChoice === "chat") {
     // ImportView owns its own internal Back/Skip/Continue and layout math
@@ -423,7 +440,7 @@ function ImportStep({
             wizardMode
             wizardHint={importHint}
             onPhaseChange={onPhaseChange}
-            onSkip={onSkip}
+            onSkip={() => onAdvance(null)}
             onComplete={onComplete}
           />
         </div>
@@ -437,9 +454,9 @@ function ImportStep({
       activeStep="import"
       leftActions={[
         { label: t("setup.back"), onClick: onBack },
-        { label: t("setup.skip"), onClick: onSkip },
+        { label: t("setup.skip"), onClick: () => onAdvance(null) },
       ]}
-      primaryAction={{ label: t("setup.continue"), onClick: onSkip }}
+      primaryAction={{ label: t("setup.continue"), onClick: () => onAdvance(pick) }}
     >
     <div className="flex flex-col" style={{ gap: "24px", paddingTop: "24px" }}>
       <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
@@ -451,6 +468,14 @@ function ImportStep({
         </p>
       </div>
 
+      {/* Primary path: a real detected vault or folder, one tap away —
+          shown first because it beats "if you already have a file" for
+          most people. Records a pick only; step 5 runs it. */}
+      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+        <VaultConnectCard variant="wizard" onPick={setPick} />
+      </div>
+
+      {/* Secondary path: for users who already exported their chat history. */}
       <div
         className="rounded-xl p-4 flex items-center justify-between"
         style={{ border: "1px solid var(--mem-border)", backgroundColor: "var(--mem-surface)", gap: "12px" }}
@@ -466,10 +491,6 @@ function ImportStep({
         <Button variant="secondary" onClick={() => setPathChoice("chat")} className="shrink-0">
           {t("setup.import.chatPathCta")}
         </Button>
-      </div>
-
-      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-        <VaultConnectCard variant="wizard" />
       </div>
     </div>
     </StepShell>
@@ -699,12 +720,16 @@ function ConnectStep({
 type TaskStatus = "pending" | "running" | "done" | "failed";
 
 const WAITING_ROW_ID = "waiting-for-agent";
+const DAEMON_ROW_ID = "daemon";
+const MODEL_ROW_ID = "on-device-model";
+const IMPORT_ROW_ID = "import";
 
-/** A unit of work on the Setting up step. `client` is null only for the
- *  always-last waiting row, which observes rather than mutates. */
+/** A unit of work on the Setting up step. `client` is set only for
+ *  plugin/config rows; the other kinds carry what they need through the
+ *  step's own `pendingModelId` / `pendingImportPick` props instead. */
 interface TaskRow {
   id: string;
-  kind: "plugin" | "config" | "waiting";
+  kind: "daemon" | "model" | "import" | "plugin" | "config" | "waiting";
   client: McpClient | null;
 }
 
@@ -721,6 +746,8 @@ const STATUS_COLOR: Record<TaskStatus, string> = {
 
 function SettingUpStep({
   selected,
+  pendingModelId,
+  pendingImportPick,
   onNext,
   onBack,
   onConnected,
@@ -728,6 +755,8 @@ function SettingUpStep({
   hideDots,
 }: {
   selected: McpClient[];
+  pendingModelId: string | null;
+  pendingImportPick: VaultPick | null;
   onNext: () => void;
   onBack: () => void;
   onConnected: (agents: string[]) => void;
@@ -742,8 +771,13 @@ function SettingUpStep({
 
   // Rows are computed ONCE, at step entry, and never re-derived — a detection
   // refetch mid-step must not add, drop, or reorder a row the user is watching.
-  // Plugin rows first, then config rows, then the waiting row, always last.
+  // Order: runtime first (nothing downstream can be true if the daemon isn't
+  // up), then the on-device model (if chosen), then import (if chosen), then
+  // each tool, then the waiting row, always last.
   const [rows] = useState<TaskRow[]>(() => {
+    const out: TaskRow[] = [{ id: DAEMON_ROW_ID, kind: "daemon", client: null }];
+    if (pendingModelId) out.push({ id: MODEL_ROW_ID, kind: "model", client: null });
+    if (pendingImportPick) out.push({ id: IMPORT_ROW_ID, kind: "import", client: null });
     const plugins: TaskRow[] = [];
     const configs: TaskRow[] = [];
     for (const client of selected) {
@@ -754,63 +788,145 @@ function SettingUpStep({
         client,
       });
     }
-    return [
-      ...plugins,
-      ...configs,
-      { id: WAITING_ROW_ID, kind: "waiting", client: null },
-    ];
+    out.push(...plugins, ...configs, { id: WAITING_ROW_ID, kind: "waiting", client: null });
+    return out;
   });
 
   const [statuses, setStatuses] = useState<Record<string, TaskStatus>>(() =>
     Object.fromEntries(rows.map((row) => [row.id, "pending" as TaskStatus])),
   );
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [importStats, setImportStats] = useState<SyncStats | null>(null);
+  // Gates the model-load poll below: the download POST resolving is not
+  // proof of anything — only `getOnDeviceModel().loaded` is.
+  const [modelDownloadStarted, setModelDownloadStarted] = useState(false);
 
+  // Runs exactly one row's work. Shared by the initial concurrent kickoff
+  // and by Retry, so a retry re-exercises the same path a first attempt
+  // would rather than a different, untested one.
+  const runRow = useCallback(
+    (row: TaskRow) => {
+      setStatuses((prev) => ({ ...prev, [row.id]: "running" }));
+      setErrors((prev) => {
+        if (!(row.id in prev)) return prev;
+        const next = { ...prev };
+        delete next[row.id];
+        return next;
+      });
+
+      if (row.kind === "plugin" || row.kind === "config") {
+        const clientType = row.client!.client_type;
+        // THE invariant: Claude Code and Codex get the plugin, never a raw MCP
+        // entry. Both vendors' Wenlan plugins declare their own `mcpServers`, so
+        // also writing `~/.claude.json` / `[mcp_servers.wenlan]` would register
+        // the Wenlan server twice. `isPluginClient` is the single home for that
+        // rule (src/components/connect/pluginClients.ts) — Settings obeys it too.
+        const task = isPluginClient(clientType)
+          ? installClientPlugin(clientType)
+          : writeMcpConfig(clientType);
+        task.then(
+          () => {
+            setStatuses((prev) => ({ ...prev, [row.id]: "done" }));
+            onConnectedRef.current([clientType]);
+            queryClient.invalidateQueries({ queryKey: ["mcp-clients"] });
+          },
+          (err) => {
+            // A failed row never blocks the wizard: it shows its reason, stays
+            // failed, and Continue stays live. No user is trapped in setup
+            // because one editor's config file was read-only.
+            setStatuses((prev) => ({ ...prev, [row.id]: "failed" }));
+            setErrors((prev) => ({ ...prev, [row.id]: String(err) }));
+          },
+        );
+        return;
+      }
+
+      if (row.kind === "daemon") {
+        // First and unconditional: nothing downstream (model load, import,
+        // any tool) can be true if the daemon itself isn't reachable.
+        getWireState().then(
+          (wire) => {
+            if (wire.daemon.reachable) {
+              setStatuses((prev) => ({ ...prev, [row.id]: "done" }));
+            } else {
+              setStatuses((prev) => ({ ...prev, [row.id]: "failed" }));
+              setErrors((prev) => ({
+                ...prev,
+                [row.id]: wire.daemon.error ?? t("setup.settingUp.daemonUnreachable"),
+              }));
+            }
+          },
+          (err) => {
+            setStatuses((prev) => ({ ...prev, [row.id]: "failed" }));
+            setErrors((prev) => ({ ...prev, [row.id]: String(err) }));
+          },
+        );
+        return;
+      }
+
+      if (row.kind === "model") {
+        if (!pendingModelId) return;
+        setModelDownloadStarted(false);
+        downloadOnDeviceModel(pendingModelId).then(
+          // Resolving here only means the request landed — not that the
+          // model is loaded. The row stays "running"; the poll below (keyed
+          // on modelDownloadStarted) is what actually proves it.
+          () => setModelDownloadStarted(true),
+          (err) => {
+            setStatuses((prev) => ({ ...prev, [row.id]: "failed" }));
+            setErrors((prev) => ({ ...prev, [row.id]: String(err) }));
+          },
+        );
+        return;
+      }
+
+      if (row.kind === "import") {
+        if (!pendingImportPick) return;
+        addSource(pendingImportPick.sourceType, pendingImportPick.path)
+          .then((source) => syncRegisteredSource(source.id))
+          .then((stats) => {
+            setImportStats(stats);
+            setStatuses((prev) => ({ ...prev, [row.id]: "done" }));
+            queryClient.invalidateQueries({ queryKey: ["registeredSources"] });
+          })
+          .catch((err) => {
+            setStatuses((prev) => ({ ...prev, [row.id]: "failed" }));
+            setErrors((prev) => ({ ...prev, [row.id]: String(err) }));
+          });
+        return;
+      }
+    },
+    [pendingModelId, pendingImportPick, queryClient, t],
+  );
+
+  // Concurrent, not sequential: one slow row must not hold up the others,
+  // and a rejection must not cancel siblings. Fires once, at step entry —
+  // the rendered order is `rows`, which is frozen.
   const startedRef = useRef(false);
   useEffect(() => {
     if (startedRef.current) return;
     startedRef.current = true;
-
-    const work = rows.filter((row) => row.client !== null);
-    if (work.length === 0) return;
-
-    setStatuses((prev) => {
-      const next = { ...prev };
-      for (const row of work) next[row.id] = "running";
-      return next;
-    });
-
-    // Concurrent, not sequential: one slow CLI must not hold up the others,
-    // and a rejection must not cancel its siblings. Only the finish order
-    // varies — the rendered order is `rows`, which is frozen.
-    for (const row of work) {
-      const clientType = row.client!.client_type;
-
-      // THE invariant: Claude Code and Codex get the plugin, never a raw MCP
-      // entry. Both vendors' Wenlan plugins declare their own `mcpServers`, so
-      // also writing `~/.claude.json` / `[mcp_servers.wenlan]` would register
-      // the Wenlan server twice. `isPluginClient` is the single home for that
-      // rule (src/components/connect/pluginClients.ts) — Settings obeys it too.
-      const task = isPluginClient(clientType)
-        ? installClientPlugin(clientType)
-        : writeMcpConfig(clientType);
-
-      task.then(
-        () => {
-          setStatuses((prev) => ({ ...prev, [row.id]: "done" }));
-          onConnectedRef.current([clientType]);
-          queryClient.invalidateQueries({ queryKey: ["mcp-clients"] });
-        },
-        (err) => {
-          // A failed row never blocks the wizard: it shows its reason, stays
-          // failed, and Continue stays live. No user is trapped in setup
-          // because one editor's config file was read-only.
-          setStatuses((prev) => ({ ...prev, [row.id]: "failed" }));
-          setErrors((prev) => ({ ...prev, [row.id]: String(err) }));
-        },
-      );
+    for (const row of rows) {
+      if (row.kind === "waiting") continue;
+      runRow(row);
     }
-  }, [rows, queryClient]);
+  }, [rows, runRow]);
+
+  // On-device model proof: poll until `loaded` matches what was chosen.
+  // No percentage — the daemon reports no progress fraction mid-download,
+  // so a spinner is the only honest signal until `loaded` flips.
+  const { data: modelPoll } = useQuery({
+    queryKey: ["onDeviceModel", "wizard-setup-proof"],
+    queryFn: getOnDeviceModel,
+    enabled: modelDownloadStarted,
+    refetchInterval: 1500,
+  });
+  useEffect(() => {
+    if (!pendingModelId || !modelPoll) return;
+    if (modelPoll.loaded === pendingModelId) {
+      setStatuses((prev) => (prev[MODEL_ROW_ID] === "done" ? prev : { ...prev, [MODEL_ROW_ID]: "done" }));
+    }
+  }, [modelPoll, pendingModelId]);
 
   const { data: agents } = useQuery({
     queryKey: ["agents"],
@@ -848,6 +964,9 @@ function SettingUpStep({
 
   const labelOf = (row: TaskRow): string => {
     if (row.kind === "waiting") return t("setup.settingUp.waitingLabel");
+    if (row.kind === "daemon") return t("setup.settingUp.daemonLabel");
+    if (row.kind === "model") return t("setup.settingUp.modelLabel");
+    if (row.kind === "import") return t("setup.settingUp.importLabel");
     // One row, one config file, one plugin — and it covers ChatGPT desktop's
     // Codex pane as well, so the row says so rather than letting the user
     // hunt for a ChatGPT checkbox that would be a lie.
@@ -860,6 +979,21 @@ function SettingUpStep({
       return waitingDone
         ? t("setup.settingUp.waitingDoneSub")
         : t("setup.settingUp.waitingSub");
+    }
+    if (row.kind === "daemon") return t("setup.settingUp.daemonSub");
+    if (row.kind === "model") {
+      return statusOf(row) === "done"
+        ? t("setup.settingUp.modelDoneSub", { model: pendingModelId ?? "" })
+        : t("setup.settingUp.modelSub");
+    }
+    if (row.kind === "import") {
+      if (statusOf(row) === "done" && importStats) {
+        return t("setup.settingUp.importDoneSub", {
+          ingested: importStats.ingested,
+          skipped: importStats.skipped,
+        });
+      }
+      return t("setup.settingUp.importSub", { name: pendingImportPick?.label ?? "" });
     }
     if (row.id === "codex_cli") return t("setup.settingUp.codexSub");
     return t(
@@ -882,7 +1016,6 @@ function SettingUpStep({
   };
 
   const anyFailed = rows.some((row) => statusOf(row) === "failed");
-  const hasWork = rows.some((row) => row.client !== null);
 
   return (
     <StepShell
@@ -912,9 +1045,7 @@ function SettingUpStep({
             lineHeight: "1.5",
           }}
         >
-          {hasWork
-            ? t("setup.settingUp.description")
-            : t("setup.settingUp.nothingSelected")}
+          {t("setup.settingUp.description")}
         </p>
       </div>
 
@@ -929,6 +1060,7 @@ function SettingUpStep({
         {rows.map((row) => {
           const status = statusOf(row);
           const error = errors[row.id];
+          const canRetry = row.kind !== "waiting" && status === "failed";
 
           return (
             <div
@@ -963,19 +1095,30 @@ function SettingUpStep({
                     {subOf(row)}
                   </p>
                 </div>
-                <span
-                  data-testid={`task-status-${row.id}`}
-                  aria-describedby={error ? taskRowDescId(row.id) : undefined}
-                  style={{
-                    fontFamily: "var(--mem-font-body)",
-                    fontSize: "var(--mem-text-sm)",
-                    color: STATUS_COLOR[status],
-                    whiteSpace: "nowrap",
-                    flexShrink: 0,
-                  }}
-                >
-                  {statusTextOf(row)}
-                </span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span
+                    data-testid={`task-status-${row.id}`}
+                    aria-describedby={error ? taskRowDescId(row.id) : undefined}
+                    style={{
+                      fontFamily: "var(--mem-font-body)",
+                      fontSize: "var(--mem-text-sm)",
+                      color: STATUS_COLOR[status],
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {statusTextOf(row)}
+                  </span>
+                  {canRetry && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => runRow(row)}
+                      data-testid={`task-retry-${row.id}`}
+                    >
+                      {t("setup.settingUp.retry")}
+                    </Button>
+                  )}
+                </div>
               </div>
 
               {error && (
@@ -1365,6 +1508,8 @@ export function SetupWizard({ onComplete, initialStep }: SetupWizardProps) {
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [connectedAgents, setConnectedAgents] = useState<string[]>([]);
   const [selectedClients, setSelectedClients] = useState<McpClient[]>([]);
+  const [pendingModelId, setPendingModelId] = useState<string | null>(null);
+  const [pendingImportPick, setPendingImportPick] = useState<VaultPick | null>(null);
   const [, setImportPhase] = useState<string>("input");
   const wizardEnteredAtRef = useRef<number>(Math.floor(Date.now() / 1000));
   // Step dots hide when entering at a specific step (unchanged semantics).
@@ -1390,7 +1535,10 @@ export function SetupWizard({ onComplete, initialStep }: SetupWizardProps) {
       <IntelligenceChoiceStep
         hideDots={hideDots}
         onBack={() => setStep("welcome")}
-        onNext={() => setStep("import")}
+        onNext={(deviceModelId) => {
+          setPendingModelId(deviceModelId);
+          setStep("import");
+        }}
       />
     );
   }
@@ -1407,7 +1555,10 @@ export function SetupWizard({ onComplete, initialStep }: SetupWizardProps) {
           />
         )}
         onPhaseChange={setImportPhase}
-        onSkip={() => setStep("connect")}
+        onAdvance={(pick) => {
+          setPendingImportPick(pick);
+          setStep("connect");
+        }}
         onComplete={(_source, result) => {
           setImportResult(result);
           setStep("connect");
@@ -1435,6 +1586,8 @@ export function SetupWizard({ onComplete, initialStep }: SetupWizardProps) {
       <SettingUpStep
         hideDots={hideDots}
         selected={selectedClients}
+        pendingModelId={pendingModelId}
+        pendingImportPick={pendingImportPick}
         onNext={() => setStep("done")}
         onBack={() => setStep("connect")}
         onConnected={handleConnectedAgents}

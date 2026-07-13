@@ -59,55 +59,49 @@ describe("VaultConnectCard", () => {
     mocks.detectObsidianVaults.mockResolvedValue([]);
   });
 
-  it("zero-count detection warns but does NOT block submit (council change e)", async () => {
-    mocks.detectVault.mockResolvedValue({
-      isVault: false, sourceType: "directory", docCount: 0,
-      countCapped: false, hasValidDoc: false, unreadable: false,
-    });
-    renderCard();
-    await userEvent.click(screen.getByText("Browse…"));
-    await waitFor(() =>
-      expect(screen.getByText(/No notes found/)).toBeInTheDocument()
-    );
-    const connect = screen.getByRole("button", { name: "Connect" });
-    expect(connect).toBeEnabled();
-  });
-
-  it("connects an obsidian vault: addSource + one-shot sync + indexed line", async () => {
-    mocks.detectVault.mockResolvedValue({
-      isVault: true, sourceType: "obsidian", docCount: 12,
-      countCapped: false, hasValidDoc: true, unreadable: false,
-    });
-    renderCard();
-    await userEvent.click(screen.getByText("Browse…"));
-    await waitFor(() => expect(screen.getByText(/Detected \.obsidian\//)).toBeInTheDocument());
-    await userEvent.click(screen.getByRole("button", { name: "Connect" }));
-    await waitFor(() => expect(mocks.addSource).toHaveBeenCalledWith("obsidian", "/v"));
-    await waitFor(() => expect(mocks.syncRegisteredSource).toHaveBeenCalledWith("s1"));
-    await waitFor(() =>
-      expect(screen.getByText(/Indexed 12 files/)).toBeInTheDocument()
-    );
-  });
-
-  it("surfaces daemon 4xx verbatim", async () => {
+  // The wizard variant only records a pick — the "Setting up" step is the
+  // one place that calls addSource/syncRegisteredSource now. There is no
+  // "Connect" action left in this component at all in wizard mode.
+  it("wizard variant never renders a Connect button — the wizard's own Continue is the only confirm", async () => {
     mocks.detectVault.mockResolvedValue({
       isVault: false, sourceType: "directory", docCount: 3,
       countCapped: false, hasValidDoc: true, unreadable: false,
     });
-    mocks.addSource.mockRejectedValue(new Error("path does not exist: /v"));
     renderCard();
     await userEvent.click(screen.getByText("Browse…"));
     await waitFor(() => expect(screen.getByText(/3 supported files/)).toBeInTheDocument());
-    await userEvent.click(screen.getByRole("button", { name: "Connect" }));
-    let errorEl: HTMLElement;
-    await waitFor(() => {
-      errorEl = screen.getByText(/path does not exist: \/v/);
-      expect(errorEl).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Connect" })).not.toBeInTheDocument();
+    expect(screen.getByText("Wenlan will import this when setup finishes.")).toBeInTheDocument();
+  });
+
+  it("a zero-count detection does not block the pick — it still reports up", async () => {
+    mocks.detectVault.mockResolvedValue({
+      isVault: false, sourceType: "directory", docCount: 0,
+      countCapped: false, hasValidDoc: false, unreadable: false,
     });
-    // Danger-text token, not a raw Tailwind color (a mutation back to
-    // text-red-500 would fail this while leaving the text assertion green).
-    expect(errorEl!).toHaveStyle({ color: "var(--mem-status-danger-text)" });
-    expect(errorEl!.className).not.toContain("text-red-500");
+    const onPick = vi.fn();
+    renderCard({ onPick });
+    await userEvent.click(screen.getByText("Browse…"));
+    await waitFor(() => expect(screen.getByText(/No notes found/)).toBeInTheDocument());
+    await waitFor(() =>
+      expect(onPick).toHaveBeenCalledWith({ sourceType: "directory", path: "/v", label: "v" }),
+    );
+  });
+
+  it("browsing to a real Obsidian vault records the pick — it never calls addSource or syncRegisteredSource itself", async () => {
+    mocks.detectVault.mockResolvedValue({
+      isVault: true, sourceType: "obsidian", docCount: 12,
+      countCapped: false, hasValidDoc: true, unreadable: false,
+    });
+    const onPick = vi.fn();
+    renderCard({ onPick });
+    await userEvent.click(screen.getByText("Browse…"));
+    await waitFor(() => expect(screen.getByText(/Detected \.obsidian\//)).toBeInTheDocument());
+    await waitFor(() =>
+      expect(onPick).toHaveBeenCalledWith({ sourceType: "obsidian", path: "/v", label: "v" }),
+    );
+    expect(mocks.addSource).not.toHaveBeenCalled();
+    expect(mocks.syncRegisteredSource).not.toHaveBeenCalled();
   });
 
   it("renders Obsidian vault chips and clicking one populates the path input", async () => {
@@ -122,37 +116,42 @@ describe("VaultConnectCard", () => {
     );
   });
 
-  it("connecting a chip-picked vault calls addSource(obsidian, path) and never runs vault detection", async () => {
+  it("picking a chip reports onPick(obsidian, path) and never runs vault detection or addSource", async () => {
     mocks.detectObsidianVaults.mockResolvedValue([
       { name: "Work Notes", path: "/Users/x/Vaults/Work Notes" },
     ]);
-    renderCard();
+    const onPick = vi.fn();
+    renderCard({ onPick });
     await waitFor(() => expect(screen.getByText("Work Notes")).toBeInTheDocument());
     await userEvent.click(screen.getByText("Work Notes"));
     await waitFor(() =>
-      expect(screen.getByText(/Obsidian vault — Work Notes/)).toBeInTheDocument()
-    );
-    await userEvent.click(screen.getByRole("button", { name: "Connect" }));
-    await waitFor(() =>
-      expect(mocks.addSource).toHaveBeenCalledWith("obsidian", "/Users/x/Vaults/Work Notes")
+      expect(onPick).toHaveBeenCalledWith({
+        sourceType: "obsidian",
+        path: "/Users/x/Vaults/Work Notes",
+        label: "Work Notes",
+      }),
     );
     expect(mocks.detectVault).not.toHaveBeenCalled();
+    expect(mocks.addSource).not.toHaveBeenCalled();
   });
 
-  it("zero vaults: no chip row, card behaves exactly as it does today", async () => {
+  it("zero vaults: no chip row; browsing a folder still reports a pick", async () => {
     mocks.detectVault.mockResolvedValue({
       isVault: false, sourceType: "directory", docCount: 3,
       countCapped: false, hasValidDoc: true, unreadable: false,
     });
-    renderCard();
+    const onPick = vi.fn();
+    renderCard({ onPick });
     await userEvent.click(screen.getByText("Browse…"));
     // By the time detection resolves and re-renders, the (mocked, instantly
     // resolving) obsidian-vaults query has settled too — a reliable point to
     // assert its absence, unlike asserting right after render.
     await waitFor(() => expect(screen.getByText(/3 supported files/)).toBeInTheDocument());
     expect(screen.queryByText("Your Obsidian vaults")).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Connect" }));
-    await waitFor(() => expect(mocks.addSource).toHaveBeenCalledWith("directory", "/v"));
+    await waitFor(() =>
+      expect(onPick).toHaveBeenCalledWith({ sourceType: "directory", path: "/v", label: "v" }),
+    );
+    expect(mocks.addSource).not.toHaveBeenCalled();
   });
 
   // Regression: handleBrowse is async — it awaits detectVault(selected) then
@@ -160,8 +159,7 @@ describe("VaultConnectCard", () => {
   // that scan is still in flight, the abandoned promise later resolves and
   // overwrites `detection` with results for the folder the user never ended
   // up choosing, contradicting the "Obsidian vault — <name>" line right
-  // below it. Submission is unaffected (handleConnect keys off
-  // pickedVault/path) — this is display-only.
+  // below it. Display-only — the pick itself keys off pickedVault/path.
   it("a browse scan that resolves after a vault chip was already picked does not overwrite the picked-vault display with stale info", async () => {
     mocks.detectObsidianVaults.mockResolvedValue([
       { name: "Work Notes", path: "/Users/x/Vaults/Work Notes" },

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
@@ -238,7 +238,17 @@ export function ModelChoiceSection() {
   );
 }
 
-export function OnDeviceModelCard() {
+export function OnDeviceModelCard({
+  deferDownload = false,
+  onModelChosen,
+}: {
+  /** Wizard step 2: record the choice, don't download here — step 5 does
+   *  the download and proves it landed (`loaded === modelId`), not just
+   *  that the request was sent. Settings (no props) keeps the immediate
+   *  download this card has always done. */
+  deferDownload?: boolean;
+  onModelChosen?: (modelId: string | null) => void;
+} = {}) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [pickedId, setPickedId] = useState<string | null>(null);
@@ -264,6 +274,18 @@ export function OnDeviceModelCard() {
   const needsDownload = !!current && !current.cached;
   const canLoad = !!current && current.cached && !isLoaded;
   const ramOk = systemInfo ? systemInfo.total_ram_gb + 0.5 >= (current?.ram_required_gb ?? 0) : true;
+
+  // Report the current pick upward whenever it changes — mount (once the
+  // catalog loads) and every dropdown change. A ref keeps this from
+  // re-firing on every parent render just because it passed a fresh
+  // closure.
+  const onModelChosenRef = useRef(onModelChosen);
+  useEffect(() => {
+    onModelChosenRef.current = onModelChosen;
+  }, [onModelChosen]);
+  useEffect(() => {
+    if (deferDownload) onModelChosenRef.current?.(currentId);
+  }, [deferDownload, currentId]);
 
   const handleDownload = async () => {
     if (!current) return;
@@ -362,7 +384,7 @@ export function OnDeviceModelCard() {
             </span>
           )}
 
-          {needsDownload && (
+          {needsDownload && !deferDownload && (
             <Button
               variant="primary"
               size="sm"
@@ -375,7 +397,7 @@ export function OnDeviceModelCard() {
               {t("intelligence.downloadSize", { size: current?.file_size_gb.toFixed(1) })}
             </Button>
           )}
-          {canLoad && (
+          {canLoad && !deferDownload && (
             <Button
               variant="primary"
               size="sm"
@@ -389,7 +411,15 @@ export function OnDeviceModelCard() {
           )}
         </div>
 
-        {downloading && (
+        {deferDownload && !isLoaded && current && (
+          <p
+            data-testid="on-device-model-deferred-note"
+            style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)" }}
+          >
+            {t("intelligence.willDownloadOnSetup")}
+          </p>
+        )}
+        {downloading && !deferDownload && (
           <p
             style={{
               fontFamily: "var(--mem-font-body)",

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
@@ -10,16 +10,31 @@ import {
   detectObsidianVaults,
   type RegisteredSource,
   type ObsidianVault,
+  type SourceTypeStr,
 } from "../../../lib/tauri";
 import { detectVault, type VaultDetection } from "../../../lib/vaultDetection";
 import { Button } from "../settings/primitives";
 
+/** A recorded choice, not yet acted on. The wizard variant reports this
+ *  upward on every change instead of calling addSource/syncRegisteredSource
+ *  itself — those calls happen exactly once, on the "Setting up" step, so
+ *  the user can watch them and get real SyncStats back. */
+export interface VaultPick {
+  sourceType: SourceTypeStr;
+  path: string;
+  label: string;
+}
+
 interface Props {
   variant: "dialog" | "wizard";
   onConnected?: (source: RegisteredSource) => void;
+  /** Wizard variant only: called with the current pick every time it
+   *  changes (a chip click or a browsed folder), so the wizard always
+   *  knows what Continue should carry forward — never called for "dialog". */
+  onPick?: (pick: VaultPick) => void;
 }
 
-export default function VaultConnectCard({ variant, onConnected }: Props) {
+export default function VaultConnectCard({ variant, onConnected, onPick }: Props) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [path, setPath] = useState("");
@@ -40,17 +55,33 @@ export default function VaultConnectCard({ variant, onConnected }: Props) {
   });
 
   // Post-connect: poll the registered source until it reports counts
-  // ("Indexed N files · M memories", spec §3). Wizard variant only — the
-  // dialog closes into the sources list which already polls.
+  // ("Indexed N files · M memories"). Dialog variant only — the wizard
+  // variant never connects here at all (see onPick below); it hands the
+  // pick to the "Setting up" step, which runs addSource/sync itself and
+  // shows the real SyncStats it gets back.
   const { data: connectedSource } = useQuery({
     queryKey: ["vault-connect-progress", connectedId],
     queryFn: async () => {
       const sources = await listRegisteredSources();
       return sources.find((s) => s.id === connectedId) ?? null;
     },
-    enabled: variant === "wizard" && connectedId !== null,
+    enabled: variant === "dialog" && connectedId !== null,
     refetchInterval: 2000,
   });
+
+  // Wizard variant: report the current pick upward on every change instead
+  // of connecting. A ref avoids re-firing just because the parent passed a
+  // fresh onPick closure.
+  const onPickRef = useRef(onPick);
+  useEffect(() => {
+    onPickRef.current = onPick;
+  }, [onPick]);
+  useEffect(() => {
+    if (variant !== "wizard" || !path) return;
+    const sourceType: SourceTypeStr = pickedVault ? "obsidian" : (detection?.sourceType ?? "directory");
+    const label = pickedVault?.name ?? path.split("/").filter(Boolean).pop() ?? path;
+    onPickRef.current?.({ sourceType, path, label });
+  }, [variant, path, pickedVault, detection]);
 
   const handleBrowse = useCallback(async () => {
     const selected = await openDialog({ directory: true, multiple: false });
@@ -230,14 +261,14 @@ export default function VaultConnectCard({ variant, onConnected }: Props) {
 
       {error && <p style={{ fontSize: "12px", fontFamily: "var(--mem-font-mono)", color: "var(--mem-status-danger-text)" }}>{error}</p>}
 
-      {connectedId === null ? (
-        <Button
-          type="button"
-          variant={variant === "wizard" ? "secondary" : "primary"}
-          onClick={handleConnect}
-          disabled={!canSubmit}
-          className="self-end"
-        >
+      {variant === "wizard" ? (
+        path.length > 0 && (
+          <p style={{ fontSize: "12px", fontFamily: "var(--mem-font-body)", color: "var(--mem-text-secondary)" }}>
+            {t("vaultConnect.willImportOnSetup")}
+          </p>
+        )
+      ) : connectedId === null ? (
+        <Button type="button" variant="primary" onClick={handleConnect} disabled={!canSubmit} className="self-end">
           {connecting ? t("vaultConnect.connecting") : t("vaultConnect.connect")}
         </Button>
       ) : (

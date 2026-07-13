@@ -56,6 +56,26 @@ vi.mock("../lib/tauri", () => ({
   listExternalModels: vi.fn().mockResolvedValue([]),
   getExternalLlmKeyConfigured: vi.fn().mockResolvedValue(false),
   detectObsidianVaults: vi.fn().mockResolvedValue([]),
+  addSource: vi.fn().mockResolvedValue({
+    id: "src-1",
+    source_type: "obsidian",
+    path: "/Users/x/Vaults/Work",
+    status: "idle",
+    last_sync: null,
+    file_count: 0,
+    memory_count: 0,
+  }),
+  syncRegisteredSource: vi.fn().mockResolvedValue({
+    files_found: 0,
+    ingested: 0,
+    skipped: 0,
+    errors: 0,
+  }),
+  getWireState: vi.fn().mockResolvedValue({
+    daemon: { base_url: "http://127.0.0.1:7878", reachable: true, version: "0.12.0", error: null },
+    mcp_binary: { command: "wenlan-mcp", args: [], candidates: [] },
+    clients: [],
+  }),
 }));
 
 import {
@@ -64,6 +84,12 @@ import {
   installClientPlugin,
   listAgents,
   setApiKey,
+  getWireState,
+  getOnDeviceModel,
+  downloadOnDeviceModel,
+  detectObsidianVaults,
+  addSource,
+  syncRegisteredSource,
 } from "../lib/tauri";
 
 /** An agent write that lands AFTER the wizard was entered — the only kind that
@@ -104,6 +130,12 @@ describe("SetupWizard", () => {
     (installClientPlugin as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
     (listAgents as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     (setApiKey as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+    (getWireState as ReturnType<typeof vi.fn>).mockResolvedValue({
+      daemon: { base_url: "http://127.0.0.1:7878", reachable: true, version: "0.12.0", error: null },
+      mcp_binary: { command: "wenlan-mcp", args: [], candidates: [] },
+      clients: [],
+    });
+    (detectObsidianVaults as ReturnType<typeof vi.fn>).mockResolvedValue([]);
   });
 
   it("renders Welcome step by default", () => {
@@ -435,9 +467,11 @@ describe("SetupWizard", () => {
     });
     expect(installClientPlugin).not.toHaveBeenCalledWith("cursor");
 
-    // Plugin rows sort ahead of config rows, and the waiting row is always last.
+    // The runtime row leads unconditionally, then plugin rows sort ahead of
+    // config rows, and the waiting row is always last.
     const rows = within(screen.getByTestId("setting-up-tasks")).getAllByTestId(/^task-status-/);
     expect(rows.map((el) => el.getAttribute("data-testid"))).toEqual([
+      "task-status-daemon",
       "task-status-claude_code",
       "task-status-cursor",
       "task-status-waiting-for-agent",
@@ -537,21 +571,23 @@ describe("SetupWizard", () => {
     renderWizard();
 
     fireEvent.click(screen.getByText("Get started"));
-    fireEvent.click(screen.getByText("Continue"));
+    // Skip every choosing step: no model, no import, no tools.
+    fireEvent.click(screen.getByText("Skip"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Bring what you already know")).toBeInTheDocument();
+    });
     fireEvent.click(screen.getByText("Skip"));
 
     await waitFor(() => {
       expect(screen.getByText("Connect your AI tools")).toBeInTheDocument();
     });
-
-    // Skip past Connect with nothing selected: Setting up has no work to do,
-    // so it says so — and Continue is still the way out.
     fireEvent.click(screen.getByText("Skip"));
 
+    // Even with nothing chosen, the runtime row still runs and proves itself —
+    // it's unconditional, not gated on any pick.
     await waitFor(() => {
-      expect(
-        screen.getByText("You didn't pick any tools. You can connect them any time in Settings → Agents."),
-      ).toBeInTheDocument();
+      expect(screen.getByTestId("task-status-daemon")).toHaveTextContent("Configured");
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
@@ -834,5 +870,223 @@ describe("SetupWizard", () => {
     expect(screen.getByText("+2 more")).toBeInTheDocument();
     expect(screen.queryByText("Tool G")).not.toBeInTheDocument();
     expect(screen.queryByText("Tool H")).not.toBeInTheDocument();
+  });
+
+  // ── Round 2: steps 2-4 collect only; step 5 does + proves everything ────
+
+  it("intelligence step 2 records the on-device model choice but does not download it — only step 5 does", async () => {
+    renderWizard();
+    fireEvent.click(screen.getByText("Get started"));
+
+    // Default device mode, default model — no explicit interaction needed.
+    // Wait for proof the catalog resolved and the choice was already
+    // reported upward (the deferred note only renders once `currentId` is
+    // populated) — asserting the absence of a call before that point would
+    // pass trivially regardless of whether the code is correct.
+    await waitFor(() =>
+      expect(screen.getByTestId("on-device-model-deferred-note")).toBeInTheDocument(),
+    );
+    expect(downloadOnDeviceModel).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByText("Continue"));
+    await waitFor(() => expect(screen.getByText("Bring what you already know")).toBeInTheDocument());
+    expect(downloadOnDeviceModel).not.toHaveBeenCalled();
+  });
+
+  it("import step 3 records the vault pick but does not import it — only step 5 does", async () => {
+    (detectObsidianVaults as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { name: "Work Notes", path: "/Users/x/Vaults/Work Notes" },
+    ]);
+
+    renderWizard({ initialStep: "import" });
+    await waitFor(() => expect(screen.getByText("Work Notes")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("Work Notes"));
+
+    await waitFor(() =>
+      expect(screen.getByText("Wenlan will import this when setup finishes.")).toBeInTheDocument(),
+    );
+    expect(addSource).not.toHaveBeenCalled();
+    expect(syncRegisteredSource).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await waitFor(() => expect(screen.getByText("Connect your AI tools")).toBeInTheDocument());
+    expect(addSource).not.toHaveBeenCalled();
+  });
+
+  it("on-device model: step 5 downloads it and proves loaded, not just that the download call resolved", async () => {
+    (getOnDeviceModel as ReturnType<typeof vi.fn>).mockResolvedValue({
+      loaded: null,
+      selected: "qwen3-4b-instruct-2507",
+      models: [{
+        id: "qwen3-4b-instruct-2507",
+        display_name: "Qwen3 4B",
+        param_count: "4B",
+        ram_required_gb: 8,
+        file_size_gb: 2.7,
+        cached: false,
+      }],
+    });
+
+    renderWizard();
+    fireEvent.click(screen.getByText("Get started"));
+    // Wait for the catalog query to resolve and populate a real model id
+    // before committing — clicking Continue before this settles would carry
+    // a null pick, same as if the user had skipped.
+    await waitFor(() =>
+      expect(screen.getByTestId("on-device-model-deferred-note")).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByText("Continue")); // commit the default device model
+    await waitFor(() => expect(screen.getByText("Bring what you already know")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("Skip"));
+    await waitFor(() => expect(screen.getByText("Connect your AI tools")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("Skip"));
+
+    await waitFor(() => {
+      expect(downloadOnDeviceModel).toHaveBeenCalledWith("qwen3-4b-instruct-2507");
+    });
+    // The download call resolved (the mock always resolves), but `loaded` is
+    // still null — the row must still read "running", never "done", on the
+    // POST alone.
+    expect(screen.getByTestId("task-status-on-device-model")).toHaveTextContent("Setting up…");
+
+    // Now the daemon reports the model actually loaded.
+    (getOnDeviceModel as ReturnType<typeof vi.fn>).mockResolvedValue({
+      loaded: "qwen3-4b-instruct-2507",
+      selected: "qwen3-4b-instruct-2507",
+      models: [{
+        id: "qwen3-4b-instruct-2507",
+        display_name: "Qwen3 4B",
+        param_count: "4B",
+        ram_required_gb: 8,
+        file_size_gb: 2.7,
+        cached: true,
+      }],
+    });
+
+    await waitFor(
+      () => {
+        expect(screen.getByTestId("task-status-on-device-model")).toHaveTextContent("Configured");
+      },
+      { timeout: 4000 },
+    );
+  });
+
+  it("import: step 5 runs addSource + syncRegisteredSource and shows the real SyncStats it gets back, never a fabricated count", async () => {
+    (detectObsidianVaults as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { name: "Work Notes", path: "/Users/x/Vaults/Work Notes" },
+    ]);
+    (addSource as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: "src-1",
+      source_type: "obsidian",
+      path: "/Users/x/Vaults/Work Notes",
+      status: "idle",
+      last_sync: null,
+      file_count: 0,
+      memory_count: 0,
+    });
+    (syncRegisteredSource as ReturnType<typeof vi.fn>).mockResolvedValue({
+      files_found: 1260,
+      ingested: 1247,
+      skipped: 13,
+      errors: 0,
+    });
+
+    renderWizard();
+    fireEvent.click(screen.getByText("Get started"));
+    fireEvent.click(screen.getByText("Skip")); // skip intelligence — isolate the import row
+    await waitFor(() => expect(screen.getByText("Work Notes")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("Work Notes"));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await waitFor(() => expect(screen.getByText("Connect your AI tools")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("Skip"));
+
+    await waitFor(() => {
+      expect(addSource).toHaveBeenCalledWith("obsidian", "/Users/x/Vaults/Work Notes");
+    });
+    await waitFor(() => {
+      expect(syncRegisteredSource).toHaveBeenCalledWith("src-1");
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("task-status-import")).toHaveTextContent("Configured");
+    });
+    expect(screen.getByText("1247 indexed, 13 skipped")).toBeInTheDocument();
+  });
+
+  it("the runtime row reflects daemon.reachable — a down daemon fails the row with its own error, and Retry re-checks it", async () => {
+    (getWireState as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({
+        daemon: { base_url: "http://127.0.0.1:7878", reachable: false, version: null, error: "connection refused" },
+        mcp_binary: { command: "wenlan-mcp", args: [], candidates: [] },
+        clients: [],
+      })
+      .mockResolvedValueOnce({
+        daemon: { base_url: "http://127.0.0.1:7878", reachable: true, version: "0.12.0", error: null },
+        mcp_binary: { command: "wenlan-mcp", args: [], candidates: [] },
+        clients: [],
+      });
+
+    renderWizard({ initialStep: "setting-up" });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("task-status-daemon")).toHaveTextContent("Couldn't set up");
+    });
+    expect(screen.getByText("connection refused")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("task-retry-daemon"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("task-status-daemon")).toHaveTextContent("Configured");
+    });
+    expect(screen.queryByText("connection refused")).not.toBeInTheDocument();
+  });
+
+  // The rows run concurrently and independently. A dead daemon is the single
+  // most likely failure on a real machine — it must not cancel, skip, or defer
+  // the sibling rows. If someone ever "tidies" the kickoff into a sequential
+  // await loop, every tool silently stops being configured whenever the daemon
+  // happens to be down, and nothing else in this suite would notice.
+  it("a down daemon does not stop the tools — sibling rows still run, and the runtime row is listed first", async () => {
+    (getWireState as ReturnType<typeof vi.fn>).mockResolvedValue({
+      daemon: {
+        base_url: "http://127.0.0.1:7878",
+        reachable: false,
+        version: null,
+        error: "connection refused",
+      },
+      mcp_binary: { command: "wenlan-mcp", args: [], candidates: [] },
+      clients: [],
+    });
+    (detectMcpClients as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        name: "Cursor",
+        client_type: "cursor",
+        config_path: "/path/to/cursor",
+        detected: true,
+        already_configured: false,
+      },
+    ]);
+    (writeMcpConfig as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+
+    renderWizard({ initialStep: "connect" });
+
+    await screen.findByRole("checkbox", { name: "Cursor" });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("task-status-daemon")).toHaveTextContent("Couldn't set up");
+    });
+
+    // The tool got configured anyway — that is the whole point.
+    await waitFor(() => {
+      expect(screen.getByTestId("task-status-cursor")).toHaveTextContent("Configured");
+    });
+    expect(writeMcpConfig).toHaveBeenCalledWith("cursor");
+
+    // And the runtime row comes first, because its failure is the explanation
+    // for anything else that goes wrong further down the list.
+    const ids = Array.from(
+      screen.getByTestId("setting-up-tasks").querySelectorAll("[data-testid^='task-status-']"),
+    ).map((el) => el.getAttribute("data-testid"));
+    expect(ids).toEqual(["task-status-daemon", "task-status-cursor", "task-status-waiting-for-agent"]);
   });
 });

@@ -54,8 +54,6 @@ const en = {
       title: "Setting up",
       description:
         "Wenlan is connecting the tools you picked. Nothing here blocks you — you can continue at any time.",
-      nothingSelected:
-        "You didn't pick any tools. You can connect them any time in Settings → Agents.",
       statusPending: "Waiting",
       statusRunning: "Setting up…",
       statusDone: "Configured",
@@ -74,6 +72,16 @@ const en = {
       waitingSub:
         "Restart the tools you just connected, then ask one to remember something.",
       waitingDoneSub: "An agent wrote to your knowledge base — the connection works.",
+      daemonLabel: "Wenlan runtime",
+      daemonSub: "Nothing else here can work until the Wenlan daemon is running.",
+      daemonUnreachable: "The Wenlan daemon isn't reachable.",
+      modelLabel: "On-device model",
+      modelSub: "Downloading and loading the model you chose — this can take a few minutes.",
+      modelDoneSub: "{{model}} is loaded and ready.",
+      importLabel: "Import",
+      importSub: "Importing {{name}}.",
+      importDoneSub: "{{ingested}} indexed, {{skipped}} skipped",
+      retry: "Retry",
     },
     done: {
       readyTitle: "Wenlan is ready.",
@@ -117,6 +125,7 @@ const en = {
     connecting: "Connecting…",
     indexing: "Indexing…",
     indexed: "Indexed {{files}} files · {{memories}} memories",
+    willImportOnSetup: "Wenlan will import this when setup finishes.",
   },
   externalProvider: {
     title: "Your own local server",
@@ -940,6 +949,7 @@ const en = {
     ramWarning:
       "{{model}} needs {{required}}GB RAM, but your system has only {{available}}GB.",
     modelCatalogUnavailable: "Model catalog unavailable — check your connection.",
+    willDownloadOnSetup: "Wenlan will download this when setup finishes.",
   },
   onboarding: {
     next: {
@@ -1100,7 +1110,6 @@ const zhHans = {
     settingUp: {
       title: "正在设置",
       description: "文澜正在接入你选择的工具。这里不会拦住你，你随时可以继续。",
-      nothingSelected: "你没有选择任何工具。你可以随时在设置 → 代理中连接它们。",
       statusPending: "等待中",
       statusRunning: "正在设置…",
       statusDone: "已配置",
@@ -1117,6 +1126,16 @@ const zhHans = {
       waitingLabel: "等待你的第一个代理",
       waitingSub: "重启刚刚连接的工具，然后让其中一个记住一些内容。",
       waitingDoneSub: "已有代理写入你的知识库，连接可用。",
+      daemonLabel: "文澜运行时",
+      daemonSub: "在文澜守护进程运行之前，其他一切都无法工作。",
+      daemonUnreachable: "无法连接到文澜守护进程。",
+      modelLabel: "本机模型",
+      modelSub: "正在下载并加载你选择的模型——这可能需要几分钟。",
+      modelDoneSub: "{{model}} 已加载完成。",
+      importLabel: "导入",
+      importSub: "正在导入 {{name}}。",
+      importDoneSub: "已索引 {{ingested}} 项，跳过 {{skipped}} 项",
+      retry: "重试",
     },
     done: {
       readyTitle: "文澜已准备好。",
@@ -1157,6 +1176,7 @@ const zhHans = {
     connecting: "连接中…",
     indexing: "索引中…",
     indexed: "已索引 {{files}} 个文件 · {{memories}} 条记忆",
+    willImportOnSetup: "Wenlan 会在设置完成后导入它。",
   },
   externalProvider: {
     title: "你自己的本地服务器",
@@ -1960,6 +1980,7 @@ const zhHans = {
     ramWarning:
       "{{model}} 需要 {{required}}GB RAM，但你的系统只有 {{available}}GB。",
     modelCatalogUnavailable: "模型目录不可用——请检查连接。",
+    willDownloadOnSetup: "Wenlan 会在设置完成后下载它。",
   },
   onboarding: {
     next: {
@@ -2119,7 +2140,6 @@ const zhHant = {
     settingUp: {
       title: "正在設定",
       description: "文瀾正在接入你選擇的工具。這裡不會擋住你，你隨時可以繼續。",
-      nothingSelected: "你沒有選擇任何工具。你可以隨時在設定 → 代理中連接它們。",
       statusPending: "等待中",
       statusRunning: "正在設定…",
       statusDone: "已設定",
@@ -2136,6 +2156,16 @@ const zhHant = {
       waitingLabel: "等待你的第一個代理",
       waitingSub: "重新啟動剛剛連接的工具，然後讓其中一個記住一些內容。",
       waitingDoneSub: "已有代理寫入你的知識庫，連接可用。",
+      daemonLabel: "文瀾執行時",
+      daemonSub: "在文瀾守護行程執行之前，其他一切都無法運作。",
+      daemonUnreachable: "無法連接到文瀾守護行程。",
+      modelLabel: "裝置端模型",
+      modelSub: "正在下載並載入你選擇的模型——這可能需要幾分鐘。",
+      modelDoneSub: "{{model}} 已載入完成。",
+      importLabel: "匯入",
+      importSub: "正在匯入 {{name}}。",
+      importDoneSub: "已索引 {{ingested}} 項，跳過 {{skipped}} 項",
+      retry: "重試",
     },
     done: {
       readyTitle: "文瀾已準備好。",
@@ -2176,6 +2206,7 @@ const zhHant = {
     connecting: "連接中…",
     indexing: "索引中…",
     indexed: "已索引 {{files}} 個檔案 · {{memories}} 條記憶",
+    willImportOnSetup: "Wenlan 會在設定完成後匯入它。",
   },
   externalProvider: {
     title: "你自己的本機伺服器",
@@ -2979,6 +3010,7 @@ const zhHant = {
     ramWarning:
       "{{model}} 需要 {{required}}GB RAM，但你的系統只有 {{available}}GB。",
     modelCatalogUnavailable: "模型目錄無法使用——請檢查連線。",
+    willDownloadOnSetup: "Wenlan 會在設定完成後下載它。",
   },
   onboarding: {
     next: {
