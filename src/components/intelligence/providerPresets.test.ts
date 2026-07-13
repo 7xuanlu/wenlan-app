@@ -196,4 +196,22 @@ describe("visiblePresets — native exemption and groups scoping", () => {
     expect(lastLocalIdx).toBeLessThan(firstCloudIdx);
     expect(customIdx).toBe(ids.length - 1);
   });
+
+  // The Model placeholder is the only in-product hint of what a model id even
+  // looks like for a given vendor, so a shared one is actively misleading —
+  // "llama3.2" under OpenAI told users to type an Ollama model. Pin the
+  // placeholders as present and pairwise distinct, so a future edit can't
+  // quietly collapse them back to one.
+  it("every keyed cloud vendor carries its own distinct model placeholder", () => {
+    const vendors = PROVIDER_PRESETS.filter((p) => p.group === "cloud" && p.keyRequired && !p.native);
+    expect(vendors).toHaveLength(7);
+
+    const placeholders = vendors.map((p) => p.modelPlaceholder);
+    for (const value of placeholders) {
+      expect(value).toBeTruthy();
+      // The generic i18n fallback is Ollama-shaped and belongs to local/custom.
+      expect(value).not.toMatch(/llama3\.2/);
+    }
+    expect(new Set(placeholders).size).toBe(vendors.length);
+  });
 });

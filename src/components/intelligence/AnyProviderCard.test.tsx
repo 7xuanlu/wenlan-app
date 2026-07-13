@@ -456,13 +456,18 @@ describe("AnyProviderCard — the Local-server card (spec §5.2)", () => {
       expect(screen.queryByRole("button", { name: "LM Studio" })).not.toBeInTheDocument();
     });
 
-    it("cloud-scoped card: selecting Anthropic shows the key field with no Endpoint field, and Save calls setApiKey — never setExternalLlm", async () => {
+    it("cloud-scoped card: selecting Anthropic shows the key field with no Endpoint or Model field, and Save calls setApiKey — never setExternalLlm", async () => {
       mocks.getDaemonVersion.mockResolvedValue("0.13.0");
       renderCard(undefined, CLOUD_GROUPS);
       await userEvent.click(await screen.findByRole("button", { name: "OpenAI" }));
-      expect(screen.getByLabelText("Endpoint URL")).toBeInTheDocument();
+      // Neither preset shows an Endpoint field anymore (defect fix: known
+      // cloud endpoints are constants, not user input) — the generic form's
+      // Model field is the reliable anchor that OpenAI actually dispatched,
+      // since AnthropicFields never renders one.
+      expect(await screen.findByLabelText("Model")).toBeInTheDocument();
 
       await userEvent.click(screen.getByRole("button", { name: "Anthropic" }));
+      expect(screen.queryByLabelText("Model")).not.toBeInTheDocument();
       expect(screen.queryByLabelText("Endpoint URL")).not.toBeInTheDocument();
       await userEvent.type(screen.getByLabelText("API key"), "sk-ant-test-key");
       await userEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -471,11 +476,14 @@ describe("AnyProviderCard — the Local-server card (spec §5.2)", () => {
       expect(mocks.setExternalLlm).not.toHaveBeenCalled();
     });
 
-    it("cloud-scoped card: selecting OpenAI shows Endpoint + key fields, and Save calls setExternalLlm — never setApiKey", async () => {
+    // Defect fix (user report): a known cloud vendor's endpoint is a
+    // constant from the preset table, not a user decision — asking for it
+    // was noise. Hiding the field must not change what actually gets sent.
+    it("cloud-scoped card: OpenAI shows key + Model fields but no Endpoint field, and Save still calls setExternalLlm with the fixed OpenAI endpoint", async () => {
       mocks.getDaemonVersion.mockResolvedValue("0.13.0");
       renderCard(undefined, CLOUD_GROUPS);
       await userEvent.click(await screen.findByRole("button", { name: "OpenAI" }));
-      expect(screen.getByLabelText("Endpoint URL")).toHaveValue("https://api.openai.com/v1");
+      expect(screen.queryByLabelText("Endpoint URL")).not.toBeInTheDocument();
 
       await userEvent.type(screen.getByLabelText("API key"), "sk-proj-test-key");
       await userEvent.type(screen.getByLabelText("Model"), "gpt-4o-mini");
@@ -487,6 +495,73 @@ describe("AnyProviderCard — the Local-server card (spec §5.2)", () => {
         )
       );
       expect(mocks.setApiKey).not.toHaveBeenCalled();
+    });
+
+    it("the custom chip still renders its Endpoint field — the escape hatch has no fixed endpoint to hide", async () => {
+      mocks.getDaemonVersion.mockResolvedValue("0.13.0");
+      renderCard(undefined, LOCAL_GROUPS);
+      await userEvent.click(await screen.findByRole("button", { name: "Custom…" }));
+      expect(screen.getByLabelText("Endpoint URL")).toBeInTheDocument();
+    });
+
+    it("the ollama chip still renders its Endpoint field — no regression to the local card", async () => {
+      renderCard(undefined, LOCAL_GROUPS);
+      expect(await screen.findByLabelText("Endpoint URL")).toBeInTheDocument();
+    });
+
+    it("OpenAI's Model field placeholder is an OpenAI-shaped id, never the Ollama example", async () => {
+      mocks.getDaemonVersion.mockResolvedValue("0.13.0");
+      renderCard(undefined, CLOUD_GROUPS);
+      await userEvent.click(await screen.findByRole("button", { name: "OpenAI" }));
+      expect(screen.getByLabelText("Model")).toHaveAttribute("placeholder", "gpt-4o-mini");
+      expect(screen.getByLabelText("Model")).not.toHaveAttribute("placeholder", "Model name (e.g. llama3.2)");
+    });
+
+    it("Ollama's Model field placeholder stays the generic llama3.2 example", async () => {
+      mocks.listExternalModels.mockRejectedValue(new Error("ECONNREFUSED"));
+      renderCard(undefined, LOCAL_GROUPS);
+      await screen.findByText(/Not detected at localhost:11434/);
+      expect(screen.getByLabelText("Model")).toHaveAttribute("placeholder", "Model name (e.g. llama3.2)");
+    });
+
+    it("a cloud vendor's discovered models render as a selectable dropdown once a key is present", async () => {
+      mocks.getDaemonVersion.mockResolvedValue("0.13.0");
+      mocks.listExternalModels.mockResolvedValue(["gpt-4o-mini", "gpt-4o"]);
+      renderCard(undefined, CLOUD_GROUPS);
+      await userEvent.click(await screen.findByRole("button", { name: "OpenAI" }));
+      // No key yet — free text, no dropdown, no failed-discovery noise either
+      // (covered by the dedicated test below).
+      expect(screen.getByLabelText("Model").tagName).toBe("INPUT");
+
+      await userEvent.type(screen.getByLabelText("API key"), "sk-proj-test-key");
+      // The Input → Select swap replaces the DOM node (different element
+      // type), so the element must be re-queried inside the wait — a
+      // reference grabbed before the swap would stay pinned to the removed
+      // <input> and never observe the tag change.
+      await waitFor(() => expect(screen.getByLabelText("Model").tagName).toBe("SELECT"));
+      const modelField = screen.getByLabelText("Model");
+      await userEvent.selectOptions(modelField, "gpt-4o");
+      expect(modelField).toHaveValue("gpt-4o");
+    });
+
+    it("modelDiscoveryFailed is absent on a keyRequired preset with an empty key — no noise before a key exists", async () => {
+      mocks.getDaemonVersion.mockResolvedValue("0.13.0");
+      mocks.listExternalModels.mockRejectedValue(new Error("401 Unauthorized"));
+      renderCard(undefined, CLOUD_GROUPS);
+      await userEvent.click(await screen.findByRole("button", { name: "OpenAI" }));
+      // Discovery still fires unauthenticated (unchanged) and this mock
+      // always rejects — awaiting the call is the positive settle-anchor
+      // before the absence check below (never assert absence "too early").
+      await waitFor(() =>
+        expect(mocks.listExternalModels).toHaveBeenCalledWith("https://api.openai.com/v1", null)
+      );
+      expect(screen.queryByText(/Couldn.t list models/)).not.toBeInTheDocument();
+
+      // Same failing mock, but now with a key present — the guard flips and
+      // the message appears, proving the earlier absence wasn't a fluke of
+      // being too early.
+      await userEvent.type(screen.getByLabelText("API key"), "sk-proj-test-key");
+      expect(await screen.findByText(/Couldn.t list models/, {}, { timeout: 2000 })).toBeInTheDocument();
     });
 
     it("cloud-scoped card on a sub-0.13 daemon shows Anthropic only — never an empty chip row", async () => {

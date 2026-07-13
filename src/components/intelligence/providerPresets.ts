@@ -23,6 +23,12 @@ export interface ProviderPreset {
   native?: boolean;
   /** Provider-shaped example shown when no key is stored (§9.1). */
   keyPlaceholder?: string;
+  /** Vendor-specific example model id shown in the Model field before
+   *  discovery has anything to offer. A proper noun / id, like keyPlaceholder
+   *  — never translated. Absent = falls back to the generic (Ollama-shaped)
+   *  i18n placeholder, correct for the local/custom presets that have no
+   *  fixed vendor. */
+  modelPlaceholder?: string;
   /** Soft-check prefixes; absent = no format check (§9.1). */
   keyPrefixes?: string[];
   /** Provider console, opened in the system browser (§9.1). */
@@ -60,6 +66,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     keyPlaceholder: "sk-proj-...",
     keyPrefixes: ["sk-"],
     getKeyUrl: "https://platform.openai.com/api-keys",
+    modelPlaceholder: "gpt-4o-mini",
   },
   {
     id: "gemini",
@@ -70,6 +77,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     keyPlaceholder: "AIzaSy... or AQ....",
     keyPrefixes: ["AIzaSy", "AQ."],
     getKeyUrl: "https://aistudio.google.com/apikey",
+    modelPlaceholder: "gemini-2.0-flash",
   },
   {
     id: "groq",
@@ -80,6 +88,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     keyPlaceholder: "gsk_...",
     keyPrefixes: ["gsk_"],
     getKeyUrl: "https://console.groq.com/keys",
+    modelPlaceholder: "llama-3.3-70b-versatile",
   },
   {
     id: "openrouter",
@@ -90,6 +99,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     keyPlaceholder: "sk-or-v1-...",
     keyPrefixes: ["sk-or-"],
     getKeyUrl: "https://openrouter.ai/keys",
+    modelPlaceholder: "anthropic/claude-3.5-sonnet",
   },
   {
     id: "mistral",
@@ -97,7 +107,13 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     endpoint: "https://api.mistral.ai/v1",
     keyRequired: true,
     group: "cloud",
+    // Mistral keys are an opaque token with no fixed prefix (unlike sk-,
+    // gsk_, xai-, sk-or-) — keyPrefixes intentionally stays unset (see
+    // keyPrefixMismatch's doc comment, which names Mistral as the example).
+    // This placeholder still shows the token's actual shape/length.
+    keyPlaceholder: "hDx3mQ7tRkP1sLb9vNc5wEa2fGz8jTy4",
     getKeyUrl: "https://console.mistral.ai",
+    modelPlaceholder: "mistral-large-latest",
   },
   {
     id: "deepseek",
@@ -108,6 +124,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     keyPlaceholder: "sk-...",
     keyPrefixes: ["sk-"],
     getKeyUrl: "https://platform.deepseek.com/api_keys",
+    modelPlaceholder: "deepseek-chat",
   },
   {
     id: "xai",
@@ -118,6 +135,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     keyPlaceholder: "xai-...",
     keyPrefixes: ["xai-"],
     getKeyUrl: "https://console.x.ai",
+    modelPlaceholder: "grok-2-latest",
   },
   { id: "ollama", name: "Ollama (local)", endpoint: "http://localhost:11434/v1", keyRequired: false, group: "local" },
   { id: "lmstudio", name: "LM Studio (local)", endpoint: "http://localhost:1234/v1", keyRequired: false, group: "local" },

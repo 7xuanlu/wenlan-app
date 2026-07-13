@@ -179,6 +179,20 @@ export default function AnyProviderCard({ groups }: { groups?: PresetGroup[] }) 
   const models = discovery.data ?? [];
   const localQuery = selectedProbe;
   const localQueryModels = localQuery?.data ?? [];
+  // A keyed cloud vendor's discovery results feed the same polished <Select>
+  // that local presets get, once a key actually works — "paste key → model
+  // list appears → pick one." Custom keeps the old free-text + datalist
+  // experience: it never has a key step, so there's no equivalent moment
+  // where the dropdown should just fill itself in.
+  const showModelSelect = localQuery
+    ? localQueryModels.length >= 1
+    : preset.keyRequired && models.length >= 1;
+  const effectiveModels = localQuery ? localQueryModels : models;
+  // A keyed cloud vendor's /models call is a guaranteed failure with no key
+  // at all — expected, not worth surfacing as an error. "A key" means either
+  // typed right now or already stored server-side; presets with no key
+  // requirement (local/custom) are never held back by this.
+  const keyPresent = !preset.keyRequired || apiKey.trim() !== "" || keyConfigured === true;
 
   // Auto-select, once both in-scope probes and the key queries have settled.
   // Precedence: 1. a saved endpoint already adopted by the prefill effect
@@ -276,6 +290,13 @@ export default function AnyProviderCard({ groups }: { groups?: PresetGroup[] }) 
   };
 
   const canAct = endpointValid && model.trim() !== "";
+
+  // A vendor with a fixed, well-known endpoint (the 7 keyed cloud presets)
+  // has nothing for the user to decide here — the endpoint is a constant
+  // from the preset table, not a user choice. custom has no fixed endpoint
+  // (that's the whole point of it), and ollama/lmstudio are genuinely
+  // re-hostable, so both keep the field.
+  const knownCloudEndpoint = preset.keyRequired && !preset.native && preset.group === "cloud";
 
   // Scope drives both copy and the Anthropic-fields no-key-guidance prop:
   // cloud-only is the wizard's Cloud model tile, which already shows its own
@@ -386,20 +407,22 @@ export default function AnyProviderCard({ groups }: { groups?: PresetGroup[] }) 
           <>
             {chipState && <StatusChip state={chipState} label={chipLabel} />}
 
-            <Field label={t("externalProvider.endpointLabel")} htmlFor="any-provider-endpoint">
-              <Input mono value={endpoint} onChange={(e) => setEndpoint(e.target.value)} />
-            </Field>
+            {!knownCloudEndpoint && (
+              <Field label={t("externalProvider.endpointLabel")} htmlFor="any-provider-endpoint">
+                <Input mono value={endpoint} onChange={(e) => setEndpoint(e.target.value)} />
+              </Field>
+            )}
 
             <Field label={t("externalProvider.modelLabel")} htmlFor="any-provider-model">
-              {localQuery && localQueryModels.length >= 1 ? (
+              {showModelSelect ? (
                 <Select mono value={model} onChange={(e) => setModel(e.target.value)}>
                   <option value="">{t("externalProvider.modelSelectPlaceholder")}</option>
                   {/* A saved model that's no longer among the discovered ids
                       (e.g. removed from Ollama since it was saved) must still
                       render as the visibly-selected value — never a blank select
                       while Save/Test remain enabled on a value the user can't see. */}
-                  {model !== "" && !localQueryModels.includes(model) && <option value={model}>{model}</option>}
-                  {localQueryModels.map((m) => (
+                  {model !== "" && !effectiveModels.includes(model) && <option value={model}>{model}</option>}
+                  {effectiveModels.map((m) => (
                     <option key={m} value={m}>{m}</option>
                   ))}
                 </Select>
@@ -408,19 +431,19 @@ export default function AnyProviderCard({ groups }: { groups?: PresetGroup[] }) 
                   mono
                   value={model}
                   onChange={(e) => setModel(e.target.value)}
-                  placeholder={t("externalProvider.modelPlaceholder")}
+                  placeholder={preset.modelPlaceholder ?? t("externalProvider.modelPlaceholder")}
                   list="any-provider-models"
                 />
               )}
             </Field>
-            {!(localQuery && localQueryModels.length >= 1) && (
+            {!showModelSelect && (
               <datalist id="any-provider-models">
                 {models.map((m) => (
                   <option key={m} value={m} />
                 ))}
               </datalist>
             )}
-            {(discovery.isError || localQuery?.isError) && (
+            {keyPresent && (discovery.isError || localQuery?.isError) && (
               <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)" }}>
                 {t("externalProvider.modelDiscoveryFailed")}
               </span>
