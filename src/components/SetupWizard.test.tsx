@@ -103,6 +103,8 @@ function renderWizard(
   props: {
     onComplete?: () => void;
     initialStep?: "welcome" | "intelligence-choice" | "import" | "connect" | "setting-up" | "done";
+    initialPendingModelId?: string | null;
+    initialPendingImportPick?: { sourceType: "obsidian" | "directory"; path: string; label: string } | null;
   } = {},
 ) {
   const queryClient = new QueryClient({
@@ -115,7 +117,12 @@ function renderWizard(
     onComplete,
     ...render(
       <QueryClientProvider client={queryClient}>
-        <SetupWizard onComplete={onComplete} initialStep={props.initialStep} />
+        <SetupWizard
+          onComplete={onComplete}
+          initialStep={props.initialStep}
+          initialPendingModelId={props.initialPendingModelId}
+          initialPendingImportPick={props.initialPendingImportPick}
+        />
       </QueryClientProvider>,
     ),
   };
@@ -468,13 +475,12 @@ describe("SetupWizard", () => {
     expect(installClientPlugin).not.toHaveBeenCalledWith("cursor");
 
     // The runtime row leads unconditionally, then plugin rows sort ahead of
-    // config rows, and the waiting row is always last.
+    // config rows. The rail holds only work Wenlan does — no waiting row.
     const rows = within(screen.getByTestId("setting-up-tasks")).getAllByTestId(/^task-status-/);
     expect(rows.map((el) => el.getAttribute("data-testid"))).toEqual([
       "task-status-daemon",
       "task-status-claude_code",
       "task-status-cursor",
-      "task-status-waiting-for-agent",
     ]);
   });
 
@@ -514,7 +520,7 @@ describe("SetupWizard", () => {
   // the moment it saw ANY past agent write, so anyone who had ever used Wenlan
   // shot straight past this step. Only a write made SINCE the wizard was
   // entered proves the config we just wrote works.
-  it("a pre-existing agent write does NOT advance past Setting up, and does not resolve the waiting row", async () => {
+  it("a pre-existing agent write does NOT advance past Setting up, and does not resolve the first-write handoff", async () => {
     (detectMcpClients as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
         name: "Cursor",
@@ -543,12 +549,14 @@ describe("SetupWizard", () => {
     expect(screen.queryByText("You're all set.")).not.toBeInTheDocument();
     expect(screen.queryByText("Wenlan is ready.")).not.toBeInTheDocument();
 
-    // The waiting row is still waiting: an old write proves nothing about the
+    // The handoff is still waiting: an old write proves nothing about the
     // config that was written seconds ago.
-    expect(screen.getByTestId("task-status-waiting-for-agent")).toHaveTextContent("Listening…");
+    expect(screen.getByTestId("first-write-label")).toHaveTextContent(
+      "Ask an agent to remember something",
+    );
   });
 
-  it("a fresh agent write resolves the waiting row — and still does not advance on its own", async () => {
+  it("a fresh agent write resolves the first-write handoff — and still does not advance on its own", async () => {
     (listAgents as ReturnType<typeof vi.fn>).mockResolvedValue([
       { name: "Claude", display_name: "Claude", last_seen_at: FRESH(), memory_count: 5 },
     ]);
@@ -556,13 +564,15 @@ describe("SetupWizard", () => {
     renderWizard({ initialStep: "setting-up" });
 
     await waitFor(() => {
-      expect(screen.getByTestId("task-status-waiting-for-agent")).toHaveTextContent("Connected");
+      expect(screen.getByTestId("first-write-label")).toHaveTextContent(
+        "Claude just wrote to your knowledge base",
+      );
     });
     expect(
-      screen.getByText("An agent wrote to your knowledge base — the connection works."),
+      screen.getByText("The connection works end to end. Pages build from here."),
     ).toBeInTheDocument();
 
-    // Resolving its row is all it does. The user still chooses when to move on.
+    // Resolving the handoff is all it does. The user still chooses when to move on.
     expect(screen.getByText("Setting up")).toBeInTheDocument();
     expect(screen.queryByText("You're all set.")).not.toBeInTheDocument();
   });
@@ -715,7 +725,9 @@ describe("SetupWizard", () => {
     renderWizard({ initialStep: "setting-up" });
 
     await waitFor(() => {
-      expect(screen.getByTestId("task-status-waiting-for-agent")).toHaveTextContent("Connected");
+      expect(screen.getByTestId("first-write-label")).toHaveTextContent(
+        "just wrote to your knowledge base",
+      );
     });
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
 
@@ -851,7 +863,9 @@ describe("SetupWizard", () => {
     renderWizard({ initialStep: "setting-up" });
 
     await waitFor(() => {
-      expect(screen.getByTestId("task-status-waiting-for-agent")).toHaveTextContent("Connected");
+      expect(screen.getByTestId("first-write-label")).toHaveTextContent(
+        "just wrote to your knowledge base",
+      );
     });
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
 
@@ -945,9 +959,11 @@ describe("SetupWizard", () => {
       expect(downloadOnDeviceModel).toHaveBeenCalledWith("qwen3-4b-instruct-2507");
     });
     // The download call resolved (the mock always resolves), but `loaded` is
-    // still null — the row must still read "running", never "done", on the
-    // POST alone.
-    expect(screen.getByTestId("task-status-on-device-model")).toHaveTextContent("Setting up…");
+    // still null and the model isn't cached — the row must read
+    // "Downloading…", never "done", on the POST alone.
+    await waitFor(() => {
+      expect(screen.getByTestId("task-status-on-device-model")).toHaveTextContent("Downloading…");
+    });
 
     // Now the daemon reports the model actually loaded.
     (getOnDeviceModel as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -969,6 +985,110 @@ describe("SetupWizard", () => {
       },
       { timeout: 4000 },
     );
+  });
+
+  // Previously unreachable: entering directly at "setting-up" with a pending
+  // model id lets the DOWNLOADING vs LOADING split (daemon-reported `cached`)
+  // be tested without driving a real multi-minute download through the wizard.
+  it("model row shows the DOWNLOADING status and size when the daemon reports the model not yet cached", async () => {
+    (getOnDeviceModel as ReturnType<typeof vi.fn>).mockResolvedValue({
+      loaded: null,
+      selected: "qwen3-4b-instruct-2507",
+      models: [{
+        id: "qwen3-4b-instruct-2507",
+        display_name: "Qwen3 4B",
+        param_count: "4B",
+        ram_required_gb: 8,
+        file_size_gb: 2.7,
+        cached: false,
+      }],
+    });
+
+    renderWizard({ initialStep: "setting-up", initialPendingModelId: "qwen3-4b-instruct-2507" });
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("Fetching 2.7 GB. Leave it running; it keeps going if you continue."),
+      ).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("task-status-on-device-model")).toHaveTextContent("Downloading…");
+  });
+
+  it("model row shows the LOADING status once the daemon reports the model cached but not yet loaded", async () => {
+    (getOnDeviceModel as ReturnType<typeof vi.fn>).mockResolvedValue({
+      loaded: null,
+      selected: "qwen3-4b-instruct-2507",
+      models: [{
+        id: "qwen3-4b-instruct-2507",
+        display_name: "Qwen3 4B",
+        param_count: "4B",
+        ram_required_gb: 8,
+        file_size_gb: 2.7,
+        cached: true,
+      }],
+    });
+
+    renderWizard({ initialStep: "setting-up", initialPendingModelId: "qwen3-4b-instruct-2507" });
+
+    await waitFor(() => {
+      expect(screen.getByText("Downloaded. Loading it into memory now.")).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("task-status-on-device-model")).toHaveTextContent("Loading…");
+  });
+
+  // Nothing on this step is a gate, but a model download made the screen feel
+  // like one until the walk-away note said otherwise. It must track whether
+  // any row is actually running, not render unconditionally.
+  // Absence only — the name used to promise a positive check this test never
+  // makes, and it passed with the note deleted outright. The presence half is
+  // the next test over; this one exists to catch a note that never goes away.
+  it("hides the walk-away note once every row has settled", async () => {
+    (getWireState as ReturnType<typeof vi.fn>).mockResolvedValue({
+      daemon: { base_url: "http://127.0.0.1:7878", reachable: true, version: "0.12.0", error: null },
+      mcp_binary: { command: "wenlan-mcp", args: [], candidates: [] },
+      clients: [],
+    });
+
+    renderWizard({ initialStep: "setting-up" });
+
+    // Positive assertion first: settle on "done" before asserting the note's
+    // absence, so the absence check can't pass just because nothing rendered yet.
+    await waitFor(() => {
+      expect(screen.getByTestId("task-status-daemon")).toHaveTextContent("Running");
+    });
+    expect(screen.queryByTestId("setting-up-walk-away")).not.toBeInTheDocument();
+  });
+
+  it("shows the walk-away note while the model row is still downloading", async () => {
+    (getOnDeviceModel as ReturnType<typeof vi.fn>).mockResolvedValue({
+      loaded: null,
+      selected: "qwen3-4b-instruct-2507",
+      models: [{
+        id: "qwen3-4b-instruct-2507",
+        display_name: "Qwen3 4B",
+        param_count: "4B",
+        ram_required_gb: 8,
+        file_size_gb: 2.7,
+        cached: false,
+      }],
+    });
+
+    renderWizard({ initialStep: "setting-up", initialPendingModelId: "qwen3-4b-instruct-2507" });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("task-status-on-device-model")).toHaveTextContent("Downloading…");
+    });
+    expect(screen.getByTestId("setting-up-walk-away")).toBeInTheDocument();
+  });
+
+  // The first-agent-write moment used to be a task row (WAITING_ROW_ID) inside
+  // the rail. It moved below the spine as a handoff — the rail now holds only
+  // work Wenlan does.
+  it("the first-write handoff renders below the rail and is not a task row", async () => {
+    renderWizard({ initialStep: "setting-up" });
+
+    await screen.findByTestId("first-write-handoff");
+    expect(screen.queryByTestId("task-row-waiting-for-agent")).not.toBeInTheDocument();
   });
 
   it("import: step 5 runs addSource + syncRegisteredSource and shows the real SyncStats it gets back, never a fabricated count", async () => {
@@ -1087,7 +1207,7 @@ describe("SetupWizard", () => {
     const ids = Array.from(
       screen.getByTestId("setting-up-tasks").querySelectorAll("[data-testid^='task-status-']"),
     ).map((el) => el.getAttribute("data-testid"));
-    expect(ids).toEqual(["task-status-daemon", "task-status-cursor", "task-status-waiting-for-agent"]);
+    expect(ids).toEqual(["task-status-daemon", "task-status-cursor"]);
   });
 
   // The user's actual complaint: step 5 looked like step 4 — "boxes by

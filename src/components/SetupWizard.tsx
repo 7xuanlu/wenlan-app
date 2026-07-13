@@ -42,9 +42,20 @@ export type WizardStep =
 interface SetupWizardProps {
   onComplete: () => void;
   initialStep?: WizardStep;
+  // Preview-harness seams. The model and import rows of the setting-up step are
+  // conditional on picks made in earlier steps, so entering at `setting-up`
+  // renders neither — which made the two longest-running rows in the whole
+  // wizard the only ones nobody could review without a real multi-minute
+  // download. The app never passes these; ?model=/?import= in preview do.
+  initialPendingModelId?: string | null;
+  initialPendingImportPick?: VaultPick | null;
 }
 
-const STEP_ORDER: WizardStep[] = [
+// Exported so the preview harness can drive the wizard by step without keeping
+// its own copy. It used to keep a literal, which drifted when "verify" was
+// renamed "setting-up" — and rather than the "visibly wrong tab" that was
+// predicted, it silently made the setting-up step unreachable in preview.
+export const STEP_ORDER: WizardStep[] = [
   "welcome",
   "intelligence-choice",
   "import",
@@ -719,17 +730,20 @@ function ConnectStep({
 
 type TaskStatus = "pending" | "running" | "done" | "failed";
 
-const WAITING_ROW_ID = "waiting-for-agent";
 const DAEMON_ROW_ID = "daemon";
 const MODEL_ROW_ID = "on-device-model";
 const IMPORT_ROW_ID = "import";
+
+/** Centre of a rail node: 5px from the row's top, plus half of its 9px box.
+ *  The spine is drawn between node centres, so both ends clamp to this. */
+const NODE_CENTER_Y = 9.5;
 
 /** A unit of work on the Setting up step. `client` is set only for
  *  plugin/config rows; the other kinds carry what they need through the
  *  step's own `pendingModelId` / `pendingImportPick` props instead. */
 interface TaskRow {
   id: string;
-  kind: "daemon" | "model" | "import" | "plugin" | "config" | "waiting";
+  kind: "daemon" | "model" | "import" | "plugin" | "config";
   client: McpClient | null;
 }
 
@@ -781,7 +795,14 @@ function SettingUpStep({
   // refetch mid-step must not add, drop, or reorder a row the user is watching.
   // Order: runtime first (nothing downstream can be true if the daemon isn't
   // up), then the on-device model (if chosen), then import (if chosen), then
-  // each tool, then the waiting row, always last.
+  // each tool.
+  //
+  // The rail holds only work WENLAN does. The first-agent write used to be a
+  // row here, but it is the one thing on this screen the machine cannot do:
+  // it needs the user to go to another app and use it. As a row it could never
+  // complete while being looked at, so the spine never finished inking and
+  // onboarding's last impression was a checklist stuck at incomplete. It lives
+  // below the rail now, as a handoff, and the rail can actually finish.
   const [rows] = useState<TaskRow[]>(() => {
     const out: TaskRow[] = [{ id: DAEMON_ROW_ID, kind: "daemon", client: null }];
     if (pendingModelId) out.push({ id: MODEL_ROW_ID, kind: "model", client: null });
@@ -796,7 +817,7 @@ function SettingUpStep({
         client,
       });
     }
-    out.push(...plugins, ...configs, { id: WAITING_ROW_ID, kind: "waiting", client: null });
+    out.push(...plugins, ...configs);
     return out;
   });
 
@@ -915,7 +936,6 @@ function SettingUpStep({
     if (startedRef.current) return;
     startedRef.current = true;
     for (const row of rows) {
-      if (row.kind === "waiting") continue;
       runRow(row);
     }
   }, [rows, runRow]);
@@ -963,15 +983,16 @@ function SettingUpStep({
     onConnectedRef.current(freshAgents.map((a) => a.name));
   }, [freshAgents]);
 
-  const statusOf = (row: TaskRow): TaskStatus =>
-    row.kind === "waiting"
-      ? waitingDone
-        ? "done"
-        : "running"
-      : (statuses[row.id] ?? "pending");
+  const statusOf = (row: TaskRow): TaskStatus => statuses[row.id] ?? "pending";
+
+  // The daemon reports no byte count, but it does report whether the file is
+  // cached. That splits one undifferentiated spinner into the two waits the
+  // user actually has — minutes of download, then seconds of load — and lets
+  // the row name the real file size instead of "a few minutes".
+  const modelEntry = modelPoll?.models.find((m) => m.id === pendingModelId);
+  const modelDownloading = statuses[MODEL_ROW_ID] === "running" && !modelEntry?.cached;
 
   const labelOf = (row: TaskRow): string => {
-    if (row.kind === "waiting") return t("setup.settingUp.waitingLabel");
     if (row.kind === "daemon") return t("setup.settingUp.daemonLabel");
     if (row.kind === "model") return t("setup.settingUp.modelLabel");
     if (row.kind === "import") return t("setup.settingUp.importLabel");
@@ -983,16 +1004,17 @@ function SettingUpStep({
   };
 
   const subOf = (row: TaskRow): string => {
-    if (row.kind === "waiting") {
-      return waitingDone
-        ? t("setup.settingUp.waitingDoneSub")
-        : t("setup.settingUp.waitingSub");
-    }
     if (row.kind === "daemon") return t("setup.settingUp.daemonSub");
     if (row.kind === "model") {
-      return statusOf(row) === "done"
-        ? t("setup.settingUp.modelDoneSub", { model: pendingModelId ?? "" })
-        : t("setup.settingUp.modelSub");
+      if (statusOf(row) === "done") {
+        return t("setup.settingUp.modelDoneSub", { model: pendingModelId ?? "" });
+      }
+      if (modelDownloading) {
+        return modelEntry
+          ? t("setup.settingUp.modelDownloadingSub", { size: modelEntry.file_size_gb })
+          : t("setup.settingUp.modelSub");
+      }
+      return t("setup.settingUp.modelLoadingSub");
     }
     if (row.kind === "import") {
       if (statusOf(row) === "done" && importStats) {
@@ -1016,13 +1038,18 @@ function SettingUpStep({
 
   const statusTextOf = (row: TaskRow): string => {
     const status = statusOf(row);
-    if (row.kind === "waiting") {
-      return status === "done"
-        ? t("setup.settingUp.statusConnected")
-        : t("setup.settingUp.statusListening");
-    }
     if (status === "pending") return t("setup.settingUp.statusPending");
-    if (status === "running") return t("setup.settingUp.statusRunning");
+    if (status === "running") {
+      // "Setting up…" for six minutes of model download is not a status, it's
+      // a shrug. Name the phase the user is actually in.
+      if (row.kind === "model") {
+        return modelDownloading
+          ? t("setup.settingUp.statusDownloading")
+          : t("setup.settingUp.statusLoading");
+      }
+      if (row.kind === "import") return t("setup.settingUp.statusImporting");
+      return t("setup.settingUp.statusRunning");
+    }
     if (status === "done") {
       // A daemon is not "configured" — it runs. A model is ready; an import is
       // imported. One flat done-word for every row kind said the wrong thing
@@ -1036,6 +1063,7 @@ function SettingUpStep({
   };
 
   const anyFailed = rows.some((row) => statusOf(row) === "failed");
+  const anyRunning = rows.some((row) => statusOf(row) === "running");
 
   return (
     <StepShell
@@ -1080,9 +1108,18 @@ function SettingUpStep({
         {rows.map((row, index) => {
           const status = statusOf(row);
           const error = errors[row.id];
-          const canRetry = row.kind !== "waiting" && status === "failed";
+          const canRetry = status === "failed";
           const isDone = status === "done";
+          const isFirst = index === 0;
           const isLast = index === rows.length - 1;
+
+          // Node centre is 9.5px down the row (node top 5px + half of 9px).
+          // First row: spine leaves its node downward. Last row: spine arrives
+          // at its node and stops. A lone row has no spine to draw at all.
+          const hasRail = rows.length > 1;
+          const railSpan = isLast
+            ? { top: 0, height: `${NODE_CENTER_Y}px` }
+            : { top: isFirst ? `${NODE_CENTER_Y}px` : 0, bottom: 0 };
 
           return (
             <div
@@ -1093,36 +1130,49 @@ function SettingUpStep({
             >
               {/* Rail + node: purely decorative — the row's own status text
                   and testids carry the meaning for assistive tech. Each row
-                  owns only the segment through/below its own node, inked
-                  independently of its siblings — rows finish concurrently and
-                  out of order, so this is never a contiguous top-down fill. */}
+                  owns only its own stretch of spine, inked independently of
+                  its siblings — rows finish concurrently and out of order, so
+                  this is never a contiguous top-down fill.
+
+                  The spine runs node-centre to node-centre, and nowhere else.
+                  It used to span each row's full box, which drew 9.5px of line
+                  ABOVE the first node (a stub joined to nothing) and skipped
+                  the last row's segment entirely (a 9.5px gap before the final
+                  node). So the first row is clamped to start at its node and
+                  the last to stop at its. */}
               <div
                 aria-hidden="true"
                 style={{ position: "relative", width: "9px", alignSelf: "stretch", flexShrink: 0 }}
               >
-                {!isLast && (
+                {hasRail && (
                   <>
                     <div
                       style={{
                         position: "absolute",
                         left: "4px",
-                        top: 0,
-                        bottom: 0,
                         width: "1px",
                         backgroundColor: "var(--mem-border)",
+                        ...railSpan,
                       }}
                     />
+                    {/* Indeterminate, not fake: a travelling glint for work in
+                        flight, a solid top-down ink once it lands. */}
+                    {status === "running" && (
+                      <div
+                        className="mem-rail-flow"
+                        style={{ position: "absolute", left: "4px", width: "1px", ...railSpan }}
+                      />
+                    )}
                     <div
                       className={isDone ? "mem-rail-ink" : undefined}
                       style={{
                         position: "absolute",
                         left: "4px",
-                        top: 0,
-                        bottom: 0,
                         width: "1px",
                         transformOrigin: "top",
                         transform: isDone ? undefined : "scaleY(0)",
                         backgroundColor: "var(--mem-accent-sage)",
+                        ...railSpan,
                       }}
                     />
                   </>
@@ -1220,7 +1270,84 @@ function SettingUpStep({
         })}
       </div>
 
+      {/* The handoff. Not a rail row: the rail is work Wenlan does, and this is
+          the one thing it can't — it needs the user to go use an agent. Sitting
+          below the spine, in the imperative, it reads as "what's next" instead
+          of a task stuck at incomplete. It still carries the strongest proof in
+          the wizard: a write that landed AFTER setup, from a real agent. */}
+      <div
+        data-testid="first-write-handoff"
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          gap: "var(--mem-space-3)",
+          paddingTop: "var(--mem-space-4)",
+          borderTop: "1px solid var(--mem-border)",
+        }}
+      >
+        <div
+          aria-hidden="true"
+          className={waitingDone ? undefined : "mem-node-pulse"}
+          style={{
+            marginTop: "5px",
+            width: "9px",
+            height: "9px",
+            flexShrink: 0,
+            borderRadius: "var(--mem-radius-full)",
+            border: `1.5px solid ${waitingDone ? "var(--mem-accent-sage)" : "var(--mem-accent-indigo)"}`,
+            backgroundColor: waitingDone ? "var(--mem-accent-sage)" : "transparent",
+          }}
+        />
+        <div className="min-w-0">
+          <p
+            data-testid="first-write-label"
+            style={{
+              fontFamily: "var(--mem-font-body)",
+              fontSize: "var(--mem-text-base)",
+              fontWeight: 500,
+              color: waitingDone ? "var(--mem-text)" : "var(--mem-text-secondary)",
+              transition: "color var(--mem-dur-fast) ease",
+            }}
+          >
+            {waitingDone
+              ? t("setup.settingUp.firstWriteDoneLabel", {
+                  agent: freshAgents[0]?.name ?? "",
+                })
+              : t("setup.settingUp.firstWriteLabel")}
+          </p>
+          <p
+            style={{
+              fontFamily: "var(--mem-font-body)",
+              fontSize: "var(--mem-text-sm)",
+              color: "var(--mem-text-tertiary)",
+              lineHeight: "1.5",
+              marginTop: "2px",
+            }}
+          >
+            {waitingDone
+              ? t("setup.settingUp.firstWriteDoneSub")
+              : t("setup.settingUp.firstWriteSub")}
+          </p>
+        </div>
+      </div>
+
       <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+        {/* Nothing on this step is a gate — Continue was always live. It just
+            never said so, so a model download made the screen feel like a wait.
+            The daemon keeps downloading and ingesting after the wizard closes. */}
+        {anyRunning && (
+          <p
+            data-testid="setting-up-walk-away"
+            style={{
+              fontFamily: "var(--mem-font-body)",
+              fontSize: "var(--mem-text-sm)",
+              color: "var(--mem-text-tertiary)",
+              lineHeight: "1.5",
+            }}
+          >
+            {t("setup.settingUp.walkAwayNote")}
+          </p>
+        )}
         <p
           style={{
             fontFamily: "var(--mem-font-body)",
@@ -1581,14 +1708,19 @@ function DoneStep({
 
 // ── SetupWizard ─────────────────────────────────────────────────────────
 
-export function SetupWizard({ onComplete, initialStep }: SetupWizardProps) {
+export function SetupWizard({
+  onComplete,
+  initialStep,
+  initialPendingModelId = null,
+  initialPendingImportPick = null,
+}: SetupWizardProps) {
   const startStep = initialStep ?? "welcome";
   const [step, setStep] = useState<WizardStep>(startStep);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [connectedAgents, setConnectedAgents] = useState<string[]>([]);
   const [selectedClients, setSelectedClients] = useState<McpClient[]>([]);
-  const [pendingModelId, setPendingModelId] = useState<string | null>(null);
-  const [pendingImportPick, setPendingImportPick] = useState<VaultPick | null>(null);
+  const [pendingModelId, setPendingModelId] = useState<string | null>(initialPendingModelId);
+  const [pendingImportPick, setPendingImportPick] = useState<VaultPick | null>(initialPendingImportPick);
   const [, setImportPhase] = useState<string>("input");
   const wizardEnteredAtRef = useRef<number>(Math.floor(Date.now() / 1000));
   // Step dots hide when entering at a specific step (unchanged semantics).

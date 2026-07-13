@@ -12,7 +12,7 @@ import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import PageDetail from "../src/components/memory/PageDetail";
 import DistillReviewPanel from "../src/components/memory/DistillReviewPanel";
-import { SetupWizard, type WizardStep } from "../src/components/SetupWizard";
+import { SetupWizard, STEP_ORDER, type WizardStep } from "../src/components/SetupWizard";
 import SettingsPage from "../src/components/memory/SettingsPage";
 import SettingsSidebar, {
   SETTINGS_GROUPS,
@@ -29,17 +29,13 @@ const VARIANTS = [
   { id: "page-plain", label: "No citations" },
 ];
 
-// Mirrors STEP_ORDER in SetupWizard.tsx. Kept as a literal rather than
-// imported: the wizard exports the type, not the array, and a drifting label
-// here is a visibly wrong tab, not a silent bug.
-const WIZARD_STEPS: WizardStep[] = [
-  "welcome",
-  "intelligence-choice",
-  "import",
-  "connect",
-  "verify",
-  "done",
-];
+// Imported, not copied. This WAS a hand-kept literal on the theory that drift
+// would show up as "a visibly wrong tab, not a silent bug". It did the
+// opposite: when the wizard renamed "verify" to "setting-up", the stale literal
+// silently made that step unreachable here — ?step=setting-up failed validation
+// and fell back, so the newest step in the wizard was the one nobody could
+// review. Sharing the array means a rename can't desync again.
+const WIZARD_STEPS: WizardStep[] = STEP_ORDER;
 
 // Mirrors reviewSuppression.ts's STORAGE_KEY/HiddenReviewEntry shape so the
 // "Seed hidden" button demoes the review panel's hidden-items footer without
@@ -224,9 +220,25 @@ function Harness() {
         // hideDots = !!initialStep, so always passing it would hide the step
         // dots and misreport a real first run as having no progress indicator.
         // No ?step= → a natural run from welcome, dots and all.
+        // ?model=<id> and ?import=<folder name> seed the picks the setting-up
+        // step's model/import rows are conditional on. Without them, entering
+        // at ?step=setting-up renders neither row — so the two slowest, least
+        // reviewed rows in the wizard were the only ones the harness couldn't
+        // show. ?model=stall pairs with the live-invoke stub that never reports
+        // the model as loaded, which is what a dead download actually looks like.
         <SetupWizard
           key={wizardStep}
           initialStep={params.get("step") ? wizardStep : undefined}
+          initialPendingModelId={params.get("model")}
+          initialPendingImportPick={
+            params.get("import")
+              ? {
+                  sourceType: "obsidian",
+                  path: `/Users/preview/${params.get("import")}`,
+                  label: params.get("import")!,
+                }
+              : null
+          }
           onComplete={() => console.log("[preview] onComplete")}
         />
       ) : mode === "settings" ? (

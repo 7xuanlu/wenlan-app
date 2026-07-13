@@ -224,6 +224,36 @@ body {
   .mem-rail-ink { animation: none; }
 }
 
+/* A running task's rail segment carries a travelling highlight. The daemon
+   reports no fraction for a model download or a folder ingest, so there is no
+   honest numerator to fill a progress bar with — a moving glint says "this is
+   alive" without claiming to know how far along it is. Reduced motion keeps a
+   static tint, so the row still reads as active rather than stalled. */
+@keyframes mem-rail-flow {
+  from { background-position: 0 0; }
+  to   { background-position: 0 52px; }
+}
+.mem-rail-flow {
+  /* A tight band, not a broad ramp: spread the sage across the whole tile and
+     it reads as the segment breathing in place rather than a glint travelling
+     down it. The falloff is what sells the direction. */
+  background-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    transparent 32%,
+    var(--mem-accent-sage) 50%,
+    transparent 68%,
+    transparent 100%
+  );
+  background-size: 100% 52px;
+  background-repeat: repeat-y;
+  opacity: 0.6;
+  animation: mem-rail-flow 1.5s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mem-rail-flow { animation: none; opacity: 0.3; }
+}
+
 /* Row hover utility — replaces JS onMouseEnter style mutation
    (AgentsSection, SettingsSidebar). */
 .mem-row-hover:hover {
