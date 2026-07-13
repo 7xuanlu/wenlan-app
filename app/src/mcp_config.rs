@@ -348,40 +348,87 @@ pub fn detect_mcp_clients() -> Vec<McpClient> {
         .collect()
 }
 
-/// Search for a local wenlan-mcp binary. Order: dev checkout paths (unchanged),
-/// then the canonical `install.sh` location, then a sidecar bundled next to
-/// this binary (the only real path for a `.dmg`-only user who never ran
-/// `install.sh`). `npx -y wenlan-mcp` (unpinned) is the caller's last resort,
-/// not this function's.
-fn find_wenlan_mcp_binary() -> Option<PathBuf> {
-    let mut candidates = vec![
-        dirs::home_dir().map(|h| h.join(".cargo/bin/wenlan-mcp")),
-        dirs::home_dir().map(|h| h.join("Repos/wenlan/target/release/wenlan-mcp")),
-        dirs::home_dir().map(|h| h.join("Repos/wenlan/target/debug/wenlan-mcp")),
-        dirs::home_dir().map(|h| h.join(".wenlan/bin/wenlan-mcp")),
-    ];
-    if let Ok(exe) = std::env::current_exe() {
-        candidates.push(exe.parent().map(|dir| dir.join("wenlan-mcp")));
+/// The backend release this app ships against. Deriving the npm fallback from
+/// the same file the sidecar download uses means the two can never disagree:
+/// bumping the pin bumps the fallback.
+const BACKEND_VERSION_PIN: &str = include_str!("../../.wenlan-backend-version");
+
+/// `wenlan-mcp@^<pinned version>`, e.g. `wenlan-mcp@^0.12.0`. Falls back to the
+/// bare package name only if the pin file is unparseable — an unpinned `npx`
+/// can silently pull a backend the app was never tested against.
+fn pinned_wenlan_mcp_package(pin_file: &str) -> String {
+    let version = pin_file
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .trim_start_matches('v');
+    if version.is_empty() || !version.starts_with(|c: char| c.is_ascii_digit()) {
+        return "wenlan-mcp".to_string();
     }
-    candidates.into_iter().flatten().find(|p| p.exists())
+    format!("wenlan-mcp@^{version}")
 }
 
-/// The MCP config entry Wenlan writes into client config files.
-/// Default: npx (production path, requires wenlan-mcp published to npm).
-/// Dev fallback: uses local binary if found on disk.
-pub fn wenlan_mcp_entry() -> WenlanMcpEntry {
-    // Dev fallback: use local binary if available
-    if let Some(binary_path) = find_wenlan_mcp_binary() {
-        return WenlanMcpEntry {
-            command: binary_path.to_string_lossy().to_string(),
+/// Where a real `wenlan-mcp` binary can live, most-specific first. Mirrors the
+/// plugin's own `wenlan-mcp-runner.sh` resolution order.
+///
+/// Deliberately does *not* probe a cargo target dir. `~/Repos/wenlan/target/release`
+/// used to rank above the installed binary here, so the wizard baked a maintainer's
+/// build-artifact path into real users' client configs — and the entry died the next
+/// `cargo clean`. A target dir is a build output, not an install location.
+fn wenlan_mcp_candidates(
+    home: Option<&Path>,
+    dev_bin: Option<&str>,
+    exe_dir: Option<&Path>,
+) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Some(dev_bin) = dev_bin.filter(|p| !p.trim().is_empty()) {
+        candidates.push(PathBuf::from(dev_bin));
+    }
+    if let Some(home) = home {
+        candidates.push(home.join(".wenlan/bin/wenlan-mcp"));
+    }
+    if let Some(exe_dir) = exe_dir {
+        candidates.push(exe_dir.join("wenlan-mcp"));
+    }
+    if let Some(home) = home {
+        candidates.push(home.join(".cargo/bin/wenlan-mcp"));
+    }
+    candidates
+}
+
+fn find_wenlan_mcp_binary() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok();
+    let dev_bin = std::env::var("WENLAN_MCP_DEV_BIN").ok();
+    wenlan_mcp_candidates(
+        dirs::home_dir().as_deref(),
+        dev_bin.as_deref(),
+        exe.as_ref().and_then(|exe| exe.parent()),
+    )
+    .into_iter()
+    .find(|p| p.exists())
+}
+
+/// The MCP config entry Wenlan writes into client config files: an installed
+/// binary when one exists, otherwise a version-pinned `npx`.
+fn wenlan_mcp_entry_for(binary: Option<PathBuf>, npm_package: &str) -> WenlanMcpEntry {
+    match binary {
+        Some(path) => WenlanMcpEntry {
+            command: path.to_string_lossy().to_string(),
             args: Vec::new(),
-        };
+        },
+        None => WenlanMcpEntry {
+            command: "npx".to_string(),
+            args: vec!["-y".to_string(), npm_package.to_string()],
+        },
     }
-    // Production default
-    WenlanMcpEntry {
-        command: "npx".to_string(),
-        args: vec!["-y".to_string(), "wenlan-mcp".to_string()],
-    }
+}
+
+pub fn wenlan_mcp_entry() -> WenlanMcpEntry {
+    wenlan_mcp_entry_for(
+        find_wenlan_mcp_binary(),
+        &pinned_wenlan_mcp_package(BACKEND_VERSION_PIN),
+    )
 }
 
 /// Write the Wenlan MCP server entry into a client's config file.
@@ -851,11 +898,126 @@ mod tests {
 
         assert!(!entry.command.is_empty());
         if entry.command == "npx" {
-            assert_eq!(entry.args, vec!["-y".to_string(), "wenlan-mcp".to_string()]);
+            assert_eq!(entry.args.len(), 2);
+            assert_eq!(entry.args[0], "-y");
+            assert!(entry.args[1].starts_with("wenlan-mcp@^"));
         } else {
             assert!(entry.command.ends_with("wenlan-mcp"));
             assert!(entry.args.is_empty());
         }
+    }
+
+    /// The bug that broke a real machine: a maintainer's cargo target dir outranked
+    /// the installed binary, so the absolute dev path was written into the user's
+    /// client config and died on the next `cargo clean`.
+    #[test]
+    fn wenlan_mcp_candidates_never_probe_a_build_artifact_dir() {
+        let home = PathBuf::from("/Users/someone");
+        let candidates = wenlan_mcp_candidates(
+            Some(home.as_path()),
+            None,
+            Some(Path::new("/Applications/Wenlan.app/Contents/MacOS")),
+        );
+        assert!(!candidates.is_empty());
+        for candidate in &candidates {
+            let path = candidate.to_string_lossy();
+            assert!(
+                !path.contains("/target/release/") && !path.contains("/target/debug/"),
+                "candidate probes a cargo build artifact, which is not an install location: {path}"
+            );
+            assert!(
+                !path.contains("/Repos/"),
+                "candidate hardcodes a maintainer's checkout layout: {path}"
+            );
+        }
+    }
+
+    #[test]
+    fn wenlan_mcp_candidates_rank_the_installed_binary_first() {
+        let home = PathBuf::from("/Users/someone");
+        let candidates = wenlan_mcp_candidates(Some(home.as_path()), None, None);
+        assert_eq!(
+            candidates.first().unwrap(),
+            &home.join(".wenlan/bin/wenlan-mcp")
+        );
+        assert!(candidates.contains(&home.join(".cargo/bin/wenlan-mcp")));
+    }
+
+    #[test]
+    fn wenlan_mcp_candidates_let_a_dev_override_win() {
+        let home = PathBuf::from("/Users/someone");
+        let candidates = wenlan_mcp_candidates(
+            Some(home.as_path()),
+            Some("/tmp/dev/wenlan-mcp"),
+            Some(Path::new("/Applications/Wenlan.app/Contents/MacOS")),
+        );
+        assert_eq!(candidates[0], PathBuf::from("/tmp/dev/wenlan-mcp"));
+        assert_eq!(candidates[1], home.join(".wenlan/bin/wenlan-mcp"));
+        assert_eq!(
+            candidates[2],
+            PathBuf::from("/Applications/Wenlan.app/Contents/MacOS/wenlan-mcp")
+        );
+    }
+
+    #[test]
+    fn wenlan_mcp_candidates_survive_a_missing_home_and_empty_override() {
+        let candidates = wenlan_mcp_candidates(
+            None,
+            Some("   "),
+            Some(Path::new("/Applications/Wenlan.app/Contents/MacOS")),
+        );
+        assert_eq!(
+            candidates,
+            vec![PathBuf::from(
+                "/Applications/Wenlan.app/Contents/MacOS/wenlan-mcp"
+            )]
+        );
+    }
+
+    #[test]
+    fn pinned_wenlan_mcp_package_tracks_the_backend_pin_file() {
+        assert_eq!(
+            pinned_wenlan_mcp_package("v0.13.0\ndeadbeef\n"),
+            "wenlan-mcp@^0.13.0"
+        );
+        assert_eq!(pinned_wenlan_mcp_package("0.12.0"), "wenlan-mcp@^0.12.0");
+    }
+
+    #[test]
+    fn pinned_wenlan_mcp_package_falls_back_when_the_pin_is_unparseable() {
+        assert_eq!(pinned_wenlan_mcp_package(""), "wenlan-mcp");
+        assert_eq!(pinned_wenlan_mcp_package("latest\n"), "wenlan-mcp");
+    }
+
+    /// The npx fallback must carry the version this app was built against, or a
+    /// `.dmg`-only user silently gets whatever backend npm serves today.
+    #[test]
+    fn npx_fallback_is_pinned_to_the_shipped_backend_version() {
+        let entry = wenlan_mcp_entry_for(None, &pinned_wenlan_mcp_package(BACKEND_VERSION_PIN));
+        assert_eq!(entry.command, "npx");
+        assert_eq!(entry.args[0], "-y");
+        assert!(
+            entry.args[1].starts_with("wenlan-mcp@^"),
+            "npx fallback is unpinned: {}",
+            entry.args[1]
+        );
+        assert!(
+            entry.args[1]
+                .trim_start_matches("wenlan-mcp@^")
+                .starts_with(|c: char| c.is_ascii_digit()),
+            "npx fallback carries no version: {}",
+            entry.args[1]
+        );
+    }
+
+    #[test]
+    fn wenlan_mcp_entry_prefers_a_found_binary_over_npx() {
+        let entry = wenlan_mcp_entry_for(
+            Some(PathBuf::from("/Users/someone/.wenlan/bin/wenlan-mcp")),
+            "wenlan-mcp@^9.9.9",
+        );
+        assert_eq!(entry.command, "/Users/someone/.wenlan/bin/wenlan-mcp");
+        assert!(entry.args.is_empty());
     }
 
     #[test]
