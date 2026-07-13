@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, within, fireEvent, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SetupWizard } from "./SetupWizard";
 import { i18n } from "../i18n";
@@ -15,6 +14,7 @@ vi.mock("../lib/tauri", () => ({
   setSetupCompleted: vi.fn().mockResolvedValue(undefined),
   detectMcpClients: vi.fn().mockResolvedValue([]),
   writeMcpConfig: vi.fn().mockResolvedValue(undefined),
+  installClientPlugin: vi.fn().mockResolvedValue(undefined),
   listAgents: vi.fn().mockResolvedValue([]),
   getWenlanMcpEntry: vi.fn().mockResolvedValue({ command: "npx", args: ["-y", "wenlan-mcp"] }),
   getRemoteAccessStatus: vi.fn().mockResolvedValue({ status: "off" }),
@@ -61,14 +61,22 @@ vi.mock("../lib/tauri", () => ({
 import {
   detectMcpClients,
   writeMcpConfig,
+  installClientPlugin,
   listAgents,
   setApiKey,
 } from "../lib/tauri";
 
+/** An agent write that lands AFTER the wizard was entered — the only kind that
+ *  proves the config we just wrote actually works. `wizardEnteredAt` is stamped
+ *  at mount, so a future timestamp is the reliable way to say "since then". */
+const FRESH = () => Math.floor(Date.now() / 1000) + 60;
+/** An agent write from a previous install. Proof of nothing about this run. */
+const STALE = () => Math.floor(Date.now() / 1000) - 3600;
+
 function renderWizard(
   props: {
     onComplete?: () => void;
-    initialStep?: "welcome" | "intelligence-choice" | "import" | "connect" | "verify" | "done";
+    initialStep?: "welcome" | "intelligence-choice" | "import" | "connect" | "setting-up" | "done";
   } = {},
 ) {
   const queryClient = new QueryClient({
@@ -93,6 +101,7 @@ describe("SetupWizard", () => {
     await i18n.changeLanguage("en");
     (detectMcpClients as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     (writeMcpConfig as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+    (installClientPlugin as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
     (listAgents as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     (setApiKey as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
   });
@@ -273,7 +282,11 @@ describe("SetupWizard", () => {
     expect(screen.queryByText("Found on this Mac")).not.toBeInTheDocument();
   });
 
-  it("connects selected detected tools on continue; the CTA label counts down as tools get connected", async () => {
+  // ── Dot 4 asks, dot 5 acts ────────────────────────────────────────────
+  // Connect writes nothing. Every mutation happens on Setting up, one visible
+  // row at a time.
+
+  it("connect writes nothing — Continue only carries the selection to Setting up", async () => {
     (detectMcpClients as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
         name: "Cursor",
@@ -288,19 +301,25 @@ describe("SetupWizard", () => {
 
     const cursorCheckbox = await screen.findByRole("checkbox", { name: "Cursor" });
     await waitFor(() => expect(cursorCheckbox).toBeChecked());
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Connect 1 tool" })).toBeInTheDocument();
-    });
 
-    fireEvent.click(screen.getByRole("button", { name: "Connect 1 tool" }));
+    // Nothing has been written while the user was merely looking at the list.
+    expect(writeMcpConfig).not.toHaveBeenCalled();
+    expect(installClientPlugin).not.toHaveBeenCalled();
 
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    // (d) A non-plugin client is set up with writeMcpConfig — on dot 5.
     await waitFor(() => {
       expect(writeMcpConfig).toHaveBeenCalledWith("cursor");
-      expect(screen.getByText("Waiting for your first agent...")).toBeInTheDocument();
     });
+    expect(screen.getByText("Setting up")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByTestId("task-status-cursor")).toHaveTextContent("Configured");
+    });
+    expect(installClientPlugin).not.toHaveBeenCalledWith("cursor");
   });
 
-  it("the CTA count tracks the checkboxes — unchecking a tool drops it from the count and from what gets written", async () => {
+  it("unchecking a tool drops it from the work list — it gets no row and no write", async () => {
     (detectMcpClients as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
         name: "Cursor",
@@ -320,26 +339,24 @@ describe("SetupWizard", () => {
 
     renderWizard({ initialStep: "connect" });
 
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Connect 2 tools" })).toBeInTheDocument();
-    });
-
-    const windsurfCheckbox = screen.getByRole("checkbox", { name: "Windsurf" });
+    const windsurfCheckbox = await screen.findByRole("checkbox", { name: "Windsurf" });
+    await waitFor(() => expect(windsurfCheckbox).toBeChecked());
     fireEvent.click(windsurfCheckbox);
+    expect(windsurfCheckbox).not.toBeChecked();
 
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Connect 1 tool" })).toBeInTheDocument();
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "Connect 1 tool" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
 
     await waitFor(() => {
       expect(writeMcpConfig).toHaveBeenCalledWith("cursor");
     });
     expect(writeMcpConfig).not.toHaveBeenCalledWith("windsurf");
+    expect(screen.queryByTestId("task-status-windsurf")).not.toBeInTheDocument();
   });
 
-  it("stays on connect step and surfaces the error when MCP setup fails", async () => {
+  // (e) A failed row is inert, not fatal. It shows its reason and stays failed;
+  // the user is never trapped in setup because one editor's config was
+  // read-only.
+  it("a failed row shows its error, stays failed, and never blocks Continue", async () => {
     (detectMcpClients as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
         name: "Cursor",
@@ -349,29 +366,37 @@ describe("SetupWizard", () => {
         already_configured: false,
       },
     ]);
-    (writeMcpConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("setup failed"));
+    (writeMcpConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("permission denied"));
 
     renderWizard({ initialStep: "connect" });
 
+    await screen.findByRole("checkbox", { name: "Cursor" });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    // Settle first: wait for the row to actually reach its failed state before
+    // asserting anything about what is *not* blocked.
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Connect 1 tool" })).toBeInTheDocument();
+      expect(screen.getByTestId("task-status-cursor")).toHaveTextContent("Couldn't set up");
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Connect 1 tool" }));
+    const error = screen.getByRole("alert");
+    expect(error).toHaveTextContent(/permission denied/i);
+    expect(error).toHaveStyle({ color: "var(--mem-status-danger-text)" });
 
+    const continueButton = screen.getByRole("button", { name: "Continue" });
+    expect(continueButton).toBeEnabled();
+
+    // And it really does move on.
+    fireEvent.click(continueButton);
     await waitFor(() => {
-      expect(writeMcpConfig).toHaveBeenCalledWith("cursor");
-      expect(screen.queryByText("Waiting for your first agent...")).not.toBeInTheDocument();
-      expect(screen.getByText(/setup failed/i)).toBeInTheDocument();
+      expect(screen.getByText("Wenlan is ready.")).toBeInTheDocument();
     });
   });
 
-  // Binding adjudication (redesign spec §12.2): the wizard must NEVER write
-  // Claude Code's config — doing so would duplicate the MCP server the
-  // Wenlan Claude Code plugin already registers. Claude Code gets no
-  // checkbox and no write action of any kind here (unlike Settings, where
-  // an explicit Advanced disclosure still offers it).
-  it("Claude Code leads with the plugin-install path, has no checkbox, and offers no write action in the wizard", async () => {
+  // (b) THE invariant. Claude Code's Wenlan plugin declares its own
+  // `mcpServers`, so writing `~/.claude.json` on top of installing the plugin
+  // would register the Wenlan server TWICE. Plugin, never a raw MCP entry.
+  it("claude_code is set up with installClientPlugin — and its config is never written", async () => {
     (detectMcpClients as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
         name: "Claude Code",
@@ -391,31 +416,38 @@ describe("SetupWizard", () => {
 
     renderWizard({ initialStep: "connect" });
 
-    await screen.findByText("Claude Code");
-    expect(
-      screen.getByText(
-        "Copy the setup prompt and paste it into Claude Code — it sets itself up.",
-      ),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Copy setup prompt" })).toBeInTheDocument();
+    // Claude Code is an ordinary checkbox now — no slash commands, no
+    // "go type this in your terminal".
+    const claudeCheckbox = await screen.findByRole("checkbox", { name: "Claude Code" });
+    await waitFor(() => expect(claudeCheckbox).toBeChecked());
 
-    expect(screen.queryByRole("checkbox", { name: "Claude Code" })).not.toBeInTheDocument();
-    expect(screen.queryByText("Or write the config for me")).not.toBeInTheDocument();
-    expect(screen.queryByText("Advanced")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
 
-    // Cursor, the GUI client, is unaffected — it still gets the ordinary
-    // checked-by-default checkbox and drives the batch-write CTA.
-    const cursorCheckbox = screen.getByRole("checkbox", { name: "Cursor" });
-    await waitFor(() => expect(cursorCheckbox).toBeChecked());
+    await waitFor(() => {
+      expect(installClientPlugin).toHaveBeenCalledWith("claude_code");
+    });
+    expect(writeMcpConfig).not.toHaveBeenCalledWith("claude_code");
 
-    fireEvent.click(await screen.findByRole("button", { name: "Connect 1 tool" }));
+    // The neighbouring GUI client still takes the config-write path — the rule
+    // is per-client, not a blanket switch.
     await waitFor(() => {
       expect(writeMcpConfig).toHaveBeenCalledWith("cursor");
     });
-    expect(writeMcpConfig).not.toHaveBeenCalledWith("claude_code");
+    expect(installClientPlugin).not.toHaveBeenCalledWith("cursor");
+
+    // Plugin rows sort ahead of config rows, and the waiting row is always last.
+    const rows = within(screen.getByTestId("setting-up-tasks")).getAllByTestId(/^task-status-/);
+    expect(rows.map((el) => el.getAttribute("data-testid"))).toEqual([
+      "task-status-claude_code",
+      "task-status-cursor",
+      "task-status-waiting-for-agent",
+    ]);
   });
 
-  it("Codex CLI is an ordinary GUI-style row now — a checkbox, no plugin path, batch-written like any other tool", async () => {
+  // (c) Same invariant for Codex — and one row covering both surfaces that
+  // share ~/.codex/config.toml. It must not read as "ChatGPT connected":
+  // ChatGPT's chat assistant only speaks remote HTTPS MCP and is NOT covered.
+  it("codex_cli is set up with installClientPlugin, on one row named for both Codex CLI and ChatGPT desktop", async () => {
     (detectMcpClients as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
         name: "Codex CLI",
@@ -428,45 +460,77 @@ describe("SetupWizard", () => {
 
     renderWizard({ initialStep: "connect" });
 
-    const codexCheckbox = await screen.findByRole("checkbox", { name: "Codex CLI" });
-    await waitFor(() => expect(codexCheckbox).toBeChecked());
-    expect(screen.queryByRole("button", { name: "Copy setup prompt" })).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Connect 1 tool" }));
-    await waitFor(() => {
-      expect(writeMcpConfig).toHaveBeenCalledWith("codex_cli");
-    });
-  });
-
-  it("verify step skips waiting UX when agents already wrote in the past", async () => {
-    (listAgents as ReturnType<typeof vi.fn>).mockResolvedValue([
-      {
-        name: "Claude",
-        client_type: "claude_code",
-        first_seen_at: Math.floor(Date.now() / 1000) - 86400,
-        last_seen_at: Math.floor(Date.now() / 1000) - 3600,
-        memory_count: 5,
-      },
-    ]);
-
-    renderWizard({ initialStep: "verify" });
+    await screen.findByRole("checkbox", { name: "Codex CLI" });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
 
     await waitFor(() => {
-      expect(screen.getByText("You're all set.")).toBeInTheDocument();
+      expect(installClientPlugin).toHaveBeenCalledWith("codex_cli");
     });
+    expect(writeMcpConfig).not.toHaveBeenCalledWith("codex_cli");
 
-    expect(screen.getByText("Claude")).toBeInTheDocument();
-    expect(screen.queryByText("Back")).not.toBeInTheDocument();
-
-    // allSetBody1/allSetBody2: wiki-pages-first, not memory-first.
+    expect(screen.getByText("Codex CLI & ChatGPT desktop")).toBeInTheDocument();
     expect(
       screen.getByText(
-        "Keep using your AI tools normally. Wenlan turns what they learn into pages you can read and cite.",
+        "One setup covers both, including the Codex pane in ChatGPT desktop. ChatGPT's chat assistant is not covered.",
       ),
     ).toBeInTheDocument();
+  });
+
+  // (f) The returning-user bug. VerifyStep used to call onNext() from an effect
+  // the moment it saw ANY past agent write, so anyone who had ever used Wenlan
+  // shot straight past this step. Only a write made SINCE the wizard was
+  // entered proves the config we just wrote works.
+  it("a pre-existing agent write does NOT advance past Setting up, and does not resolve the waiting row", async () => {
+    (detectMcpClients as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        name: "Cursor",
+        client_type: "cursor",
+        config_path: "/path/to/cursor",
+        detected: true,
+        already_configured: false,
+      },
+    ]);
+    (listAgents as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { name: "Claude", display_name: "Claude", last_seen_at: STALE(), memory_count: 5 },
+    ]);
+
+    renderWizard({ initialStep: "connect" });
+
+    await screen.findByRole("checkbox", { name: "Cursor" });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    // Settle on a real state change first — otherwise the "did not advance"
+    // assertions below could pass simply by running before anything happened.
+    await waitFor(() => {
+      expect(screen.getByTestId("task-status-cursor")).toHaveTextContent("Configured");
+    });
+
+    expect(screen.getByText("Setting up")).toBeInTheDocument();
+    expect(screen.queryByText("You're all set.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Wenlan is ready.")).not.toBeInTheDocument();
+
+    // The waiting row is still waiting: an old write proves nothing about the
+    // config that was written seconds ago.
+    expect(screen.getByTestId("task-status-waiting-for-agent")).toHaveTextContent("Listening…");
+  });
+
+  it("a fresh agent write resolves the waiting row — and still does not advance on its own", async () => {
+    (listAgents as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { name: "Claude", display_name: "Claude", last_seen_at: FRESH(), memory_count: 5 },
+    ]);
+
+    renderWizard({ initialStep: "setting-up" });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("task-status-waiting-for-agent")).toHaveTextContent("Connected");
+    });
     expect(
-      screen.getByText("Pages refresh between sessions, so the next one starts where the last ended."),
+      screen.getByText("An agent wrote to your knowledge base — the connection works."),
     ).toBeInTheDocument();
+
+    // Resolving its row is all it does. The user still chooses when to move on.
+    expect(screen.getByText("Setting up")).toBeInTheDocument();
+    expect(screen.queryByText("You're all set.")).not.toBeInTheDocument();
   });
 
   it("renders skip-path Done copy without a back button", async () => {
@@ -480,8 +544,17 @@ describe("SetupWizard", () => {
       expect(screen.getByText("Connect your AI tools")).toBeInTheDocument();
     });
 
+    // Skip past Connect with nothing selected: Setting up has no work to do,
+    // so it says so — and Continue is still the way out.
     fireEvent.click(screen.getByText("Skip"));
-    fireEvent.click(screen.getByText("Skip"));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("You didn't pick any tools. You can connect them any time in Settings → Agents."),
+      ).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
 
     await waitFor(() => {
       expect(screen.getByText("Wenlan is ready.")).toBeInTheDocument();
@@ -546,7 +619,10 @@ describe("SetupWizard", () => {
     expect(scrollMain.contains(continueButton)).toBe(false);
   });
 
-  it("a client that is already configured shows the Configured badge and a disabled, checked checkbox — never a second badge on an unconfigured row", async () => {
+  // (a) The bug this redesign fixes: an already-configured client's checkbox
+  // used to be `disabled`, so a user could not opt out of a tool Wenlan had
+  // already touched. It starts checked, but it stays fully interactive.
+  it("an already-configured client starts checked but stays interactive — it can be unchecked, and then it is left alone", async () => {
     (detectMcpClients as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
         name: "Cursor",
@@ -566,39 +642,46 @@ describe("SetupWizard", () => {
 
     renderWizard({ initialStep: "connect" });
 
-    await waitFor(() => {
-      expect(screen.getByText("Cursor")).toBeInTheDocument();
-    });
+    const cursorCheckbox = await screen.findByRole("checkbox", { name: "Cursor" });
+    await waitFor(() => expect(cursorCheckbox).toBeChecked());
 
     // Exactly one badge, on Cursor's row — Windsurf isn't configured yet and
-    // must not render a second one.
+    // must not render a second one. The badge is the affordance; `disabled`
+    // never is.
     expect(screen.getAllByText("Configured")).toHaveLength(1);
-    const cursorCheckbox = screen.getByRole("checkbox", { name: "Cursor" });
-    expect(cursorCheckbox).toBeChecked();
-    expect(cursorCheckbox).toBeDisabled();
+    expect(screen.getByText("Already set up. Uncheck to leave it as it is.")).toBeInTheDocument();
+    expect(cursorCheckbox).toBeEnabled();
+
+    // And unchecking actually takes: the box clears, and Setting up gives it
+    // no row and no write.
+    fireEvent.click(cursorCheckbox);
+    expect(cursorCheckbox).not.toBeChecked();
 
     const windsurfCheckbox = screen.getByRole("checkbox", { name: "Windsurf" });
     await waitFor(() => expect(windsurfCheckbox).toBeChecked());
     expect(windsurfCheckbox).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    await waitFor(() => {
+      expect(writeMcpConfig).toHaveBeenCalledWith("windsurf");
+    });
+    expect(writeMcpConfig).not.toHaveBeenCalledWith("cursor");
+    expect(screen.queryByTestId("task-status-cursor")).not.toBeInTheDocument();
   });
 
   it("done: agent ids that resolve to the same display name collapse to one chip; raw ids never render", async () => {
     (listAgents as ReturnType<typeof vi.fn>).mockResolvedValue([
-      {
-        name: "codex-ulw-loop",
-        display_name: "Codex",
-        last_seen_at: Math.floor(Date.now() / 1000) - 3600,
-        memory_count: 1,
-      },
-      {
-        name: "codex-mcp-client",
-        display_name: "Codex",
-        last_seen_at: Math.floor(Date.now() / 1000) - 3600,
-        memory_count: 1,
-      },
+      { name: "codex-ulw-loop", display_name: "Codex", last_seen_at: FRESH(), memory_count: 1 },
+      { name: "codex-mcp-client", display_name: "Codex", last_seen_at: FRESH(), memory_count: 1 },
     ]);
 
-    renderWizard({ initialStep: "verify" });
+    renderWizard({ initialStep: "setting-up" });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("task-status-waiting-for-agent")).toHaveTextContent("Connected");
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
 
     await waitFor(() => {
       expect(screen.getByText("You're all set.")).toBeInTheDocument();
@@ -613,10 +696,9 @@ describe("SetupWizard", () => {
   // *friendly* name ("Gemini CLI") instead of the canonical client_type
   // slug ("gemini_cli"). Since prettifySlug only splits on `-`/`_`, a
   // friendly name with a space collapses to one token and gets mangled
-  // ("Gemini cli"). This exercises the real ConnectStep → DoneStep path
-  // (not resolveAgentDisplayName directly), which is the gap that let it
-  // ship — VerifyStep already passed the correct slug.
-  it("done: tools connected via the batch-write flow show correctly-capitalized names, not mangled friendly names", async () => {
+  // ("Gemini cli"). The write path moved to SettingUpStep, so this now
+  // exercises the ConnectStep → SettingUpStep → DoneStep chain.
+  it("done: tools set up on dot 5 show correctly-capitalized names, not mangled friendly names", async () => {
     (detectMcpClients as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
         name: "Claude Desktop",
@@ -636,16 +718,13 @@ describe("SetupWizard", () => {
 
     renderWizard({ initialStep: "connect" });
 
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Connect 2 tools" })).toBeInTheDocument();
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Connect 2 tools" }));
+    await screen.findByRole("checkbox", { name: "Gemini CLI" });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
 
-    // Successful connect auto-advances to verify.
     await waitFor(() => {
-      expect(screen.getByText("Waiting for your first agent...")).toBeInTheDocument();
+      expect(screen.getByTestId("task-status-gemini_cli")).toHaveTextContent("Configured");
     });
-    fireEvent.click(screen.getByText("Skip"));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
 
     await waitFor(() => {
       expect(screen.getByText("You're all set.")).toBeInTheDocument();
@@ -658,8 +737,8 @@ describe("SetupWizard", () => {
   });
 
   // Same bug, the other call site: a client that's *already configured*
-  // (so onConnected fires from ConnectStep's mount effect, not the
-  // batch-write flow) must also resolve from client_type.
+  // (so onConnected fires from ConnectStep's mount effect, not from a row's
+  // completion) must also resolve from client_type.
   it("done: an already-configured tool's name also resolves from client_type, not the friendly Rust name", async () => {
     (detectMcpClients as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
@@ -676,12 +755,12 @@ describe("SetupWizard", () => {
     await waitFor(() => {
       expect(screen.getByText("Configured")).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByText("Continue"));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
 
     await waitFor(() => {
-      expect(screen.getByText("Waiting for your first agent...")).toBeInTheDocument();
+      expect(screen.getByText("Setting up")).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByText("Skip"));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
 
     await waitFor(() => {
       expect(screen.getByText("You're all set.")).toBeInTheDocument();
@@ -707,11 +786,9 @@ describe("SetupWizard", () => {
     expect(deviceButton).toHaveAttribute("aria-pressed", "false");
   });
 
-  it("the manual config snippet is a standalone disclosure, independent of any specific client row", async () => {
-    // A non-empty detected-client list matters here: an empty list makes
-    // the wizard auto-expand this same disclosure (so a would-be
-    // detection-failure user sees the manual snippet immediately), which
-    // would race this test's own click and make the assertion flaky.
+  // Connect is selection-only: no config snippet, no copy-a-config affordance,
+  // nothing that writes or hands the user a payload to paste.
+  it("connect offers no config snippet — the step asks, it never acts", async () => {
     (detectMcpClients as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
         name: "Cursor",
@@ -724,25 +801,23 @@ describe("SetupWizard", () => {
 
     renderWizard({ initialStep: "connect" });
 
-    await screen.findByText("Cursor");
+    await screen.findByRole("checkbox", { name: "Cursor" });
     expect(screen.queryByText(/mcpServers/)).not.toBeInTheDocument();
-
-    await userEvent.click(screen.getByText("Using another MCP client? Show config"));
-
-    expect(screen.getByText(/mcpServers/)).toBeInTheDocument();
+    expect(screen.queryByText("Using another MCP client? Show config")).not.toBeInTheDocument();
   });
 
   it("done: caps connected-agent chips at 6 with a +N overflow chip", async () => {
     const ids = ["tool-a", "tool-b", "tool-c", "tool-d", "tool-e", "tool-f", "tool-g", "tool-h"];
     (listAgents as ReturnType<typeof vi.fn>).mockResolvedValue(
-      ids.map((name) => ({
-        name,
-        last_seen_at: Math.floor(Date.now() / 1000) - 3600,
-        memory_count: 1,
-      })),
+      ids.map((name) => ({ name, last_seen_at: FRESH(), memory_count: 1 })),
     );
 
-    renderWizard({ initialStep: "verify" });
+    renderWizard({ initialStep: "setting-up" });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("task-status-waiting-for-agent")).toHaveTextContent("Connected");
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
 
     await waitFor(() => {
       expect(screen.getByText("You're all set.")).toBeInTheDocument();

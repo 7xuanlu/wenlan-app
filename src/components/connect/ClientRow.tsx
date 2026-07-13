@@ -16,8 +16,9 @@ interface ClientRowProps {
    *  text). Rendered outside the label — never nested inside it, so a click
    *  here can never also toggle a `leading` checkbox. */
   trailing?: ReactNode;
-  /** Body under the title row: CliPrimaryPath, Advanced details, etc. Always
-   *  a sibling of the label (never nested inside it) for the same reason. */
+  /** Body under the title row (the wizard's "already set up" note, etc).
+   *  Always a sibling of the label — never nested inside it — for the same
+   *  reason. */
   children?: ReactNode;
   error?: string | null;
   /** Renders a StatusChip (`state: {kind: "up"}`, honest because
@@ -28,9 +29,9 @@ interface ClientRowProps {
   selected?: boolean;
 }
 
-/** Deterministic id for a row's body (CliPrimaryPath, config path, error) so
- *  a caller-built `leading` checkbox can wire `aria-describedby` to it
- *  without a prop round-trip through this component. */
+/** Deterministic id for a row's body (config path, error, status note) so a
+ *  caller-built `leading` checkbox can wire `aria-describedby` to it without a
+ *  prop round-trip through this component. */
 export function clientRowDescId(clientType: string): string {
   return `client-row-desc-${clientType}`;
 }

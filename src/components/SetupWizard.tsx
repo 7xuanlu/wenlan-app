@@ -1,16 +1,17 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Trans, useTranslation } from "react-i18next";
 import {
   detectMcpClients,
   writeMcpConfig,
+  installClientPlugin,
   listAgents,
-  getWenlanMcpEntry,
+  type McpClient,
   type ImportResult,
 } from "../lib/tauri";
 import { ImportView } from "./memory/ImportView";
 import VaultConnectCard from "./memory/sources/VaultConnectCard";
-import CliPrimaryPath, { isCliPrimaryClient } from "./connect/CliPrimaryPath";
+import { isPluginClient } from "./connect/pluginClients";
 import ClientRow, { clientRowDescId } from "./connect/ClientRow";
 import { OnDeviceModelCard } from "./intelligence/IntelligenceSetup";
 import type { PresetGroup } from "./intelligence/providerPresets";
@@ -24,7 +25,13 @@ import { resolveAgentDisplayName } from "../lib/agents";
 const CLOUD_GROUPS: PresetGroup[] = ["cloud"];
 const LOCAL_GROUPS: PresetGroup[] = ["local", "custom"];
 
-export type WizardStep = "welcome" | "intelligence-choice" | "import" | "connect" | "verify" | "done";
+export type WizardStep =
+  | "welcome"
+  | "intelligence-choice"
+  | "import"
+  | "connect"
+  | "setting-up"
+  | "done";
 
 interface SetupWizardProps {
   onComplete: () => void;
@@ -36,7 +43,7 @@ const STEP_ORDER: WizardStep[] = [
   "intelligence-choice",
   "import",
   "connect",
-  "verify",
+  "setting-up",
   "done",
 ];
 
@@ -477,37 +484,31 @@ function ConnectStep({
   onConnected,
   hideDots,
 }: {
-  onNext: () => void;
+  onNext: (selected: McpClient[]) => void;
   onBack: () => void;
   onConnected: (agents: string[]) => void;
   hideDots: boolean;
 }) {
   const { t } = useTranslation();
-  const queryClient = useQueryClient();
-  const [connectedClients, setConnectedClients] = useState<Record<string, boolean>>({});
-  const [connectErrors, setConnectErrors] = useState<Record<string, string>>({});
-  const [manualExpanded, setManualExpanded] = useState(false);
   const [selectedClients, setSelectedClients] = useState<Record<string, boolean>>({});
-  const [isConnectingAll, setIsConnectingAll] = useState(false);
 
   const { data: clients, isLoading, isError } = useQuery({
     queryKey: ["mcp-clients"],
     queryFn: detectMcpClients,
   });
 
+  // This step asks; it never acts. Nothing here writes a config or installs
+  // anything — every mutation happens on the next step, where the user can
+  // watch it happen. Which is also why an already-configured client is not
+  // frozen: it starts checked, but stays fully interactive, so the user can
+  // uncheck a tool they'd rather Wenlan left alone.
   useEffect(() => {
     if (!clients) return;
     setSelectedClients((prev) => {
       const next = { ...prev };
       for (const client of clients) {
         if (next[client.client_type] === undefined) {
-          // The CLI-primary client (Claude Code) leads with the plugin path
-          // and has no checkbox at all, so its selection state is never
-          // seeded true here.
-          next[client.client_type] =
-            client.detected &&
-            !client.already_configured &&
-            !isCliPrimaryClient(client.client_type);
+          next[client.client_type] = client.detected;
         }
       }
       return next;
@@ -524,106 +525,15 @@ function ConnectStep({
     }
   }, [clients, onConnected]);
 
-  useEffect(() => {
-    if (isError) {
-      setManualExpanded(true);
-      return;
-    }
-    if (clients && clients.filter((client) => client.detected).length === 0) {
-      setManualExpanded(true);
-    }
-  }, [isError, clients]);
+  const detectedClients = useMemo(
+    () => (clients ?? []).filter((client) => client.detected),
+    [clients],
+  );
 
-  const { data: wenlanMcpEntry } = useQuery({
-    queryKey: ["wenlan-mcp-entry"],
-    queryFn: getWenlanMcpEntry,
-    staleTime: Infinity,
-  });
-
-  const mcpJsonSnippet = `{
-  "mcpServers": {
-    "wenlan": ${JSON.stringify(wenlanMcpEntry ?? { command: "npx", args: ["-y", "wenlan-mcp"] }, null, 6).replace(/\n/g, "\n    ")}
-  }
-}`;
-
-  const detectedClients = (clients ?? []).filter((client) => client.detected);
-
-  // GUI rows first, then the CLI-primary row, then already-configured rows
-  // of either kind — they need no action, so they sink to the bottom.
-  // Array.prototype.sort is stable, so relative order within a tier holds.
-  const rowTier = (client: (typeof detectedClients)[number]) => {
-    if (client.already_configured) return 2;
-    if (isCliPrimaryClient(client.client_type)) return 1;
-    return 0;
-  };
-  const sortedClients = [...detectedClients].sort((a, b) => rowTier(a) - rowTier(b));
-
-  // The load-bearing invariant on this screen: Claude Code's config is never
-  // written from the wizard, because doing so would duplicate the MCP
-  // server the Wenlan Claude Code plugin already registers. Its row has no
-  // checkbox to check in the first place, but it is also explicitly
-  // excluded here and in handleContinue below — two independent guarantees,
-  // not one.
-  const connectCount = detectedClients.filter(
-    (client) =>
-      !isCliPrimaryClient(client.client_type) &&
-      selectedClients[client.client_type] &&
-      !client.already_configured &&
-      !connectedClients[client.client_type],
-  ).length;
-
-  const handleContinue = async () => {
-    if (!clients) {
-      onNext();
-      return;
-    }
-
-    const toConnect = clients.filter(
-      (client) =>
-        !isCliPrimaryClient(client.client_type) &&
-        selectedClients[client.client_type] &&
-        client.detected &&
-        !client.already_configured &&
-        !connectedClients[client.client_type],
+  const handleContinue = () => {
+    onNext(
+      detectedClients.filter((client) => selectedClients[client.client_type]),
     );
-
-    if (toConnect.length === 0) {
-      onNext();
-      return;
-    }
-
-    setIsConnectingAll(true);
-    const newlyConnected: string[] = [];
-    let hadErrors = false;
-
-    for (const client of toConnect) {
-      try {
-        await writeMcpConfig(client.client_type);
-        setConnectedClients((prev) => ({ ...prev, [client.client_type]: true }));
-        setConnectErrors((prev) => {
-          const next = { ...prev };
-          delete next[client.client_type];
-          return next;
-        });
-        newlyConnected.push(client.client_type);
-      } catch (err) {
-        hadErrors = true;
-        setConnectErrors((prev) => ({
-          ...prev,
-          [client.client_type]: String(err),
-        }));
-      }
-    }
-
-    if (newlyConnected.length > 0) {
-      onConnected(newlyConnected);
-      queryClient.invalidateQueries({ queryKey: ["mcp-clients"] });
-    }
-
-    setIsConnectingAll(false);
-    if (!hadErrors) {
-      onNext();
-    }
   };
 
   return (
@@ -632,17 +542,11 @@ function ConnectStep({
       activeStep="connect"
       leftActions={[
         { label: t("setup.back"), onClick: onBack },
-        { label: t("setup.skip"), onClick: onNext },
+        { label: t("setup.skip"), onClick: () => onNext([]) },
       ]}
       primaryAction={{
-        label: isConnectingAll
-          ? t("setup.connect.connecting")
-          : connectCount > 0
-            ? t("setup.connect.connectCta", { count: connectCount })
-            : t("setup.continue"),
+        label: t("setup.continue"),
         onClick: handleContinue,
-        disabled: isConnectingAll,
-        loading: isConnectingAll,
       }}
     >
     <div
@@ -724,38 +628,24 @@ function ConnectStep({
         <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
           <SectionHeader label={t("setup.connect.detectedOnMac")} />
           <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-            {sortedClients.map((client) => {
-              const isConfigured = connectedClients[client.client_type] || client.already_configured;
-              const error = connectErrors[client.client_type];
+            {detectedClients.map((client) => {
               const isSelected = !!selectedClients[client.client_type];
-
-              if (isCliPrimaryClient(client.client_type)) {
-                return (
-                  <ClientRow
-                    key={client.client_type}
-                    client={client}
-                    configured={isConfigured}
-                    error={error}
-                  >
-                    <CliPrimaryPath />
-                  </ClientRow>
-                );
-              }
+              const isConfigured = client.already_configured;
 
               return (
                 <ClientRow
                   key={client.client_type}
                   client={client}
                   configured={isConfigured}
-                  error={error}
                   selected={isSelected}
                   leading={
                     <input
                       type="checkbox"
                       aria-label={client.name}
-                      aria-describedby={error ? clientRowDescId(client.client_type) : undefined}
-                      checked={isSelected || isConfigured}
-                      disabled={isConfigured || isConnectingAll}
+                      aria-describedby={
+                        isConfigured ? clientRowDescId(client.client_type) : undefined
+                      }
+                      checked={isSelected}
                       onChange={(e) =>
                         setSelectedClients((prev) => ({ ...prev, [client.client_type]: e.target.checked }))
                       }
@@ -767,7 +657,20 @@ function ConnectStep({
                       }}
                     />
                   }
-                />
+                >
+                  {isConfigured ? (
+                    <p
+                      style={{
+                        fontFamily: "var(--mem-font-body)",
+                        fontSize: "var(--mem-text-sm)",
+                        color: "var(--mem-text-tertiary)",
+                        lineHeight: "1.5",
+                      }}
+                    >
+                      {t("setup.connect.alreadySetUp")}
+                    </p>
+                  ) : null}
+                </ClientRow>
               );
             })}
           </div>
@@ -786,91 +689,45 @@ function ConnectStep({
           {t("setup.connect.settingsPointer")}
         </p>
       )}
-
-      <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setManualExpanded((prev) => !prev)}
-          className="self-start"
-        >
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-            style={{
-              transform: manualExpanded ? "rotate(90deg)" : "rotate(0deg)",
-              transition: "transform 0.2s ease",
-            }}
-          >
-            <polyline points="9 18 15 12 9 6" />
-          </svg>
-          {t("setup.connect.showConfigSnippet")}
-        </Button>
-
-        {manualExpanded && (
-          <div style={{ marginTop: "8px" }}>
-            <p
-              style={{
-                fontFamily: "var(--mem-font-body)",
-                fontSize: "var(--mem-text-sm)",
-                color: "var(--mem-text-tertiary)",
-                marginBottom: "8px",
-                lineHeight: "1.5",
-              }}
-            >
-              {t("setup.connect.addConfigSnippet")}
-            </p>
-            <pre
-              className="rounded-lg px-4 py-3"
-              style={{
-                fontFamily: "var(--mem-font-mono)",
-                fontSize: "var(--mem-text-sm)",
-                color: "var(--mem-text)",
-                backgroundColor: "var(--mem-surface)",
-                border: "1px solid var(--mem-border)",
-                overflow: "auto",
-                lineHeight: "1.6",
-              }}
-            >
-              {mcpJsonSnippet}
-            </pre>
-            <p
-              style={{
-                fontFamily: "var(--mem-font-body)",
-                fontSize: "var(--mem-text-xs)",
-                color: "var(--mem-text-tertiary)",
-                lineHeight: "1.5",
-                marginTop: "6px",
-              }}
-            >
-              {wenlanMcpEntry?.command === "npx"
-                ? t("setup.connect.productionDefault")
-                : t("setup.connect.developmentPath")}
-            </p>
-          </div>
-        )}
-      </div>
     </div>
     </StepShell>
   );
 }
 
-// ── Verify Step ─────────────────────────────────────────────────────────
+// ── Setting Up Step ─────────────────────────────────────────────────────
 
-function VerifyStep({
+type TaskStatus = "pending" | "running" | "done" | "failed";
+
+const WAITING_ROW_ID = "waiting-for-agent";
+
+/** A unit of work on the Setting up step. `client` is null only for the
+ *  always-last waiting row, which observes rather than mutates. */
+interface TaskRow {
+  id: string;
+  kind: "plugin" | "config" | "waiting";
+  client: McpClient | null;
+}
+
+function taskRowDescId(rowId: string): string {
+  return `setting-up-desc-${rowId}`;
+}
+
+const STATUS_COLOR: Record<TaskStatus, string> = {
+  pending: "var(--mem-text-tertiary)",
+  running: "var(--mem-text-secondary)",
+  done: "var(--mem-status-success-text)",
+  failed: "var(--mem-status-danger-text)",
+};
+
+function SettingUpStep({
+  selected,
   onNext,
   onBack,
   onConnected,
   wizardEnteredAt,
   hideDots,
 }: {
+  selected: McpClient[];
   onNext: () => void;
   onBack: () => void;
   onConnected: (agents: string[]) => void;
@@ -878,105 +735,164 @@ function VerifyStep({
   hideDots: boolean;
 }) {
   const { t } = useTranslation();
-  const [elapsed, setElapsed] = useState(0);
-  const [advanced, setAdvanced] = useState(false);
+  const queryClient = useQueryClient();
 
-  // Stable refs to avoid re-triggering the effect on parent re-renders
-  const onNextRef = useRef(onNext);
   const onConnectedRef = useRef(onConnected);
-  useEffect(() => { onNextRef.current = onNext; }, [onNext]);
   useEffect(() => { onConnectedRef.current = onConnected; }, [onConnected]);
 
-  // Poll for agents every 3 seconds
+  // Rows are computed ONCE, at step entry, and never re-derived — a detection
+  // refetch mid-step must not add, drop, or reorder a row the user is watching.
+  // Plugin rows first, then config rows, then the waiting row, always last.
+  const [rows] = useState<TaskRow[]>(() => {
+    const plugins: TaskRow[] = [];
+    const configs: TaskRow[] = [];
+    for (const client of selected) {
+      const plugin = isPluginClient(client.client_type);
+      (plugin ? plugins : configs).push({
+        id: client.client_type,
+        kind: plugin ? "plugin" : "config",
+        client,
+      });
+    }
+    return [
+      ...plugins,
+      ...configs,
+      { id: WAITING_ROW_ID, kind: "waiting", client: null },
+    ];
+  });
+
+  const [statuses, setStatuses] = useState<Record<string, TaskStatus>>(() =>
+    Object.fromEntries(rows.map((row) => [row.id, "pending" as TaskStatus])),
+  );
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const startedRef = useRef(false);
+  useEffect(() => {
+    if (startedRef.current) return;
+    startedRef.current = true;
+
+    const work = rows.filter((row) => row.client !== null);
+    if (work.length === 0) return;
+
+    setStatuses((prev) => {
+      const next = { ...prev };
+      for (const row of work) next[row.id] = "running";
+      return next;
+    });
+
+    // Concurrent, not sequential: one slow CLI must not hold up the others,
+    // and a rejection must not cancel its siblings. Only the finish order
+    // varies — the rendered order is `rows`, which is frozen.
+    for (const row of work) {
+      const clientType = row.client!.client_type;
+
+      // THE invariant: Claude Code and Codex get the plugin, never a raw MCP
+      // entry. Both vendors' Wenlan plugins declare their own `mcpServers`, so
+      // also writing `~/.claude.json` / `[mcp_servers.wenlan]` would register
+      // the Wenlan server twice. `isPluginClient` is the single home for that
+      // rule (src/components/connect/pluginClients.ts) — Settings obeys it too.
+      const task = isPluginClient(clientType)
+        ? installClientPlugin(clientType)
+        : writeMcpConfig(clientType);
+
+      task.then(
+        () => {
+          setStatuses((prev) => ({ ...prev, [row.id]: "done" }));
+          onConnectedRef.current([clientType]);
+          queryClient.invalidateQueries({ queryKey: ["mcp-clients"] });
+        },
+        (err) => {
+          // A failed row never blocks the wizard: it shows its reason, stays
+          // failed, and Continue stays live. No user is trapped in setup
+          // because one editor's config file was read-only.
+          setStatuses((prev) => ({ ...prev, [row.id]: "failed" }));
+          setErrors((prev) => ({ ...prev, [row.id]: String(err) }));
+        },
+      );
+    }
+  }, [rows, queryClient]);
+
   const { data: agents } = useQuery({
     queryKey: ["agents"],
     queryFn: listAgents,
     refetchInterval: 3000,
   });
 
-  // Fresh-write proof: agents that wrote *since the wizard opened*. This is
-  // the canonical success signal on a first-run install.
-  const activeAgents = useMemo(
+  // Scoped to writes made SINCE the wizard was entered. A pre-existing write
+  // proves some older install worked; it says nothing about the configs we
+  // just wrote. The old VerifyStep accepted any past write and called onNext()
+  // from an effect, which is why a returning user never saw this step at all.
+  const freshAgents = useMemo(
     () =>
       (agents ?? []).filter(
         (a) => a.last_seen_at != null && a.last_seen_at > wizardEnteredAt,
       ),
     [agents, wizardEnteredAt],
   );
+  const waitingDone = freshAgents.length > 0;
 
-  // Pre-existing connections: agents that have written at *any* point in the
-  // past. On a re-run of the wizard (via Settings → reset onboarding), these
-  // already-connected tools shouldn't make the user stare at a "waiting..."
-  // screen — the success has already happened, just not in this wizard session.
-  const preExistingAgents = useMemo(
-    () =>
-      (agents ?? []).filter(
-        (a) => a.last_seen_at != null && a.name !== "unknown",
-      ),
-    [agents],
-  );
-
-  // Track elapsed time for progressive hints
+  // Resolves its own row and stops there. It never advances the wizard.
+  const notifiedRef = useRef(false);
   useEffect(() => {
-    const interval = setInterval(() => setElapsed((e) => e + 1), 1000);
-    return () => clearInterval(interval);
-  }, []);
+    if (notifiedRef.current || freshAgents.length === 0) return;
+    notifiedRef.current = true;
+    onConnectedRef.current(freshAgents.map((a) => a.name));
+  }, [freshAgents]);
 
-  // Auto-advance when an agent has written — either fresh since wizard start
-  // (first-run happy path) or any time in the past (re-run short-circuit).
-  // Fires once; refs break the effect/state dependency cycle.
-  useEffect(() => {
-    if (advanced) return;
-    const winner = activeAgents.length > 0 ? activeAgents : preExistingAgents;
-    if (winner.length > 0) {
-      setAdvanced(true);
-      onConnectedRef.current(winner.map((a) => a.name));
-      onNextRef.current();
+  const statusOf = (row: TaskRow): TaskStatus =>
+    row.kind === "waiting"
+      ? waitingDone
+        ? "done"
+        : "running"
+      : (statuses[row.id] ?? "pending");
+
+  const labelOf = (row: TaskRow): string => {
+    if (row.kind === "waiting") return t("setup.settingUp.waitingLabel");
+    // One row, one config file, one plugin — and it covers ChatGPT desktop's
+    // Codex pane as well, so the row says so rather than letting the user
+    // hunt for a ChatGPT checkbox that would be a lie.
+    if (row.id === "codex_cli") return t("setup.settingUp.codexLabel");
+    return row.client!.name;
+  };
+
+  const subOf = (row: TaskRow): string => {
+    if (row.kind === "waiting") {
+      return waitingDone
+        ? t("setup.settingUp.waitingDoneSub")
+        : t("setup.settingUp.waitingSub");
     }
-  }, [activeAgents, preExistingAgents, advanced]);
+    if (row.id === "codex_cli") return t("setup.settingUp.codexSub");
+    return t(
+      row.kind === "plugin" ? "setup.settingUp.pluginSub" : "setup.settingUp.configSub",
+      { name: row.client!.name },
+    );
+  };
+
+  const statusTextOf = (row: TaskRow): string => {
+    const status = statusOf(row);
+    if (row.kind === "waiting") {
+      return status === "done"
+        ? t("setup.settingUp.statusConnected")
+        : t("setup.settingUp.statusListening");
+    }
+    if (status === "pending") return t("setup.settingUp.statusPending");
+    if (status === "running") return t("setup.settingUp.statusRunning");
+    if (status === "done") return t("setup.settingUp.statusDone");
+    return t("setup.settingUp.statusFailed");
+  };
+
+  const anyFailed = rows.some((row) => statusOf(row) === "failed");
+  const hasWork = rows.some((row) => row.client !== null);
 
   return (
     <StepShell
       hideDots={hideDots}
-      activeStep="verify"
-      leftActions={[
-        { label: t("setup.back"), onClick: onBack },
-        { label: t("setup.skip"), onClick: onNext },
-      ]}
+      activeStep="setting-up"
+      leftActions={[{ label: t("setup.back"), onClick: onBack }]}
+      primaryAction={{ label: t("setup.continue"), onClick: onNext }}
     >
-    <div
-      className="flex flex-col"
-      style={{ gap: "24px", paddingTop: "24px" }}
-    >
-      {/* Centered pulse + heading group */}
-      <div
-        className="flex flex-col items-center text-center"
-        style={{ gap: "24px", paddingTop: "40px" }}
-      >
-      {/* Pulse dot */}
-      <div
-        style={{
-          width: "48px",
-          height: "48px",
-          borderRadius: "50%",
-          backgroundColor: "var(--mem-indigo-bg)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          animation: "pulse-ring 2s ease-in-out infinite",
-        }}
-      >
-        <div
-          style={{
-            width: "16px",
-            height: "16px",
-            borderRadius: "50%",
-            backgroundColor: "var(--mem-accent-indigo)",
-          }}
-        />
-      </div>
-
-      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+    <div className="flex flex-col" style={{ gap: "24px", paddingTop: "24px" }}>
+      <div>
         <h1
           style={{
             fontFamily: "var(--mem-font-heading)",
@@ -985,22 +901,104 @@ function VerifyStep({
             color: "var(--mem-text)",
           }}
         >
-          {t("setup.verify.title")}
+          {t("setup.settingUp.title")}
         </h1>
         <p
           style={{
             fontFamily: "var(--mem-font-body)",
             fontSize: "var(--mem-text-base)",
             color: "var(--mem-text-secondary)",
+            marginTop: "4px",
             lineHeight: "1.5",
           }}
         >
-          {t("setup.verify.description")}
+          {hasWork
+            ? t("setup.settingUp.description")
+            : t("setup.settingUp.nothingSelected")}
         </p>
       </div>
 
-      {/* Progressive hints */}
-      {elapsed >= 30 && elapsed < 60 && (
+      {/* One polite live region over the whole list: a row's status text is the
+          only thing that changes in it, so that is what gets announced. */}
+      <div
+        role="status"
+        aria-live="polite"
+        data-testid="setting-up-tasks"
+        style={{ display: "flex", flexDirection: "column", gap: "8px" }}
+      >
+        {rows.map((row) => {
+          const status = statusOf(row);
+          const error = errors[row.id];
+
+          return (
+            <div
+              key={row.id}
+              className="rounded-xl px-4 py-3"
+              style={{
+                backgroundColor: "var(--mem-surface)",
+                border: "1px solid var(--mem-border)",
+              }}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p
+                    style={{
+                      fontFamily: "var(--mem-font-body)",
+                      fontSize: "var(--mem-text-base)",
+                      fontWeight: 500,
+                      color: "var(--mem-text)",
+                    }}
+                  >
+                    {labelOf(row)}
+                  </p>
+                  <p
+                    style={{
+                      fontFamily: "var(--mem-font-body)",
+                      fontSize: "var(--mem-text-sm)",
+                      color: "var(--mem-text-tertiary)",
+                      lineHeight: "1.5",
+                      marginTop: "2px",
+                    }}
+                  >
+                    {subOf(row)}
+                  </p>
+                </div>
+                <span
+                  data-testid={`task-status-${row.id}`}
+                  aria-describedby={error ? taskRowDescId(row.id) : undefined}
+                  style={{
+                    fontFamily: "var(--mem-font-body)",
+                    fontSize: "var(--mem-text-sm)",
+                    color: STATUS_COLOR[status],
+                    whiteSpace: "nowrap",
+                    flexShrink: 0,
+                  }}
+                >
+                  {statusTextOf(row)}
+                </span>
+              </div>
+
+              {error && (
+                <p
+                  id={taskRowDescId(row.id)}
+                  role="alert"
+                  style={{
+                    fontFamily: "var(--mem-font-body)",
+                    fontSize: "var(--mem-text-sm)",
+                    color: "var(--mem-status-danger-text)",
+                    lineHeight: "1.5",
+                    marginTop: "8px",
+                  }}
+                >
+                  {error}
+                </p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
         <p
           style={{
             fontFamily: "var(--mem-font-body)",
@@ -1009,55 +1007,21 @@ function VerifyStep({
             lineHeight: "1.5",
           }}
         >
-          {t("setup.verify.restartHint")}
+          {t("setup.settingUp.configuredNote")}
         </p>
-      )}
-
-      {elapsed >= 60 && (
-        <div
-          className="rounded-xl px-4 py-3"
-          style={{
-            backgroundColor: "var(--mem-surface)",
-            border: "1px solid var(--mem-border)",
-            textAlign: "left",
-          }}
-        >
+        {anyFailed && (
           <p
             style={{
               fontFamily: "var(--mem-font-body)",
-              fontSize: "var(--mem-text-base)",
-              fontWeight: 500,
-              color: "var(--mem-text)",
-              marginBottom: "8px",
-            }}
-          >
-            {t("setup.verify.troubleshootingTitle")}
-          </p>
-          <ul
-            style={{
-              fontFamily: "var(--mem-font-body)",
               fontSize: "var(--mem-text-sm)",
-              color: "var(--mem-text-secondary)",
-              lineHeight: "1.8",
-              paddingLeft: "16px",
-              margin: 0,
+              color: "var(--mem-text-tertiary)",
+              lineHeight: "1.5",
             }}
           >
-            <li>{t("setup.verify.troubleshootingServer")}</li>
-            <li>{t("setup.verify.troubleshootingConfig")}</li>
-            <li>{t("setup.verify.troubleshootingRestart")}</li>
-          </ul>
-        </div>
-      )}
+            {t("setup.settingUp.failedHint")}
+          </p>
+        )}
       </div>
-
-      {/* Pulse animation */}
-      <style>{`
-        @keyframes pulse-ring {
-          0%, 100% { transform: scale(1); opacity: 1; }
-          50% { transform: scale(1.1); opacity: 0.7; }
-        }
-      `}</style>
     </div>
     </StepShell>
   );
@@ -1400,17 +1364,22 @@ export function SetupWizard({ onComplete, initialStep }: SetupWizardProps) {
   const [step, setStep] = useState<WizardStep>(startStep);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [connectedAgents, setConnectedAgents] = useState<string[]>([]);
+  const [selectedClients, setSelectedClients] = useState<McpClient[]>([]);
   const [, setImportPhase] = useState<string>("input");
   const wizardEnteredAtRef = useRef<number>(Math.floor(Date.now() / 1000));
   // Step dots hide when entering at a specific step (unchanged semantics).
   const hideDots = !!initialStep;
 
-  const handleConnectedAgents = (agents: string[]) => {
+  // Stable identity, and bails out when nothing new arrived. ConnectStep's
+  // already-configured effect lists `onConnected` in its deps, so a fresh
+  // closure or a fresh array on every call would feed itself: notify → setState
+  // → re-render → new callback → effect re-fires → notify.
+  const handleConnectedAgents = useCallback((agents: string[]) => {
     setConnectedAgents((prev) => {
       const merged = new Set([...prev, ...agents]);
-      return Array.from(merged);
+      return merged.size === prev.length ? prev : Array.from(merged);
     });
-  };
+  }, []);
 
   if (step === "welcome") {
     return <WelcomeStep hideDots={hideDots} onNext={() => setStep("intelligence-choice")} />;
@@ -1451,17 +1420,21 @@ export function SetupWizard({ onComplete, initialStep }: SetupWizardProps) {
     return (
       <ConnectStep
         hideDots={hideDots}
-        onNext={() => setStep("verify")}
+        onNext={(selected) => {
+          setSelectedClients(selected);
+          setStep("setting-up");
+        }}
         onBack={startStep === "connect" ? onComplete : () => setStep("import")}
         onConnected={handleConnectedAgents}
       />
     );
   }
 
-  if (step === "verify") {
+  if (step === "setting-up") {
     return (
-      <VerifyStep
+      <SettingUpStep
         hideDots={hideDots}
+        selected={selectedClients}
         onNext={() => setStep("done")}
         onBack={() => setStep("connect")}
         onConnected={handleConnectedAgents}
