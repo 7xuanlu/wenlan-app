@@ -59,6 +59,12 @@ describe("providerPresets — §9.1 data shape", () => {
     expect(mistral.keyPrefixes).toBeUndefined();
   });
 
+  // Defect fix (user report): the old placeholder was a random-looking
+  // 32-char string that read like a real (possibly leaked) credential.
+  it("Mistral's key placeholder is not the old fabricated-looking token string", () => {
+    expect(byId("mistral").keyPlaceholder).not.toBe("hDx3mQ7tRkP1sLb9vNc5wEa2fGz8jTy4");
+  });
+
   it("keeps ids stable and endpoints unchanged after the renames", () => {
     expect(byId("gemini").endpoint).toBe(
       "https://generativelanguage.googleapis.com/v1beta/openai",

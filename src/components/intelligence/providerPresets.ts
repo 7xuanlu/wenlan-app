@@ -110,8 +110,10 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     // Mistral keys are an opaque token with no fixed prefix (unlike sk-,
     // gsk_, xai-, sk-or-) — keyPrefixes intentionally stays unset (see
     // keyPrefixMismatch's doc comment, which names Mistral as the example).
-    // This placeholder still shows the token's actual shape/length.
-    keyPlaceholder: "hDx3mQ7tRkP1sLb9vNc5wEa2fGz8jTy4",
+    // This placeholder still shows the token's actual shape/length, using
+    // repeated "x" rather than a random-looking string so it can't be
+    // mistaken for a real (possibly leaked) credential.
+    keyPlaceholder: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
     getKeyUrl: "https://console.mistral.ai",
     modelPlaceholder: "mistral-large-latest",
   },

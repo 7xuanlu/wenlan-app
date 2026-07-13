@@ -479,14 +479,21 @@ describe("AnyProviderCard — the Local-server card (spec §5.2)", () => {
     // Defect fix (user report): a known cloud vendor's endpoint is a
     // constant from the preset table, not a user decision — asking for it
     // was noise. Hiding the field must not change what actually gets sent.
-    it("cloud-scoped card: OpenAI shows key + Model fields but no Endpoint field, and Save still calls setExternalLlm with the fixed OpenAI endpoint", async () => {
+    // Model is dropdown-only for cloud vendors (user report), so there is no
+    // free-text input to type into once a key resolves models — Save must
+    // still send the fixed endpoint and the model SELECTED from the
+    // dropdown. This is the one that matters most: hiding the text input
+    // must not break the value that actually gets sent.
+    it("cloud-scoped card: OpenAI shows key + Model fields but no Endpoint field, and Save still calls setExternalLlm with the fixed OpenAI endpoint and the selected model", async () => {
       mocks.getDaemonVersion.mockResolvedValue("0.13.0");
+      mocks.listExternalModels.mockResolvedValue(["gpt-4o-mini", "gpt-4o"]);
       renderCard(undefined, CLOUD_GROUPS);
       await userEvent.click(await screen.findByRole("button", { name: "OpenAI" }));
       expect(screen.queryByLabelText("Endpoint URL")).not.toBeInTheDocument();
 
       await userEvent.type(screen.getByLabelText("API key"), "sk-proj-test-key");
-      await userEvent.type(screen.getByLabelText("Model"), "gpt-4o-mini");
+      await waitFor(() => expect(screen.getByLabelText("Model")).toBeEnabled());
+      await userEvent.selectOptions(screen.getByLabelText("Model"), "gpt-4o-mini");
       await userEvent.click(screen.getByRole("button", { name: "Save" }));
 
       await waitFor(() =>
@@ -509,10 +516,16 @@ describe("AnyProviderCard — the Local-server card (spec §5.2)", () => {
       expect(await screen.findByLabelText("Endpoint URL")).toBeInTheDocument();
     });
 
+    // The Model field only carries a placeholder in its free-text fallback
+    // state (dropdown-only otherwise) — force discovery to error with a key
+    // present to reach that state, then check the placeholder is vendor-shaped.
     it("OpenAI's Model field placeholder is an OpenAI-shaped id, never the Ollama example", async () => {
       mocks.getDaemonVersion.mockResolvedValue("0.13.0");
+      mocks.listExternalModels.mockRejectedValue(new Error("ECONNREFUSED"));
       renderCard(undefined, CLOUD_GROUPS);
       await userEvent.click(await screen.findByRole("button", { name: "OpenAI" }));
+      await userEvent.type(screen.getByLabelText("API key"), "sk-proj-test-key");
+      await waitFor(() => expect(screen.getByLabelText("Model").tagName).toBe("INPUT"));
       expect(screen.getByLabelText("Model")).toHaveAttribute("placeholder", "gpt-4o-mini");
       expect(screen.getByLabelText("Model")).not.toHaveAttribute("placeholder", "Model name (e.g. llama3.2)");
     });
@@ -524,24 +537,48 @@ describe("AnyProviderCard — the Local-server card (spec §5.2)", () => {
       expect(screen.getByLabelText("Model")).toHaveAttribute("placeholder", "Model name (e.g. llama3.2)");
     });
 
-    it("a cloud vendor's discovered models render as a selectable dropdown once a key is present", async () => {
+    // §Dropdown-only Model field (user report: "I thought even the model
+    // don't need to type, only need to select from dropdown"). Before a key,
+    // the control is a disabled <select> — never free text to type into;
+    // once a key resolves models, it becomes the enabled, selectable
+    // dropdown that already existed for local presets.
+    it("a cloud vendor's Model field is a disabled dropdown before a key, and becomes selectable with discovered ids once a key is present", async () => {
       mocks.getDaemonVersion.mockResolvedValue("0.13.0");
       mocks.listExternalModels.mockResolvedValue(["gpt-4o-mini", "gpt-4o"]);
       renderCard(undefined, CLOUD_GROUPS);
       await userEvent.click(await screen.findByRole("button", { name: "OpenAI" }));
-      // No key yet — free text, no dropdown, no failed-discovery noise either
-      // (covered by the dedicated test below).
-      expect(screen.getByLabelText("Model").tagName).toBe("INPUT");
+      // No key yet — a disabled dropdown with a needs-key hint, not free
+      // text, and no failed-discovery noise either (covered by the dedicated
+      // test below).
+      const noKeyField = screen.getByLabelText("Model");
+      expect(noKeyField.tagName).toBe("SELECT");
+      expect(noKeyField).toBeDisabled();
+      expect(screen.getByText("Add your API key to see available models")).toBeInTheDocument();
 
       await userEvent.type(screen.getByLabelText("API key"), "sk-proj-test-key");
-      // The Input → Select swap replaces the DOM node (different element
-      // type), so the element must be re-queried inside the wait — a
-      // reference grabbed before the swap would stay pinned to the removed
-      // <input> and never observe the tag change.
-      await waitFor(() => expect(screen.getByLabelText("Model").tagName).toBe("SELECT"));
+      // The select stays a <select> throughout (disabled → enabled), so
+      // waiting on the enabled state is enough — no element-type swap to
+      // race here, unlike the old Input → Select case.
+      await waitFor(() => expect(screen.getByLabelText("Model")).toBeEnabled());
       const modelField = screen.getByLabelText("Model");
+      expect(modelField.tagName).toBe("SELECT");
       await userEvent.selectOptions(modelField, "gpt-4o");
       expect(modelField).toHaveValue("gpt-4o");
+    });
+
+    // Anti-brick escape hatch: if a vendor's /models call errors even with a
+    // key present, dropdown-only would permanently strand that vendor — the
+    // free-text fallback (with the vendor's own placeholder) must reappear.
+    it("discovery ERRORS with a key present: the free-text fallback reappears with the vendor's modelPlaceholder", async () => {
+      mocks.getDaemonVersion.mockResolvedValue("0.13.0");
+      mocks.listExternalModels.mockRejectedValue(new Error("500 Internal Server Error"));
+      renderCard(undefined, CLOUD_GROUPS);
+      await userEvent.click(await screen.findByRole("button", { name: "OpenAI" }));
+
+      await userEvent.type(screen.getByLabelText("API key"), "sk-proj-test-key");
+      await waitFor(() => expect(screen.getByLabelText("Model").tagName).toBe("INPUT"));
+      expect(screen.getByLabelText("Model")).toHaveAttribute("placeholder", "gpt-4o-mini");
+      expect(await screen.findByText(/Couldn.t list models/)).toBeInTheDocument();
     });
 
     it("modelDiscoveryFailed is absent on a keyRequired preset with an empty key — no noise before a key exists", async () => {

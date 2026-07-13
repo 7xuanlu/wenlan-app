@@ -298,6 +298,25 @@ export default function AnyProviderCard({ groups }: { groups?: PresetGroup[] }) 
   // re-hostable, so both keep the field.
   const knownCloudEndpoint = preset.keyRequired && !preset.native && preset.group === "cloud";
 
+  // Dropdown-only Model field for the keyed cloud vendors (user report: "I
+  // thought even the model don't need to type, only need to select from
+  // dropdown"). Every keyRequired preset that reaches this branch IS a cloud
+  // vendor (knownCloudEndpoint) — local/custom never set keyRequired, so
+  // this never touches their free-text-plus-datalist experience.
+  // "loading" covers both an in-flight discovery fetch AND the debounce
+  // window right after a keystroke, before discoverySettled catches up —
+  // otherwise a stale settled state could flash the free-text fallback for
+  // a moment between "key just typed" and "fetch actually started".
+  const cloudModelsPending =
+    knownCloudEndpoint && keyPresent && !showModelSelect && (!discoverySettled || discovery.isFetching);
+  const modelFieldMode: "needsKey" | "loading" | "select" | "input" = !keyPresent && knownCloudEndpoint
+    ? "needsKey"
+    : cloudModelsPending
+      ? "loading"
+      : showModelSelect
+        ? "select"
+        : "input";
+
   // Scope drives both copy and the Anthropic-fields no-key-guidance prop:
   // cloud-only is the wizard's Cloud model tile, which already shows its own
   // note text below the card, so AnthropicFields' guidance block would be
@@ -413,42 +432,12 @@ export default function AnyProviderCard({ groups }: { groups?: PresetGroup[] }) 
               </Field>
             )}
 
-            <Field label={t("externalProvider.modelLabel")} htmlFor="any-provider-model">
-              {showModelSelect ? (
-                <Select mono value={model} onChange={(e) => setModel(e.target.value)}>
-                  <option value="">{t("externalProvider.modelSelectPlaceholder")}</option>
-                  {/* A saved model that's no longer among the discovered ids
-                      (e.g. removed from Ollama since it was saved) must still
-                      render as the visibly-selected value — never a blank select
-                      while Save/Test remain enabled on a value the user can't see. */}
-                  {model !== "" && !effectiveModels.includes(model) && <option value={model}>{model}</option>}
-                  {effectiveModels.map((m) => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                </Select>
-              ) : (
-                <Input
-                  mono
-                  value={model}
-                  onChange={(e) => setModel(e.target.value)}
-                  placeholder={preset.modelPlaceholder ?? t("externalProvider.modelPlaceholder")}
-                  list="any-provider-models"
-                />
-              )}
-            </Field>
-            {!showModelSelect && (
-              <datalist id="any-provider-models">
-                {models.map((m) => (
-                  <option key={m} value={m} />
-                ))}
-              </datalist>
-            )}
-            {keyPresent && (discovery.isError || localQuery?.isError) && (
-              <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)" }}>
-                {t("externalProvider.modelDiscoveryFailed")}
-              </span>
-            )}
-
+            {/* Key precedes Model for the keyed cloud vendors: the key is
+                the precondition for model discovery, so the form reads in
+                the order the user actually fills it — paste key → models
+                load → pick one. (preset.keyRequired is true only for cloud
+                vendors here — see knownCloudEndpoint above — so this never
+                reorders the local/custom presets, which have no key field.) */}
             {preset.keyRequired && (
               <Field
                 label={t("externalProvider.apiKeyLabel")}
@@ -470,6 +459,59 @@ export default function AnyProviderCard({ groups }: { groups?: PresetGroup[] }) 
               <Button variant="ghost" size="sm" onClick={() => shellOpen(preset.getKeyUrl!)} className="self-start">
                 {t("externalProvider.getKeyLink")}
               </Button>
+            )}
+
+            <Field label={t("externalProvider.modelLabel")} htmlFor="any-provider-model">
+              {modelFieldMode === "select" ? (
+                <Select mono value={model} onChange={(e) => setModel(e.target.value)}>
+                  <option value="">{t("externalProvider.modelSelectPlaceholder")}</option>
+                  {/* A saved model that's no longer among the discovered ids
+                      (e.g. removed from Ollama since it was saved) must still
+                      render as the visibly-selected value — never a blank select
+                      while Save/Test remain enabled on a value the user can't see. */}
+                  {model !== "" && !effectiveModels.includes(model) && <option value={model}>{model}</option>}
+                  {effectiveModels.map((m) => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </Select>
+              ) : modelFieldMode === "needsKey" ? (
+                // Cloud vendor, no key yet: dropdown-only (user report) — no
+                // free-text input to type a model id into before there's a
+                // key to discover one with.
+                <Select mono disabled value="">
+                  <option value="">{t("externalProvider.modelSelectNeedsKey")}</option>
+                </Select>
+              ) : modelFieldMode === "loading" ? (
+                <Select mono disabled value="">
+                  <option value="">{t("externalProvider.modelSelectLoading")}</option>
+                </Select>
+              ) : (
+                // Escape hatch: a keyed cloud vendor whose /models call
+                // errored (or returned nothing) falls back to free text —
+                // see the preset-table comment on why a dropdown-only UI
+                // with no fallback would permanently brick a vendor whose
+                // /models response shape drifts. Local/custom presets always
+                // land here too; they never get dropdown-only treatment.
+                <Input
+                  mono
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  placeholder={preset.modelPlaceholder ?? t("externalProvider.modelPlaceholder")}
+                  list="any-provider-models"
+                />
+              )}
+            </Field>
+            {modelFieldMode === "input" && (
+              <datalist id="any-provider-models">
+                {models.map((m) => (
+                  <option key={m} value={m} />
+                ))}
+              </datalist>
+            )}
+            {keyPresent && (discovery.isError || localQuery?.isError) && (
+              <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)" }}>
+                {t("externalProvider.modelDiscoveryFailed")}
+              </span>
             )}
 
             <div className="flex items-center gap-2">
