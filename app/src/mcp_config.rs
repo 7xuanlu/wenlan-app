@@ -98,6 +98,37 @@ fn claude_code_plugin_enabled_on_disk() -> bool {
         .unwrap_or(false)
 }
 
+/// Whether a Codex CLI `config.toml` blob has the Wenlan plugin enabled —
+/// `[plugins."wenlan@<marketplace>"] enabled = true`. The marketplace name
+/// varies (`wenlan-local` pre-7xuanlu/wenlan#348, `7xuanlu-wenlan` after),
+/// so match the `wenlan@` prefix, never a literal marketplace name — same
+/// reasoning as `claude_code_plugin_enabled`.
+fn codex_cli_plugin_enabled(toml_str: &str) -> bool {
+    toml_str
+        .parse::<toml_edit::DocumentMut>()
+        .ok()
+        .and_then(|doc| {
+            let plugins = doc.get("plugins")?.as_table_like()?;
+            Some(plugins.iter().any(|(key, item)| {
+                key.starts_with("wenlan@")
+                    && item.get("enabled").and_then(|v| v.as_bool()) == Some(true)
+            }))
+        })
+        .unwrap_or(false)
+}
+
+/// Reads the real `~/.codex/config.toml` and checks it via
+/// `codex_cli_plugin_enabled`. Split out so the matching logic stays a pure,
+/// directly testable function.
+fn codex_cli_plugin_enabled_on_disk() -> bool {
+    let Some(home) = dirs::home_dir() else {
+        return false;
+    };
+    std::fs::read_to_string(home.join(".codex").join("config.toml"))
+        .map(|s| codex_cli_plugin_enabled(&s))
+        .unwrap_or(false)
+}
+
 /// Detect installed MCP-compatible tools and whether Wenlan is already configured.
 pub fn detect_mcp_clients() -> Vec<McpClient> {
     let clients = [
@@ -143,6 +174,16 @@ pub fn detect_mcp_clients() -> Vec<McpClient> {
                 (
                     config_path.exists(),
                     config_has_entry() || claude_code_plugin_enabled_on_disk(),
+                )
+            } else if client_type == &"codex_cli" {
+                // Codex CLI also counts as configured via the Wenlan plugin
+                // (`[plugins."wenlan@<marketplace>"]` in
+                // `~/.codex/config.toml`), which registers its own MCP
+                // server without a separate `[mcp_servers.wenlan]` entry —
+                // see codex_cli_plugin_enabled.
+                (
+                    config_path.exists(),
+                    config_has_entry() || codex_cli_plugin_enabled_on_disk(),
                 )
             } else {
                 // Everything else: detect by config file existence
@@ -379,6 +420,44 @@ mod tests {
     #[test]
     fn test_claude_code_plugin_enabled_false_on_malformed_json() {
         assert!(!claude_code_plugin_enabled("not json"));
+    }
+
+    #[test]
+    fn test_codex_cli_plugin_enabled_matches_pre_rename_marketplace() {
+        let toml = "[plugins.\"wenlan@wenlan-local\"]\nenabled = true\n";
+        assert!(codex_cli_plugin_enabled(toml));
+    }
+
+    #[test]
+    fn test_codex_cli_plugin_enabled_matches_post_rename_marketplace() {
+        // 7xuanlu/wenlan#348 renames the marketplace to match Claude's — must
+        // still match, since matching is by the `wenlan@` prefix, not a
+        // literal marketplace name.
+        let toml = "[plugins.\"wenlan@7xuanlu-wenlan\"]\nenabled = true\n";
+        assert!(codex_cli_plugin_enabled(toml));
+    }
+
+    #[test]
+    fn test_codex_cli_plugin_enabled_false_when_disabled() {
+        let toml = "[plugins.\"wenlan@wenlan-local\"]\nenabled = false\n";
+        assert!(!codex_cli_plugin_enabled(toml));
+    }
+
+    #[test]
+    fn test_codex_cli_plugin_enabled_false_when_no_wenlan_entry() {
+        let toml = "[plugins.\"other@somewhere\"]\nenabled = true\n";
+        assert!(!codex_cli_plugin_enabled(toml));
+    }
+
+    #[test]
+    fn test_codex_cli_plugin_enabled_false_when_no_plugins_key() {
+        let toml = "model = \"gpt-5.5\"\n";
+        assert!(!codex_cli_plugin_enabled(toml));
+    }
+
+    #[test]
+    fn test_codex_cli_plugin_enabled_false_on_malformed_toml() {
+        assert!(!codex_cli_plugin_enabled("not toml ["));
     }
 
     #[test]

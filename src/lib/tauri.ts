@@ -1937,6 +1937,20 @@ export async function getWenlanMcpEntry(): Promise<WenlanMcpEntry> {
   return invoke("get_wenlan_mcp_entry");
 }
 
+export type PluginInstallClientType = "claude_code" | "codex_cli";
+
+/** Installs the Wenlan plugin for `clientType` (marketplace add, then
+ *  plugin install/add) by shelling out to that client's CLI — never writes
+ *  a raw MCP entry (`~/.claude.json` or `[mcp_servers.wenlan]`), since the
+ *  plugin registers its own MCP server. Idempotent: resolves if the
+ *  marketplace or plugin is already present. Rejects with a plain error
+ *  message ("Claude Code CLI not found" / "Codex CLI not found", a step
+ *  failure, or "unsupported client type") — callers must not block the
+ *  wizard on that rejection. */
+export async function installClientPlugin(clientType: PluginInstallClientType): Promise<void> {
+  return invoke("install_client_plugin", { clientType });
+}
+
 // ===== Onboarding Journey Milestones =====
 
 export type MilestoneId =

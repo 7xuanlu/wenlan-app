@@ -13,6 +13,7 @@ mod identity_paths;
 mod indexer;
 mod lifecycle;
 pub mod mcp_config;
+pub mod plugin_install;
 pub mod privacy;
 pub mod remote_access;
 mod search;
@@ -911,6 +912,7 @@ pub fn run() {
             search::detect_mcp_clients_cmd,
             search::write_mcp_config,
             search::get_wenlan_mcp_entry,
+            search::install_client_plugin,
             // Entity suggestion commands
             search::get_entity_suggestions_cmd,
             search::approve_entity_suggestion_cmd,

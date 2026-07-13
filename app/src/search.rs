@@ -379,6 +379,20 @@ pub async fn get_wenlan_mcp_entry() -> Result<crate::mcp_config::WenlanMcpEntry,
     Ok(crate::mcp_config::wenlan_mcp_entry())
 }
 
+/// Installs the Wenlan plugin for `client_type` (`"claude_code"` /
+/// `"codex_cli"`) by shelling out to that client's CLI (marketplace add,
+/// then plugin install/add) — see `plugin_install::install_client_plugin`.
+/// Idempotent: succeeds if the marketplace or plugin is already present.
+/// Runs on a blocking thread since the marketplace step can clone over the
+/// network.
+#[tauri::command]
+pub async fn install_client_plugin(client_type: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || crate::plugin_install::install_client_plugin(&client_type))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
 // ── Activity commands (file-based, local) ─────────────────────────────
 
 #[tauri::command]
