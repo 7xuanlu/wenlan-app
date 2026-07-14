@@ -236,8 +236,8 @@ describe("DiagnosticsSection", () => {
     });
   });
 
-  describe("wiring rail (signature)", () => {
-    it("pulses probing nodes while the wire state loads, then settles to the resolved topology", async () => {
+  describe("wiring loading state", () => {
+    it("shows the loading state while the wire state is pending, then the resolved rows", async () => {
       let resolveWire!: (value: WireState) => void;
       vi.mocked(getWireState).mockReturnValue(
         new Promise((resolve) => {
@@ -245,22 +245,21 @@ describe("DiagnosticsSection", () => {
         }),
       );
 
-      const { container } = renderDiagnostics();
+      renderDiagnostics();
 
-      // While in flight the rail holds its shape: three probing dots pulse and
-      // no resolved node content is on screen yet. An instant-resolve mock
-      // would skip straight past this, so the promise is held open on purpose.
+      // While in flight, only the loading state is on screen. An
+      // instant-resolve mock would skip straight past this, so the promise
+      // is held open on purpose.
       await screen.findByText("Loading wiring…");
-      expect(container.querySelectorAll(".mem-node-pulse")).toHaveLength(3);
       expect(screen.queryByText("Wenlan runtime")).not.toBeInTheDocument();
 
       await act(async () => {
         resolveWire(wireFixture);
       });
 
-      // Resolved: the pulse stops and the real topology renders.
+      // Resolved: the real rows render and the loading state is gone.
       expect(await screen.findByText("Wenlan runtime")).toBeInTheDocument();
-      expect(container.querySelectorAll(".mem-node-pulse")).toHaveLength(0);
+      expect(screen.queryByText("Loading wiring…")).not.toBeInTheDocument();
     });
   });
 

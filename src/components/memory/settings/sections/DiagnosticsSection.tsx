@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
@@ -101,137 +101,41 @@ function buildWireReport(t: TFunction, wire: WireState): string {
   return lines.join("\n");
 }
 
-// ── Rail: the wiring topology as one continuous spine ─────────────────────
-// daemon → MCP binary → clients, rendered as nodes threaded on a single
-// vertical spine. The spine (dots + connectors) is decorative and
-// aria-hidden; every health fact stays available as text through the
-// StatusChips and labels inside each node's content.
+// ── Wiring rows: daemon, MCP binary, clients — three independent checks ──
 
-type NodeState = "healthy" | "broken" | "idle" | "probing";
-type HopState = "healthy" | "broken" | "idle";
-
-// A dot is filled sage when the node is healthy, a hollow danger ring when it
-// is broken, a hollow tertiary ring when idle/unchecked, and a filled tertiary
-// dot (pulsing) while probing.
-const NODE_DOT_STYLE: Record<NodeState, CSSProperties> = {
-  healthy: { backgroundColor: "var(--mem-accent-sage)" },
-  broken: { backgroundColor: "transparent", border: "1.5px solid var(--mem-status-danger-border)" },
-  idle: { backgroundColor: "transparent", border: "1.5px solid var(--mem-text-tertiary)" },
-  probing: { backgroundColor: "var(--mem-text-tertiary)" },
-};
-
-const HOP_COLOR: Record<HopState, string> = {
-  healthy: "var(--mem-accent-sage)",
-  broken: "var(--mem-status-danger-border)",
-  idle: "var(--mem-border)",
-};
-
-/** A hop (the connector into the next node) is sage only when both of its ends
- *  are healthy, danger when it leads into a broken node, and muted when the
- *  chain is already compromised upstream or the downstream node was never
- *  reached (idle). Matches both approved mockup panels: healthy → all sage;
- *  daemon-up / binary-missing → danger into the binary, muted onward. */
-function hopState(upstream: NodeState, downstream: NodeState): HopState {
-  if (upstream !== "healthy") return "idle";
-  if (downstream === "broken") return "broken";
-  if (downstream === "healthy") return "healthy";
-  return "idle";
-}
-
-function RailNode({
-  state,
-  hop,
-  isLast = false,
-  children,
-}: {
-  state: NodeState;
-  hop?: HopState;
-  isLast?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <div className="flex" style={{ gap: "var(--mem-space-3)" }}>
-      {/* The track column stretches to the full row height, so the connector —
-          drawn from just under this dot (top 17px) to the row's bottom edge,
-          which sits ~5px above the next dot — never breaks however tall the
-          node's content grows. This is why the spine is per-node tails rather
-          than fixed-height segments between rows. */}
-      <div aria-hidden="true" className="relative shrink-0" style={{ width: "20px", alignSelf: "stretch" }}>
-        {!isLast && hop && (
-          <span
-            style={{
-              position: "absolute",
-              left: "9px",
-              top: "17px",
-              bottom: 0,
-              width: "2px",
-              backgroundColor: HOP_COLOR[hop],
-            }}
-          />
-        )}
-        <span
-          className={state === "probing" ? "mem-node-pulse" : undefined}
-          style={{
-            position: "absolute",
-            left: "6px",
-            top: "5px",
-            width: "8px",
-            height: "8px",
-            boxSizing: "border-box",
-            borderRadius: "var(--mem-radius-full)",
-            ...NODE_DOT_STYLE[state],
-          }}
-        />
-      </div>
-      <div className="min-w-0 flex-1" style={{ paddingBottom: isLast ? 0 : "var(--mem-space-5)" }}>
-        {children}
-      </div>
-    </div>
-  );
-}
-
-/** Loading state: the rail's shape, held. Three probing nodes (pulsing dots)
- *  with muted connectors and Skeleton bars where each node's content will
- *  land. `sr-only` text carries the load to assistive tech, since the
- *  Skeleton bars are decorative. */
-function RailSkeleton() {
+/** Loading state: three skeleton rows matching the resolved row shape.
+ *  `sr-only` text carries the load to assistive tech, since the Skeleton
+ *  bars are decorative. */
+function WiringSkeleton() {
   const { t } = useTranslation();
   return (
-    <div className="px-5 pt-4 pb-5" aria-busy="true">
+    <div aria-busy="true">
       <span className="sr-only">{t("settings.diagnostics.wiring.loading")}</span>
       {[0, 1, 2].map((index) => (
-        <RailNode key={index} state="probing" hop="idle" isLast={index === 2}>
+        <div key={index} className="px-5 py-4">
           <div className="flex flex-col gap-2">
             <Skeleton width="35%" height={14} />
             <Skeleton width="72%" height={10} />
           </div>
-        </RailNode>
+        </div>
       ))}
     </div>
   );
 }
 
-function WiringRail({ wire }: { wire: WireState }) {
-  const daemonState: NodeState = wire.daemon.reachable ? "healthy" : "broken";
-  const mcpState: NodeState = wire.mcp_binary.candidates.some((candidate) => candidate.exists)
-    ? "healthy"
-    : "broken";
-  const doubleRegistered = wire.clients.some((client) => client.has_plugin && client.has_raw_entry);
-  const clientsState: NodeState =
-    wire.clients.length === 0 ? "idle" : doubleRegistered ? "broken" : "healthy";
-
+function WiringRows({ wire }: { wire: WireState }) {
   return (
-    <div className="px-5 pt-4 pb-5">
-      <RailNode state={daemonState} hop={hopState(daemonState, mcpState)}>
+    <>
+      <div className="px-5 py-4">
         <DaemonStatus daemon={wire.daemon} />
-      </RailNode>
-      <RailNode state={mcpState} hop={hopState(mcpState, clientsState)}>
+      </div>
+      <div className="px-5 py-4">
         <McpBinaryStatus mcpBinary={wire.mcp_binary} />
-      </RailNode>
-      <RailNode state={clientsState} isLast>
+      </div>
+      <div className="px-5 py-4">
         <ClientsWiring clients={wire.clients} />
-      </RailNode>
-    </div>
+      </div>
+    </>
   );
 }
 
@@ -271,6 +175,10 @@ function DaemonStatus({ daemon }: { daemon: DaemonWire }) {
 
 function McpBinaryStatus({ mcpBinary }: { mcpBinary: BinaryWire }) {
   const { t } = useTranslation();
+  // The candidates list is a probe order — most paths are SUPPOSED to be
+  // missing as long as one is found. Only flag red (down) when the binary
+  // exists nowhere; otherwise a missing candidate is idle, not an alarm.
+  const anyFound = mcpBinary.candidates.some((candidate) => candidate.exists);
   return (
     <>
       <div className="mb-1" style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-md)", fontWeight: 500, color: "var(--mem-text)" }}>
@@ -283,7 +191,7 @@ function McpBinaryStatus({ mcpBinary }: { mcpBinary: BinaryWire }) {
         {mcpBinary.candidates.map((candidate) => (
           <div key={candidate.path} className="flex items-center gap-2 flex-wrap">
             <StatusChip
-              state={candidate.exists ? { kind: "up" } : { kind: "down" }}
+              state={candidate.exists ? { kind: "up" } : anyFound ? { kind: "idle" } : { kind: "down" }}
               label={
                 candidate.exists
                   ? t("settings.diagnostics.wiring.candidateFound")
@@ -525,10 +433,10 @@ export default function DiagnosticsSection() {
           label={t("settings.diagnostics.wiring.title")}
           action={wireQuery.data ? <CopyReportButton wire={wireQuery.data} /> : undefined}
         />
-        <Card padding="none">
-          {wireQuery.isLoading && <RailSkeleton />}
+        <Card padding="rows">
+          {wireQuery.isLoading && <WiringSkeleton />}
           {wireQuery.isError && <WiringError />}
-          {wireQuery.data && <WiringRail wire={wireQuery.data} />}
+          {wireQuery.data && <WiringRows wire={wireQuery.data} />}
         </Card>
       </section>
 
