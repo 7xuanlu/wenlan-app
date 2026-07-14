@@ -77,6 +77,18 @@ vi.mock("../lib/tauri", () => ({
     mcp_binary: { command: "wenlan-mcp", args: [], candidates: [] },
     clients: [],
   }),
+  storeMemory: vi.fn().mockResolvedValue({ source_id: "mem_setup-check" }),
+  listRecentMemories: vi.fn().mockResolvedValue([
+    {
+      kind: "memory",
+      id: "mem_setup-check",
+      title: "Wenlan setup check",
+      snippet: null,
+      timestamp_ms: Date.now(),
+      badge: { kind: "none" },
+    },
+  ]),
+  deleteMemory: vi.fn().mockResolvedValue(undefined),
 }));
 
 import {
@@ -92,6 +104,9 @@ import {
   detectObsidianVaults,
   addSource,
   syncRegisteredSource,
+  storeMemory,
+  listRecentMemories,
+  deleteMemory,
 } from "../lib/tauri";
 
 /** An agent write that lands AFTER the wizard was entered — the only kind that
@@ -146,6 +161,18 @@ describe("SetupWizard", () => {
     });
     (detectObsidianVaults as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     (onDeviceModelDownloadBytes as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    (storeMemory as ReturnType<typeof vi.fn>).mockResolvedValue({ source_id: "mem_setup-check" });
+    (listRecentMemories as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        kind: "memory",
+        id: "mem_setup-check",
+        title: "Wenlan setup check",
+        snippet: null,
+        timestamp_ms: Date.now(),
+        badge: { kind: "none" },
+      },
+    ]);
+    (deleteMemory as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
   });
 
   it("renders Welcome step by default", () => {
@@ -477,13 +504,14 @@ describe("SetupWizard", () => {
     });
     expect(installClientPlugin).not.toHaveBeenCalledWith("cursor");
 
-    // The runtime row leads unconditionally, then plugin rows sort ahead of
-    // config rows. The rail holds only work Wenlan does — no waiting row.
+    // The runtime row leads unconditionally, then config rows sort ahead of
+    // plugin rows — ascending by how long the row actually takes, so the
+    // rail inks top-to-bottom instead of the slowest row sitting at the top.
     const rows = within(screen.getByTestId("setting-up-tasks")).getAllByTestId(/^task-status-/);
     expect(rows.map((el) => el.getAttribute("data-testid"))).toEqual([
       "task-status-daemon",
-      "task-status-claude_code",
       "task-status-cursor",
+      "task-status-claude_code",
     ]);
   });
 
@@ -519,11 +547,65 @@ describe("SetupWizard", () => {
     ).toBeInTheDocument();
   });
 
+  // Rows are ordered ascending by how long they actually take, so the rail
+  // inks top-to-bottom in the common case instead of stalling on a slow row
+  // near the top while everything below it has long since finished. Plugin
+  // rows (claude_code) clone from GitHub — seconds; config rows (cursor) are
+  // a local file write — milliseconds; import is disk + ingest; the model is
+  // a multi-GB download, the slowest row on the screen.
+  it("rows are ordered daemon, config tools, plugin tools, import, then model — ascending by expected duration", async () => {
+    (detectObsidianVaults as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { name: "Work Notes", path: "/Users/x/Vaults/Work Notes" },
+    ]);
+    (detectMcpClients as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        name: "Cursor",
+        client_type: "cursor",
+        config_path: "/path/to/cursor",
+        detected: true,
+        already_configured: false,
+      },
+      {
+        name: "Claude Code",
+        client_type: "claude_code",
+        config_path: "/path/to/claude.json",
+        detected: true,
+        already_configured: false,
+      },
+    ]);
+
+    renderWizard();
+    fireEvent.click(screen.getByText("Get started"));
+    // Step 2: keep the default on-device model pick so a model row exists.
+    await waitFor(() =>
+      expect(screen.getByTestId("on-device-model-deferred-note")).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByText("Continue"));
+
+    // Step 3: pick the vault so an import row exists.
+    await waitFor(() => expect(screen.getByText("Work Notes")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("Work Notes"));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    // Step 4: both detected tools start checked — take both.
+    await screen.findByRole("checkbox", { name: "Cursor" });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    const rows = within(screen.getByTestId("setting-up-tasks")).getAllByTestId(/^task-status-/);
+    expect(rows.map((el) => el.getAttribute("data-testid"))).toEqual([
+      "task-status-daemon",
+      "task-status-cursor",
+      "task-status-claude_code",
+      "task-status-import",
+      "task-status-on-device-model",
+    ]);
+  });
+
   // (f) The returning-user bug. VerifyStep used to call onNext() from an effect
   // the moment it saw ANY past agent write, so anyone who had ever used Wenlan
   // shot straight past this step. Only a write made SINCE the wizard was
-  // entered proves the config we just wrote works.
-  it("a pre-existing agent write does NOT advance past Setting up, and does not resolve the first-write handoff", async () => {
+  // entered feeds the Done step's connected-agent chips.
+  it("a pre-existing agent write does NOT advance past Setting up, and does not appear as a connected agent", async () => {
     (detectMcpClients as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
         name: "Cursor",
@@ -552,32 +634,13 @@ describe("SetupWizard", () => {
     expect(screen.queryByText("You're all set.")).not.toBeInTheDocument();
     expect(screen.queryByText("Wenlan is ready.")).not.toBeInTheDocument();
 
-    // The handoff is still waiting: an old write proves nothing about the
-    // config that was written seconds ago.
-    expect(screen.getByTestId("first-write-label")).toHaveTextContent(
-      "Ask an agent to remember something",
-    );
-  });
-
-  it("a fresh agent write resolves the first-write handoff — and still does not advance on its own", async () => {
-    (listAgents as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { name: "Claude", display_name: "Claude", last_seen_at: FRESH(), memory_count: 5 },
-    ]);
-
-    renderWizard({ initialStep: "setting-up" });
-
+    // An old write proves nothing about the config that was written seconds
+    // ago — it must not show up as a connected agent on Done.
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     await waitFor(() => {
-      expect(screen.getByTestId("first-write-label")).toHaveTextContent(
-        "Claude just wrote to your knowledge base",
-      );
+      expect(screen.getByText("You're all set.")).toBeInTheDocument();
     });
-    expect(
-      screen.getByText("The connection works end to end. Pages build from here."),
-    ).toBeInTheDocument();
-
-    // Resolving the handoff is all it does. The user still chooses when to move on.
-    expect(screen.getByText("Setting up")).toBeInTheDocument();
-    expect(screen.queryByText("You're all set.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Claude")).not.toBeInTheDocument();
   });
 
   it("renders skip-path Done copy without a back button", async () => {
@@ -727,10 +790,10 @@ describe("SetupWizard", () => {
 
     renderWizard({ initialStep: "setting-up" });
 
+    // Settle on the daemon row finishing first — it's the only visible signal
+    // that a render has happened at all before we act on it.
     await waitFor(() => {
-      expect(screen.getByTestId("first-write-label")).toHaveTextContent(
-        "just wrote to your knowledge base",
-      );
+      expect(screen.getByTestId("task-status-daemon")).toHaveTextContent("Running");
     });
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
 
@@ -738,7 +801,12 @@ describe("SetupWizard", () => {
       expect(screen.getByText("You're all set.")).toBeInTheDocument();
     });
 
-    expect(screen.getByText("Codex")).toBeInTheDocument();
+    // The fresh-agent notification (listAgents → onConnected) can land either
+    // before or after the Continue click — wait for it rather than asserting
+    // synchronously right after the Done heading appears.
+    await waitFor(() => {
+      expect(screen.getByText("Codex")).toBeInTheDocument();
+    });
     expect(screen.queryByText("codex-ulw-loop")).not.toBeInTheDocument();
     expect(screen.queryByText("codex-mcp-client")).not.toBeInTheDocument();
   });
@@ -865,10 +933,10 @@ describe("SetupWizard", () => {
 
     renderWizard({ initialStep: "setting-up" });
 
+    // Settle on the daemon row finishing first — it's the only visible signal
+    // that a render has happened at all before we act on it.
     await waitFor(() => {
-      expect(screen.getByTestId("first-write-label")).toHaveTextContent(
-        "just wrote to your knowledge base",
-      );
+      expect(screen.getByTestId("task-status-daemon")).toHaveTextContent("Running");
     });
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
 
@@ -877,6 +945,13 @@ describe("SetupWizard", () => {
     });
 
     // Unrecognized slugs are prettified (word-split + title-case), not shown raw.
+    // The fresh-agent notification can land either before or after the
+    // Continue click, so wait for the first chip rather than asserting
+    // synchronously right after the Done heading appears.
+    const firstPrettified = "Tool A";
+    await waitFor(() => {
+      expect(screen.getByText(firstPrettified)).toBeInTheDocument();
+    });
     for (const id of ids.slice(0, 6)) {
       const prettified = id
         .split("-")
@@ -1224,16 +1299,6 @@ describe("SetupWizard", () => {
     expect(screen.getByTestId("task-status-on-device-model")).toHaveTextContent("Downloading…");
   });
 
-  // The first-agent-write moment used to be a task row (WAITING_ROW_ID) inside
-  // the rail. It moved below the spine as a handoff — the rail now holds only
-  // work Wenlan does.
-  it("the first-write handoff renders below the rail and is not a task row", async () => {
-    renderWizard({ initialStep: "setting-up" });
-
-    await screen.findByTestId("first-write-handoff");
-    expect(screen.queryByTestId("task-row-waiting-for-agent")).not.toBeInTheDocument();
-  });
-
   it("import: step 5 runs addSource + syncRegisteredSource and shows the real SyncStats it gets back, never a fabricated count", async () => {
     (detectObsidianVaults as ReturnType<typeof vi.fn>).mockResolvedValue([
       { name: "Work Notes", path: "/Users/x/Vaults/Work Notes" },
@@ -1301,6 +1366,82 @@ describe("SetupWizard", () => {
       expect(screen.getByTestId("task-status-daemon")).toHaveTextContent("Running");
     });
     expect(screen.queryByText("connection refused")).not.toBeInTheDocument();
+  });
+
+  // Reachable is not the same as working: the row must prove the actual
+  // write path, not just that the daemon answered a ping. It stores a marked
+  // probe memory, reads it straight back, then cleans up after itself.
+  it("the runtime row proves the write path — stores a probe memory, reads it back, then deletes it", async () => {
+    (storeMemory as ReturnType<typeof vi.fn>).mockResolvedValue({ source_id: "mem_probe-1" });
+    (listRecentMemories as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        kind: "memory",
+        id: "mem_probe-1",
+        title: "Wenlan setup check",
+        snippet: null,
+        timestamp_ms: Date.now(),
+        badge: { kind: "none" },
+      },
+    ]);
+
+    renderWizard({ initialStep: "setting-up" });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("task-status-daemon")).toHaveTextContent("Running");
+    });
+
+    // The row proves it, not just pings it: content is a self-identifying
+    // setup check, and the read-back is a real lookup by the id the store
+    // call returned — not merely that the store call resolved.
+    expect(storeMemory).toHaveBeenCalledWith(
+      expect.objectContaining({ content: expect.stringContaining("setup check") }),
+    );
+    expect(listRecentMemories).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(deleteMemory).toHaveBeenCalledWith("mem_probe-1");
+    });
+  });
+
+  it("the runtime row fails when the stored probe memory can't be read back — reachable is not enough", async () => {
+    (storeMemory as ReturnType<typeof vi.fn>).mockResolvedValue({ source_id: "mem_probe-2" });
+    // The read-back comes back empty: the write never lands, or lands
+    // somewhere the recent-memories feed can't see it either way.
+    (listRecentMemories as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+
+    renderWizard({ initialStep: "setting-up" });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("task-status-daemon")).toHaveTextContent("Couldn't set up");
+    });
+    expect(
+      screen.getByText(/Stored a test memory but couldn't read it back\./),
+    ).toBeInTheDocument();
+    // Never cleaned up: cleanup only runs once the round trip has actually
+    // proved the pipeline works.
+    expect(deleteMemory).not.toHaveBeenCalled();
+  });
+
+  it("a failed cleanup delete does not fail the runtime row — the round trip already proved the pipeline", async () => {
+    (storeMemory as ReturnType<typeof vi.fn>).mockResolvedValue({ source_id: "mem_probe-3" });
+    (listRecentMemories as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        kind: "memory",
+        id: "mem_probe-3",
+        title: "Wenlan setup check",
+        snippet: null,
+        timestamp_ms: Date.now(),
+        badge: { kind: "none" },
+      },
+    ]);
+    (deleteMemory as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("delete failed"));
+
+    renderWizard({ initialStep: "setting-up" });
+
+    await waitFor(() => {
+      expect(deleteMemory).toHaveBeenCalledWith("mem_probe-3");
+    });
+    expect(screen.getByTestId("task-status-daemon")).toHaveTextContent("Running");
+    expect(screen.queryByText("delete failed")).not.toBeInTheDocument();
   });
 
   // The rows run concurrently and independently. A dead daemon is the single

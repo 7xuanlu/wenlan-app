@@ -12,6 +12,9 @@ import {
   onDeviceModelDownloadBytes,
   addSource,
   syncRegisteredSource,
+  storeMemory,
+  listRecentMemories,
+  deleteMemory,
   type McpClient,
   type ImportResult,
   type SyncStats,
@@ -818,20 +821,31 @@ function SettingUpStep({
 
   // Rows are computed ONCE, at step entry, and never re-derived — a detection
   // refetch mid-step must not add, drop, or reorder a row the user is watching.
-  // Order: runtime first (nothing downstream can be true if the daemon isn't
-  // up), then the on-device model (if chosen), then import (if chosen), then
-  // each tool.
   //
-  // The rail holds only work WENLAN does. The first-agent write used to be a
-  // row here, but it is the one thing on this screen the machine cannot do:
-  // it needs the user to go to another app and use it. As a row it could never
-  // complete while being looked at, so the spine never finished inking and
-  // onboarding's last impression was a checklist stuck at incomplete. It lives
-  // below the rail now, as a handoff, and the rail can actually finish.
+  // Order is ascending by how long the row actually takes, not by what it is:
+  //   1. daemon   — instant, a local HTTP round trip. Stays first regardless:
+  //                 nothing downstream can be trusted if it isn't up.
+  //   2. config   — instant, a local file write.
+  //   3. plugin   — claude_code / codex_cli: a `git clone` from GitHub, so
+  //                 seconds, not milliseconds.
+  //   4. import   — disk read plus ingest (if the user picked a vault).
+  //   5. model    — a multi-GB download (if the user picked one); by far the
+  //                 slowest row on this screen, sometimes minutes.
+  // All rows still kick off concurrently (see the effect below) — this only
+  // changes the order they're DRAWN in. Rows resolve concurrently and out of
+  // order regardless, but the common case (nothing fails) now sweeps the rail
+  // top-to-bottom instead of stalling on row 2 while everything below it has
+  // long since finished.
+  //
+  // The rail holds only work WENLAN does — and that now includes proving the
+  // write path itself. A below-rail handoff used to ask the user to leave and
+  // go use another app so a real agent write could prove the connection; as
+  // a row it could never complete while being watched, so the spine never
+  // finished inking. The daemon row now proves the same thing on its own (see
+  // its round trip in `runRow`), so that handoff is gone — the machine proves
+  // it can remember something, instead of asking the user to.
   const [rows] = useState<TaskRow[]>(() => {
     const out: TaskRow[] = [{ id: DAEMON_ROW_ID, kind: "daemon", client: null }];
-    if (pendingModelId) out.push({ id: MODEL_ROW_ID, kind: "model", client: null });
-    if (pendingImportPick) out.push({ id: IMPORT_ROW_ID, kind: "import", client: null });
     const plugins: TaskRow[] = [];
     const configs: TaskRow[] = [];
     for (const client of selected) {
@@ -842,7 +856,9 @@ function SettingUpStep({
         client,
       });
     }
-    out.push(...plugins, ...configs);
+    out.push(...configs, ...plugins);
+    if (pendingImportPick) out.push({ id: IMPORT_ROW_ID, kind: "import", client: null });
+    if (pendingModelId) out.push({ id: MODEL_ROW_ID, kind: "model", client: null });
     return out;
   });
 
@@ -900,15 +916,50 @@ function SettingUpStep({
         // any tool) can be true if the daemon itself isn't reachable.
         getWireState().then(
           (wire) => {
-            if (wire.daemon.reachable) {
-              setStatuses((prev) => ({ ...prev, [row.id]: "done" }));
-            } else {
+            if (!wire.daemon.reachable) {
               setStatuses((prev) => ({ ...prev, [row.id]: "failed" }));
               setErrors((prev) => ({
                 ...prev,
                 [row.id]: wire.daemon.error ?? t("setup.settingUp.daemonUnreachable"),
               }));
+              return;
             }
+
+            // Reachable only proves the daemon answers HTTP — not that it can
+            // actually store and recall a memory. Prove the real write path:
+            // store a marked, self-identifying probe memory, then read it
+            // straight back through the recent-memories feed. That's a direct
+            // recency read off the memories table, not a search/embedding
+            // index that could lag behind the write — so it proves the
+            // memory came BACK, not merely that the store call resolved.
+            const probeContent =
+              "Wenlan setup check: confirms this device can store and " +
+              "recall a memory. Safe to ignore — it deletes itself right " +
+              `after this check. (${new Date().toISOString()})`;
+            storeMemory({ content: probeContent, source_agent: "wenlan-setup" })
+              .then((stored) =>
+                listRecentMemories(5).then((recent) => {
+                  if (!recent.some((item) => item.id === stored.source_id)) {
+                    throw new Error(
+                      "Stored a test memory but couldn't read it back.",
+                    );
+                  }
+                  return stored.source_id;
+                }),
+              )
+              .then(
+                (sourceId) => {
+                  setStatuses((prev) => ({ ...prev, [row.id]: "done" }));
+                  // Best-effort cleanup: the round trip above already proved
+                  // the pipeline works, so a failed delete of our own probe
+                  // memory must not fail the row.
+                  deleteMemory(sourceId).catch(() => {});
+                },
+                (err) => {
+                  setStatuses((prev) => ({ ...prev, [row.id]: "failed" }));
+                  setErrors((prev) => ({ ...prev, [row.id]: String(err) }));
+                },
+              );
           },
           (err) => {
             setStatuses((prev) => ({ ...prev, [row.id]: "failed" }));
@@ -1009,9 +1060,14 @@ function SettingUpStep({
       ),
     [agents, wizardEnteredAt],
   );
-  const waitingDone = freshAgents.length > 0;
 
-  // Resolves its own row and stops there. It never advances the wizard.
+  // Feeds the Done step's connected-agent chips: a write from a real agent
+  // made SINCE the wizard was entered is the strongest proof a connection
+  // works. This used to also gate a visible handoff row below the rail, but
+  // that row is gone — it needed the user to leave this screen and use
+  // another app, so it could never complete while being watched. The
+  // notification itself still matters on its own: it's what turns a real
+  // agent write into a chip on the Done screen. It never advances the wizard.
   const notifiedRef = useRef(false);
   useEffect(() => {
     if (notifiedRef.current || freshAgents.length === 0) return;
@@ -1085,7 +1141,13 @@ function SettingUpStep({
   };
 
   const subOf = (row: TaskRow): string => {
-    if (row.kind === "daemon") return t("setup.settingUp.daemonSub");
+    if (row.kind === "daemon") {
+      // Done reads as proof ("it stored and recalled a test memory"), not as
+      // a restated ping — the same done/not-done split every other row uses.
+      return t(
+        statusOf(row) === "done" ? "setup.settingUp.daemonDoneSub" : "setup.settingUp.daemonSub",
+      );
+    }
     if (row.kind === "model") {
       if (statusOf(row) === "done") {
         return t("setup.settingUp.modelDoneSub", { model: pendingModelId ?? "" });
@@ -1395,67 +1457,6 @@ function SettingUpStep({
             </div>
           );
         })}
-      </div>
-
-      {/* The handoff. Not a rail row: the rail is work Wenlan does, and this is
-          the one thing it can't — it needs the user to go use an agent. Sitting
-          below the spine, in the imperative, it reads as "what's next" instead
-          of a task stuck at incomplete. It still carries the strongest proof in
-          the wizard: a write that landed AFTER setup, from a real agent. */}
-      <div
-        data-testid="first-write-handoff"
-        style={{
-          display: "flex",
-          alignItems: "flex-start",
-          gap: "var(--mem-space-3)",
-          paddingTop: "var(--mem-space-4)",
-          borderTop: "1px solid var(--mem-border)",
-        }}
-      >
-        <div
-          aria-hidden="true"
-          className={waitingDone ? undefined : "mem-node-pulse"}
-          style={{
-            marginTop: "5px",
-            width: "9px",
-            height: "9px",
-            flexShrink: 0,
-            borderRadius: "var(--mem-radius-full)",
-            border: `1.5px solid ${waitingDone ? "var(--mem-accent-sage)" : "var(--mem-accent-indigo)"}`,
-            backgroundColor: waitingDone ? "var(--mem-accent-sage)" : "transparent",
-          }}
-        />
-        <div className="min-w-0">
-          <p
-            data-testid="first-write-label"
-            style={{
-              fontFamily: "var(--mem-font-body)",
-              fontSize: "var(--mem-text-base)",
-              fontWeight: 500,
-              color: waitingDone ? "var(--mem-text)" : "var(--mem-text-secondary)",
-              transition: "color var(--mem-dur-fast) ease",
-            }}
-          >
-            {waitingDone
-              ? t("setup.settingUp.firstWriteDoneLabel", {
-                  agent: freshAgents[0]?.name ?? "",
-                })
-              : t("setup.settingUp.firstWriteLabel")}
-          </p>
-          <p
-            style={{
-              fontFamily: "var(--mem-font-body)",
-              fontSize: "var(--mem-text-sm)",
-              color: "var(--mem-text-tertiary)",
-              lineHeight: "1.5",
-              marginTop: "2px",
-            }}
-          >
-            {waitingDone
-              ? t("setup.settingUp.firstWriteDoneSub")
-              : t("setup.settingUp.firstWriteSub")}
-          </p>
-        </div>
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
