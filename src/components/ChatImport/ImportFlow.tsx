@@ -121,7 +121,7 @@ export function ImportFlow() {
             borderRadius: 8,
             padding: "8px 12px",
             fontFamily: "var(--mem-font-body)",
-            fontSize: 12,
+            fontSize: "var(--mem-text-sm)",
             lineHeight: "1.5",
             display: "flex",
             alignItems: "center",
@@ -175,12 +175,6 @@ export function ImportFlow() {
         </div>
       )}
 
-      <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.3; }
-        }
-      `}</style>
     </div>
   );
 }
@@ -188,12 +182,14 @@ export function ImportFlow() {
 function StatusIcon({ reading, error, refining }: { reading?: boolean; error?: boolean; refining: boolean }) {
   if (reading || refining) {
     return (
-      <span style={{
-        width: 6, height: 6, borderRadius: "50%",
-        background: "var(--mem-accent-indigo)",
-        animation: "pulse 1.2s ease-in-out infinite",
-        flexShrink: 0,
-      }} />
+      <span
+        className="mem-node-pulse"
+        style={{
+          width: 6, height: 6, borderRadius: "50%",
+          background: "var(--mem-accent-indigo)",
+          flexShrink: 0,
+        }}
+      />
     );
   }
   if (error) {

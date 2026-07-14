@@ -18,7 +18,16 @@ import {
   setLocalePreference,
   type StoredLocale,
 } from "../../../../i18n";
-import { Button, Card, Field, Input, SectionHeader, Select, SettingRow } from "../primitives";
+import {
+  Card,
+  ConfirmActionButton,
+  Field,
+  Input,
+  SectionHeader,
+  SegmentedControl,
+  Select,
+  SettingRow,
+} from "../primitives";
 import ProfileAvatar from "../../ProfileAvatar";
 
 type ThemeLabelKey =
@@ -128,15 +137,8 @@ function ProfileSettingsBlock() {
 
   return (
     <section className="mem-fade-up" style={{ animationDelay: "0ms" }}>
-      <SectionHeader
-        label={t("settings.profile.label")}
-        icon={
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 21a8 8 0 10-16 0" />
-            <circle cx="12" cy="7" r="4" strokeWidth={1.5} />
-          </svg>
-        }
-      />
+      {/* No icon: in settings the sidebar owns iconography; eyebrows are type-only. */}
+      <SectionHeader label={t("settings.profile.label")} />
       <Card padding="card">
         <div className="flex items-start gap-4">
           <div className="flex shrink-0 flex-col items-center gap-2">
@@ -229,10 +231,7 @@ export default function GeneralSection() {
     <>
       <ProfileSettingsBlock />
       <section className="mem-fade-up" style={{ animationDelay: "0ms" }}>
-        <SectionHeader
-          label={t("settings.general.appSection")}
-          icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" /></svg>}
-        />
+        <SectionHeader label={t("settings.general.appSection")} />
         <Card padding="rows">
           <SettingRow
             title={t("settings.general.runAtLoginTitle")}
@@ -245,32 +244,16 @@ export default function GeneralSection() {
             title={t("settings.theme.label")}
             description={t("settings.theme.description")}
             control={
-              <div className="relative flex bg-[var(--mem-hover)] rounded-lg p-0.5 shrink-0">
-                <div
-                  className="absolute top-0.5 bottom-0.5 rounded-md shadow-sm transition-transform duration-200 ease-out"
-                  style={{
-                    backgroundColor: "var(--mem-accent-indigo)",
-                    width: `calc(${100 / THEME_OPTIONS.length}% - 2px)`,
-                    transform: `translateX(calc(${THEME_OPTIONS.findIndex((o) => o.value === theme)} * (100% + ${4 / (THEME_OPTIONS.length - 1)}px)))`,
-                    left: 1,
-                  }}
-                />
-                {THEME_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.value}
-                    onClick={() => setThemeValue(opt.value)}
-                    className={`relative z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-colors duration-200 ${
-                      theme === opt.value
-                        ? "text-[var(--mem-text-on-accent)]"
-                        : "text-[var(--mem-text-secondary)] hover:text-[var(--mem-text)]"
-                    }`}
-                    style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", fontWeight: 500 }}
-                  >
-                    {opt.icon}
-                    {t(opt.labelKey)}
-                  </button>
-                ))}
-              </div>
+              <SegmentedControl
+                aria-label={t("settings.theme.label")}
+                options={THEME_OPTIONS.map((opt) => ({
+                  value: opt.value,
+                  label: t(opt.labelKey),
+                  icon: opt.icon,
+                }))}
+                value={theme}
+                onChange={setThemeValue}
+              />
             }
           />
           <SettingRow
@@ -296,26 +279,27 @@ export default function GeneralSection() {
               </div>
             }
           />
+          {/* Re-run setup wizard — a proper row with an inline two-step
+              confirm; data is preserved regardless. */}
+          <SettingRow
+            title={t("settings.general.rerunSetup")}
+            description={t("settings.general.rerunSetupConfirm")}
+            control={
+              <ConfirmActionButton
+                variant="secondary"
+                size="sm"
+                confirmLabel={t("settings.agents.confirm")}
+                cancelLabel={t("settings.agents.cancel")}
+                onConfirm={async () => {
+                  await setSetupCompleted(false);
+                  queryClient.invalidateQueries({ queryKey: ["shouldShowWizard"] });
+                }}
+              >
+                {t("settings.general.rerunSetupGo")}
+              </ConfirmActionButton>
+            }
+          />
         </Card>
-        {/* Re-run setup wizard. Confirmation prevents accidental restart;
-            data is preserved regardless. */}
-        <div className="px-2 pt-4">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="hover:underline"
-            onClick={async () => {
-              const ok = window.confirm(
-                t("settings.general.rerunSetupConfirm")
-              );
-              if (!ok) return;
-              await setSetupCompleted(false);
-              queryClient.invalidateQueries({ queryKey: ["shouldShowWizard"] });
-            }}
-          >
-            {t("settings.general.rerunSetup")}
-          </Button>
-        </div>
       </section>
     </>
   );

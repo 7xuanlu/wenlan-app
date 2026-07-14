@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
@@ -13,7 +13,7 @@ import {
   type PipelineStatusResponse,
   type WireState,
 } from "../../../../lib/tauri";
-import { Button, Card, SectionHeader, StatusChip } from "../primitives";
+import { Button, Card, SectionHeader, Skeleton, StatusChip } from "../primitives";
 
 function sortedEntries(values: Record<string, number>): [string, number][] {
   return Object.entries(values).sort(([leftKey, leftValue], [rightKey, rightValue]) => {
@@ -101,14 +101,148 @@ function buildWireReport(t: TFunction, wire: WireState): string {
   return lines.join("\n");
 }
 
+// ── Rail: the wiring topology as one continuous spine ─────────────────────
+// daemon → MCP binary → clients, rendered as nodes threaded on a single
+// vertical spine. The spine (dots + connectors) is decorative and
+// aria-hidden; every health fact stays available as text through the
+// StatusChips and labels inside each node's content.
+
+type NodeState = "healthy" | "broken" | "idle" | "probing";
+type HopState = "healthy" | "broken" | "idle";
+
+// A dot is filled sage when the node is healthy, a hollow danger ring when it
+// is broken, a hollow tertiary ring when idle/unchecked, and a filled tertiary
+// dot (pulsing) while probing.
+const NODE_DOT_STYLE: Record<NodeState, CSSProperties> = {
+  healthy: { backgroundColor: "var(--mem-accent-sage)" },
+  broken: { backgroundColor: "transparent", border: "1.5px solid var(--mem-status-danger-border)" },
+  idle: { backgroundColor: "transparent", border: "1.5px solid var(--mem-text-tertiary)" },
+  probing: { backgroundColor: "var(--mem-text-tertiary)" },
+};
+
+const HOP_COLOR: Record<HopState, string> = {
+  healthy: "var(--mem-accent-sage)",
+  broken: "var(--mem-status-danger-border)",
+  idle: "var(--mem-border)",
+};
+
+/** A hop (the connector into the next node) is sage only when both of its ends
+ *  are healthy, danger when it leads into a broken node, and muted when the
+ *  chain is already compromised upstream or the downstream node was never
+ *  reached (idle). Matches both approved mockup panels: healthy → all sage;
+ *  daemon-up / binary-missing → danger into the binary, muted onward. */
+function hopState(upstream: NodeState, downstream: NodeState): HopState {
+  if (upstream !== "healthy") return "idle";
+  if (downstream === "broken") return "broken";
+  if (downstream === "healthy") return "healthy";
+  return "idle";
+}
+
+function RailNode({
+  state,
+  hop,
+  isLast = false,
+  children,
+}: {
+  state: NodeState;
+  hop?: HopState;
+  isLast?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex" style={{ gap: "var(--mem-space-3)" }}>
+      {/* The track column stretches to the full row height, so the connector —
+          drawn from just under this dot (top 17px) to the row's bottom edge,
+          which sits ~5px above the next dot — never breaks however tall the
+          node's content grows. This is why the spine is per-node tails rather
+          than fixed-height segments between rows. */}
+      <div aria-hidden="true" className="relative shrink-0" style={{ width: "20px", alignSelf: "stretch" }}>
+        {!isLast && hop && (
+          <span
+            style={{
+              position: "absolute",
+              left: "9px",
+              top: "17px",
+              bottom: 0,
+              width: "2px",
+              backgroundColor: HOP_COLOR[hop],
+            }}
+          />
+        )}
+        <span
+          className={state === "probing" ? "mem-node-pulse" : undefined}
+          style={{
+            position: "absolute",
+            left: "6px",
+            top: "5px",
+            width: "8px",
+            height: "8px",
+            boxSizing: "border-box",
+            borderRadius: "var(--mem-radius-full)",
+            ...NODE_DOT_STYLE[state],
+          }}
+        />
+      </div>
+      <div className="min-w-0 flex-1" style={{ paddingBottom: isLast ? 0 : "var(--mem-space-5)" }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/** Loading state: the rail's shape, held. Three probing nodes (pulsing dots)
+ *  with muted connectors and Skeleton bars where each node's content will
+ *  land. `sr-only` text carries the load to assistive tech, since the
+ *  Skeleton bars are decorative. */
+function RailSkeleton() {
+  const { t } = useTranslation();
+  return (
+    <div className="px-5 pt-4 pb-5" aria-busy="true">
+      <span className="sr-only">{t("settings.diagnostics.wiring.loading")}</span>
+      {[0, 1, 2].map((index) => (
+        <RailNode key={index} state="probing" hop="idle" isLast={index === 2}>
+          <div className="flex flex-col gap-2">
+            <Skeleton width="35%" height={14} />
+            <Skeleton width="72%" height={10} />
+          </div>
+        </RailNode>
+      ))}
+    </div>
+  );
+}
+
+function WiringRail({ wire }: { wire: WireState }) {
+  const daemonState: NodeState = wire.daemon.reachable ? "healthy" : "broken";
+  const mcpState: NodeState = wire.mcp_binary.candidates.some((candidate) => candidate.exists)
+    ? "healthy"
+    : "broken";
+  const doubleRegistered = wire.clients.some((client) => client.has_plugin && client.has_raw_entry);
+  const clientsState: NodeState =
+    wire.clients.length === 0 ? "idle" : doubleRegistered ? "broken" : "healthy";
+
+  return (
+    <div className="px-5 pt-4 pb-5">
+      <RailNode state={daemonState} hop={hopState(daemonState, mcpState)}>
+        <DaemonStatus daemon={wire.daemon} />
+      </RailNode>
+      <RailNode state={mcpState} hop={hopState(mcpState, clientsState)}>
+        <McpBinaryStatus mcpBinary={wire.mcp_binary} />
+      </RailNode>
+      <RailNode state={clientsState} isLast>
+        <ClientsWiring clients={wire.clients} />
+      </RailNode>
+    </div>
+  );
+}
+
 function DaemonStatus({ daemon }: { daemon: DaemonWire }) {
   const { t } = useTranslation();
   return (
-    <div className="px-5 py-4">
-      <div className="flex items-center justify-between gap-3 mb-2">
-        <div style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-base)", fontWeight: 600, color: "var(--mem-text)" }}>
+    <>
+      <div className="flex items-center gap-2 flex-wrap mb-1">
+        <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-md)", fontWeight: 500, color: "var(--mem-text)" }}>
           {t("settings.diagnostics.wiring.daemonTitle")}
-        </div>
+        </span>
         <StatusChip
           state={daemon.reachable ? { kind: "up" } : { kind: "down" }}
           label={
@@ -118,7 +252,7 @@ function DaemonStatus({ daemon }: { daemon: DaemonWire }) {
           }
         />
       </div>
-      <p style={{ fontFamily: "var(--mem-font-mono)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text-secondary)" }}>
+      <p style={{ fontFamily: "var(--mem-font-mono)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text-secondary)", overflowWrap: "anywhere" }}>
         {daemon.base_url}
       </p>
       {daemon.version && (
@@ -131,18 +265,18 @@ function DaemonStatus({ daemon }: { daemon: DaemonWire }) {
           {daemon.error}
         </p>
       )}
-    </div>
+    </>
   );
 }
 
 function McpBinaryStatus({ mcpBinary }: { mcpBinary: BinaryWire }) {
   const { t } = useTranslation();
   return (
-    <div className="px-5 py-4">
-      <div className="mb-2" style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-base)", fontWeight: 600, color: "var(--mem-text)" }}>
+    <>
+      <div className="mb-1" style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-md)", fontWeight: 500, color: "var(--mem-text)" }}>
         {t("settings.diagnostics.wiring.mcpBinaryTitle")}
       </div>
-      <p style={{ fontFamily: "var(--mem-font-mono)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text)" }}>
+      <p style={{ fontFamily: "var(--mem-font-mono)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text)", overflowWrap: "anywhere" }}>
         {[mcpBinary.command, ...mcpBinary.args].join(" ")}
       </p>
       <div className="mt-3 flex flex-col gap-2">
@@ -168,15 +302,15 @@ function McpBinaryStatus({ mcpBinary }: { mcpBinary: BinaryWire }) {
           </div>
         ))}
       </div>
-    </div>
+    </>
   );
 }
 
 function ClientsWiring({ clients }: { clients: ClientWire[] }) {
   const { t } = useTranslation();
   return (
-    <div className="px-5 py-4">
-      <div className="mb-2" style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-base)", fontWeight: 600, color: "var(--mem-text)" }}>
+    <>
+      <div className="mb-1" style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-md)", fontWeight: 500, color: "var(--mem-text)" }}>
         {t("settings.diagnostics.wiring.clientsTitle")}
       </div>
       {clients.length === 0 ? (
@@ -237,7 +371,7 @@ function ClientsWiring({ clients }: { clients: ClientWire[] }) {
           })}
         </div>
       )}
-    </div>
+    </>
   );
 }
 
@@ -391,20 +525,10 @@ export default function DiagnosticsSection() {
           label={t("settings.diagnostics.wiring.title")}
           action={wireQuery.data ? <CopyReportButton wire={wireQuery.data} /> : undefined}
         />
-        <Card padding="rows">
-          {wireQuery.isLoading && (
-            <p className="px-5 py-4" style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text-secondary)" }}>
-              {t("settings.diagnostics.wiring.loading")}
-            </p>
-          )}
+        <Card padding="none">
+          {wireQuery.isLoading && <RailSkeleton />}
           {wireQuery.isError && <WiringError />}
-          {wireQuery.data && (
-            <>
-              <DaemonStatus daemon={wireQuery.data.daemon} />
-              <McpBinaryStatus mcpBinary={wireQuery.data.mcp_binary} />
-              <ClientsWiring clients={wireQuery.data.clients} />
-            </>
-          )}
+          {wireQuery.data && <WiringRail wire={wireQuery.data} />}
         </Card>
       </section>
 

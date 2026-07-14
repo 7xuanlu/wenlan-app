@@ -10,7 +10,7 @@ import {
   type RemoteAccessStatus,
   type RemoteConnectionTest,
 } from "../../lib/tauri";
-import { Button, StatusChip, Toggle } from "./settings/primitives";
+import { Button, Card, StatusChip, Toggle, WarningTriangleIcon } from "./settings/primitives";
 
 const REMOTE_QUERY_KEY = ["remote-access-status"] as const;
 
@@ -111,13 +111,7 @@ export function RemoteAccessPanel() {
   };
 
   return (
-    <div
-      className="rounded-xl"
-      style={{
-        backgroundColor: "var(--mem-surface)",
-        border: "1px solid var(--mem-border)",
-      }}
-    >
+    <Card padding="none">
       {/* Toggle row */}
       <div className="px-5 py-4">
         <div className="flex items-start justify-between gap-4">
@@ -147,25 +141,12 @@ export function RemoteAccessPanel() {
             via aria-describedby so a screen reader hears the boundary at the
             moment of toggling. */}
         <div className="flex items-start gap-2 mt-2">
-          <svg
-            aria-hidden="true"
-            className="w-3.5 h-3.5 text-[var(--mem-status-warning-text)] shrink-0 mt-px"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.072 16.5c-.77.833.192 2.5 1.732 2.5z"
-            />
-          </svg>
+          <WarningTriangleIcon className="w-3.5 h-3.5 text-[var(--mem-status-warning-text)] shrink-0 mt-px" />
           <p
             id={warningId}
             style={{
               fontFamily: "var(--mem-font-body)",
-              fontSize: "12px",
+              fontSize: "var(--mem-text-sm)",
               color: "var(--mem-status-warning-text)",
               lineHeight: "1.5",
             }}
@@ -187,7 +168,7 @@ export function RemoteAccessPanel() {
             <label
               style={{
                 fontFamily: "var(--mem-font-body)",
-                fontSize: "11px",
+                fontSize: "var(--mem-text-xs)",
                 fontWeight: 500,
                 color: "var(--mem-text-tertiary)",
                 textTransform: "uppercase",
@@ -240,7 +221,7 @@ export function RemoteAccessPanel() {
                 className="inline-flex items-center gap-1"
                 style={{
                   fontFamily: "var(--mem-font-body)",
-                  fontSize: "12px",
+                  fontSize: "var(--mem-text-sm)",
                   color: "var(--mem-accent-sage)",
                 }}
               >
@@ -266,7 +247,7 @@ export function RemoteAccessPanel() {
                 className="inline-flex items-center gap-1"
                 style={{
                   fontFamily: "var(--mem-font-body)",
-                  fontSize: "12px",
+                  fontSize: "var(--mem-text-sm)",
                   color: "var(--mem-status-danger-text)",
                 }}
               >
@@ -306,7 +287,7 @@ export function RemoteAccessPanel() {
             <p
               style={{
                 fontFamily: "var(--mem-font-body)",
-                fontSize: "11px",
+                fontSize: "var(--mem-text-xs)",
                 color: "var(--mem-text-tertiary)",
                 lineHeight: "1.6",
                 margin: 0,
@@ -341,7 +322,7 @@ export function RemoteAccessPanel() {
           </Button>
         </div>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -378,7 +359,7 @@ function InstructionsBlock({
         className="flex items-center gap-1 transition-colors"
         style={{
           fontFamily: "var(--mem-font-body)",
-          fontSize: "12px",
+          fontSize: "var(--mem-text-sm)",
           color: "var(--mem-text-tertiary)",
         }}
       >

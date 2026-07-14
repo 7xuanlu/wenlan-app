@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
@@ -10,7 +9,7 @@ import {
 } from "../../../../lib/tauri";
 import { describeTrustLevel, resolveAgentDisplayName, TRUST_LEVELS } from "../../../../lib/agents";
 import { RemoteAccessPanel } from "../../RemoteAccessPanel";
-import { Button, Card, SectionHeader, Select, Tag, Toggle } from "../primitives";
+import { Button, Card, ConfirmActionButton, SectionHeader, Select, Tag, Toggle } from "../primitives";
 import WebPlatformCards from "../../../connect/WebPlatformCards";
 import ClientSetupList from "../../../connect/ClientSetupList";
 
@@ -46,62 +45,11 @@ export default function AgentsSection({ onSetupAgent }: { onSetupAgent?: () => v
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["agents"] }),
   });
 
-  const [deletingAgent, setDeletingAgent] = useState<string | null>(null);
-
   return (
     <>
       {/* ── Connected Agents ─────────────────────────────────────── */}
       <section className="mem-fade-up" style={{ animationDelay: "0ms" }}>
-        <SectionHeader
-          icon={
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-            </svg>
-          }
-          label={t("settings.agents.connectedAgents")}
-        />
-        {/* Trust level explainer — makes it clear what the badges mean and how
-            Wenlan gates context for each tier. */}
-        <div
-          className="rounded-xl mb-3 px-4 py-3"
-          style={{
-            backgroundColor: "var(--mem-hover)",
-            border: "1px solid var(--mem-border)",
-          }}
-        >
-          <p
-            style={{
-              fontFamily: "var(--mem-font-mono)",
-              fontSize: "var(--mem-text-2xs)",
-              fontWeight: 600,
-              letterSpacing: "0.05em",
-              textTransform: "uppercase",
-              color: "var(--mem-text-tertiary)",
-              marginBottom: 8,
-            }}
-          >
-            {t("settings.agents.trustLevels")}
-          </p>
-          <div className="flex flex-col gap-1.5">
-            {(Object.keys(TRUST_LEVELS) as Array<keyof typeof TRUST_LEVELS>).map((level) => (
-              <div key={level} className="flex items-start gap-2">
-                <span className="shrink-0">
-                  <Tag tone="neutral">{t(`settings.agents.trust.${level}`)}</Tag>
-                </span>
-                <span
-                  style={{
-                    fontFamily: "var(--mem-font-body)",
-                    fontSize: "var(--mem-text-sm)",
-                    color: "var(--mem-text-secondary)",
-                    lineHeight: 1.5,
-                  }}
-                >
-                  {t(`settings.agents.trustSummary.${level}`)}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
+        <SectionHeader label={t("settings.agents.connectedAgents")} />
         <Card padding={agents.length === 0 && pendingClients.length === 0 ? "none" : "rows"}>
           {agents.length === 0 && pendingClients.length === 0 ? (
             <div className="px-5 py-6 text-center space-y-3">
@@ -133,12 +81,7 @@ export default function AgentsSection({ onSetupAgent }: { onSetupAgent?: () => v
                         <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-md)", fontWeight: 500, color: "var(--mem-text)" }}>
                           {client.name}
                         </span>
-                        <span
-                          className="px-1.5 py-0.5 rounded"
-                          style={{ fontFamily: "var(--mem-font-mono)", fontSize: "var(--mem-text-2xs)", backgroundColor: "var(--mem-status-warning-bg)", color: "var(--mem-accent-amber)" }}
-                        >
-                          {t("settings.agents.configured")}
-                        </span>
+                        <Tag tone="neutral">{t("settings.agents.configured")}</Tag>
                       </div>
                       <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", color: "var(--mem-text-tertiary)", marginTop: "2px" }}>
                         {t("settings.agents.restartToActivate", { name: client.name })}
@@ -232,92 +175,93 @@ export default function AgentsSection({ onSetupAgent }: { onSetupAgent?: () => v
                           })
                         }
                       />
-                      {deletingAgent === agent.name ? (
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => {
-                              deleteAgentMut.mutate(agent.name);
-                              setDeletingAgent(null);
-                            }}
-                            className="px-2 py-0.5 rounded text-xs bg-[var(--mem-status-danger-bg)] text-[var(--mem-status-danger-text)] hover:bg-[var(--mem-status-danger-border)] transition-colors"
-                            style={{ fontFamily: "var(--mem-font-body)" }}
-                          >
-                            {t("settings.agents.confirm")}
-                          </button>
-                          <button
-                            onClick={() => setDeletingAgent(null)}
-                            className="px-2 py-0.5 rounded text-xs text-[var(--mem-text-tertiary)] hover:text-[var(--mem-text)] transition-colors"
-                            style={{ fontFamily: "var(--mem-font-body)" }}
-                          >
-                            {t("settings.agents.cancel")}
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => setDeletingAgent(agent.name)}
-                          className="p-1 text-[var(--mem-text-tertiary)] hover:text-[var(--mem-status-danger-text)] transition-colors"
-                        >
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
-                      )}
+                      <ConfirmActionButton
+                        variant="ghost"
+                        size="sm"
+                        aria-label={t("settings.agents.deleteAgent", {
+                          name: resolveAgentDisplayName(agent.name, agents),
+                        })}
+                        confirmLabel={t("settings.agents.confirm")}
+                        cancelLabel={t("settings.agents.cancel")}
+                        onConfirm={() => deleteAgentMut.mutate(agent.name)}
+                      >
+                        <svg aria-hidden="true" className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </ConfirmActionButton>
                     </div>
                   </div>
                 </div>
               ))}
               {onSetupAgent && (
-                <div className="px-5 py-3">
-                  <button
-                    onClick={onSetupAgent}
-                    className="text-xs transition-colors"
-                    style={{ fontFamily: "var(--mem-font-body)", color: "var(--mem-accent-indigo)" }}
-                  >
+                <div className="px-3 py-2">
+                  <Button variant="ghost" size="sm" onClick={onSetupAgent}>
                     {t("settings.agents.setupAnotherTool")}
-                  </button>
+                  </Button>
                 </div>
               )}
             </>
           )}
         </Card>
+        {/* Trust legend — collapsed by default; native <details> keeps the
+            keyboard/screen-reader contract for free. */}
+        <details className="group px-1 pt-2">
+          <summary
+            className="inline-flex cursor-pointer list-none items-center gap-1.5 rounded-[var(--mem-radius-sm)] px-1 py-0.5 [&::-webkit-details-marker]:hidden focus-visible:outline-2 focus-visible:outline-[var(--mem-focus-ring)] focus-visible:outline-offset-2"
+            style={{
+              fontFamily: "var(--mem-font-body)",
+              fontSize: "var(--mem-text-xs)",
+              color: "var(--mem-text-tertiary)",
+            }}
+          >
+            <svg
+              aria-hidden="true"
+              className="h-3 w-3 shrink-0 transition-transform duration-[var(--mem-dur-fast)] group-open:rotate-90"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+            {t("settings.agents.trustLevels")}
+          </summary>
+          <div className="flex flex-col gap-1.5 px-1 pt-2">
+            {(Object.keys(TRUST_LEVELS) as Array<keyof typeof TRUST_LEVELS>).map((level) => (
+              <div key={level} className="flex items-start gap-2">
+                <span className="shrink-0">
+                  <Tag tone="neutral">{t(`settings.agents.trust.${level}`)}</Tag>
+                </span>
+                <span
+                  style={{
+                    fontFamily: "var(--mem-font-body)",
+                    fontSize: "var(--mem-text-sm)",
+                    color: "var(--mem-text-secondary)",
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {t(`settings.agents.trustSummary.${level}`)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </details>
       </section>
 
       {/* ── Remote Access ─────────────────────────────────────────── */}
       <section className="mem-fade-up" style={{ animationDelay: "30ms" }}>
-        <SectionHeader
-          icon={
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          }
-          label={t("settings.agents.remoteAccess")}
-        />
+        <SectionHeader label={t("settings.agents.remoteAccess")} />
         <RemoteAccessPanel />
       </section>
 
       {/* ── Web — Claude.ai & ChatGPT ─────────────────────────────── */}
       <section className="mem-fade-up" style={{ animationDelay: "45ms" }}>
-        <SectionHeader
-          icon={
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A11.953 11.953 0 0112 13.5c-2.998 0-5.74-1.1-7.843-2.918m0 0A8.959 8.959 0 003 12c0-.778.099-1.533.284-2.253" />
-            </svg>
-          }
-          label={t("connectMatrix.webTitle")}
-        />
+        <SectionHeader label={t("connectMatrix.webTitle")} />
         <WebPlatformCards />
       </section>
 
       {/* ── Apps & CLIs ───────────────────────────────────────────── */}
       <section className="mem-fade-up" style={{ animationDelay: "60ms" }}>
-        <SectionHeader
-          icon={
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6.75 7.5l3 2.25-3 2.25m4.5 0h3m-9-9h13.5c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125H4.5A1.125 1.125 0 013.375 16.5v-9.75c0-.621.504-1.125 1.125-1.125z" />
-            </svg>
-          }
-          label={t("connectMatrix.appsTitle")}
-        />
+        <SectionHeader label={t("connectMatrix.appsTitle")} />
         <ClientSetupList />
       </section>
     </>

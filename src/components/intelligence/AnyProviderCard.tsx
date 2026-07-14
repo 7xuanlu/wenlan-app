@@ -395,13 +395,13 @@ export default function AnyProviderCard({ groups }: { groups?: PresetGroup[] }) 
           >
             {t(titleKey)}
           </h3>
-          <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-secondary)", lineHeight: 1.5, marginTop: "4px" }}>
+          <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text-secondary)", lineHeight: 1.5, marginTop: "4px" }}>
             {t(descriptionKey)}
           </p>
         </div>
 
         {anthropic.isConfigured && !preset.native && (
-          <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-accent-amber)", lineHeight: 1.5 }}>
+          <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-accent-amber)", lineHeight: 1.5 }}>
             {t("externalProvider.anthropicPrecedence")}
           </p>
         )}
@@ -410,7 +410,12 @@ export default function AnyProviderCard({ groups }: { groups?: PresetGroup[] }) 
           {presets.map((p) => {
             const probe = probeFor(p.id);
             const status = !probe ? null : probe.isLoading ? "probing" : probe.isSuccess ? "connected" : "notDetected";
-            const dot = status === "connected" ? "●" : status === "notDetected" ? "○" : "…";
+            const dotClass =
+              status === "connected"
+                ? "bg-[var(--mem-status-success-text)] rounded-full"
+                : status === "notDetected"
+                  ? "border border-[var(--mem-text-tertiary)] rounded-full"
+                  : "bg-[var(--mem-text-tertiary)] rounded-full animate-pulse";
             const selected = p.id === presetId;
             return (
               <button
@@ -427,15 +432,7 @@ export default function AnyProviderCard({ groups }: { groups?: PresetGroup[] }) 
                 }}
               >
                 {probe && (
-                  <span
-                    aria-hidden="true"
-                    style={{
-                      marginRight: "6px",
-                      color: status === "connected" && !selected ? "var(--mem-accent-sage)" : "inherit",
-                    }}
-                  >
-                    {dot}
-                  </span>
+                  <span aria-hidden="true" className={`inline-block w-1.5 h-1.5 mr-1.5 shrink-0 ${dotClass}`} />
                 )}
                 {localLabel(p.name)}
               </button>
@@ -554,7 +551,7 @@ export default function AnyProviderCard({ groups }: { groups?: PresetGroup[] }) 
                 have no key requirement at all, so there's no "expected
                 failure" case to suppress. */}
             {(((!knownCloudEndpoint || typedKey) && discovery.isError) || localQuery?.isError) && (
-              <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)" }}>
+              <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", color: "var(--mem-text-tertiary)" }}>
                 {t("externalProvider.modelDiscoveryFailed")}
               </span>
             )}
@@ -581,27 +578,27 @@ export default function AnyProviderCard({ groups }: { groups?: PresetGroup[] }) 
             </div>
 
             {testState.kind === "ok" && (
-              <p style={{ fontFamily: "var(--mem-font-mono)", fontSize: "11px", color: "var(--mem-text-secondary)" }}>
+              <p style={{ fontFamily: "var(--mem-font-mono)", fontSize: "var(--mem-text-xs)", color: "var(--mem-text-secondary)" }}>
                 {t("externalProvider.testOk", { response: testState.response })}
               </p>
             )}
             {testState.kind === "error" && (
-              <p style={{ fontFamily: "var(--mem-font-mono)", fontSize: "11px", color: "var(--mem-status-danger-text)" }}>
+              <p style={{ fontFamily: "var(--mem-font-mono)", fontSize: "var(--mem-text-xs)", color: "var(--mem-status-danger-text)" }}>
                 {testState.message}
               </p>
             )}
             {saveState === "applied" && (
-              <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-accent-sage)" }}>
+              <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-accent-sage)" }}>
                 {t("externalProvider.savedApplied")}
               </p>
             )}
             {saveState === "restart" && (
-              <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-secondary)" }}>
+              <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text-secondary)" }}>
                 {t("externalProvider.savedRestart")}
               </p>
             )}
             {saveState.startsWith("error:") && (
-              <p style={{ fontFamily: "var(--mem-font-mono)", fontSize: "11px", color: "var(--mem-status-danger-text)" }}>
+              <p style={{ fontFamily: "var(--mem-font-mono)", fontSize: "var(--mem-text-xs)", color: "var(--mem-status-danger-text)" }}>
                 {saveState.slice("error:".length)}
               </p>
             )}

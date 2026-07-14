@@ -44,7 +44,7 @@ export default function ClientSetupList() {
   };
 
   const notInstalled = (
-    <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)" }}>
+    <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", color: "var(--mem-text-tertiary)" }}>
       {t("connectMatrix.notDetected")}
     </span>
   );

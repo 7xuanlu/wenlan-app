@@ -16,6 +16,7 @@ import type {
   DistillReviewResponse,
   PageChange,
   ListMemoryRevisionsResponse,
+  RegisteredSource,
 } from "../src/lib/tauri";
 
 const cite = (
@@ -829,3 +830,41 @@ export const MEMORY_REVISIONS: Record<string, ListMemoryRevisionsResponse> = {
   "mem-daemon-port": { current_source_id: "mem-daemon-port", chain_depth: 1, entries: [] },
   "mem-review-flow": { current_source_id: "mem-review-flow", chain_depth: 1, entries: [] },
 };
+
+// Connected sources for settings → Sources. The live page keeps this list
+// empty on purpose (registered sources are app-local Tauri state a browser
+// can't read), so without fixture rows the row/kebab/error-callout states
+// could never be pixel-reviewed. last_sync is relative to load time so the
+// "Last synced …ago" meta line stays plausible whenever the preview runs.
+const nowSec = Math.floor(Date.now() / 1000);
+export const REGISTERED_SOURCES: RegisteredSource[] = [
+  {
+    id: "fixture-src-vault",
+    source_type: "obsidian",
+    path: "/Users/lucian/Notes",
+    status: "Active",
+    last_sync: nowSec - 40 * 60,
+    file_count: 214,
+    memory_count: 187,
+  },
+  {
+    id: "fixture-src-research",
+    source_type: "directory",
+    path: "/Users/lucian/Library/CloudStorage/GoogleDrive/research",
+    status: "Active",
+    last_sync: nowSec - 26 * 3600,
+    file_count: 38,
+    memory_count: 41,
+    last_sync_errors: 3,
+    last_sync_error_detail: "google_drive_offline",
+  },
+  {
+    id: "fixture-src-clippings",
+    source_type: "directory",
+    path: "/Users/lucian/Archive/clippings",
+    status: "Paused",
+    last_sync: null,
+    file_count: 0,
+    memory_count: 0,
+  },
+];

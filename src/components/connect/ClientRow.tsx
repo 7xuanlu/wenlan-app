@@ -111,7 +111,7 @@ export default function ClientRow({
               className="truncate"
               style={{
                 fontFamily: "var(--mem-font-mono)",
-                fontSize: "10px",
+                fontSize: "var(--mem-text-2xs)",
                 color: "var(--mem-text-tertiary)",
                 margin: 0,
               }}

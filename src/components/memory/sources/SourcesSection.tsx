@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   listRegisteredSources,
@@ -10,6 +11,7 @@ import {
   type RegisteredSource,
 } from "../../../lib/tauri";
 import AddSourceDialog from "./AddSourceDialog";
+import { Button, Card } from "../settings/primitives";
 
 function shortenPath(p: string): string {
   const home = "~";
@@ -31,6 +33,7 @@ function relativeTime(ts: number | null): string {
 }
 
 export default function SourcesSection() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState<RegisteredSource | null>(null);
@@ -117,16 +120,13 @@ export default function SourcesSection() {
   return (
     <section className="space-y-3">
       {sources.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-[var(--mem-border)] p-8 text-center">
+        <div className="rounded-[var(--mem-radius-lg)] border border-dashed border-[var(--mem-border)] p-8 text-center">
           <p className="text-sm text-[var(--mem-text-secondary)] mb-3">
             No sources yet
           </p>
-          <button
-            onClick={() => setDialogOpen(true)}
-            className="rounded-md bg-[var(--mem-accent-indigo)] px-4 py-2 text-sm text-white hover:opacity-90"
-          >
+          <Button variant="primary" onClick={() => setDialogOpen(true)}>
             Add your first source
-          </button>
+          </Button>
         </div>
       ) : (
         <div className="space-y-2">
@@ -138,7 +138,7 @@ export default function SourcesSection() {
             return (
               <div
                 key={source.id}
-                className="rounded-lg border border-[var(--mem-border)] bg-[var(--mem-surface)]"
+                className="rounded-[var(--mem-radius-lg)] border border-[var(--mem-border)] bg-[var(--mem-surface)]"
               >
                 <div className="flex items-center justify-between px-4 py-3">
                   <div className="flex-1 min-w-0">
@@ -147,7 +147,14 @@ export default function SourcesSection() {
                         {folderName(source.path)}
                       </span>
                     </div>
-                    <p className="text-xs text-[var(--mem-text-secondary)] mt-0.5">
+                    <p
+                      className="mt-0.5"
+                      style={{
+                        fontFamily: "var(--mem-font-mono)",
+                        fontSize: "var(--mem-text-2xs)",
+                        color: "var(--mem-text-tertiary)",
+                      }}
+                    >
                       {isSyncing
                         ? "Syncing…"
                         : `${source.source_type === "obsidian" ? "Obsidian vault" : "Folder"} · ${source.file_count.toLocaleString()} files · ${source.memory_count.toLocaleString()} memories · ${relativeTime(source.last_sync)}`}
@@ -158,15 +165,50 @@ export default function SourcesSection() {
                     <button
                       onClick={() => syncMutation.mutate(source.id)}
                       disabled={isSyncing}
-                      className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                      className={`inline-flex items-center gap-1.5 rounded-[var(--mem-radius-sm)] px-3 py-1.5 text-xs font-medium transition-colors ${
                         justSynced
-                          ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                          ? "bg-[var(--mem-status-success-bg)] text-[var(--mem-status-success-text)]"
                           : isSyncing
-                            ? "bg-[var(--mem-accent-indigo)]/10 text-[var(--mem-accent-indigo)]"
+                            ? "bg-[var(--mem-indigo-bg)] text-[var(--mem-accent-indigo)]"
                             : "border border-[var(--mem-border)] text-[var(--mem-text-secondary)] hover:border-[var(--mem-accent-indigo)] hover:text-[var(--mem-accent-indigo)]"
                       }`}
                     >
-                      {justSynced ? "✓ Synced" : isSyncing ? "↻ Syncing…" : "↻ Sync"}
+                      {justSynced ? (
+                        <svg
+                          className="w-3.5 h-3.5"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth={1.5}
+                          aria-hidden="true"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M4.5 12.75l6 6 9-13.5"
+                          />
+                        </svg>
+                      ) : (
+                        <svg
+                          className={`w-3.5 h-3.5${isSyncing ? " animate-spin motion-reduce:animate-none" : ""}`}
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth={1.5}
+                          aria-hidden="true"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M16.023 9.348h4.992V4.356M2.985 19.644v-4.992h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"
+                          />
+                        </svg>
+                      )}
+                      {justSynced
+                        ? t("settings.sources.synced")
+                        : isSyncing
+                          ? t("settings.sources.syncing")
+                          : t("settings.sources.sync")}
                     </button>
 
                     <div className="relative" data-menu-id={source.id}>
@@ -174,17 +216,26 @@ export default function SourcesSection() {
                         onClick={() =>
                           setMenuOpenId(menuOpenId === source.id ? null : source.id)
                         }
-                        className="rounded p-1 text-[var(--mem-text-secondary)] hover:bg-[var(--mem-hover-strong)]"
-                        aria-label="More"
+                        className="rounded-[var(--mem-radius-md)] p-1 text-[var(--mem-text-secondary)] hover:bg-[var(--mem-hover-strong)]"
+                        aria-label={t("settings.sources.more")}
                         aria-haspopup="menu"
                         aria-expanded={menuOpenId === source.id}
                       >
-                        ⋯
+                        <svg
+                          viewBox="0 0 24 24"
+                          fill="currentColor"
+                          className="w-4 h-4"
+                          aria-hidden="true"
+                        >
+                          <circle cx="5" cy="12" r="1.6" />
+                          <circle cx="12" cy="12" r="1.6" />
+                          <circle cx="19" cy="12" r="1.6" />
+                        </svg>
                       </button>
                       {menuOpenId === source.id && (
                         <div
                           role="menu"
-                          className="absolute right-0 top-full mt-1 z-10 w-44 rounded-md border border-[var(--mem-border)] bg-[var(--mem-surface)] shadow-lg py-1"
+                          className="absolute right-0 top-full mt-1 z-10 w-44 rounded-[var(--mem-radius-md)] border border-[var(--mem-popover-border)] bg-[var(--mem-popover)] shadow-[var(--mem-shadow-overlay)] py-1"
                         >
                           <button
                             role="menuitem"
@@ -199,7 +250,7 @@ export default function SourcesSection() {
                               setConfirmRemove(source);
                               setMenuOpenId(null);
                             }}
-                            className="w-full px-3 py-1.5 text-left text-xs text-red-500 hover:bg-[var(--mem-hover)]"
+                            className="w-full px-3 py-1.5 text-left text-xs text-[var(--mem-status-danger-text)] hover:bg-[var(--mem-hover)]"
                           >
                             Remove source
                           </button>
@@ -223,34 +274,52 @@ export default function SourcesSection() {
           })}
           <button
             onClick={() => setDialogOpen(true)}
-            className="w-full rounded-lg border border-dashed border-[var(--mem-border)] py-2 text-xs text-[var(--mem-text-tertiary)] hover:border-[var(--mem-accent-indigo)] hover:text-[var(--mem-accent-indigo)] transition-colors"
+            className="inline-flex w-full items-center justify-center gap-1.5 rounded-[var(--mem-radius-lg)] border border-dashed border-[var(--mem-border)] py-2 text-xs text-[var(--mem-text-tertiary)] hover:border-[var(--mem-accent-indigo)] hover:text-[var(--mem-accent-indigo)] transition-colors"
           >
-            + Add source…
+            <svg
+              className="w-3.5 h-3.5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.5}
+              aria-hidden="true"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M12 4.5v15m7.5-7.5h-15"
+              />
+            </svg>
+            {t("settings.sources.addSource")}
           </button>
         </div>
       )}
 
       {/* Knowledge Directory block */}
       {knowledgePath && (
-        <div className="rounded-lg border border-[var(--mem-border)] bg-[var(--mem-surface)] px-4 py-3 mt-4">
-          <h4 className="text-xs font-medium text-[var(--mem-text-secondary)] mb-1">
-            Knowledge Directory
-          </h4>
-          <p className="text-sm text-[var(--mem-text)]">
-            {shortenPath(knowledgePath)}
-          </p>
-          <p className="text-xs text-[var(--mem-text-secondary)] mt-0.5">
-            {knowledgeCount !== undefined
-              ? `${knowledgeCount} page files`
-              : "Loading…"}{" "}
-            · updates automatically
-          </p>
-          <button
-            onClick={() => openFile(knowledgePath)}
-            className="mt-2 text-xs text-[var(--mem-accent-indigo)] hover:underline"
-          >
-            Reveal in Finder
-          </button>
+        <div className="mt-4">
+          <Card padding="none">
+            <div className="px-4 py-3">
+              <h4 className="text-xs font-medium text-[var(--mem-text-secondary)] mb-1">
+                Knowledge Directory
+              </h4>
+              <p className="text-sm text-[var(--mem-text)]">
+                {shortenPath(knowledgePath)}
+              </p>
+              <p className="text-xs text-[var(--mem-text-secondary)] mt-0.5">
+                {knowledgeCount !== undefined
+                  ? `${knowledgeCount} page files`
+                  : "Loading…"}{" "}
+                · updates automatically
+              </p>
+              <button
+                onClick={() => openFile(knowledgePath)}
+                className="mt-2 text-xs text-[var(--mem-accent-indigo)] hover:underline"
+              >
+                Reveal in Finder
+              </button>
+            </div>
+          </Card>
         </div>
       )}
 
@@ -268,7 +337,7 @@ export default function SourcesSection() {
       {/* Remove Confirmation Dialog */}
       {confirmRemove && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="w-96 rounded-lg bg-[var(--mem-surface)] p-6 shadow-xl">
+          <div className="w-96 rounded-[var(--mem-radius-lg)] border border-[var(--mem-border)] bg-[var(--mem-surface)] p-6 shadow-[var(--mem-shadow-overlay)]">
             <h3 className="text-sm font-medium text-[var(--mem-text)] mb-2">
               Remove &ldquo;{folderName(confirmRemove.path)}&rdquo;?
             </h3>
@@ -278,19 +347,21 @@ export default function SourcesSection() {
               remain in your Wenlan library but stop updating.
             </p>
             <div className="flex justify-end gap-2">
-              <button
+              <Button
+                variant="secondary"
+                size="sm"
                 onClick={() => setConfirmRemove(null)}
-                className="rounded-md px-3 py-1.5 text-xs text-[var(--mem-text-secondary)] border border-[var(--mem-border)] hover:bg-[var(--mem-hover)]"
               >
                 Cancel
-              </button>
-              <button
-                onClick={() => removeMutation.mutate(confirmRemove.id)}
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
                 disabled={removeMutation.isPending}
-                className="rounded-md bg-red-500 px-3 py-1.5 text-xs text-white hover:bg-red-600"
+                onClick={() => removeMutation.mutate(confirmRemove.id)}
               >
                 {removeMutation.isPending ? "Removing…" : "Remove source"}
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -319,6 +390,7 @@ function SourceErrorCallout({
   onRetry,
   onReveal,
 }: SourceErrorCalloutProps) {
+  const { t } = useTranslation();
   const isGoogleDrive = source.last_sync_error_detail === "google_drive_offline";
   const headline =
     errorCount === 1
@@ -330,15 +402,15 @@ function SourceErrorCallout({
 
   return (
     <div
-      className="border-t border-l-[3px] px-4 py-3 flex items-start gap-3 rounded-b-lg"
+      className="border-t border-l-[3px] rounded-b-[var(--mem-radius-lg)] px-4 py-3 flex items-start gap-3"
       style={{
         // Set each side explicitly — using `borderColor` shorthand here
         // would also color the (zero-width) right and bottom sides with
         // --mem-border, which would be wrong if a later change adds widths
         // to those sides.
         borderTopColor: "var(--mem-border)",
-        borderLeftColor: "var(--mem-accent-warm)",
-        backgroundColor: "rgba(212, 136, 74, 0.06)",
+        borderLeftColor: "var(--mem-status-warning-text)",
+        backgroundColor: "var(--mem-status-warning-bg)",
       }}
     >
       <svg
@@ -347,7 +419,7 @@ function SourceErrorCallout({
         stroke="currentColor"
         strokeWidth={2}
         viewBox="0 0 24 24"
-        style={{ color: "var(--mem-accent-warm)" }}
+        style={{ color: "var(--mem-status-warning-text)" }}
         aria-hidden="true"
       >
         <path
@@ -370,25 +442,17 @@ function SourceErrorCallout({
           {detail}
         </p>
         <div className="flex items-center gap-2">
-          <button
-            onClick={onRetry}
+          <Button
+            variant="secondary"
+            size="sm"
             disabled={isSyncing}
-            className="px-2.5 py-1 rounded-md text-xs font-medium border transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-            style={{
-              borderColor: "var(--mem-border)",
-              color: "var(--mem-text)",
-              backgroundColor: "var(--mem-surface)",
-            }}
+            onClick={onRetry}
           >
             {isSyncing ? "Syncing…" : "Retry sync"}
-          </button>
-          <button
-            onClick={onReveal}
-            className="px-2.5 py-1 text-xs font-medium transition-colors"
-            style={{ color: "var(--mem-text-secondary)" }}
-          >
-            Open in Finder →
-          </button>
+          </Button>
+          <Button variant="ghost" size="sm" onClick={onReveal}>
+            {t("settings.sources.openInFinder")}
+          </Button>
         </div>
       </div>
     </div>

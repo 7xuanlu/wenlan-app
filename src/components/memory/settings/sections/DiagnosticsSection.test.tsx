@@ -236,6 +236,34 @@ describe("DiagnosticsSection", () => {
     });
   });
 
+  describe("wiring rail (signature)", () => {
+    it("pulses probing nodes while the wire state loads, then settles to the resolved topology", async () => {
+      let resolveWire!: (value: WireState) => void;
+      vi.mocked(getWireState).mockReturnValue(
+        new Promise((resolve) => {
+          resolveWire = resolve;
+        }),
+      );
+
+      const { container } = renderDiagnostics();
+
+      // While in flight the rail holds its shape: three probing dots pulse and
+      // no resolved node content is on screen yet. An instant-resolve mock
+      // would skip straight past this, so the promise is held open on purpose.
+      await screen.findByText("Loading wiring…");
+      expect(container.querySelectorAll(".mem-node-pulse")).toHaveLength(3);
+      expect(screen.queryByText("Wenlan runtime")).not.toBeInTheDocument();
+
+      await act(async () => {
+        resolveWire(wireFixture);
+      });
+
+      // Resolved: the pulse stops and the real topology renders.
+      expect(await screen.findByText("Wenlan runtime")).toBeInTheDocument();
+      expect(container.querySelectorAll(".mem-node-pulse")).toHaveLength(0);
+    });
+  });
+
   // ── Mutation-proof: the three properties this card exists to guarantee ──
 
   describe("mutation-proof properties", () => {

@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import { clipboardWrite, getRemoteAccessStatus, listAgents } from "../../lib/tauri";
-import { Button } from "../memory/settings/primitives";
+import { Button, Card } from "../memory/settings/primitives";
 
 const CLAUDE_CONNECTOR_URL = "https://claude.ai/settings/connectors?modal=add-custom-connector";
 
@@ -56,13 +56,13 @@ export default function WebPlatformCards() {
   };
 
   const stepHeading = (text: string) => (
-    <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", fontWeight: 600, color: "var(--mem-text)", margin: 0 }}>
+    <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", fontWeight: 600, color: "var(--mem-text)", margin: 0 }}>
       {text}
     </p>
   );
 
   const stepList = (steps: string[]) => (
-    <ol style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-secondary)", lineHeight: 1.7, paddingLeft: "18px", listStyle: "decimal", margin: 0 }}>
+    <ol style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text-secondary)", lineHeight: 1.7, paddingLeft: "18px", listStyle: "decimal", margin: 0 }}>
       {steps.map((s) => (
         <li key={s}>{s}</li>
       ))}
@@ -74,7 +74,7 @@ export default function WebPlatformCards() {
       <div className="flex items-center gap-2">
         <code
           className="flex-1 truncate rounded-md px-2 py-1.5"
-          style={{ fontFamily: "var(--mem-font-mono)", fontSize: "11px", backgroundColor: "var(--mem-bg)", border: "1px solid var(--mem-border)", color: "var(--mem-text)" }}
+          style={{ fontFamily: "var(--mem-font-mono)", fontSize: "var(--mem-text-xs)", backgroundColor: "var(--mem-bg)", border: "1px solid var(--mem-border)", color: "var(--mem-text)" }}
         >
           {url}
         </code>
@@ -83,28 +83,27 @@ export default function WebPlatformCards() {
         </Button>
       </div>
     ) : (
-      <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-tertiary)" }}>
+      <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text-tertiary)" }}>
         {t("connectMatrix.tunnelOff")}
       </p>
     );
 
   const cardShell = (platform: "claude" | "chatgpt", title: string, children: ReactNode) => (
-    <div
-      className="rounded-xl p-4 flex flex-col"
-      style={{ border: "1px solid var(--mem-border)", backgroundColor: "var(--mem-surface)", gap: "10px" }}
-    >
-      <div className="flex items-center justify-between">
-        <h3 style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-lg)", fontWeight: 600, color: "var(--mem-text)" }}>
-          {title}
-        </h3>
-        {connectedPlatform === platform && (
-          <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-accent-sage)" }}>
-            {t("connectMatrix.connectedHint")}
-          </span>
-        )}
+    <Card padding="none">
+      <div className="p-4 flex flex-col" style={{ gap: "10px" }}>
+        <div className="flex items-center justify-between">
+          <h3 style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-lg)", fontWeight: 600, color: "var(--mem-text)" }}>
+            {title}
+          </h3>
+          {connectedPlatform === platform && (
+            <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", color: "var(--mem-accent-sage)" }}>
+              {t("connectMatrix.connectedHint")}
+            </span>
+          )}
+        </div>
+        {children}
       </div>
-      {children}
-    </div>
+    </Card>
   );
 
   return (
@@ -121,7 +120,7 @@ export default function WebPlatformCards() {
             t("connectMatrix.claudePluginStep2"),
             t("connectMatrix.claudePluginStep3"),
           ])}
-          <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)", lineHeight: 1.5, margin: 0 }}>
+          <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", color: "var(--mem-text-tertiary)", lineHeight: 1.5, margin: 0 }}>
             {t("connectMatrix.claudePluginNote")}
           </p>
           {/* Step 2 — memory access: a public plugin cannot carry a

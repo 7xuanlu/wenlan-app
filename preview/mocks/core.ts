@@ -16,6 +16,7 @@ import {
   MERGE_SOURCES,
   RECENT_CHANGES,
   MEMORY_REVISIONS,
+  REGISTERED_SOURCES,
 } from "../fixtures";
 import { liveInvoke } from "./live-invoke";
 
@@ -55,7 +56,7 @@ export async function invoke(
       );
     }
     case "list_registered_sources":
-      return [];
+      return REGISTERED_SOURCES;
     case "update_page": {
       // Mirror the backend edit contract: content updates, citations reset.
       const page = PAGES[args?.id as string];

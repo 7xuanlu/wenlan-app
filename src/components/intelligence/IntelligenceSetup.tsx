@@ -102,7 +102,7 @@ export function AnthropicFields({
           label={isConfigured ? t("intelligence.connected") : t("intelligence.notConfigured")}
         />
       </div>
-      <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)" }}>
+      <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", color: "var(--mem-text-tertiary)" }}>
         {t("intelligence.apiKeyDescription")}
       </p>
 
@@ -112,7 +112,7 @@ export function AnthropicFields({
             className="flex-1 px-3 py-1.5 rounded-md"
             style={{
               fontFamily: "var(--mem-font-mono)",
-              fontSize: "12px",
+              fontSize: "var(--mem-text-sm)",
               color: "var(--mem-text-secondary)",
               backgroundColor: "var(--mem-hover)",
             }}
@@ -150,7 +150,7 @@ export function AnthropicFields({
       )}
 
       {error && (
-        <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-status-danger-text)" }}>
+        <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", color: "var(--mem-status-danger-text)" }}>
           {error}
         </p>
       )}
@@ -161,12 +161,12 @@ export function AnthropicFields({
           style={{
             padding: "10px 14px",
             backgroundColor: "var(--mem-hover)",
-            fontSize: "12px",
+            fontSize: "var(--mem-text-sm)",
             color: "var(--mem-text-secondary)",
             lineHeight: 1.6,
           }}
         >
-          <div style={{ fontWeight: 500, color: "var(--mem-text)", marginBottom: 2, fontSize: "12px" }}>
+          <div style={{ fontWeight: 500, color: "var(--mem-text)", marginBottom: 2, fontSize: "var(--mem-text-sm)" }}>
             {t("intelligence.pageSynthesisRequiresCloud")}
           </div>
           <div>{t("intelligence.memorySafe")}</div>
@@ -193,7 +193,7 @@ export function ModelChoiceSection() {
       <div className="flex items-center justify-between mb-3">
         <div>
           <div style={{ fontSize: "var(--mem-text-base)", fontWeight: 500, color: "var(--mem-text)", fontFamily: "var(--mem-font-body)" }}>{t("intelligence.routineModel")}</div>
-          <div style={{ fontSize: "11px", color: "var(--mem-text-tertiary)", fontFamily: "var(--mem-font-body)" }}>{t("intelligence.routineModelDescription")}</div>
+          <div style={{ fontSize: "var(--mem-text-xs)", color: "var(--mem-text-tertiary)", fontFamily: "var(--mem-font-body)" }}>{t("intelligence.routineModelDescription")}</div>
         </div>
         <div className="shrink-0 w-fit">
           <Select
@@ -215,7 +215,7 @@ export function ModelChoiceSection() {
       <div className="flex items-center justify-between">
         <div>
           <div style={{ fontSize: "var(--mem-text-base)", fontWeight: 500, color: "var(--mem-text)", fontFamily: "var(--mem-font-body)" }}>{t("intelligence.synthesisModel")}</div>
-          <div style={{ fontSize: "11px", color: "var(--mem-text-tertiary)", fontFamily: "var(--mem-font-body)" }}>{t("intelligence.synthesisModelDescription")}</div>
+          <div style={{ fontSize: "var(--mem-text-xs)", color: "var(--mem-text-tertiary)", fontFamily: "var(--mem-font-body)" }}>{t("intelligence.synthesisModelDescription")}</div>
         </div>
         <div className="shrink-0 w-fit">
           <Select
@@ -316,7 +316,7 @@ export function OnDeviceModelCard({
         <p
           style={{
             fontFamily: "var(--mem-font-body)",
-            fontSize: "11px",
+            fontSize: "var(--mem-text-xs)",
             color: "var(--mem-text-tertiary)",
           }}
         >
@@ -342,7 +342,7 @@ export function OnDeviceModelCard({
               className="flex-1 min-w-0"
               style={{
                 fontFamily: "var(--mem-font-mono)",
-                fontSize: "11px",
+                fontSize: "var(--mem-text-xs)",
                 color: "var(--mem-text-secondary)",
               }}
             >
@@ -376,7 +376,7 @@ export function OnDeviceModelCard({
             <span
               style={{
                 fontFamily: "var(--mem-font-body)",
-                fontSize: "11px",
+                fontSize: "var(--mem-text-xs)",
                 color: "var(--mem-text-tertiary)",
               }}
             >
@@ -414,7 +414,7 @@ export function OnDeviceModelCard({
         {deferDownload && !isLoaded && current && (
           <p
             data-testid="on-device-model-deferred-note"
-            style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)" }}
+            style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", color: "var(--mem-text-tertiary)" }}
           >
             {t("intelligence.willDownloadOnSetup")}
           </p>
@@ -423,7 +423,7 @@ export function OnDeviceModelCard({
           <p
             style={{
               fontFamily: "var(--mem-font-body)",
-              fontSize: "11px",
+              fontSize: "var(--mem-text-xs)",
               color: "var(--mem-text-tertiary)",
             }}
           >
@@ -431,12 +431,12 @@ export function OnDeviceModelCard({
           </p>
         )}
         {error && (
-          <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-status-danger-text)" }}>
+          <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", color: "var(--mem-status-danger-text)" }}>
             {error}
           </p>
         )}
         {!ramOk && current && !downloading && (
-          <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-status-warning-text)" }}>
+          <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", color: "var(--mem-status-warning-text)" }}>
             {t("intelligence.ramWarning", {
               model: current.display_name,
               required: current.ram_required_gb.toFixed(0),

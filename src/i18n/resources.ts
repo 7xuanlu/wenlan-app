@@ -390,8 +390,9 @@ const en = {
       runAtLoginDescription:
         "Keeps the daemon and tray icon running even when the app window is closed. Quit from the tray menu to stop everything.",
       rerunSetup: "Re-run setup wizard",
+      rerunSetupGo: "Re-run",
       rerunSetupConfirm:
-        "Re-run setup? Your data is preserved — this only replays the wizard.",
+        "Your data is preserved. This only replays the setup wizard.",
     },
     profile: {
       label: "Profile",
@@ -410,6 +411,13 @@ const en = {
       importChatHistoryTitle: "Import chat history",
       importChatHistoryDescription:
         "Drop a ChatGPT or Claude export ZIP to import conversations. Previously imported conversations are automatically skipped.",
+      connectedTitle: "Connected sources",
+      sync: "Sync",
+      syncing: "Syncing…",
+      synced: "Synced",
+      addSource: "Add source…",
+      openInFinder: "Open in Finder",
+      more: "More",
     },
     agents: {
       connectedAgents: "Connected Agents",
@@ -426,6 +434,7 @@ const en = {
       lastSeen: "Last seen {{date}}",
       confirm: "Confirm",
       cancel: "Cancel",
+      deleteAgent: "Delete {{name}}",
       setupAnotherTool: "+ Set up another tool",
       remoteAccess: "Remote Access",
       trust: {
@@ -1472,8 +1481,9 @@ const zhHans = {
       runAtLoginDescription:
         "即使应用窗口已关闭，也保持守护进程和托盘图标运行。要停止全部内容，请从托盘菜单退出。",
       rerunSetup: "重新运行设置向导",
+      rerunSetupGo: "重新运行",
       rerunSetupConfirm:
-        "重新运行设置？你的数据会保留，这只会重新播放设置向导。",
+        "你的数据会保留，这只会重新播放设置向导。",
     },
     profile: {
       label: "个人资料",
@@ -1492,6 +1502,13 @@ const zhHans = {
       importChatHistoryTitle: "导入聊天记录",
       importChatHistoryDescription:
         "拖入 ChatGPT 或 Claude 导出的 ZIP 来导入对话。之前导入过的对话会自动跳过。",
+      connectedTitle: "已连接的来源",
+      sync: "同步",
+      syncing: "正在同步…",
+      synced: "已同步",
+      addSource: "添加来源…",
+      openInFinder: "在访达中打开",
+      more: "更多",
     },
     agents: {
       connectedAgents: "已连接代理",
@@ -1508,6 +1525,7 @@ const zhHans = {
       lastSeen: "上次出现：{{date}}",
       confirm: "确认",
       cancel: "取消",
+      deleteAgent: "删除 {{name}}",
       setupAnotherTool: "+ 设置另一个工具",
       remoteAccess: "远程访问",
       trust: {
@@ -2536,8 +2554,9 @@ const zhHant = {
       runAtLoginDescription:
         "即使應用程式視窗已關閉，也保持守護程式和選單列圖示執行。要停止全部內容，請從選單列退出。",
       rerunSetup: "重新執行設定精靈",
+      rerunSetupGo: "重新執行",
       rerunSetupConfirm:
-        "重新執行設定？你的資料會保留，這只會重新播放設定精靈。",
+        "你的資料會保留，這只會重新播放設定精靈。",
     },
     profile: {
       label: "個人資料",
@@ -2556,6 +2575,13 @@ const zhHant = {
       importChatHistoryTitle: "匯入聊天記錄",
       importChatHistoryDescription:
         "拖入 ChatGPT 或 Claude 匯出的 ZIP 來匯入對話。先前匯入過的對話會自動略過。",
+      connectedTitle: "已連接的來源",
+      sync: "同步",
+      syncing: "正在同步…",
+      synced: "已同步",
+      addSource: "新增來源…",
+      openInFinder: "在 Finder 中開啟",
+      more: "更多",
     },
     agents: {
       connectedAgents: "已連接代理",
@@ -2572,6 +2598,7 @@ const zhHant = {
       lastSeen: "上次出現：{{date}}",
       confirm: "確認",
       cancel: "取消",
+      deleteAgent: "刪除 {{name}}",
       setupAnotherTool: "+ 設定另一個工具",
       remoteAccess: "遠端存取",
       trust: {
