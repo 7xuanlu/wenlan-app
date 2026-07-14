@@ -224,6 +224,28 @@ impl WenlanClient {
             .map_err(|e| format!("Parse {}: {}", path, e))
     }
 
+    pub async fn get_optional_json<T: DeserializeOwned>(
+        &self,
+        path: &str,
+    ) -> Result<Option<T>, String> {
+        let resp = self
+            .client
+            .get(self.url(path))
+            .send()
+            .await
+            .map_err(|e| format!("HTTP GET {}: {}", path, e))?;
+        if resp.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        if !resp.status().is_success() {
+            return Err(format!("HTTP GET {} returned {}", path, resp.status()));
+        }
+        resp.json()
+            .await
+            .map(Some)
+            .map_err(|e| format!("Parse {}: {}", path, e))
+    }
+
     pub async fn post_json<Req: Serialize, Resp: DeserializeOwned>(
         &self,
         path: &str,
@@ -929,6 +951,110 @@ mod tests {
             request
         });
         (format!("http://{}", addr), handle)
+    }
+
+    async fn serve_status_once(
+        status: u16,
+        reason: &'static str,
+        body: &'static str,
+    ) -> (String, tokio::task::JoinHandle<String>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let handle = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut buf = [0_u8; 2048];
+            let n = stream.read(&mut buf).await.unwrap();
+            let request = String::from_utf8_lossy(&buf[..n]).to_string();
+            let response = format!(
+                "HTTP/1.1 {status} {reason}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            stream.write_all(response.as_bytes()).await.unwrap();
+            request
+        });
+        (format!("http://{}", addr), handle)
+    }
+
+    #[tokio::test]
+    async fn optional_get_maps_only_not_found_to_none() {
+        let (base_url, request) =
+            serve_status_once(404, "Not Found", r#"{"error":"missing"}"#).await;
+        let client = WenlanClient {
+            client: reqwest::Client::new(),
+            base_url,
+        };
+
+        let value: Option<serde_json::Value> = client
+            .get_optional_json("/api/memory/missing/detail")
+            .await
+            .unwrap();
+
+        assert_eq!(value, None);
+        assert_eq!(
+            request.await.unwrap().lines().next().unwrap_or_default(),
+            "GET /api/memory/missing/detail HTTP/1.1"
+        );
+    }
+
+    #[tokio::test]
+    async fn optional_get_preserves_other_http_failures() {
+        let (base_url, _request) =
+            serve_status_once(500, "Internal Server Error", r#"{"error":"failed"}"#).await;
+        let client = WenlanClient {
+            client: reqwest::Client::new(),
+            base_url,
+        };
+
+        let error = client
+            .get_optional_json::<serde_json::Value>("/api/memory/id/detail")
+            .await
+            .unwrap_err();
+
+        assert!(error.contains("returned 500"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn optional_get_preserves_malformed_success_failures() {
+        let (base_url, _request) = serve_status_once(200, "OK", "not-json").await;
+        let client = WenlanClient {
+            client: reqwest::Client::new(),
+            base_url,
+        };
+
+        let error = client
+            .get_optional_json::<serde_json::Value>("/api/memory/id/detail")
+            .await
+            .unwrap_err();
+
+        assert!(error.contains("Parse /api/memory/id/detail"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn optional_get_deserializes_present_values() {
+        let (base_url, _request) = serve_status_once(
+            200,
+            "OK",
+            r#"{"memory":{"source_id":"memory-present","title":"Present memory","content":"body","confirmed":true,"pinned":false,"last_modified":1,"chunk_count":1,"enrichment_status":"enriched","supersede_mode":"hide","access_count":0}}"#,
+        )
+        .await;
+        let client = WenlanClient {
+            client: reqwest::Client::new(),
+            base_url,
+        };
+
+        let value = client
+            .get_optional_json::<wenlan_types::responses::MemoryDetailResponse>(
+                "/api/memory/id/detail",
+            )
+            .await
+            .unwrap()
+            .and_then(|response| response.memory);
+
+        assert_eq!(
+            value.map(|memory| memory.source_id),
+            Some("memory-present".to_string())
+        );
     }
 
     /// Accepts one connection, reads the request, then never responds.

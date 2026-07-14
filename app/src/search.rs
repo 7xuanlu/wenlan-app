@@ -1176,10 +1176,17 @@ pub async fn get_memory_detail(
     source_id: String,
 ) -> Result<Option<MemoryItem>, String> {
     let client = state.read().await.client.clone();
-    let resp: responses::MemoryDetailResponse = client
-        .get_json(&format!("/api/memory/{}/detail", source_id))
+    get_memory_detail_response(&client, &source_id).await
+}
+
+async fn get_memory_detail_response(
+    client: &crate::api::WenlanClient,
+    source_id: &str,
+) -> Result<Option<MemoryItem>, String> {
+    let response: Option<responses::MemoryDetailResponse> = client
+        .get_optional_json(&format!("/api/memory/{}/detail", source_id))
         .await?;
-    Ok(resp.memory)
+    Ok(response.and_then(|response| response.memory))
 }
 
 #[tauri::command]
