@@ -10,7 +10,6 @@ import { getVersion } from "@tauri-apps/api/app";
 import { useTranslation } from "react-i18next";
 
 export type SettingsSection =
-  | "capture"
   | "sources"
   | "agents"
   | "intelligence"
@@ -55,7 +54,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
     labelKey: "settings.groups.general.label",
     hintKey: "settings.groups.general.hint",
     icon: (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="12" r="3" />
         <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" />
       </svg>
@@ -66,7 +65,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
     labelKey: "settings.groups.intelligence.label",
     hintKey: "settings.groups.intelligence.hint",
     icon: (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="12" r="9" />
         <path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6L5.6 18.4" />
       </svg>
@@ -77,7 +76,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
     labelKey: "settings.groups.diagnostics.label",
     hintKey: "settings.groups.diagnostics.hint",
     icon: (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
         <path d="M4 19V5" />
         <path d="M4 19h16" />
         <path d="M8 15l3-3 3 2 4-6" />
@@ -89,7 +88,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
     labelKey: "settings.groups.agents.label",
     hintKey: "settings.groups.agents.hint",
     icon: (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
         <path d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
       </svg>
     ),
@@ -99,26 +98,13 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
     labelKey: "settings.groups.sources.label",
     hintKey: "settings.groups.sources.hint",
     icon: (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
         <ellipse cx="12" cy="5" rx="9" ry="3" />
         <path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5" />
         <path d="M3 12c0 1.7 4 3 9 3s9-1.3 9-3" />
       </svg>
     ),
   },
-  // Capture is hidden for now — ambient capture is disabled as part of the
-  // memory-layer pivot. Re-enable when capture features are ready for users.
-  // {
-  //   id: "capture",
-  //   label: "Capture",
-  //   hint: "Screen and clipboard",
-  //   icon: (
-  //     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-  //       <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z" />
-  //       <circle cx="12" cy="13" r="4" />
-  //     </svg>
-  //   ),
-  // },
 ];
 
 interface SettingsSidebarProps {
@@ -168,7 +154,7 @@ export default function SettingsSidebar({
               cursor: "pointer",
             }}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--mem-text-tertiary)" }}>
+            <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--mem-text-tertiary)" }}>
               <path d="M3 10.5L12 3l9 7.5" />
               <path d="M5 9.5V21h14V9.5" />
               <path d="M9.5 21v-6h5v6" />
@@ -176,7 +162,7 @@ export default function SettingsSidebar({
             <span
               style={{
                 fontFamily: "var(--mem-font-body)",
-                fontSize: "13px",
+                fontSize: "var(--mem-text-base)",
                 fontWeight: 400,
               }}
             >
@@ -190,7 +176,7 @@ export default function SettingsSidebar({
           <span
             style={{
               fontFamily: "var(--mem-font-mono)",
-              fontSize: "10px",
+              fontSize: "var(--mem-text-2xs)",
               fontWeight: 600,
               letterSpacing: "0.08em",
               textTransform: "uppercase",
@@ -209,24 +195,14 @@ export default function SettingsSidebar({
               <button
                 key={group.id}
                 onClick={() => onSelect(group.id)}
-                className="group relative flex items-center gap-3 px-3 py-2 rounded-md transition-colors duration-150 text-left"
+                className={`group relative flex items-center gap-3 px-3 py-2 rounded-md transition-colors duration-150 text-left ${
+                  isActive ? "" : "bg-transparent mem-row-hover"
+                }`}
                 style={{
-                  backgroundColor: isActive ? "var(--mem-hover-strong)" : "transparent",
+                  backgroundColor: isActive ? "var(--mem-hover-strong)" : undefined,
                   color: isActive ? "var(--mem-text)" : "var(--mem-text-secondary)",
                   cursor: "pointer",
                   border: "none",
-                }}
-                onMouseEnter={(e) => {
-                  if (!isActive) {
-                    (e.currentTarget as HTMLElement).style.backgroundColor =
-                      "var(--mem-hover)";
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!isActive) {
-                    (e.currentTarget as HTMLElement).style.backgroundColor =
-                      "transparent";
-                  }
                 }}
               >
                 {/* Active accent bar */}
@@ -258,7 +234,7 @@ export default function SettingsSidebar({
                 <span
                   style={{
                     fontFamily: "var(--mem-font-body)",
-                    fontSize: "13px",
+                    fontSize: "var(--mem-text-base)",
                     fontWeight: isActive ? 500 : 400,
                   }}
                 >
@@ -269,12 +245,15 @@ export default function SettingsSidebar({
           })}
         </nav>
 
-        {/* Bottom brand and privacy reassurance — pinned. Mirrors main Sidebar pattern. */}
+        {/* Bottom brand strip — pinned. Mirrors main Sidebar pattern. The
+            privacy note used to live here too, but it duplicated (and was
+            worded more loosely than) the per-section footer in
+            SettingsPage.tsx, so the claim now appears in exactly one place. */}
         <div
           className="px-4 pt-3 pb-4 flex-shrink-0"
           style={{ borderTop: "1px solid var(--mem-border)" }}
         >
-          <div className="flex items-center justify-between gap-2" style={{ paddingBottom: 8 }}>
+          <div className="flex items-center justify-between gap-2">
             <button
               type="button"
               onClick={onNavigateHome}
@@ -285,7 +264,7 @@ export default function SettingsSidebar({
                 color: "var(--mem-text-tertiary)",
                 cursor: "pointer",
                 fontFamily: "var(--mem-font-body)",
-                fontSize: "11px",
+                fontSize: "var(--mem-text-xs)",
                 fontWeight: 600,
                 lineHeight: 1,
                 padding: 0,
@@ -297,7 +276,7 @@ export default function SettingsSidebar({
               <span
                 style={{
                   fontFamily: "var(--mem-font-mono)",
-                  fontSize: "9.5px",
+                  fontSize: "var(--mem-text-2xs)",
                   color: "var(--mem-text-tertiary)",
                   letterSpacing: "0.02em",
                   opacity: 0.7,
@@ -307,33 +286,6 @@ export default function SettingsSidebar({
                 v{appVersion}
               </span>
             )}
-          </div>
-          <div className="flex items-start gap-2">
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              style={{ color: "var(--mem-text-tertiary)", opacity: 0.7, marginTop: 1 }}
-            >
-              <rect x="3" y="11" width="18" height="11" rx="2" />
-              <path d="M7 11V7a5 5 0 0110 0v4" />
-            </svg>
-            <span
-              style={{
-                fontFamily: "var(--mem-font-body)",
-                fontSize: "10px",
-                lineHeight: 1.5,
-                color: "var(--mem-text-tertiary)",
-                opacity: 0.7,
-              }}
-            >
-              {t("settings.localOnly")}
-            </span>
           </div>
         </div>
       </div>

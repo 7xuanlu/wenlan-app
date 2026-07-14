@@ -1167,6 +1167,30 @@ describe("HomePage redesign", () => {
     expect(onSelectPage).not.toHaveBeenCalled();
   });
 
+  it("does not flash the empty seed state while the pages query is still loading", async () => {
+    let resolvePages!: (pages: tauri.Page[]) => void;
+    vi.mocked(tauri.listPages).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvePages = resolve;
+        }),
+    );
+
+    renderHome();
+
+    // The query has not resolved yet — its data defaults to `[]`, which must
+    // not be read as "no pages" and paint the never-onboarded seed state.
+    expect(screen.queryByTestId("what-happens-next")).toBeNull();
+    expect(screen.queryByTestId("wiki-home")).toBeNull();
+
+    resolvePages([
+      page({ id: "page-architecture", title: "Wenlan app architecture" }),
+    ]);
+
+    expect(await screen.findByTestId("wiki-home")).toBeInTheDocument();
+    expect(screen.queryByTestId("what-happens-next")).toBeNull();
+  });
+
   it("empty state shows greeting plus WhatHappensNextCard, no data zones", async () => {
     vi.mocked(tauri.listConcepts).mockResolvedValue([]);
     vi.mocked(tauri.listRecentConcepts).mockResolvedValue([]);

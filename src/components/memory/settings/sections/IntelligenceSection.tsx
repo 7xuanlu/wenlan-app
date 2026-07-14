@@ -2,7 +2,7 @@
 import { useTranslation } from "react-i18next";
 import ActiveIntelligenceStrip from "../../../intelligence/ActiveIntelligenceStrip";
 import AnyProviderCard from "../../../intelligence/AnyProviderCard";
-import { ApiKeyCard, OnDeviceModelCard, useApiKeyStatus } from "../../../intelligence/IntelligenceSetup";
+import { OnDeviceModelCard, useApiKeyStatus } from "../../../intelligence/IntelligenceSetup";
 import { SectionHeader } from "../primitives";
 
 export default function IntelligenceSection({ delay }: { delay: number }) {
@@ -21,7 +21,6 @@ export default function IntelligenceSection({ delay }: { delay: number }) {
       />
       <div className="flex flex-col gap-3">
         <ActiveIntelligenceStrip />
-        <ApiKeyCard />
         {!isConfigured && (
           <div className="mem-fade-up" style={{ animationDelay: `${delay + 30}ms` }}>
             <OnDeviceModelCard />

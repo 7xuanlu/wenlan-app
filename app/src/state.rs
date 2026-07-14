@@ -11,13 +11,10 @@ use crate::remote_access::RemoteAccessState;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
 use tauri::Emitter;
-use wenlan_types::working_memory::WorkingMemory;
 
 use crate::activity::{Activity, ActivitySummary, ACTIVITY_GAP_SECS};
 use crate::sources::{DataSource, SourceStatus};
-use wenlan_types::responses::ConfigResponse;
 
 /// Retention period for completed activities (90 days).
 const ACTIVITY_RETENTION_SECS: i64 = 90 * 86400;
@@ -50,26 +47,12 @@ pub struct AppState {
     pub index_status: IndexStatus,
     pub sources: HashMap<String, Box<dyn DataSource>>,
     pub watch_paths: Vec<PathBuf>,
-    pub clipboard_enabled: bool,
     pub last_ingestion_at: i64,
     pub current_activity: Option<Activity>,
     pub completed_activities: Vec<Activity>,
     pub app_handle: Option<tauri::AppHandle>,
-    /// Unified trigger channel sender.
-    pub trigger_tx: Option<tokio::sync::mpsc::Sender<crate::trigger::types::TriggerEvent>>,
-    /// Last context bundle received from the router.
-    pub last_context_bundle: Option<crate::router::bundle::ContextBundle>,
-    /// Screen capture enabled.
-    pub screen_capture_enabled: bool,
     /// Remote access tunnel state.
     pub remote_access: tokio::sync::Mutex<RemoteAccessState>,
-    /// Rolling in-memory buffer of recent captures for zero-query Spotlight.
-    ///
-    /// Populated by the context consumer (`router/intent.rs`) when it ingests
-    /// a screen/quick-thought capture. Served by the `get_working_memory`
-    /// Tauri command. Lives in the app process because only the app has
-    /// active sensors — captures happen only in the app process.
-    pub working_memory: Arc<tokio::sync::Mutex<WorkingMemory>>,
 }
 
 impl Default for AppState {
@@ -88,16 +71,11 @@ impl Default for AppState {
             },
             sources: HashMap::new(),
             watch_paths: vec![],
-            clipboard_enabled: false,
             last_ingestion_at: 0,
             current_activity: None,
             completed_activities: vec![],
             app_handle: None,
-            trigger_tx: None,
-            last_context_bundle: None,
-            screen_capture_enabled: false,
             remote_access: tokio::sync::Mutex::new(RemoteAccessState::default()),
-            working_memory: Arc::new(tokio::sync::Mutex::new(WorkingMemory::new())),
         }
     }
 }
@@ -113,11 +91,6 @@ impl AppState {
                 log::warn!("[state] emit capture-event failed: {}", e);
             }
         }
-    }
-
-    pub fn apply_daemon_runtime_config(&mut self, config: &ConfigResponse) {
-        self.clipboard_enabled = config.clipboard_enabled;
-        self.screen_capture_enabled = config.screen_capture_enabled;
     }
 
     pub(crate) fn save_all_activities(&self) {
@@ -167,10 +140,7 @@ impl AppState {
 
     /// Initialize after daemon is confirmed healthy.
     /// Loads local file-based state only — no DB or LLM.
-    pub async fn initialize_local(
-        &mut self,
-        daemon_config: Option<&ConfigResponse>,
-    ) -> Result<Vec<PathBuf>, crate::error::AppError> {
+    pub async fn initialize_local(&mut self) -> Result<Vec<PathBuf>, crate::error::AppError> {
         use crate::sources::local_files::LocalFilesSource;
 
         // Register local files source
@@ -186,11 +156,6 @@ impl AppState {
 
         // Restore persisted config
         let config = crate::config::load_config();
-        self.clipboard_enabled = config.clipboard_enabled;
-        self.screen_capture_enabled = config.screen_capture_enabled;
-        if let Some(config) = daemon_config {
-            self.apply_daemon_runtime_config(config);
-        }
 
         let mut restored_paths = Vec::new();
         for path in config.directory_source_paths() {
@@ -220,41 +185,5 @@ impl AppState {
         }
         statuses.sort_by(|a, b| a.name.cmp(&b.name));
         statuses
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn config_response(clipboard_enabled: bool, screen_capture_enabled: bool) -> ConfigResponse {
-        ConfigResponse {
-            skip_apps: Vec::new(),
-            skip_title_patterns: Vec::new(),
-            private_browsing_detection: true,
-            setup_completed: true,
-            clipboard_enabled,
-            screen_capture_enabled,
-            remote_access_enabled: false,
-            routine_model: None,
-            synthesis_model: None,
-            external_llm_endpoint: None,
-            external_llm_model: None,
-        }
-    }
-
-    #[test]
-    fn daemon_runtime_config_overrides_local_bootstrap_toggles() {
-        let mut state = AppState {
-            clipboard_enabled: true,
-            screen_capture_enabled: false,
-            ..AppState::default()
-        };
-        let daemon = config_response(false, true);
-
-        state.apply_daemon_runtime_config(&daemon);
-
-        assert!(!state.clipboard_enabled);
-        assert!(state.screen_capture_enabled);
     }
 }

@@ -14,6 +14,7 @@ use crate::sources::SourceStatus;
 use crate::state::{AppState, IndexStatus};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -210,80 +211,6 @@ pub async fn position_quick_capture(app: tauri::AppHandle) -> Result<(), String>
     Ok(())
 }
 
-// ── Permission commands (kept as-is) ──────────────────────────────────
-
-#[tauri::command]
-pub fn check_screen_permission() -> bool {
-    #[cfg(target_os = "macos")]
-    {
-        #[link(name = "CoreGraphics", kind = "framework")]
-        extern "C" {
-            fn CGPreflightScreenCaptureAccess() -> bool;
-        }
-        unsafe { CGPreflightScreenCaptureAccess() }
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        true
-    }
-}
-
-#[tauri::command]
-pub fn request_screen_permission() -> bool {
-    #[cfg(target_os = "macos")]
-    {
-        #[link(name = "CoreGraphics", kind = "framework")]
-        extern "C" {
-            fn CGRequestScreenCaptureAccess() -> bool;
-        }
-        unsafe { CGRequestScreenCaptureAccess() }
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        true
-    }
-}
-
-// ── Config and settings commands ──────────────────────────────────────
-
-#[tauri::command]
-pub async fn get_clipboard_enabled(state: tauri::State<'_, State>) -> Result<bool, String> {
-    let client = {
-        let s = state.read().await;
-        s.client.clone()
-    };
-    let enabled = client.get_clipboard_enabled().await?;
-    {
-        let mut app_state = state.write().await;
-        app_state.clipboard_enabled = enabled;
-    }
-    Ok(enabled)
-}
-
-#[tauri::command]
-pub async fn set_clipboard_enabled(
-    state: tauri::State<'_, State>,
-    enabled: bool,
-) -> Result<(), String> {
-    let client = {
-        let s = state.read().await;
-        s.client.clone()
-    };
-    let resp = set_clipboard_enabled_config_response(&client, enabled).await?;
-    {
-        let mut app_state = state.write().await;
-        app_state.clipboard_enabled = resp.clipboard_enabled;
-    }
-    Ok(())
-}
-
-async fn set_clipboard_enabled_config_response(
-    client: &crate::api::WenlanClient,
-    enabled: bool,
-) -> Result<responses::ConfigResponse, String> {
-    client.set_clipboard_enabled(enabled).await
-}
-
 #[tauri::command]
 pub async fn get_api_key() -> Result<Option<String>, String> {
     let config = config::load_config();
@@ -368,26 +295,6 @@ mod setup_key_response_tests {
 }
 
 #[cfg(test)]
-mod capture_config_response_tests {
-    use super::*;
-
-    #[allow(dead_code)]
-    async fn clipboard_toggle_uses_daemon_config_response(client: crate::api::WenlanClient) {
-        let _: Result<responses::ConfigResponse, String> =
-            set_clipboard_enabled_config_response(&client, true).await;
-    }
-
-    #[allow(dead_code)]
-    async fn screen_capture_toggle_uses_daemon_config_response(client: crate::api::WenlanClient) {
-        let _: Result<responses::ConfigResponse, String> =
-            set_screen_capture_enabled_config_response(&client, false).await;
-    }
-
-    #[test]
-    fn capture_config_response_types_are_checked() {}
-}
-
-#[cfg(test)]
 mod ingest_command_tests {
     use super::*;
 
@@ -404,82 +311,6 @@ mod ingest_command_tests {
 
     #[test]
     fn webpage_ingest_command_response_type_is_checked() {}
-}
-
-// Phase 5-D Phase 4: route config reads/writes through the daemon so the
-// daemon's in-memory cache stays consistent with on-disk config.json.
-// Direct `crate::config::load_config()` calls here would let app and daemon
-// drift (the daemon caches at startup; sensors keep using stale skip lists
-// after a local-only write).
-
-#[tauri::command]
-pub async fn get_skip_apps(state: tauri::State<'_, State>) -> Result<Vec<String>, String> {
-    let client = {
-        let s = state.read().await;
-        s.client.clone()
-    };
-    client.get_skip_apps().await
-}
-
-#[tauri::command]
-pub async fn set_skip_apps(
-    state: tauri::State<'_, State>,
-    apps: Vec<String>,
-) -> Result<(), String> {
-    let client = {
-        let s = state.read().await;
-        s.client.clone()
-    };
-    client.set_skip_apps(apps).await
-}
-
-#[tauri::command]
-pub async fn get_skip_title_patterns(
-    state: tauri::State<'_, State>,
-) -> Result<Vec<String>, String> {
-    let client = {
-        let s = state.read().await;
-        s.client.clone()
-    };
-    client.get_skip_title_patterns().await
-}
-
-#[tauri::command]
-pub async fn set_skip_title_patterns(
-    state: tauri::State<'_, State>,
-    patterns: Vec<String>,
-) -> Result<(), String> {
-    let client = {
-        let s = state.read().await;
-        s.client.clone()
-    };
-    client.set_skip_title_patterns(patterns).await
-}
-
-#[tauri::command]
-pub async fn get_private_browsing_detection(
-    state: tauri::State<'_, State>,
-) -> Result<bool, String> {
-    let client = {
-        let s = state.read().await;
-        s.client.clone()
-    };
-    client.get_private_browsing_detection().await
-}
-
-#[tauri::command]
-pub async fn set_private_browsing_detection(
-    state: tauri::State<'_, State>,
-    enabled: bool,
-) -> Result<(), String> {
-    let client = {
-        let s = state.read().await;
-        s.client.clone()
-    };
-    client
-        .set_private_browsing_detection(enabled)
-        .await
-        .map(|_| ())
 }
 
 #[tauri::command]
@@ -549,42 +380,35 @@ pub async fn get_wenlan_mcp_entry() -> Result<crate::mcp_config::WenlanMcpEntry,
     Ok(crate::mcp_config::wenlan_mcp_entry())
 }
 
+/// Installs the Wenlan plugin for `client_type` (`"claude_code"` /
+/// `"codex_cli"`) by shelling out to that client's CLI (marketplace add,
+/// then plugin install/add) — see `plugin_install::install_client_plugin`.
+/// Idempotent: succeeds if the marketplace or plugin is already present.
+/// Runs on a blocking thread since the marketplace step can clone over the
+/// network.
 #[tauri::command]
-pub async fn get_screen_capture_enabled(state: tauri::State<'_, State>) -> Result<bool, String> {
-    let client = {
-        let s = state.read().await;
-        s.client.clone()
-    };
-    let enabled = client.get_screen_capture_enabled().await?;
-    {
-        let mut app_state = state.write().await;
-        app_state.screen_capture_enabled = enabled;
-    }
-    Ok(enabled)
+pub async fn install_client_plugin(client_type: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || crate::plugin_install::install_client_plugin(&client_type))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
 }
 
+/// The real, resolved wiring of Wenlan on this machine — daemon
+/// reachability, the `wenlan-mcp` binary that would actually be written into
+/// a client config (with the full candidate trail, missing paths included),
+/// and per-client MCP routing. Backs the wizard's "Setting up" step and
+/// Settings → Diagnostics. Never rejects on a down daemon — see
+/// `wire_state::compute`.
 #[tauri::command]
-pub async fn set_screen_capture_enabled(
+pub async fn wire_state(
     state: tauri::State<'_, State>,
-    enabled: bool,
-) -> Result<(), String> {
+) -> Result<crate::wire_state::WireState, String> {
     let client = {
         let s = state.read().await;
         s.client.clone()
     };
-    let resp = set_screen_capture_enabled_config_response(&client, enabled).await?;
-    {
-        let mut app_state = state.write().await;
-        app_state.screen_capture_enabled = resp.screen_capture_enabled;
-    }
-    Ok(())
-}
-
-async fn set_screen_capture_enabled_config_response(
-    client: &crate::api::WenlanClient,
-    enabled: bool,
-) -> Result<responses::ConfigResponse, String> {
-    client.set_screen_capture_enabled(enabled).await
+    Ok(crate::wire_state::compute(&client).await)
 }
 
 // ── Activity commands (file-based, local) ─────────────────────────────
@@ -636,19 +460,6 @@ mod pipeline_status_command_type_tests {
 
     #[test]
     fn pipeline_status_command_response_type_is_checked() {}
-}
-
-// ── Trigger/sensor commands ───────────────────────────────────────────
-
-#[tauri::command]
-pub async fn trigger_manual_capture(state: tauri::State<'_, State>) -> Result<(), String> {
-    let s = state.read().await;
-    if let Some(ref tx) = s.trigger_tx {
-        tx.send(crate::trigger::types::TriggerEvent::ManualHotkey)
-            .await
-            .map_err(|e| format!("{}", e))?;
-    }
-    Ok(())
 }
 
 // ── Remote access commands ────────────────────────────────────────────
@@ -838,6 +649,18 @@ pub async fn read_source_dir(path: String) -> Result<Vec<DirEntryDto>, String> {
         out.push(DirEntryDto { name, is_directory });
     }
     Ok(out)
+}
+
+/// Offer the user's real Obsidian vaults as one-tap chips in the connect
+/// flow, read from Obsidian's own vault registry. A convenience, never a
+/// dependency: any read/parse failure resolves to an empty list rather than
+/// an error (see `sources::obsidian::discover_vaults`).
+#[tauri::command]
+pub async fn detect_obsidian_vaults() -> Result<Vec<crate::sources::obsidian::ObsidianVault>, String>
+{
+    Ok(crate::sources::obsidian::discover_vaults(
+        &crate::sources::obsidian::obsidian_registry_path(),
+    ))
 }
 
 /// Read a text file's contents for inline preview in the Sources detail pane.
@@ -2827,22 +2650,7 @@ fn percent_encode(s: &str) -> String {
     out
 }
 
-// ── Working memory / sessions ─────────────────────────────────────────
-
-#[tauri::command]
-pub async fn get_working_memory(
-    state: tauri::State<'_, State>,
-) -> Result<Vec<wenlan_types::working_memory::WorkingMemoryEntry>, String> {
-    // Working memory is in-process state populated by the context consumer
-    // (`router/intent.rs`). Sensors run only in the app process, so this
-    // is served from the app's local rolling buffer rather than an HTTP endpoint.
-    let wm_handle = {
-        let s = state.read().await;
-        s.working_memory.clone()
-    };
-    let mut wm = wm_handle.lock().await;
-    Ok(wm.get_recent())
-}
+// ── Sessions ───────────────────────────────────────────────────────────
 
 #[tauri::command]
 pub async fn get_session_snapshots(
@@ -3902,6 +3710,94 @@ mod on_device_model_command_type_tests {
 
     #[test]
     fn on_device_model_command_response_type_is_checked() {}
+}
+
+/// Bytes downloaded so far for an in-flight on-device model download.
+///
+/// The daemon's `/api/on-device-model/download` is one blocking HTTP call
+/// that reports nothing until it finishes, so there is no progress endpoint
+/// to poll. But the daemon downloads via hf-hub's sync API, which streams
+/// each blob into `<blob-etag>.part` with `OpenOptions::append(true)` and no
+/// preallocation, renaming it to `<blob-etag>` only on completion. That
+/// means the `.part` file's size on disk is the true number of bytes
+/// downloaded so far, even though we don't know the file's final size.
+///
+/// This walks the whole hub cache rather than resolving the exact repo id
+/// for the model being downloaded: `OnDeviceModelEntry` carries no repo_id,
+/// and hardcoding the daemon's model registry here would duplicate it. This
+/// is safe because exactly one on-device model download is ever in flight
+/// during the setup wizard.
+fn largest_part_file(hub_dir: &Path) -> Option<u64> {
+    let mut largest: Option<u64> = None;
+    for model_dir in std::fs::read_dir(hub_dir).ok()?.flatten() {
+        let blobs_dir = model_dir.path().join("blobs");
+        let Ok(blob_entries) = std::fs::read_dir(&blobs_dir) else {
+            continue;
+        };
+        for blob_entry in blob_entries.flatten() {
+            let path = blob_entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("part") {
+                continue;
+            }
+            let Ok(metadata) = blob_entry.metadata() else {
+                continue;
+            };
+            let size = metadata.len();
+            largest = Some(largest.map_or(size, |current: u64| current.max(size)));
+        }
+    }
+    largest
+}
+
+/// Returns bytes downloaded so far for an in-flight on-device model
+/// download, or `None` if no download is in progress (or the hf-hub cache
+/// layout has changed). See [`largest_part_file`] for why this is honest
+/// about the numerator (bytes so far) but says nothing about a total.
+#[tauri::command]
+pub fn on_device_model_download_bytes() -> Option<u64> {
+    let hub_dir = dirs::home_dir()?.join(".cache/huggingface/hub");
+    largest_part_file(&hub_dir)
+}
+
+#[cfg(test)]
+mod on_device_model_download_bytes_tests {
+    use super::*;
+
+    #[test]
+    fn returns_none_for_empty_hub_dir() {
+        let hub = tempfile::tempdir().unwrap();
+        assert_eq!(largest_part_file(hub.path()), None);
+    }
+
+    #[test]
+    fn returns_none_when_no_part_files_exist() {
+        let hub = tempfile::tempdir().unwrap();
+        let blobs = hub.path().join("models--org--model").join("blobs");
+        std::fs::create_dir_all(&blobs).unwrap();
+        std::fs::write(blobs.join("completed-etag"), vec![0u8; 999_999]).unwrap();
+
+        assert_eq!(largest_part_file(hub.path()), None);
+    }
+
+    #[test]
+    fn returns_size_of_largest_part_file_across_models() {
+        let hub = tempfile::tempdir().unwrap();
+        let blobs_a = hub.path().join("models--org--model-a").join("blobs");
+        let blobs_b = hub.path().join("models--org--model-b").join("blobs");
+        std::fs::create_dir_all(&blobs_a).unwrap();
+        std::fs::create_dir_all(&blobs_b).unwrap();
+        std::fs::write(blobs_a.join("abc123.part"), vec![0u8; 100]).unwrap();
+        std::fs::write(blobs_b.join("def456.part"), vec![0u8; 500]).unwrap();
+        // A completed blob (no `.part` suffix) must never be counted.
+        std::fs::write(blobs_b.join("completed-etag"), vec![0u8; 999_999]).unwrap();
+
+        assert_eq!(largest_part_file(hub.path()), Some(500));
+    }
+
+    #[test]
+    fn on_device_model_download_bytes_returns_option_u64() {
+        let _: Option<u64> = on_device_model_download_bytes();
+    }
 }
 
 // ── Home delta feed ─────────────────────────────────────────────────────

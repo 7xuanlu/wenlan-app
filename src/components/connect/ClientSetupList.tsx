@@ -1,14 +1,23 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { detectMcpClients, writeMcpConfig, type McpClient } from "../../lib/tauri";
-import CliPrimaryPath, { isCliPrimaryClient, type CliClientType } from "./CliPrimaryPath";
+import {
+  detectMcpClients,
+  writeMcpConfig,
+  installClientPlugin,
+  type McpClient,
+} from "../../lib/tauri";
+import { isPluginClient } from "./pluginClients";
+import ClientRow from "./ClientRow";
+import { Button } from "../memory/settings/primitives";
 
-/** Apps & CLIs group (spec §2a / §9.3). CLI clients lead with their primary
- *  plugin path (CliPrimaryPath: terminal commands + "Copy setup prompt");
- *  the one-click config write moves under Advanced. GUI clients keep the
- *  one-click "Set up". */
+/** Apps & CLIs group. Every detected client has the same one-click "Set up" —
+ *  what that button *does* differs by client, and `isPluginClient` is the only
+ *  thing that decides: Claude Code and Codex get the Wenlan plugin (which
+ *  registers the MCP server itself), everyone else gets an MCP config write.
+ *  Writing a config for a plugin client would register Wenlan twice, so this
+ *  surface obeys the same invariant the wizard does. */
 export default function ClientSetupList() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -21,7 +30,11 @@ export default function ClientSetupList() {
     setBusy(clientType);
     setErrors((prev) => ({ ...prev, [clientType]: "" }));
     try {
-      await writeMcpConfig(clientType);
+      if (isPluginClient(clientType)) {
+        await installClientPlugin(clientType);
+      } else {
+        await writeMcpConfig(clientType);
+      }
       queryClient.invalidateQueries({ queryKey: ["mcp-clients"] });
     } catch (err) {
       setErrors((prev) => ({ ...prev, [clientType]: String(err) }));
@@ -30,92 +43,41 @@ export default function ClientSetupList() {
     }
   };
 
-  const rowShell = (client: McpClient, children: ReactNode) => (
-    <div
-      key={client.client_type}
-      className="rounded-lg px-3 py-2.5 flex flex-col gap-2"
-      style={{ border: "1px solid var(--mem-border)", backgroundColor: "var(--mem-surface)" }}
-    >
-      <div className="flex items-center gap-3">
-        <div className="flex-1 min-w-0">
-          <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "13px", fontWeight: 500, color: "var(--mem-text)", margin: 0 }}>
-            {client.name}
-          </p>
-          <p className="truncate" style={{ fontFamily: "var(--mem-font-mono)", fontSize: "10px", color: "var(--mem-text-tertiary)", margin: 0 }}>
-            {client.config_path}
-          </p>
-        </div>
-        {client.already_configured && (
-          <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-accent-sage)" }}>
-            {t("connectMatrix.configured")}
-          </span>
-        )}
-      </div>
-      {children}
-      {errors[client.client_type] && (
-        <p className="text-red-500" role="alert" style={{ fontFamily: "var(--mem-font-mono)", fontSize: "10px", margin: 0 }}>
-          {errors[client.client_type]}
-        </p>
-      )}
-    </div>
+  const notInstalled = (
+    <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)" }}>
+      {t("connectMatrix.notDetected")}
+    </span>
   );
 
-  const advancedSetUp = (client: McpClient) => (
-    <details>
-      <summary style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)", cursor: "pointer" }}>
-        {t("connectMatrix.advanced")}
-      </summary>
-      <button
-        type="button"
-        onClick={() => setUp(client.client_type)}
-        disabled={busy === client.client_type}
-        className="mt-2 rounded-md px-3 py-1.5 text-xs disabled:opacity-50"
-        style={{ border: "1px solid var(--mem-border)", color: "var(--mem-text)", fontFamily: "var(--mem-font-body)" }}
-      >
-        {busy === client.client_type ? t("connectMatrix.settingUp") : t("connectMatrix.oneClickAdvanced")}
-      </button>
-    </details>
-  );
-
-  const guiPrimary = (client: McpClient) =>
-    client.already_configured ? null : client.detected ? (
-      <button
-        type="button"
-        onClick={() => setUp(client.client_type)}
-        disabled={busy === client.client_type}
-        className="self-start rounded-md px-3 py-1.5 text-xs disabled:opacity-50"
-        style={{ backgroundColor: "var(--mem-accent-indigo)", color: "white", fontFamily: "var(--mem-font-body)" }}
-      >
-        {busy === client.client_type ? t("connectMatrix.settingUp") : t("connectMatrix.setUp")}
-      </button>
-    ) : (
-      <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)" }}>
-        {t("connectMatrix.notDetected")}
-      </span>
-    );
-
-  // A plugin-install command for a CLI that isn't on the machine can't
-  // succeed anyway — gate the CLI primary path on detection too, same as
-  // guiPrimary, so an undetected client always shows "Not detected".
-  const cliPrimary = (client: McpClient, clientType: CliClientType) =>
-    client.detected ? (
-      <>
-        <CliPrimaryPath clientType={clientType} />
-        {advancedSetUp(client)}
-      </>
-    ) : (
-      <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)" }}>
-        {t("connectMatrix.notDetected")}
-      </span>
-    );
+  const trailing = (client: McpClient) =>
+    client.already_configured
+      ? null
+      : client.detected
+        ? (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setUp(client.client_type)}
+              disabled={busy === client.client_type}
+            >
+              {busy === client.client_type ? t("connectMatrix.settingUp") : t("connectMatrix.setUp")}
+            </Button>
+          )
+        : notInstalled;
 
   return (
     <div className="flex flex-col" style={{ gap: "8px" }}>
-      {(clients ?? []).map((client) =>
-        isCliPrimaryClient(client.client_type)
-          ? rowShell(client, cliPrimary(client, client.client_type))
-          : rowShell(client, guiPrimary(client)),
-      )}
+      {(clients ?? []).map((client) => (
+        <ClientRow
+          key={client.client_type}
+          client={client}
+          showConfigPath
+          configured={client.already_configured}
+          error={errors[client.client_type]}
+          trailing={trailing(client)}
+        />
+      ))}
     </div>
   );
 }

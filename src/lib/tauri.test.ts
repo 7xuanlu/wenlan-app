@@ -453,42 +453,6 @@ describe('updateChunk', () => {
   });
 });
 
-describe('clipboard and capture toggles', () => {
-  it('getClipboardEnabled calls invoke', async () => {
-    mockInvoke.mockResolvedValue(false);
-    await tauri.getClipboardEnabled();
-    expect(mockInvoke).toHaveBeenCalledWith('get_clipboard_enabled');
-  });
-
-  it('setClipboardEnabled passes enabled', async () => {
-    await tauri.setClipboardEnabled(true);
-    expect(mockInvoke).toHaveBeenCalledWith('set_clipboard_enabled', { enabled: true });
-  });
-
-  it('getScreenCaptureEnabled calls invoke', async () => {
-    mockInvoke.mockResolvedValue(false);
-    await tauri.getScreenCaptureEnabled();
-    expect(mockInvoke).toHaveBeenCalledWith('get_screen_capture_enabled');
-  });
-
-  it('setScreenCaptureEnabled passes enabled', async () => {
-    await tauri.setScreenCaptureEnabled(true);
-    expect(mockInvoke).toHaveBeenCalledWith('set_screen_capture_enabled', { enabled: true });
-  });
-
-  it('checkScreenPermission calls invoke', async () => {
-    mockInvoke.mockResolvedValue(true);
-    await tauri.checkScreenPermission();
-    expect(mockInvoke).toHaveBeenCalledWith('check_screen_permission');
-  });
-
-  it('requestScreenPermission calls invoke', async () => {
-    mockInvoke.mockResolvedValue(true);
-    await expect(tauri.requestScreenPermission()).resolves.toBe(true);
-    expect(mockInvoke).toHaveBeenCalledWith('request_screen_permission');
-  });
-});
-
 describe('activities', () => {
   it('listActivities calls invoke', async () => {
     mockInvoke.mockResolvedValue([]);
@@ -500,14 +464,6 @@ describe('activities', () => {
     mockInvoke.mockResolvedValue(5);
     await tauri.rebuildActivities();
     expect(mockInvoke).toHaveBeenCalledWith('rebuild_activities');
-  });
-});
-
-describe('getWorkingMemory', () => {
-  it('calls invoke', async () => {
-    mockInvoke.mockResolvedValue([]);
-    await tauri.getWorkingMemory();
-    expect(mockInvoke).toHaveBeenCalledWith('get_working_memory');
   });
 });
 
@@ -602,30 +558,6 @@ describe('session snapshots', () => {
   it('deleteSnapshot passes snapshotId', async () => {
     await tauri.deleteSnapshot('snap-1');
     expect(mockInvoke).toHaveBeenCalledWith('delete_snapshot', { snapshotId: 'snap-1' });
-  });
-});
-
-describe('capture quality settings', () => {
-  it('getSkipApps calls invoke', async () => {
-    mockInvoke.mockResolvedValue([]);
-    await tauri.getSkipApps();
-    expect(mockInvoke).toHaveBeenCalledWith('get_skip_apps');
-  });
-
-  it('setSkipApps passes apps array', async () => {
-    await tauri.setSkipApps(['Slack', 'Zoom']);
-    expect(mockInvoke).toHaveBeenCalledWith('set_skip_apps', { apps: ['Slack', 'Zoom'] });
-  });
-
-  it('getPrivateBrowsingDetection calls invoke', async () => {
-    mockInvoke.mockResolvedValue(true);
-    await tauri.getPrivateBrowsingDetection();
-    expect(mockInvoke).toHaveBeenCalledWith('get_private_browsing_detection');
-  });
-
-  it('setPrivateBrowsingDetection passes enabled', async () => {
-    await tauri.setPrivateBrowsingDetection(false);
-    expect(mockInvoke).toHaveBeenCalledWith('set_private_browsing_detection', { enabled: false });
   });
 });
 
@@ -729,20 +661,6 @@ describe('setAvatar', () => {
   });
 });
 
-describe('shouldSkipClipboardChange', () => {
-  it('returns false by default', () => {
-    expect(tauri.shouldSkipClipboardChange()).toBe(false);
-  });
-});
-
-describe('ingestClipboard', () => {
-  it('calls invoke with content', async () => {
-    mockInvoke.mockResolvedValue(1);
-    await tauri.ingestClipboard('pasted text');
-    expect(mockInvoke).toHaveBeenCalledWith('ingest_clipboard', { content: 'pasted text' });
-  });
-});
-
 describe('updateProfile', () => {
   it('passes all args with null defaults', async () => {
     await tauri.updateProfile('p1', 'Lucian', 'Lux');
@@ -833,21 +751,6 @@ describe('getSnapshotCapturesWithContent', () => {
     mockInvoke.mockResolvedValue([]);
     await tauri.getSnapshotCapturesWithContent('snap-1');
     expect(mockInvoke).toHaveBeenCalledWith('get_snapshot_captures_with_content', { snapshotId: 'snap-1' });
-  });
-});
-
-describe('setSkipTitlePatterns', () => {
-  it('passes patterns array', async () => {
-    await tauri.setSkipTitlePatterns(['*secret*']);
-    expect(mockInvoke).toHaveBeenCalledWith('set_skip_title_patterns', { patterns: ['*secret*'] });
-  });
-});
-
-describe('getSkipTitlePatterns', () => {
-  it('calls invoke', async () => {
-    mockInvoke.mockResolvedValue([]);
-    await tauri.getSkipTitlePatterns();
-    expect(mockInvoke).toHaveBeenCalledWith('get_skip_title_patterns');
   });
 });
 

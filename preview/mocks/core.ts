@@ -92,9 +92,25 @@ export async function invoke(
     case "list_unconfirmed_memories":
       if (REVIEW_FAIL.queue) throw new Error("[preview] simulated queue failure");
       return REVIEW_STATE.captures;
-    case "confirm_memory":
-    case "delete_memory": {
+    case "confirm_memory": {
       const id = args?.sourceId as string;
+      REVIEW_STATE.captures = REVIEW_STATE.captures.filter((c) => c.id !== id);
+      return null;
+    }
+    case "delete_memory": {
+      // Only a review-queue fixture capture is deleted from the fixture. The
+      // wizard's runtime row stores its own synthesized probe memory
+      // (live-invoke.ts's PREVIEW_PROBES — store_memory no longer touches the
+      // real daemon at all) and deletes it through the same live-invoke.ts
+      // delete_memory handler, which reads that same map. Fixturing this
+      // delete used to swallow it, so every open of the wizard preview left a
+      // real "Wenlan setup check" memory behind in the developer's own
+      // knowledge base. Anything this fixture doesn't own is a live id and
+      // gets a live delete.
+      const id = args?.sourceId as string;
+      if (!REVIEW_STATE.captures.some((c) => c.id === id)) {
+        return liveInvoke(cmd, args);
+      }
       REVIEW_STATE.captures = REVIEW_STATE.captures.filter((c) => c.id !== id);
       return null;
     }
@@ -105,8 +121,14 @@ export async function invoke(
       REVIEW_STATE.proposals = REVIEW_STATE.proposals.filter((p) => p.id !== id);
       return { id, action_applied: action };
     }
-    case "get_memory_detail":
-      return REVIEW_MEMORIES[args?.sourceId as string] ?? null;
+    case "get_memory_detail": {
+      const sourceId = args?.sourceId as string;
+      // The wizard's runtime row synthesizes its own probe id (see
+      // PREVIEW_PROBES in live-invoke.ts) rather than this fixture's ids —
+      // falling through (like delete_memory below already does) lets that
+      // synthesized id resolve instead of dying on a fixture-only `null`.
+      return REVIEW_MEMORIES[sourceId] ?? liveInvoke(cmd, args);
+    }
     case "get_entity_detail_cmd":
       return REVIEW_ENTITIES[args?.entityId as string] ?? null;
     // On-open evidence for topic/suggest_entity review dialogs — a plain
@@ -134,8 +156,12 @@ export async function invoke(
         }));
     }
     default:
-      console.warn(`[preview] unmocked invoke: ${cmd}`, args);
-      return null;
+      // Anything this switch doesn't fixture falls through to the live map,
+      // which already carries app-local defaults with the right struct shapes
+      // (get_setup_status, get_remote_access_status, get_on_device_model...).
+      // Returning null here instead would white-screen the wizard and settings
+      // modes, since those components read fields off the result unguarded.
+      return liveInvoke(cmd, args);
   }
 }
 

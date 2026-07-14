@@ -258,6 +258,23 @@ export async function readSourceDir(path: string): Promise<SourceDirEntry[]> {
   return invoke("read_source_dir", { path });
 }
 
+export interface ObsidianVault {
+  name: string;
+  path: string;
+}
+
+/**
+ * Read the user's real Obsidian vaults from Obsidian's own vault registry
+ * (macOS: `~/Library/Application Support/obsidian/obsidian.json`), most
+ * recently opened first. Read in Rust because the webview's `fs:default`
+ * scope only covers app-specific directories — it can't reach Obsidian's
+ * registry. Never throws: no Obsidian, an unreadable registry, or a vault
+ * whose folder is gone all just mean an empty list.
+ */
+export async function detectObsidianVaults(): Promise<ObsidianVault[]> {
+  return invoke("detect_obsidian_vaults");
+}
+
 /**
  * Read a text file's full contents for inline preview in the detail pane.
  * Backed by the Rust `read_text_file` command (same reason as readSourceDir:
@@ -296,25 +313,9 @@ export async function quickCapture(req: QuickCaptureRequest): Promise<number> {
   return invoke("quick_capture", { req });
 }
 
-// Skip flag to prevent re-ingesting content we just wrote to the clipboard
-let _skipNextClipboardChange = false;
-
-export function shouldSkipClipboardChange(): boolean {
-  if (_skipNextClipboardChange) {
-    _skipNextClipboardChange = false;
-    return true;
-  }
-  return false;
-}
-
 export async function clipboardWrite(text: string): Promise<void> {
   const { writeText } = await import("tauri-plugin-clipboard-x-api");
-  _skipNextClipboardChange = true;
   await writeText(text);
-}
-
-export async function ingestClipboard(content: string): Promise<number> {
-  return invoke("ingest_clipboard", { content });
 }
 
 export interface IngestWebpageRequest {
@@ -331,30 +332,6 @@ export interface IngestResponse {
 
 export async function ingestWebpage(req: IngestWebpageRequest): Promise<IngestResponse> {
   return invoke("ingest_webpage", { req });
-}
-
-export async function getClipboardEnabled(): Promise<boolean> {
-  return invoke("get_clipboard_enabled");
-}
-
-export async function setClipboardEnabled(enabled: boolean): Promise<void> {
-  return invoke("set_clipboard_enabled", { enabled });
-}
-
-export async function getScreenCaptureEnabled(): Promise<boolean> {
-  return invoke("get_screen_capture_enabled");
-}
-
-export async function setScreenCaptureEnabled(enabled: boolean): Promise<void> {
-  return invoke("set_screen_capture_enabled", { enabled });
-}
-
-export async function checkScreenPermission(): Promise<boolean> {
-  return invoke("check_screen_permission");
-}
-
-export async function requestScreenPermission(): Promise<boolean> {
-  return invoke("request_screen_permission");
 }
 
 export async function getApiKey(): Promise<string | null> {
@@ -461,6 +438,15 @@ export async function downloadOnDeviceModel(modelId: string): Promise<void> {
   return invoke("download_on_device_model", { modelId });
 }
 
+/** Bytes downloaded so far for an in-flight on-device model download, read
+ *  from the hf-hub cache's in-progress `.part` file. `null` when no download
+ *  is in progress. There is no reliable total to compare this against — see
+ *  callers for how the estimated file size is used only as a rough, always
+ *  under-run, denominator. */
+export async function onDeviceModelDownloadBytes(): Promise<number | null> {
+  return invoke("on_device_model_download_bytes");
+}
+
 export interface ActivitySummary {
   id: string;
   started_at: number;
@@ -475,19 +461,6 @@ export async function listActivities(): Promise<ActivitySummary[]> {
 
 export async function rebuildActivities(): Promise<number> {
   return invoke("rebuild_activities");
-}
-
-export interface WorkingMemoryEntry {
-  timestamp: number;
-  source: string;
-  app_name: string;
-  window_title: string;
-  text_snippet: string;
-  source_id: string;
-}
-
-export async function getWorkingMemory(): Promise<WorkingMemoryEntry[]> {
-  return invoke("get_working_memory");
 }
 
 export type CaptureStats = Record<string, number>;
@@ -725,32 +698,6 @@ export async function getSnapshotCapturesWithContent(snapshotId: string): Promis
 
 export async function deleteSnapshot(snapshotId: string): Promise<void> {
   return invoke("delete_snapshot", { snapshotId });
-}
-
-// ── Capture Quality ─────────────────────────────────────────────────────
-
-export async function getSkipApps(): Promise<string[]> {
-  return invoke("get_skip_apps");
-}
-
-export async function setSkipApps(apps: string[]): Promise<void> {
-  return invoke("set_skip_apps", { apps });
-}
-
-export async function getSkipTitlePatterns(): Promise<string[]> {
-  return invoke("get_skip_title_patterns");
-}
-
-export async function setSkipTitlePatterns(patterns: string[]): Promise<void> {
-  return invoke("set_skip_title_patterns", { patterns });
-}
-
-export async function getPrivateBrowsingDetection(): Promise<boolean> {
-  return invoke("get_private_browsing_detection");
-}
-
-export async function setPrivateBrowsingDetection(enabled: boolean): Promise<void> {
-  return invoke("set_private_browsing_detection", { enabled });
 }
 
 // ── Memory Facets ───────────────────────────────────────────────────
@@ -1997,6 +1944,66 @@ export interface WenlanMcpEntry {
  *  either a resolved local binary path (dev) or `npx -y wenlan-mcp` (prod). */
 export async function getWenlanMcpEntry(): Promise<WenlanMcpEntry> {
   return invoke("get_wenlan_mcp_entry");
+}
+
+export type PluginInstallClientType = "claude_code" | "codex_cli";
+
+/** Installs the Wenlan plugin for `clientType` (marketplace add, then
+ *  plugin install/add) by shelling out to that client's CLI — never writes
+ *  a raw MCP entry (`~/.claude.json` or `[mcp_servers.wenlan]`), since the
+ *  plugin registers its own MCP server. Idempotent: resolves if the
+ *  marketplace or plugin is already present. Rejects with a plain error
+ *  message ("Claude Code CLI not found" / "Codex CLI not found", a step
+ *  failure, or "unsupported client type") — callers must not block the
+ *  wizard on that rejection. */
+export async function installClientPlugin(clientType: PluginInstallClientType): Promise<void> {
+  return invoke("install_client_plugin", { clientType });
+}
+
+// ===== Wire State (real, resolved wiring — wizard progress + Diagnostics) =====
+
+export interface DaemonWire {
+  base_url: string;
+  reachable: boolean;
+  version: string | null;
+  error: string | null;
+}
+
+export interface BinaryCandidate {
+  path: string;
+  exists: boolean;
+  source: "WENLAN_MCP_DEV_BIN" | "installed" | "bundled" | "cargo";
+}
+
+export interface BinaryWire {
+  command: string;
+  args: string[];
+  candidates: BinaryCandidate[];
+}
+
+export interface ClientWire {
+  client_type: string;
+  name: string;
+  detected: boolean;
+  config_path: string;
+  has_raw_entry: boolean;
+  has_plugin: boolean;
+  route: "plugin" | "config" | "skip";
+}
+
+export interface WireState {
+  daemon: DaemonWire;
+  mcp_binary: BinaryWire;
+  clients: ClientWire[];
+}
+
+/** The real, resolved wiring of Wenlan on this machine: daemon
+ *  reachability, the `wenlan-mcp` binary that would actually be written into
+ *  a client config (with the full candidate trail — missing paths included,
+ *  never silently dropped), and per-client MCP routing. Never rejects on a
+ *  down daemon (`daemon.reachable: false` instead). */
+export async function getWireState(): Promise<WireState> {
+  return invoke("wire_state");
 }
 
 // ===== Onboarding Journey Milestones =====

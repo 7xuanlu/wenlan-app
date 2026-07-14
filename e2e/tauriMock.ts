@@ -108,8 +108,6 @@ export async function installTauriMock(page: Page, options: InstallTauriMockOpti
       switch (command) {
         case "should_show_wizard":
           return false;
-        case "get_clipboard_enabled":
-          return false;
         case "set_traffic_lights_visible":
         case "set_setup_completed":
           return null;

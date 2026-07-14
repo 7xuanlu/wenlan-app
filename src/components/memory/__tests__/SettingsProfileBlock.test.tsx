@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import SettingsPage from "../SettingsPage";
 
 const updateProfileMock = vi.hoisted(() => vi.fn().mockResolvedValue(null));
+const setRunAtLoginMock = vi.hoisted(() => vi.fn().mockResolvedValue(null));
 
 vi.mock("../../../lib/tauri", () => ({
   getProfile: vi.fn().mockResolvedValue({
@@ -20,12 +21,6 @@ vi.mock("../../../lib/tauri", () => ({
   updateProfile: updateProfileMock,
   setAvatar: vi.fn().mockResolvedValue(null),
   removeAvatar: vi.fn().mockResolvedValue(null),
-  getClipboardEnabled: vi.fn().mockResolvedValue(true),
-  setClipboardEnabled: vi.fn().mockResolvedValue(null),
-  getScreenCaptureEnabled: vi.fn().mockResolvedValue(false),
-  setScreenCaptureEnabled: vi.fn().mockResolvedValue(null),
-  checkScreenPermission: vi.fn().mockResolvedValue(false),
-  requestScreenPermission: vi.fn().mockResolvedValue(null),
   getCaptureStats: vi.fn().mockResolvedValue({ clipboard: 0, screen: 0 }),
   listAgents: vi.fn().mockResolvedValue([]),
   updateAgent: vi.fn().mockResolvedValue(null),
@@ -33,7 +28,7 @@ vi.mock("../../../lib/tauri", () => ({
   detectMcpClients: vi.fn().mockResolvedValue([]),
   setSetupCompleted: vi.fn().mockResolvedValue(null),
   isRunAtLoginEnabled: vi.fn().mockResolvedValue(false),
-  setRunAtLogin: vi.fn().mockResolvedValue(null),
+  setRunAtLogin: setRunAtLoginMock,
 }));
 
 vi.mock("../../../lib/theme", () => ({
@@ -44,7 +39,7 @@ vi.mock("../sources/SourcesSection", () => ({ default: () => <div /> }));
 vi.mock("../../ChatImport/ImportFlow", () => ({ ImportFlow: () => <div /> }));
 vi.mock("../RemoteAccessPanel", () => ({ RemoteAccessPanel: () => <div /> }));
 vi.mock("../../intelligence/IntelligenceSetup", () => ({
-  ApiKeyCard: () => <div />,
+  AnthropicFields: () => <div />,
   OnDeviceModelCard: () => <div />,
   useApiKeyStatus: () => ({ isConfigured: false }),
 }));
@@ -54,7 +49,7 @@ function renderSettingsPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <SettingsPage section="general" onBack={() => {}} />
+      <SettingsPage section="general" onBack={() => {}} onImport={() => {}} />
     </QueryClientProvider>,
   );
 }
@@ -93,5 +88,27 @@ describe("SettingsPage profile display block", () => {
       undefined,
       undefined,
     );
+  });
+
+  // Primitives migration (Step 6a): the display-name field moved from a
+  // hand-rolled <label><input> pair to the shared Field/Input primitives,
+  // and the run-at-login row moved into a Card wrapper. Both changes could
+  // silently break the label/control association or the toggle's click
+  // wiring without any visual sign, so pin them explicitly.
+  it("keeps the display-name label wired to its input after the Field migration", async () => {
+    renderSettingsPage();
+
+    const input = await screen.findByLabelText("Display name");
+    expect(input).toHaveValue("Lucian");
+  });
+
+  it("still fires the run-at-login toggle after the Card migration", async () => {
+    const user = userEvent.setup();
+    renderSettingsPage();
+
+    const toggle = await screen.findByRole("button", { pressed: false });
+    await user.click(toggle);
+
+    expect(setRunAtLoginMock).toHaveBeenCalledWith(true, expect.anything());
   });
 });

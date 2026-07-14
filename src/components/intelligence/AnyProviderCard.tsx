@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
@@ -11,20 +11,17 @@ import {
   getExternalLlmKeyConfigured,
 } from "../../lib/tauri";
 import { useDaemonVersion } from "../../hooks/useDaemonVersion";
-import { useApiKeyStatus } from "./IntelligenceSetup";
+import { AnthropicFields, useApiKeyStatus } from "./IntelligenceSetup";
 import {
   PROVIDER_PRESETS,
   presetForEndpoint,
+  normalizeEndpoint,
   keyPrefixMismatch,
+  visiblePresets,
   type PresetGroup,
+  type ProviderPreset,
 } from "./providerPresets";
-
-interface Props {
-  /** Filter the preset picker (wizard: cloud-only / local-only). */
-  groups?: PresetGroup[];
-  initialPresetId?: string;
-  hidePresetPicker?: boolean;
-}
+import { Card, Field, Input, Button, Select, StatusChip, type ProbeState } from "../memory/settings/primitives";
 
 // The preset table is the single source of truth for local endpoints — look
 // them up by id rather than restating the URLs here, so a future table edit
@@ -39,42 +36,53 @@ const LMSTUDIO_ENDPOINT = presetEndpoint("lmstudio");
 const hostOf = (ep: string) => ep.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
 const localLabel = (name: string) => name.replace(/\s*\(local\)$/i, "");
 
-const fieldStyle: CSSProperties = {
-  width: "100%",
-  padding: "8px 10px",
-  borderRadius: "8px",
-  border: "1px solid var(--mem-border)",
-  backgroundColor: "var(--mem-bg)",
-  color: "var(--mem-text)",
-  fontFamily: "var(--mem-font-mono)",
-  fontSize: "12px",
-};
+// Thread #5: the discovery query is keyed on live user input, so every
+// keystroke used to fire its own fetch. Delay only the value fed into that
+// query key/queryFn — form responsiveness (endpointValid, canAct) stays on
+// the live value.
+function useDebouncedValue<T>(value: T, delayMs: number): T {
+  const [debounced, setDebounced] = useState(value);
+  const isFirstRender = useRef(true);
+  useEffect(() => {
+    // Skip the mount run — there is nothing to debounce yet, and scheduling
+    // a timer that just resets the value to itself is wasted work.
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    const id = setTimeout(() => setDebounced(value), delayMs);
+    return () => clearTimeout(id);
+  }, [value, delayMs]);
+  return debounced;
+}
 
-const labelStyle: CSSProperties = {
-  fontFamily: "var(--mem-font-body)",
-  fontSize: "12px",
-  fontWeight: 500,
-  color: "var(--mem-text-secondary)",
-};
+/** Card-scope-aware default: prefer Ollama (never a paid vendor) if this
+ *  card's scope includes local presets; else Anthropic (native, no billing
+ *  surprise) if in scope; else whatever the scope's first preset is. Runs
+ *  once, as a useState lazy initializer — never re-evaluated on rerender,
+ *  so a gate flipping open after mount can't move an already-made
+ *  selection. */
+function pickDefaultPresetId(list: ProviderPreset[]): string {
+  if (list.some((p) => p.id === "ollama")) return "ollama";
+  if (list.some((p) => p.id === "anthropic")) return "anthropic";
+  return list[0]?.id ?? "custom";
+}
 
-export default function AnyProviderCard({ groups, initialPresetId, hidePresetPicker }: Props) {
+export default function AnyProviderCard({ groups }: { groups?: PresetGroup[] }) {
   const { t } = useTranslation();
-  const { supportsExternalKey, supportsHotSwap } = useDaemonVersion();
+  const { supportsHotSwap, supportsExternalKey } = useDaemonVersion();
   const anthropic = useApiKeyStatus();
   const queryClient = useQueryClient();
-  const keyHintId = useId();
 
-  const presets = useMemo(
-    () =>
-      PROVIDER_PRESETS.filter(
-        (p) => !groups || groups.includes(p.group) || p.group === "custom"
-      ),
-    [groups]
-  );
+  // `groups` is commonly passed as an inline array literal, a fresh
+  // reference every render — key the memo on the joined string, not on
+  // `groups` identity, or it recomputes (and churns everything downstream)
+  // every render regardless of whether the scope actually changed.
+  const groupsKey = groups?.join(",");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const presets = useMemo(() => visiblePresets(supportsExternalKey, groups), [supportsExternalKey, groupsKey]);
 
-  const isLocalOnly = groups?.length === 1 && groups[0] === "local";
-
-  const [presetId, setPresetId] = useState(initialPresetId ?? presets[0].id);
+  const [presetId, setPresetId] = useState(() => pickDefaultPresetId(presets));
   const preset = presets.find((p) => p.id === presetId) ?? presets[presets.length - 1];
   const [endpoint, setEndpoint] = useState(preset.endpoint);
   const [model, setModel] = useState("");
@@ -98,33 +106,39 @@ export default function AnyProviderCard({ groups, initialPresetId, hidePresetPic
   useEffect(() => {
     if (!current) return;
     const [savedEndpoint, savedModel] = current;
-    if (savedEndpoint) {
+    // Only adopt the saved endpoint when its preset is actually in THIS
+    // card's scope — a cloud-scoped card must not jump to "custom" (or
+    // show a foreign endpoint string) just because the user previously
+    // saved an Ollama endpoint from a different, local-scoped card.
+    if (savedEndpoint && presets.some((p) => p.id === presetForEndpoint(savedEndpoint).id)) {
       setEndpoint(savedEndpoint);
       setPresetId(presetForEndpoint(savedEndpoint).id);
+      if (savedModel) setModel(savedModel);
     }
-    if (savedModel) setModel(savedModel);
     // Run once when the saved config arrives; later edits are user-driven.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current]);
 
-  // Keyed cloud presets stay dark below daemon 0.13 (spec §8).
-  const lockedByVersion = preset.keyRequired && !supportsExternalKey;
-
-  const trimmedEndpoint = endpoint.trim().replace(/\/+$/, "");
+  const trimmedEndpoint = normalizeEndpoint(endpoint);
   const endpointValid = /^https?:\/\//.test(trimmedEndpoint);
 
-  // §9.2: probe BOTH local servers on the Local-server pane mount.
+  // §9.2: probe BOTH local servers on pane mount — but only when this card's
+  // scope can actually show them. A cloud- or Anthropic-only card has no
+  // Ollama/LM Studio chip to attach a probe result to, so skip the network
+  // calls entirely rather than firing them for a dot no one will ever see.
+  const ollamaInScope = presets.some((p) => p.id === "ollama");
+  const lmStudioInScope = presets.some((p) => p.id === "lmstudio");
   const ollamaProbe = useQuery({
     queryKey: ["local-probe", OLLAMA_ENDPOINT],
     queryFn: () => listExternalModels(OLLAMA_ENDPOINT, null),
-    enabled: !!isLocalOnly,
+    enabled: ollamaInScope,
     retry: false,
     staleTime: 30_000,
   });
   const lmStudioProbe = useQuery({
     queryKey: ["local-probe", LMSTUDIO_ENDPOINT],
     queryFn: () => listExternalModels(LMSTUDIO_ENDPOINT, null),
-    enabled: !!isLocalOnly,
+    enabled: lmStudioInScope,
     retry: false,
     staleTime: 30_000,
   });
@@ -134,84 +148,121 @@ export default function AnyProviderCard({ groups, initialPresetId, hidePresetPic
   // (trimmed) endpoint still matches that preset's endpoint — once the user
   // hand-edits Endpoint away from e.g. Ollama's default, the probed models
   // belong to a different server than the one now in the field, so the
-  // association must drop (Task 5 review finding: never show a dropdown of
-  // the wrong server's models, and never leave the edited endpoint with no
-  // discovery at all).
+  // association must drop (chip-never-lies: never show a stale chip or a
+  // dropdown of the wrong server's models).
   const probedEndpointFor = (id: string) =>
     id === "ollama" ? OLLAMA_ENDPOINT : id === "lmstudio" ? LMSTUDIO_ENDPOINT : null;
   const selectedProbe =
     probedEndpointFor(presetId) === trimmedEndpoint ? probeFor(presetId) : null;
 
-  // Model auto-discovery; silent fallback to free text on failure (spec §1).
-  // Ollama/LM Studio already have a dedicated probe above — reusing this
-  // query for them would duplicate the fetch, so it stays off for those two.
-  // A hand-typed or "Custom…" local endpoint has no dedicated probe, so this
-  // query is the only discovery source for it — kept enabled even while
-  // `isLocalOnly` is true whenever the selected preset isn't one of the two
-  // probed ones (§9.2: no discovery hole for unprobed local endpoints).
+  // Model auto-discovery; silent fallback to free text on failure. Ollama/LM
+  // Studio already have a dedicated probe above — reusing this query for them
+  // would duplicate the fetch, so it stays off whenever their probe is the
+  // active one. A hand-typed or "Custom…" endpoint has no dedicated probe, so
+  // this query is the only discovery source for it.
+  // Endpoint and key are debounced 400ms so a fetch fires once a typing
+  // burst settles, not once per keystroke. `enabled` also requires the
+  // debounced values to have caught up to the live ones (not just
+  // endpointValid/selectedProbe, which react instantly) — otherwise a live
+  // condition flipping true mid-burst would fire a fetch against the
+  // still-stale debounced key.
+  const debouncedEndpoint = useDebouncedValue(trimmedEndpoint, 400);
+  const debouncedApiKey = useDebouncedValue(apiKey, 400);
+  const discoverySettled = debouncedEndpoint === trimmedEndpoint && debouncedApiKey === apiKey;
   const discovery = useQuery({
-    queryKey: ["external-models", trimmedEndpoint, apiKey],
-    queryFn: () => listExternalModels(trimmedEndpoint, apiKey || null),
-    enabled: endpointValid && !lockedByVersion && (!isLocalOnly || !selectedProbe),
+    queryKey: ["external-models", debouncedEndpoint, debouncedApiKey],
+    queryFn: () => listExternalModels(debouncedEndpoint, debouncedApiKey || null),
+    enabled: endpointValid && !selectedProbe && discoverySettled,
     retry: false,
     staleTime: 30_000,
   });
   const models = discovery.data ?? [];
-
-  // §9.2 parity: the wizard local pane reads the fixed-endpoint probes; the
-  // settings card (all groups) reuses the generic discovery query when a
-  // local preset is selected. `localQuery` drives the chip and the <select>.
-  //
-  // Task 5b review finding: locality must be decided by the *live* endpoint
-  // (`trimmedEndpoint`, the same value `discovery` actually probes), never
-  // by the merely-selected preset id — otherwise picking "Ollama (local)"
-  // and then hand-editing Endpoint to a cloud host renders a chip claiming
-  // "Connected to Ollama" sourced from that cloud provider's models. This
-  // mirrors the wizard's `selectedProbe` invariant above (probe association
-  // drops the moment the endpoint no longer matches).
-  const endpointPreset = presetForEndpoint(trimmedEndpoint);
-  const isLocalEndpoint = endpointPreset.group === "local";
-  const localQuery = isLocalOnly ? selectedProbe : isLocalEndpoint ? discovery : null;
+  const localQuery = selectedProbe;
   const localQueryModels = localQuery?.data ?? [];
-  // The chip's vendor name must come from whichever preset the live endpoint
-  // resolves to (settings card) — the wizard pane keeps the selected preset
-  // and the endpoint in sync via its pills, so it can use `preset` directly.
-  const chipPreset = isLocalOnly ? preset : endpointPreset;
+  // A keyed cloud vendor's discovery results feed the same polished <Select>
+  // that local presets get, once a key actually works — "paste key → model
+  // list appears → pick one." Custom keeps the old free-text + datalist
+  // experience: it never has a key step, so there's no equivalent moment
+  // where the dropdown should just fill itself in.
+  const showModelSelect = localQuery
+    ? localQueryModels.length >= 1
+    : preset.keyRequired && models.length >= 1;
+  const effectiveModels = localQuery ? localQueryModels : models;
+  // The daemon never exposes a stored key's VALUE to the frontend (security
+  // posture, not a gap) — only a presence flag, `keyConfigured`, scoped to
+  // the single external-llm slot rather than to any one vendor. So only a
+  // key TYPED into the field right now can actually drive model discovery;
+  // a stored key cannot. `keyConfigured === true` must never be read as "we
+  // have a key to discover with" — it may belong to a different vendor
+  // entirely (paste an OpenAI key, click the Groq chip, and `keyConfigured`
+  // still reads true).
+  const typedKey = apiKey.trim() !== "";
+  // Which vendor the daemon's currently-stored key/endpoint actually
+  // belongs to — `keyConfigured` alone can't say that, so cross-reference
+  // it against the saved endpoint's preset.
+  const savedPresetId = presetForEndpoint(current?.[0] ?? null).id;
+  // True only when the stored key belongs to THIS card's selected vendor
+  // and the user hasn't typed a fresh key over it.
+  const storedKeyForThisVendor = keyConfigured === true && preset.id === savedPresetId && !typedKey;
 
-  // Auto-select the single responder, once both probes have settled.
+  // Auto-select, once both in-scope probes and the key queries have settled.
+  // Precedence: 1. a saved endpoint already adopted by the prefill effect
+  // above wins outright. 2. else a configured, in-scope Anthropic key —
+  // never auto-select a paid non-native vendor over a key the user already
+  // set up. 3. else the single local responder (unchanged from before).
   const autoSelectedRef = useRef(false);
   useEffect(() => {
-    if (!isLocalOnly || autoSelectedRef.current) return;
-    if (ollamaProbe.isLoading || lmStudioProbe.isLoading) return;
+    if (autoSelectedRef.current) return;
+    if (ollamaInScope && ollamaProbe.isLoading) return;
+    if (lmStudioInScope && lmStudioProbe.isLoading) return;
     // Wait for the saved-config query to settle before latching a decision —
     // otherwise a fast probe can auto-select while `current` is still
     // undefined, and the prefill effect then re-applies the saved endpoint
     // right after, causing a visible double-set of the endpoint field.
     if (current === undefined) return;
+    // Wait for the Anthropic key query too — its status is undefined until
+    // it resolves, and precedence rule 2 below needs a real answer.
+    if (anthropic.maskedKey === undefined) return;
     autoSelectedRef.current = true; // decide exactly once
-    // Respect a previously-saved local endpoint over auto-selection.
-    if (current[0]) return;
-    const up = [
-      ["ollama", ollamaProbe.isSuccess] as const,
-      ["lmstudio", lmStudioProbe.isSuccess] as const,
-    ].filter(([, ok]) => ok);
+
+    // 1. A saved endpoint whose preset is in scope was already adopted by
+    // the prefill effect above.
+    if (current[0] && presets.some((p) => p.id === presetForEndpoint(current[0]).id)) return;
+
+    // 2. A configured Anthropic key, visible in this scope.
+    if (anthropic.isConfigured && presets.some((p) => p.id === "anthropic")) {
+      setPresetId("anthropic");
+      return;
+    }
+
+    // 3. The single in-scope local responder.
+    const up = (
+      [
+        ["ollama", ollamaInScope && ollamaProbe.isSuccess] as const,
+        ["lmstudio", lmStudioInScope && lmStudioProbe.isSuccess] as const,
+      ] as const
+    ).filter(([, ok]) => ok);
     if (up.length === 1) {
       const id = up[0][0];
       setPresetId(id);
       setEndpoint(id === "ollama" ? OLLAMA_ENDPOINT : LMSTUDIO_ENDPOINT);
     }
   }, [
-    isLocalOnly,
+    ollamaInScope,
     ollamaProbe.isLoading,
     ollamaProbe.isSuccess,
+    lmStudioInScope,
     lmStudioProbe.isLoading,
     lmStudioProbe.isSuccess,
     current,
+    anthropic.maskedKey,
+    anthropic.isConfigured,
+    presets,
   ]);
 
   const selectPreset = (id: string) => {
     setPresetId(id);
-    const next = PROVIDER_PRESETS.find((p) => p.id === id);
+    const next = presets.find((p) => p.id === id);
     if (next && next.endpoint) setEndpoint(next.endpoint);
     if (next && !next.endpoint) setEndpoint("");
     setModel("");
@@ -220,8 +271,7 @@ export default function AnyProviderCard({ groups, initialPresetId, hidePresetPic
     setSaveState("idle");
   };
 
-  const keyToSend = (): string | undefined =>
-    supportsExternalKey && apiKey !== "" ? apiKey : undefined;
+  const keyToSend = (): string | undefined => (apiKey !== "" ? apiKey : undefined);
 
   const handleTest = async () => {
     setTestState({ kind: "testing" });
@@ -229,7 +279,7 @@ export default function AnyProviderCard({ groups, initialPresetId, hidePresetPic
       const resp = await testExternalLlm(trimmedEndpoint, model, keyToSend() ?? null);
       setTestState({ kind: "ok", response: resp.response });
     } catch (err) {
-      // Verbatim daemon error (spec: Error handling).
+      // Verbatim daemon error.
       setTestState({ kind: "error", message: err instanceof Error ? err.message : String(err) });
     }
   };
@@ -239,8 +289,8 @@ export default function AnyProviderCard({ groups, initialPresetId, hidePresetPic
     try {
       await setExternalLlm(trimmedEndpoint, model, keyToSend());
       setSaveState(supportsHotSwap ? "applied" : "restart");
-      // The daemon may hot-load this config immediately (spec §7.6), so the
-      // strip's status queries must refresh alongside our own prefill query —
+      // The daemon may hot-load this config immediately, so the strip's
+      // status queries must refresh alongside our own prefill query —
       // otherwise ActiveIntelligenceStrip keeps showing stale state.
       queryClient.invalidateQueries({ queryKey: ["setup-status"] });
       queryClient.invalidateQueries({ queryKey: ["external-llm"] });
@@ -250,43 +300,116 @@ export default function AnyProviderCard({ groups, initialPresetId, hidePresetPic
     }
   };
 
-  const canAct = endpointValid && model.trim() !== "" && !lockedByVersion;
+  const canAct = endpointValid && model.trim() !== "";
+
+  // A vendor with a fixed, well-known endpoint (the 7 keyed cloud presets)
+  // has nothing for the user to decide here — the endpoint is a constant
+  // from the preset table, not a user choice. custom has no fixed endpoint
+  // (that's the whole point of it), and ollama/lmstudio are genuinely
+  // re-hostable, so both keep the field.
+  const knownCloudEndpoint = preset.keyRequired && !preset.native && preset.group === "cloud";
+
+  // Dropdown-only Model field for the keyed cloud vendors (user report: "I
+  // thought even the model don't need to type, only need to select from
+  // dropdown"). Every keyRequired preset that reaches this branch IS a cloud
+  // vendor (knownCloudEndpoint) — local/custom never set keyRequired, so
+  // this never touches their free-text-plus-datalist experience.
+  // "loading" covers both an in-flight discovery fetch AND the debounce
+  // window right after a keystroke, before discoverySettled catches up —
+  // otherwise a stale settled state could flash the free-text fallback for
+  // a moment between "key just typed" and "fetch actually started". Gated
+  // on `typedKey`, not a stored key — a stored key never drives discovery
+  // (see the comment above), so it must never land here either.
+  const cloudModelsPending =
+    knownCloudEndpoint && typedKey && !showModelSelect && (!discoverySettled || discovery.isFetching);
+  // Priority: a stored key for the vendor actually selected wins first —
+  // the one case where a real model can be shown with no live discovery at
+  // all. Then "no usable key yet" (covers both no-key and wrong-vendor-key,
+  // and a stored key with no saved model to show). Then the ordinary
+  // discovery states. `storedKeyForThisVendor` already implies `!typedKey`,
+  // so it can never race with "loading"/"select" below — typing a fresh key
+  // flips it false and falls through to them on the next render.
+  const modelFieldMode: "needsKey" | "storedKey" | "loading" | "select" | "input" =
+    knownCloudEndpoint && storedKeyForThisVendor && model.trim() !== ""
+      ? "storedKey"
+      : knownCloudEndpoint && !typedKey
+        ? "needsKey"
+        : cloudModelsPending
+          ? "loading"
+          : showModelSelect
+            ? "select"
+            : "input";
+
+  // Scope drives both copy and the Anthropic-fields no-key-guidance prop:
+  // cloud-only is the wizard's Cloud model tile, which already shows its own
+  // note text below the card, so AnthropicFields' guidance block would be
+  // redundant there. The all-scope card (Settings, `groups` undefined) is
+  // Anthropic's only entry point outside the wizard, so it keeps guidance on.
+  const isCloudOnly = groups?.length === 1 && groups[0] === "cloud";
+  const isLocalOnly = groups !== undefined && groups.every((g) => g !== "cloud");
+  const titleKey = isCloudOnly
+    ? "externalProvider.cloudTitle"
+    : isLocalOnly
+      ? "externalProvider.title"
+      : "externalProvider.titleWithCloud";
+  const descriptionKey = isCloudOnly
+    ? "externalProvider.cloudDescription"
+    : isLocalOnly
+      ? "externalProvider.description"
+      : "externalProvider.descriptionWithCloud";
+
+  const chipState: ProbeState | null = !localQuery
+    ? null
+    : localQuery.isLoading
+      ? { kind: "probing" }
+      : localQuery.isSuccess
+        ? { kind: "up" }
+        : { kind: "down" };
+  const chipLabel = !localQuery
+    ? ""
+    : localQuery.isLoading
+      ? t("externalProvider.localProbing", { name: localLabel(preset.name) })
+      : localQuery.isSuccess
+        ? localQueryModels.length === 0
+          ? t("externalProvider.localNoModelsChip", { name: localLabel(preset.name) })
+          : t("externalProvider.localConnectedChip", {
+              name: localLabel(preset.name),
+              count: localQueryModels.length,
+            })
+        : t("externalProvider.localNotDetectedChip", {
+            name: localLabel(preset.name),
+            host: hostOf(preset.endpoint),
+          });
 
   return (
-    <div
-      className="rounded-xl p-4 flex flex-col"
-      style={{ border: "1px solid var(--mem-border)", backgroundColor: "var(--mem-surface)", gap: "12px" }}
-    >
-      <div>
-        <h3 style={{ fontFamily: "var(--mem-font-heading)", fontSize: "15px", fontWeight: 500, color: "var(--mem-text)" }}>
-          {t("externalProvider.title")}
-        </h3>
-        <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-secondary)", lineHeight: 1.5, marginTop: "4px" }}>
-          {t("externalProvider.description")}
-        </p>
-      </div>
+    <Card padding="card">
+      <div className="flex flex-col" style={{ gap: "12px" }}>
+        <div>
+          <h3
+            style={{
+              fontFamily: "var(--mem-font-body)",
+              fontSize: "var(--mem-text-lg)",
+              fontWeight: 600,
+              color: "var(--mem-text)",
+            }}
+          >
+            {t(titleKey)}
+          </h3>
+          <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-secondary)", lineHeight: 1.5, marginTop: "4px" }}>
+            {t(descriptionKey)}
+          </p>
+        </div>
 
-      {anthropic.isConfigured && (
-        <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-accent-amber)", lineHeight: 1.5 }}>
-          {t("externalProvider.anthropicPrecedence")}
-        </p>
-      )}
+        {anthropic.isConfigured && !preset.native && (
+          <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-accent-amber)", lineHeight: 1.5 }}>
+            {t("externalProvider.anthropicPrecedence")}
+          </p>
+        )}
 
-      {isLocalOnly ? (
-        <div
-          className="flex flex-wrap gap-2"
-          role="group"
-          aria-label={t("externalProvider.presetLabel")}
-        >
+        <div className="flex flex-wrap gap-2" role="group" aria-label={t("externalProvider.presetLabel")}>
           {presets.map((p) => {
             const probe = probeFor(p.id);
-            const status = !probe
-              ? null
-              : probe.isLoading
-              ? "probing"
-              : probe.isSuccess
-              ? "connected"
-              : "notDetected";
+            const status = !probe ? null : probe.isLoading ? "probing" : probe.isSuccess ? "connected" : "notDetected";
             const dot = status === "connected" ? "●" : status === "notDetected" ? "○" : "…";
             const selected = p.id === presetId;
             return (
@@ -299,7 +422,7 @@ export default function AnyProviderCard({ groups, initialPresetId, hidePresetPic
                 style={{
                   border: `1px solid ${selected ? "var(--mem-accent-indigo)" : "var(--mem-border)"}`,
                   backgroundColor: selected ? "var(--mem-accent-indigo)" : "var(--mem-surface)",
-                  color: selected ? "white" : "var(--mem-text)",
+                  color: selected ? "var(--mem-text-on-accent)" : "var(--mem-text)",
                   fontFamily: "var(--mem-font-body)",
                 }}
               >
@@ -308,10 +431,7 @@ export default function AnyProviderCard({ groups, initialPresetId, hidePresetPic
                     aria-hidden="true"
                     style={{
                       marginRight: "6px",
-                      color:
-                        status === "connected" && !selected
-                          ? "var(--mem-accent-sage)"
-                          : "inherit",
+                      color: status === "connected" && !selected ? "var(--mem-accent-sage)" : "inherit",
                     }}
                   >
                     {dot}
@@ -322,193 +442,172 @@ export default function AnyProviderCard({ groups, initialPresetId, hidePresetPic
             );
           })}
         </div>
-      ) : !hidePresetPicker ? (
-        <label className="flex flex-col gap-1">
-          <span style={labelStyle}>{t("externalProvider.presetLabel")}</span>
-          <select value={presetId} onChange={(e) => selectPreset(e.target.value)} style={fieldStyle}>
-            {presets.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
-        </label>
-      ) : null}
 
-      {localQuery && (isLocalOnly || endpointValid) && (
-        <p
-          role="status"
-          style={{
-            fontFamily: "var(--mem-font-body)",
-            fontSize: "12px",
-            lineHeight: 1.5,
-            color: localQuery.isSuccess
-              ? "var(--mem-accent-sage)"
-              : "var(--mem-text-secondary)",
-          }}
-        >
-          {localQuery.isLoading
-            ? t("externalProvider.localProbing", { name: localLabel(chipPreset.name) })
-            : localQuery.isSuccess
-            ? t("externalProvider.localConnectedChip", {
-                name: localLabel(chipPreset.name),
-                modelCount: localQueryModels.length,
-              })
-            : t("externalProvider.localNotDetectedChip", {
-                name: localLabel(chipPreset.name),
-                host: hostOf(isLocalOnly ? chipPreset.endpoint : trimmedEndpoint),
-              })}
-        </p>
-      )}
+        {preset.native ? (
+          <AnthropicFields showNoKeyGuidance={!isCloudOnly} />
+        ) : (
+          <>
+            {chipState && <StatusChip state={chipState} label={chipLabel} />}
 
-      {lockedByVersion ? (
-        <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-secondary)", lineHeight: 1.5 }}>
-          {t("externalProvider.keyNeedsUpgrade")}
-        </p>
-      ) : (
-        <>
-          <label className="flex flex-col gap-1">
-            <span style={labelStyle}>{t("externalProvider.endpointLabel")}</span>
-            <input type="text" value={endpoint} onChange={(e) => setEndpoint(e.target.value)} style={fieldStyle} />
-          </label>
-
-          <label className="flex flex-col gap-1">
-            <span style={labelStyle}>{t("externalProvider.modelLabel")}</span>
-            {localQuery && localQueryModels.length >= 1 ? (
-              <select value={model} onChange={(e) => setModel(e.target.value)} style={fieldStyle}>
-                <option value="">{t("externalProvider.modelSelectPlaceholder")}</option>
-                {/* A saved model that's no longer among the discovered ids
-                    (e.g. removed from Ollama since it was saved) must still
-                    render as the visibly-selected value — never a blank
-                    select while Save/Test remain enabled on a value the user
-                    can't see. */}
-                {model !== "" && !localQueryModels.includes(model) && (
-                  <option value={model}>{model}</option>
-                )}
-                {localQueryModels.map((m) => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-              </select>
-            ) : (
-              <>
-                <input
-                  type="text"
-                  value={model}
-                  onChange={(e) => setModel(e.target.value)}
-                  placeholder={t("externalProvider.modelPlaceholder")}
-                  list="any-provider-models"
-                  style={fieldStyle}
-                />
-                <datalist id="any-provider-models">
-                  {models.map((m) => (
-                    <option key={m} value={m} />
-                  ))}
-                </datalist>
-              </>
+            {!knownCloudEndpoint && (
+              <Field label={t("externalProvider.endpointLabel")} htmlFor="any-provider-endpoint">
+                <Input mono value={endpoint} onChange={(e) => setEndpoint(e.target.value)} />
+              </Field>
             )}
-          </label>
-          {(discovery.isError || localQuery?.isError) && (
-            <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)" }}>
-              {t("externalProvider.modelDiscoveryFailed")}
-            </span>
-          )}
 
-          {supportsExternalKey && (
-            <div className="flex flex-col gap-1">
-              <label className="flex flex-col gap-1">
-                <span style={labelStyle}>{t("externalProvider.apiKeyLabel")}</span>
-                <input
+            {/* Key precedes Model for the keyed cloud vendors: the key is
+                the precondition for model discovery, so the form reads in
+                the order the user actually fills it — paste key → models
+                load → pick one. (preset.keyRequired is true only for cloud
+                vendors here — see knownCloudEndpoint above — so this never
+                reorders the local/custom presets, which have no key field.) */}
+            {preset.keyRequired && (
+              <Field
+                label={t("externalProvider.apiKeyLabel")}
+                htmlFor="any-provider-key"
+                description={keyPrefixMismatch(preset, apiKey)
+                  ? t("externalProvider.keyHint", { vendor: preset.name, prefix: (preset.keyPrefixes ?? []).join(" or ") })
+                  : undefined}
+              >
+                <Input
                   type="password"
+                  mono
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
-                  placeholder={
-                    keyConfigured
-                      ? t("externalProvider.apiKeyConfiguredPlaceholder")
-                      : (preset.keyPlaceholder ?? "")
-                  }
-                  style={fieldStyle}
-                  aria-describedby={keyPrefixMismatch(preset, apiKey) ? keyHintId : undefined}
+                  placeholder={keyConfigured ? t("externalProvider.apiKeyConfiguredPlaceholder") : preset.keyPlaceholder ?? ""}
                 />
-              </label>
-              {keyPrefixMismatch(preset, apiKey) && (
-                <span
-                  id={keyHintId}
-                  style={{
-                    fontFamily: "var(--mem-font-body)",
-                    fontSize: "11px",
-                    color: "var(--mem-accent-amber)",
-                  }}
-                >
-                  {t("externalProvider.keyHint", {
-                    vendor: preset.name,
-                    prefix: (preset.keyPrefixes ?? []).join(" or "),
-                  })}
-                </span>
+              </Field>
+            )}
+            {preset.keyRequired && preset.getKeyUrl && (
+              <Button variant="ghost" size="sm" onClick={() => shellOpen(preset.getKeyUrl!)} className="self-start">
+                {t("externalProvider.getKeyLink")}
+              </Button>
+            )}
+
+            <Field
+              label={t("externalProvider.modelLabel")}
+              htmlFor="any-provider-model"
+              description={
+                modelFieldMode === "storedKey" ? t("externalProvider.modelSelectStoredKeyHint") : undefined
+              }
+            >
+              {modelFieldMode === "select" ? (
+                <Select mono value={model} onChange={(e) => setModel(e.target.value)}>
+                  <option value="">{t("externalProvider.modelSelectPlaceholder")}</option>
+                  {/* A saved model that's no longer among the discovered ids
+                      (e.g. removed from Ollama since it was saved) must still
+                      render as the visibly-selected value — never a blank select
+                      while Save/Test remain enabled on a value the user can't see. */}
+                  {model !== "" && !effectiveModels.includes(model) && <option value={model}>{model}</option>}
+                  {effectiveModels.map((m) => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </Select>
+              ) : modelFieldMode === "needsKey" ? (
+                // Cloud vendor, no key yet: dropdown-only (user report) — no
+                // free-text input to type a model id into before there's a
+                // key to discover one with.
+                <Select mono disabled value="">
+                  <option value="">{t("externalProvider.modelSelectNeedsKey")}</option>
+                </Select>
+              ) : modelFieldMode === "storedKey" ? (
+                // Honestly disabled: the daemon never hands the stored key's
+                // value back to the frontend, so re-listing models here is
+                // genuinely impossible without the user retyping it — this
+                // shows the last-saved model rather than pretending to offer
+                // a dropdown it can't populate. The Field description above
+                // (modelSelectStoredKeyHint) tells the user how to get an
+                // editable one back.
+                <Select mono disabled value={model}>
+                  <option value={model}>{model}</option>
+                </Select>
+              ) : modelFieldMode === "loading" ? (
+                <Select mono disabled value="">
+                  <option value="">{t("externalProvider.modelSelectLoading")}</option>
+                </Select>
+              ) : (
+                // Escape hatch: a keyed cloud vendor whose /models call
+                // errored (or returned nothing) falls back to free text —
+                // see the preset-table comment on why a dropdown-only UI
+                // with no fallback would permanently brick a vendor whose
+                // /models response shape drifts. Local/custom presets always
+                // land here too; they never get dropdown-only treatment.
+                <Input
+                  mono
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  placeholder={preset.modelPlaceholder ?? t("externalProvider.modelPlaceholder")}
+                  list="any-provider-models"
+                />
               )}
-              {preset.getKeyUrl && (
-                <button
-                  type="button"
-                  onClick={() => shellOpen(preset.getKeyUrl!)}
-                  className="self-start text-xs"
-                  style={{
-                    fontFamily: "var(--mem-font-body)",
-                    color: "var(--mem-accent-indigo)",
-                    background: "none",
-                    border: "none",
-                    padding: 0,
-                    cursor: "pointer",
-                  }}
-                >
-                  {t("externalProvider.getKeyLink")}
-                </button>
-              )}
+            </Field>
+            {modelFieldMode === "input" && (
+              <datalist id="any-provider-models">
+                {models.map((m) => (
+                  <option key={m} value={m} />
+                ))}
+              </datalist>
+            )}
+            {/* Discovery with no typed key is a guaranteed 401 for a cloud
+                vendor — expected, not worth surfacing. Local probes
+                (localQuery) keep their own error path unconditionally: they
+                have no key requirement at all, so there's no "expected
+                failure" case to suppress. */}
+            {(((!knownCloudEndpoint || typedKey) && discovery.isError) || localQuery?.isError) && (
+              <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)" }}>
+                {t("externalProvider.modelDiscoveryFailed")}
+              </span>
+            )}
+
+            <div className="flex items-center gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleTest}
+                disabled={!canAct}
+                loading={testState.kind === "testing"}
+              >
+                {t("externalProvider.test")}
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleSave}
+                disabled={!canAct}
+                loading={saveState === "saving"}
+              >
+                {t("externalProvider.save")}
+              </Button>
             </div>
-          )}
-        </>
-      )}
 
-      <div className="flex items-center gap-2">
-        <button
-          onClick={handleTest}
-          disabled={!canAct || testState.kind === "testing"}
-          className="rounded-md px-3 py-1.5 text-xs disabled:opacity-50"
-          style={{ border: "1px solid var(--mem-border)", color: "var(--mem-text)", fontFamily: "var(--mem-font-body)" }}
-        >
-          {testState.kind === "testing" ? t("externalProvider.testing") : t("externalProvider.test")}
-        </button>
-        <button
-          onClick={handleSave}
-          disabled={!canAct || saveState === "saving"}
-          className="rounded-md px-3 py-1.5 text-xs font-medium disabled:opacity-50"
-          style={{ backgroundColor: "var(--mem-accent-indigo)", color: "white", fontFamily: "var(--mem-font-body)" }}
-        >
-          {saveState === "saving" ? t("externalProvider.saving") : t("externalProvider.save")}
-        </button>
+            {testState.kind === "ok" && (
+              <p style={{ fontFamily: "var(--mem-font-mono)", fontSize: "11px", color: "var(--mem-text-secondary)" }}>
+                {t("externalProvider.testOk", { response: testState.response })}
+              </p>
+            )}
+            {testState.kind === "error" && (
+              <p style={{ fontFamily: "var(--mem-font-mono)", fontSize: "11px", color: "var(--mem-status-danger-text)" }}>
+                {testState.message}
+              </p>
+            )}
+            {saveState === "applied" && (
+              <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-accent-sage)" }}>
+                {t("externalProvider.savedApplied")}
+              </p>
+            )}
+            {saveState === "restart" && (
+              <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-secondary)" }}>
+                {t("externalProvider.savedRestart")}
+              </p>
+            )}
+            {saveState.startsWith("error:") && (
+              <p style={{ fontFamily: "var(--mem-font-mono)", fontSize: "11px", color: "var(--mem-status-danger-text)" }}>
+                {saveState.slice("error:".length)}
+              </p>
+            )}
+          </>
+        )}
       </div>
-
-      {testState.kind === "ok" && (
-        <p style={{ fontFamily: "var(--mem-font-mono)", fontSize: "11px", color: "var(--mem-text-secondary)" }}>
-          {t("externalProvider.testOk", { response: testState.response })}
-        </p>
-      )}
-      {testState.kind === "error" && (
-        <p className="text-red-500" style={{ fontFamily: "var(--mem-font-mono)", fontSize: "11px" }}>
-          {testState.message}
-        </p>
-      )}
-      {saveState === "applied" && (
-        <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-accent-sage)" }}>
-          {t("externalProvider.savedApplied")}
-        </p>
-      )}
-      {saveState === "restart" && (
-        <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-secondary)" }}>
-          {t("externalProvider.savedRestart")}
-        </p>
-      )}
-      {saveState.startsWith("error:") && (
-        <p className="text-red-500" style={{ fontFamily: "var(--mem-font-mono)", fontSize: "11px" }}>
-          {saveState.slice("error:".length)}
-        </p>
-      )}
-    </div>
+    </Card>
   );
 }

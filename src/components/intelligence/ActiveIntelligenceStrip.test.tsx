@@ -87,4 +87,48 @@ describe("ActiveIntelligenceStrip", () => {
     renderStrip();
     expect(await screen.findByText(/Basic memory/)).toBeInTheDocument();
   });
+
+  it("chip-never-lies: restart-pending claims neither serving nor failed", async () => {
+    mocks.getDaemonVersion.mockResolvedValue("0.13.0");
+    mocks.getSetupStatus.mockResolvedValue({
+      ...BASE_STATUS,
+      external_llm: { configured: true, loaded: false },
+    });
+    mocks.getExternalLlm.mockResolvedValue(["https://api.openai.com/v1", "gpt-4o-mini"]);
+    renderStrip();
+
+    const chipLabel = await screen.findByText(/restart pending/);
+    const chip = chipLabel.closest('[aria-live="polite"]');
+    expect(chip).not.toBeNull();
+    // Green would claim it is serving; red would claim a probe found it dead.
+    // Neither happened: the config simply post-dates the running daemon.
+    expect(chip?.className).not.toContain("mem-status-success-text");
+    expect(chip?.className).not.toContain("mem-status-danger-text");
+  });
+
+  it("chip-never-lies: an unverifiable external provider is 'not checked', not 'failed'", async () => {
+    // Daemon 0.12 cannot report runtime state, so we have not probed anything.
+    // An unobservable runtime is not a failed one.
+    mocks.getDaemonVersion.mockResolvedValue("0.12.0");
+    mocks.getSetupStatus.mockResolvedValue({ ...BASE_STATUS });
+    mocks.getExternalLlm.mockResolvedValue(["http://localhost:11434/v1", "qwen3"]);
+    renderStrip();
+
+    const chipLabel = await screen.findByText(/not verified|unverified/i);
+    const chip = chipLabel.closest('[aria-live="polite"]');
+    expect(chip).not.toBeNull();
+    expect(chip?.className).not.toContain("mem-status-danger-text");
+    expect(chip?.className).not.toContain("mem-status-success-text");
+  });
+
+  it("chip-never-lies: a genuinely serving state renders the success/green chip tone", async () => {
+    mocks.getSetupStatus.mockResolvedValue({ ...BASE_STATUS, anthropic_key_configured: true });
+    renderStrip();
+
+    const chipLabel = await screen.findByText("Serving: Anthropic");
+    const chip = chipLabel.closest('[aria-live="polite"]');
+    expect(chip).not.toBeNull();
+    expect(chip?.className).toContain("mem-status-success-text");
+    expect(chip?.className).not.toContain("mem-status-danger-text");
+  });
 });

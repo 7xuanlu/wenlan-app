@@ -8,7 +8,10 @@
 // Resolution order:
 //   1. User registration (`agent_connections.display_name` via listAgents).
 //   2. Built-in `KNOWN_CLIENT_DISPLAY_NAMES` registry (mirrors origin-core's `KNOWN_CLIENTS`).
-//   3. The raw canonical ID, unchanged.
+//   3. The raw canonical ID, prettified into a readable title (word-split on
+//      `-`/`_`, title-case each word, acronym map for mcp/cli/api/ai/vscode).
+//      Every row still shows the raw ID as a mono subtitle underneath, so
+//      this never hides the real value — it's the same string, reformatted.
 //
 // **Keep in sync with `crates/origin-core/src/db.rs::KNOWN_CLIENTS`.**
 
@@ -29,6 +32,33 @@ export const KNOWN_CLIENT_DISPLAY_NAMES: Record<string, string> = {
   "windsurf": "Windsurf",
   "zed": "Zed",
 };
+
+/** Word-level overrides applied after title-casing an unknown slug's parts. */
+const SLUG_WORD_OVERRIDES: Record<string, string> = {
+  mcp: "MCP",
+  cli: "CLI",
+  api: "API",
+  ai: "AI",
+  vscode: "VS Code",
+};
+
+/**
+ * Turn an unrecognized canonical ID into a readable title. Fabricates
+ * nothing — splits on `-`/`_`, title-cases each word, and swaps known
+ * acronyms/product names in. `codex-mcp-client` → `Codex MCP Client`.
+ */
+function prettifySlug(slug: string): string {
+  return slug
+    .split(/[-_]+/)
+    .filter(Boolean)
+    .map((word) => {
+      const lower = word.toLowerCase();
+      const override = SLUG_WORD_OVERRIDES[lower];
+      if (override) return override;
+      return lower.charAt(0).toUpperCase() + lower.slice(1);
+    })
+    .join(" ");
+}
 
 /**
  * Resolve a canonical agent ID to a friendly display name.
@@ -58,8 +88,9 @@ export function resolveAgentDisplayName(
   const known = KNOWN_CLIENT_DISPLAY_NAMES[canonicalId];
   if (known) return known;
 
-  // 3. Fall through to the raw ID. Honest.
-  return canonicalId;
+  // 3. Prettify the raw slug. The raw ID stays visible via the row's mono
+  //    subtitle, so this fabricates nothing — same string, reformatted.
+  return prettifySlug(canonicalId);
 }
 
 // ── Trust level presentation ───────────────────────────────────────────
@@ -70,41 +101,20 @@ export function resolveAgentDisplayName(
 export type TrustLevel = "full" | "review" | "unknown";
 
 export interface TrustLevelDescriptor {
-  label: string;
-  /** One-line explanation shown as tooltip / badge caption. */
-  summary: string;
-  /** Longer explanation for the section explainer. */
-  detail: string;
+  level: TrustLevel;
   /** CSS accent var for the badge. */
   accent: string;
 }
 
-export const TRUST_LEVELS: Record<TrustLevel, TrustLevelDescriptor> = {
-  full: {
-    label: "Full",
-    summary:
-      "Sees everything: identity, preferences, lessons, gotchas, decisions, pages, and search results.",
-    detail:
-      "This is the default for agents you've explicitly registered — if you walked through setup for it, Wenlan treats it as trusted and gives it access to every tier of context.",
-    accent: "var(--mem-accent-indigo)",
-  },
-  review: {
-    label: "Review",
-    summary:
-      "Sees lessons, gotchas, decisions, corrections, pages, and search — but not identity or preferences.",
-    detail:
-      "Useful when you want an agent to help with work but not see your personal identity or preferences. Rarely needed for single-user setups.",
-    accent: "var(--mem-accent-amber)",
-  },
-  unknown: {
-    label: "Unknown",
-    summary: "Sees search results only. No identity or preferences.",
-    detail:
-      "Unregistered callers (direct curl, third-party MCP clients you didn't register) land here automatically. Safe fallback for untrusted sources.",
-    accent: "var(--mem-accent-warm)",
-  },
+// Label and summary copy live in i18n (`settings.agents.trust.*` /
+// `settings.agents.trustSummary.*`) — this module stays presentation-only.
+export const TRUST_LEVELS: Record<TrustLevel, { accent: string }> = {
+  full: { accent: "var(--mem-accent-indigo)" },
+  review: { accent: "var(--mem-accent-amber)" },
+  unknown: { accent: "var(--mem-accent-warm)" },
 };
 
 export function describeTrustLevel(level: string): TrustLevelDescriptor {
-  return TRUST_LEVELS[level as TrustLevel] ?? TRUST_LEVELS.unknown;
+  const known = (level in TRUST_LEVELS ? level : "unknown") as TrustLevel;
+  return { level: known, accent: TRUST_LEVELS[known].accent };
 }

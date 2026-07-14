@@ -83,7 +83,12 @@ exit 1
 }
 
 describe("refactor inventory", () => {
-  it("writes repo-relative artifact paths so worktree paths do not churn", () => {
+  // 30s, not the 5s default: this shells out to the whole inventory pipeline via
+  // spawnSync, which blocks the worker's event loop for the subprocess's entire
+  // life. It runs in ~0.7s alone, but under the full suite's parallel workers it
+  // crossed 5s about one run in six — a red CI that had nothing to do with the
+  // code under test.
+  it("writes repo-relative artifact paths so worktree paths do not churn", { timeout: 30_000 }, () => {
     const appRoot = resolve(makeTempRoot(), "wenlan-app");
     const binRoot = resolve(appRoot, "bin");
     writeFixtureRepo(appRoot);

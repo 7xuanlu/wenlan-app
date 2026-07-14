@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
@@ -11,6 +11,7 @@ import {
   setApiKey,
   setModelChoice,
 } from "../../lib/tauri";
+import { Card, Field, Input, Button, Select, StatusChip } from "../memory/settings/primitives";
 
 type AnthropicModelDescriptionKey =
   | "intelligence.modelDescriptions.fastAffordable"
@@ -39,7 +40,12 @@ export function useApiKeyStatus() {
   };
 }
 
-export function ApiKeyCard({
+/** The native Anthropic key form: StatusChip, masked-key/clear or key-input
+ *  branch, get-key link, error line, no-key guidance, and (once configured)
+ *  the routine/synthesis model pickers. No <Card> wrapper and no <h3> title
+ *  — every host (the Settings card, AnyProviderCard's Anthropic chip)
+ *  supplies its own title, so this is just the body. */
+export function AnthropicFields({
   showModelChoice = true,
   showNoKeyGuidance = true,
 }: {
@@ -89,124 +95,86 @@ export function ApiKeyCard({
   };
 
   return (
-    <div className="bg-[var(--mem-surface)] rounded-xl overflow-hidden border border-[var(--mem-border)]">
-      <div className="px-5 py-4">
-        <div className="flex items-center justify-between mb-1">
-          <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "13px", color: "var(--mem-text)" }}>
-            {t("intelligence.apiKeyTitle")}
-          </span>
+    <div className="flex flex-col" style={{ gap: "10px" }}>
+      <div className="flex items-center justify-end">
+        <StatusChip
+          state={isConfigured ? { kind: "up" } : { kind: "idle" }}
+          label={isConfigured ? t("intelligence.connected") : t("intelligence.notConfigured")}
+        />
+      </div>
+      <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)" }}>
+        {t("intelligence.apiKeyDescription")}
+      </p>
+
+      {isConfigured ? (
+        <div className="flex items-center gap-2">
           <span
-            className="px-1.5 py-0.5 rounded text-[10px] font-medium"
+            className="flex-1 px-3 py-1.5 rounded-md"
             style={{
               fontFamily: "var(--mem-font-mono)",
-              backgroundColor: isConfigured ? "rgba(34,197,94,0.1)" : "rgba(156,163,175,0.1)",
-              color: isConfigured ? "rgb(34,197,94)" : "var(--mem-text-tertiary)",
-            }}
-          >
-            {isConfigured ? t("intelligence.connected") : t("intelligence.notConfigured")}
-          </span>
-        </div>
-        <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)", marginBottom: "10px" }}>
-          {t("intelligence.apiKeyDescription")}
-        </p>
-
-        {isConfigured ? (
-          <div className="flex items-center gap-2">
-            <span
-              className="flex-1 px-3 py-1.5 rounded-md"
-              style={{
-                fontFamily: "var(--mem-font-mono)",
-                fontSize: "12px",
-                color: "var(--mem-text-secondary)",
-                backgroundColor: "var(--mem-hover)",
-              }}
-            >
-              {maskedKey}
-            </span>
-            <button
-              onClick={handleClear}
-              disabled={saving}
-              className="px-2.5 py-1.5 rounded-md text-xs transition-colors hover:bg-[var(--mem-hover-strong)]"
-              style={{ fontFamily: "var(--mem-font-body)", color: "var(--mem-text-tertiary)" }}
-            >
-              {t("intelligence.clear")}
-            </button>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2">
-            <input
-              type="password"
-              value={keyInput}
-              onChange={(e) => setKeyInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && keyInput) handleSave(); }}
-              placeholder="sk-ant-api03-..."
-              className="flex-1 px-3 py-1.5 rounded-md outline-none text-xs"
-              style={{
-                fontFamily: "var(--mem-font-mono)",
-                backgroundColor: "var(--mem-hover)",
-                border: "1px solid var(--mem-border)",
-                color: "var(--mem-text)",
-              }}
-            />
-            <button
-              onClick={handleSave}
-              disabled={saving || !keyInput}
-              className="px-3 py-1.5 rounded-md text-xs font-medium transition-colors"
-              style={{
-                backgroundColor: keyInput ? "var(--mem-accent-indigo)" : "var(--mem-hover)",
-                color: keyInput ? "white" : "var(--mem-text-tertiary)",
-              }}
-            >
-              {saving ? "..." : t("intelligence.save")}
-            </button>
-          </div>
-        )}
-
-        {!isConfigured && (
-          <button
-            type="button"
-            onClick={() => shellOpen("https://console.anthropic.com/settings/keys")}
-            className="mt-2 text-xs"
-            style={{
-              fontFamily: "var(--mem-font-body)",
-              color: "var(--mem-accent-indigo)",
-              background: "none",
-              border: "none",
-              padding: 0,
-              cursor: "pointer",
-            }}
-          >
-            {t("externalProvider.getKeyLink")}
-          </button>
-        )}
-
-        {error && (
-          <p className="mt-2" style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "rgb(239,68,68)" }}>
-            {error}
-          </p>
-        )}
-
-        {!isConfigured && showNoKeyGuidance && (
-          <div
-            className="mt-3 rounded-lg"
-            style={{
-              padding: "10px 14px",
-              backgroundColor: "var(--mem-hover)",
               fontSize: "12px",
               color: "var(--mem-text-secondary)",
-              lineHeight: 1.6,
+              backgroundColor: "var(--mem-hover)",
             }}
           >
-            <div style={{ fontWeight: 500, color: "var(--mem-text)", marginBottom: 2, fontSize: "12px" }}>
-              {t("intelligence.pageSynthesisRequiresCloud")}
-            </div>
-            <div>{t("intelligence.memorySafe")}</div>
-            <div style={{ marginTop: 6 }}>{t("intelligence.addApiKey")}</div>
+            {maskedKey}
+          </span>
+          <Button variant="ghost" size="sm" onClick={handleClear} disabled={saving}>
+            {t("intelligence.clear")}
+          </Button>
+        </div>
+      ) : (
+        <div className="flex items-end gap-2">
+          <div className="flex-1">
+            <Field label={t("externalProvider.apiKeyLabel")} htmlFor="anthropic-api-key">
+              <Input
+                type="password"
+                mono
+                value={keyInput}
+                onChange={(e) => setKeyInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && keyInput) handleSave(); }}
+                placeholder="sk-ant-api03-..."
+              />
+            </Field>
           </div>
-        )}
+          <Button variant="primary" size="sm" onClick={handleSave} disabled={saving || !keyInput} loading={saving}>
+            {t("intelligence.save")}
+          </Button>
+        </div>
+      )}
 
-        {isConfigured && showModelChoice && <ModelChoiceSection />}
-      </div>
+      {!isConfigured && (
+        <Button variant="ghost" size="sm" onClick={() => shellOpen("https://console.anthropic.com/settings/keys")} className="self-start">
+          {t("externalProvider.getKeyLink")}
+        </Button>
+      )}
+
+      {error && (
+        <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-status-danger-text)" }}>
+          {error}
+        </p>
+      )}
+
+      {!isConfigured && showNoKeyGuidance && (
+        <div
+          className="rounded-lg"
+          style={{
+            padding: "10px 14px",
+            backgroundColor: "var(--mem-hover)",
+            fontSize: "12px",
+            color: "var(--mem-text-secondary)",
+            lineHeight: 1.6,
+          }}
+        >
+          <div style={{ fontWeight: 500, color: "var(--mem-text)", marginBottom: 2, fontSize: "12px" }}>
+            {t("intelligence.pageSynthesisRequiresCloud")}
+          </div>
+          <div>{t("intelligence.memorySafe")}</div>
+          <div style={{ marginTop: 6 }}>{t("intelligence.addApiKey")}</div>
+        </div>
+      )}
+
+      {isConfigured && showModelChoice && <ModelChoiceSection />}
     </div>
   );
 }
@@ -220,60 +188,67 @@ export function ModelChoiceSection() {
   });
   const [routineModel, synthesisModel] = modelChoice ?? [null, null];
 
-  const selectStyle: React.CSSProperties = {
-    fontFamily: "var(--mem-font-mono)",
-    fontSize: "11px",
-    backgroundColor: "var(--mem-hover)",
-    border: "1px solid var(--mem-border)",
-    color: "var(--mem-text)",
-    borderRadius: "6px",
-    padding: "4px 8px",
-    outline: "none",
-  };
-
   return (
     <div className="mt-4 pt-3" style={{ borderTop: "1px solid var(--mem-border)" }}>
       <div className="flex items-center justify-between mb-3">
         <div>
-          <div style={{ fontSize: "13px", fontWeight: 500, color: "var(--mem-text)", fontFamily: "var(--mem-font-body)" }}>{t("intelligence.routineModel")}</div>
+          <div style={{ fontSize: "var(--mem-text-base)", fontWeight: 500, color: "var(--mem-text)", fontFamily: "var(--mem-font-body)" }}>{t("intelligence.routineModel")}</div>
           <div style={{ fontSize: "11px", color: "var(--mem-text-tertiary)", fontFamily: "var(--mem-font-body)" }}>{t("intelligence.routineModelDescription")}</div>
         </div>
-        <select
-          value={routineModel ?? "claude-haiku-4-5-20251001"}
-          onChange={async (e) => {
-            await setModelChoice(e.target.value, synthesisModel);
-            queryClient.invalidateQueries({ queryKey: ["modelChoice"] });
-          }}
-          style={selectStyle}
-        >
-          {ANTHROPIC_MODELS.map((m) => (
-            <option key={m.id} value={m.id}>{m.label} - {t(m.descKey)}</option>
-          ))}
-        </select>
+        <div className="shrink-0 w-fit">
+          <Select
+            size="sm"
+            mono
+            aria-label={t("intelligence.chooseRoutineModel")}
+            value={routineModel ?? "claude-haiku-4-5-20251001"}
+            onChange={async (e) => {
+              await setModelChoice(e.target.value, synthesisModel);
+              queryClient.invalidateQueries({ queryKey: ["modelChoice"] });
+            }}
+          >
+            {ANTHROPIC_MODELS.map((m) => (
+              <option key={m.id} value={m.id}>{m.label} - {t(m.descKey)}</option>
+            ))}
+          </Select>
+        </div>
       </div>
       <div className="flex items-center justify-between">
         <div>
-          <div style={{ fontSize: "13px", fontWeight: 500, color: "var(--mem-text)", fontFamily: "var(--mem-font-body)" }}>{t("intelligence.synthesisModel")}</div>
+          <div style={{ fontSize: "var(--mem-text-base)", fontWeight: 500, color: "var(--mem-text)", fontFamily: "var(--mem-font-body)" }}>{t("intelligence.synthesisModel")}</div>
           <div style={{ fontSize: "11px", color: "var(--mem-text-tertiary)", fontFamily: "var(--mem-font-body)" }}>{t("intelligence.synthesisModelDescription")}</div>
         </div>
-        <select
-          value={synthesisModel ?? "claude-sonnet-4-6"}
-          onChange={async (e) => {
-            await setModelChoice(routineModel, e.target.value);
-            queryClient.invalidateQueries({ queryKey: ["modelChoice"] });
-          }}
-          style={selectStyle}
-        >
-          {ANTHROPIC_MODELS.map((m) => (
-            <option key={m.id} value={m.id}>{m.label} - {t(m.descKey)}</option>
-          ))}
-        </select>
+        <div className="shrink-0 w-fit">
+          <Select
+            size="sm"
+            mono
+            aria-label={t("intelligence.chooseSynthesisModel")}
+            value={synthesisModel ?? "claude-sonnet-4-6"}
+            onChange={async (e) => {
+              await setModelChoice(routineModel, e.target.value);
+              queryClient.invalidateQueries({ queryKey: ["modelChoice"] });
+            }}
+          >
+            {ANTHROPIC_MODELS.map((m) => (
+              <option key={m.id} value={m.id}>{m.label} - {t(m.descKey)}</option>
+            ))}
+          </Select>
+        </div>
       </div>
     </div>
   );
 }
 
-export function OnDeviceModelCard() {
+export function OnDeviceModelCard({
+  deferDownload = false,
+  onModelChosen,
+}: {
+  /** Wizard step 2: record the choice, don't download here — step 5 does
+   *  the download and proves it landed (`loaded === modelId`), not just
+   *  that the request was sent. Settings (no props) keeps the immediate
+   *  download this card has always done. */
+  deferDownload?: boolean;
+  onModelChosen?: (modelId: string | null) => void;
+} = {}) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [pickedId, setPickedId] = useState<string | null>(null);
@@ -300,6 +275,18 @@ export function OnDeviceModelCard() {
   const canLoad = !!current && current.cached && !isLoaded;
   const ramOk = systemInfo ? systemInfo.total_ram_gb + 0.5 >= (current?.ram_required_gb ?? 0) : true;
 
+  // Report the current pick upward whenever it changes — mount (once the
+  // catalog loads) and every dropdown change. A ref keeps this from
+  // re-firing on every parent render just because it passed a fresh
+  // closure.
+  const onModelChosenRef = useRef(onModelChosen);
+  useEffect(() => {
+    onModelChosenRef.current = onModelChosen;
+  }, [onModelChosen]);
+  useEffect(() => {
+    if (deferDownload) onModelChosenRef.current?.(currentId);
+  }, [deferDownload, currentId]);
+
   const handleDownload = async () => {
     if (!current) return;
     setDownloading(true);
@@ -316,33 +303,21 @@ export function OnDeviceModelCard() {
   };
 
   const statusBadge = isLoaded ? t("intelligence.running") : t("intelligence.notLoaded");
-  const statusColor = isLoaded ? "rgb(34,197,94)" : "var(--mem-text-tertiary)";
-  const statusBg = isLoaded ? "rgba(34,197,94,0.1)" : "rgba(156,163,175,0.1)";
 
   return (
-    <section className="bg-[var(--mem-surface)] rounded-xl overflow-hidden border border-[var(--mem-border)]">
-      <div className="px-5 py-4">
-        <div className="flex items-center justify-between mb-1">
-          <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "13px", color: "var(--mem-text)" }}>
+    <Card padding="card">
+      <div className="flex flex-col" style={{ gap: "10px" }}>
+        <div className="flex items-center justify-between">
+          <h3 style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-lg)", fontWeight: 600, color: "var(--mem-text)" }}>
             {t("intelligence.onDeviceModel")}
-          </span>
-          <span
-            className="px-1.5 py-0.5 rounded text-[10px] font-medium"
-            style={{
-              fontFamily: "var(--mem-font-mono)",
-              backgroundColor: statusBg,
-              color: statusColor,
-            }}
-          >
-            {statusBadge}
-          </span>
+          </h3>
+          <StatusChip state={isLoaded ? { kind: "up" } : { kind: "idle" }} label={statusBadge} />
         </div>
         <p
           style={{
             fontFamily: "var(--mem-font-body)",
             fontSize: "11px",
             color: "var(--mem-text-tertiary)",
-            marginBottom: "10px",
           }}
         >
           {t("intelligence.localModelDescription")}
@@ -360,10 +335,11 @@ export function OnDeviceModelCard() {
           )}
         </p>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-start gap-2">
           {current && (
             <span
-              className="flex-1 min-w-0 truncate"
+              data-testid="on-device-model-spec"
+              className="flex-1 min-w-0"
               style={{
                 fontFamily: "var(--mem-font-mono)",
                 fontSize: "11px",
@@ -380,65 +356,71 @@ export function OnDeviceModelCard() {
             </span>
           )}
 
-          <select
-            value={currentId ?? ""}
-            onChange={(e) => setPickedId(e.target.value)}
-            className="rounded-md outline-none"
-            style={{
-              fontFamily: "var(--mem-font-mono)",
-              fontSize: "11px",
-              backgroundColor: "var(--mem-hover)",
-              border: "1px solid var(--mem-border)",
-              color: "var(--mem-text-secondary)",
-              padding: "4px 8px",
-              flexShrink: 0,
-            }}
-          >
-            {models.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.display_name}
-              </option>
-            ))}
-          </select>
+          {models.length > 0 ? (
+            <div className="shrink-0 w-fit">
+              <Select
+                size="sm"
+                mono
+                aria-label={t("intelligence.chooseOnDeviceModel")}
+                value={currentId ?? ""}
+                onChange={(e) => setPickedId(e.target.value)}
+              >
+                {models.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.display_name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          ) : (
+            <span
+              style={{
+                fontFamily: "var(--mem-font-body)",
+                fontSize: "11px",
+                color: "var(--mem-text-tertiary)",
+              }}
+            >
+              {t("intelligence.modelCatalogUnavailable")}
+            </span>
+          )}
 
-          {needsDownload && (
-            <button
+          {needsDownload && !deferDownload && (
+            <Button
+              variant="primary"
+              size="sm"
               onClick={handleDownload}
               disabled={downloading || !ramOk}
-              className="px-3 py-1.5 rounded-md text-xs font-medium transition-colors"
-              style={{
-                fontFamily: "var(--mem-font-body)",
-                backgroundColor: ramOk ? "var(--mem-accent-indigo)" : "var(--mem-hover)",
-                color: ramOk ? "white" : "var(--mem-text-tertiary)",
-                whiteSpace: "nowrap",
-                flexShrink: 0,
-              }}
+              loading={downloading}
+              className="whitespace-nowrap shrink-0"
               title={!ramOk ? t("intelligence.notEnoughRamTitle") : undefined}
             >
-              {downloading ? t("intelligence.downloading") : t("intelligence.downloadSize", { size: current?.file_size_gb.toFixed(1) })}
-            </button>
+              {t("intelligence.downloadSize", { size: current?.file_size_gb.toFixed(1) })}
+            </Button>
           )}
-          {canLoad && (
-            <button
+          {canLoad && !deferDownload && (
+            <Button
+              variant="primary"
+              size="sm"
               onClick={handleDownload}
               disabled={downloading}
-              className="px-3 py-1.5 rounded-md text-xs font-medium transition-colors"
-              style={{
-                fontFamily: "var(--mem-font-body)",
-                backgroundColor: "var(--mem-accent-indigo)",
-                color: "white",
-                whiteSpace: "nowrap",
-                flexShrink: 0,
-              }}
+              loading={downloading}
+              className="whitespace-nowrap shrink-0"
             >
-              {downloading ? t("intelligence.loading") : t("intelligence.load")}
-            </button>
+              {t("intelligence.load")}
+            </Button>
           )}
         </div>
 
-        {downloading && (
+        {deferDownload && !isLoaded && current && (
           <p
-            className="mt-2"
+            data-testid="on-device-model-deferred-note"
+            style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)" }}
+          >
+            {t("intelligence.willDownloadOnSetup")}
+          </p>
+        )}
+        {downloading && !deferDownload && (
+          <p
             style={{
               fontFamily: "var(--mem-font-body)",
               fontSize: "11px",
@@ -449,18 +431,12 @@ export function OnDeviceModelCard() {
           </p>
         )}
         {error && (
-          <p
-            className="mt-2"
-            style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "rgb(239,68,68)" }}
-          >
+          <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-status-danger-text)" }}>
             {error}
           </p>
         )}
         {!ramOk && current && !downloading && (
-          <p
-            className="mt-2"
-            style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "rgb(234,179,8)" }}
-          >
+          <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-status-warning-text)" }}>
             {t("intelligence.ramWarning", {
               model: current.display_name,
               required: current.ram_required_gb.toFixed(0),
@@ -469,6 +445,6 @@ export function OnDeviceModelCard() {
           </p>
         )}
       </div>
-    </section>
+    </Card>
   );
 }

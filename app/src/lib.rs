@@ -13,19 +13,18 @@ mod identity_paths;
 mod indexer;
 mod lifecycle;
 pub mod mcp_config;
+pub mod plugin_install;
 pub mod privacy;
 pub mod remote_access;
-mod router;
 mod search;
-mod sensor;
 pub mod sources;
 pub mod state;
 pub mod system_info;
 // Public surface consumed by tray_menu (Task 15); suppress dead_code until then.
 #[allow(dead_code)]
 pub(crate) mod tray_health;
-mod trigger;
 mod updater;
+pub mod wire_state;
 
 use state::AppState;
 use std::sync::Arc;
@@ -84,9 +83,10 @@ pub fn run() {
 
     let env_filter = || {
         tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-            tracing_subscriber::EnvFilter::new(
-                "warn,wenlan_lib::trigger=info,wenlan_lib::router=info,wenlan_lib::sensor=info",
-            )
+            // Was "warn" plus info-level targets for wenlan_lib::{trigger,router,sensor} —
+            // all three modules are gone, so those directives named nothing and the
+            // filter was already just "warn" in effect.
+            tracing_subscriber::EnvFilter::new("warn")
         })
     };
 
@@ -392,9 +392,6 @@ pub fn run() {
             let spotlight_shortcut = "CmdOrCtrl+Shift+K"
                 .parse::<tauri_plugin_global_shortcut::Shortcut>()
                 .unwrap();
-            let capture_shortcut = "CmdOrCtrl+Shift+M"
-                .parse::<tauri_plugin_global_shortcut::Shortcut>()
-                .unwrap();
             let quick_capture_shortcut = "CmdOrCtrl+Shift+N"
                 .parse::<tauri_plugin_global_shortcut::Shortcut>()
                 .unwrap();
@@ -405,49 +402,24 @@ pub fn run() {
                 app.state();
             let watcher_clone = watcher_state.inner().clone();
 
-            // ── Unified trigger channel ──
-            let (trigger_tx, trigger_rx) =
-                tokio::sync::mpsc::channel::<trigger::types::TriggerEvent>(32);
-            let (bundle_tx, bundle_rx) =
-                tokio::sync::mpsc::channel::<router::bundle::ContextBundle>(8);
-
-            // Smart router (tokio task)
-            let router_state = state_clone.clone();
-            tauri::async_runtime::spawn(router::intent::run_router(
-                trigger_rx,
-                bundle_tx,
-                router_state,
-            ));
-
-            // Context consumer (tokio task)
-            let consumer_state = state_clone.clone();
-            tauri::async_runtime::spawn(router::intent::run_context_consumer(
-                bundle_rx,
-                consumer_state,
-            ));
-
-            // Save trigger_tx and app_handle
-            let trigger_tx_for_state = trigger_tx.clone();
+            // Save app_handle
             {
                 let state_for_handle = state_clone.clone();
                 let app_handle = handle.clone();
                 tauri::async_runtime::block_on(async {
                     let mut s = state_for_handle.write().await;
                     s.app_handle = Some(app_handle);
-                    s.trigger_tx = Some(trigger_tx_for_state);
                 });
             }
 
             // Register all global shortcuts
             {
                 let handle_for_shortcuts = handle.clone();
-                let trigger_tx_shortcut = trigger_tx;
                 let toggle = toggle_shortcut;
                 let spotlight = spotlight_shortcut;
-                let capture = capture_shortcut;
                 let quick_capture = quick_capture_shortcut;
                 app.global_shortcut().on_shortcuts(
-                    [toggle, spotlight, capture, quick_capture],
+                    [toggle, spotlight, quick_capture],
                     move |_app, shortcut, event| {
                         use tauri::Emitter;
                         use tauri_plugin_global_shortcut::ShortcutState;
@@ -467,11 +439,6 @@ pub fn run() {
                                     let _ = window.set_focus();
                                     let _ = handle_for_shortcuts.emit("show-memory", ());
                                 }
-                            }
-                        } else if *shortcut == capture {
-                            if crate::config::load_config().screen_capture_enabled {
-                                let _ = trigger_tx_shortcut
-                                    .try_send(trigger::types::TriggerEvent::ManualHotkey);
                             }
                         } else if *shortcut == quick_capture {
                             if let Some(window) =
@@ -751,7 +718,7 @@ pub fn run() {
                 // Initialize local state (activities, config, file sources)
                 let paths = {
                     let mut state = init_state.write().await;
-                    match state.initialize_local(daemon_config.as_ref()).await {
+                    match state.initialize_local().await {
                         Ok(paths) => paths,
                         Err(e) => {
                             log::error!("Failed to initialize local state: {}", e);
@@ -831,21 +798,19 @@ pub fn run() {
             search::delete_bulk,
             search::open_file,
             search::read_source_dir,
+            search::detect_obsidian_vaults,
             search::read_text_file,
             search::quick_capture,
             search::ingest_clipboard,
             search::ingest_webpage,
             search::distill_review,
             search::redistill_page,
-            search::get_clipboard_enabled,
-            search::set_clipboard_enabled,
             search::get_api_key,
             search::set_api_key,
             search::get_chunks,
             search::update_chunk,
             search::list_activities,
             search::rebuild_activities,
-            search::trigger_manual_capture,
             search::get_capture_stats,
             search::get_pipeline_status,
             search::list_all_tags,
@@ -854,17 +819,10 @@ pub fn run() {
             search::suggest_tags,
             search::dismiss_quick_capture,
             search::position_quick_capture,
-            search::get_working_memory,
             search::get_session_snapshots,
             search::get_snapshot_captures,
             search::get_snapshot_captures_with_content,
             search::delete_snapshot,
-            search::get_skip_apps,
-            search::set_skip_apps,
-            search::get_skip_title_patterns,
-            search::set_skip_title_patterns,
-            search::get_private_browsing_detection,
-            search::set_private_browsing_detection,
             search::list_spaces,
             search::get_space,
             search::create_space,
@@ -955,6 +913,8 @@ pub fn run() {
             search::detect_mcp_clients_cmd,
             search::write_mcp_config,
             search::get_wenlan_mcp_entry,
+            search::install_client_plugin,
+            search::wire_state,
             // Entity suggestion commands
             search::get_entity_suggestions_cmd,
             search::approve_entity_suggestion_cmd,
@@ -991,10 +951,6 @@ pub fn run() {
             search::export_page_to_obsidian,
             search::get_knowledge_path,
             search::count_knowledge_files,
-            search::get_screen_capture_enabled,
-            search::set_screen_capture_enabled,
-            search::check_screen_permission,
-            search::request_screen_permission,
             // Decision log commands
             search::list_decisions_cmd,
             search::list_decision_domains_cmd,
@@ -1011,6 +967,7 @@ pub fn run() {
             // On-device model commands
             search::get_on_device_model,
             search::download_on_device_model,
+            search::on_device_model_download_bytes,
             // Lifecycle commands
             search::is_run_at_login_enabled,
             search::set_run_at_login,

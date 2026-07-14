@@ -36,7 +36,39 @@ const qs = (obj: Record<string, unknown>) => {
   return parts.length ? `?${parts.join("&")}` : "";
 };
 
-const HANDLERS: Record<string, (a: any) => Promise<unknown>> = {
+// --- on-device model download simulation ---
+// Real hf-hub downloads take minutes; the wizard's "setting up" row only
+// needs to prove the honest state machine (running -> cached, loaded set)
+// plays out, so this compresses it to ~25s. Module-level so `get_on_device_model`
+// and `on_device_model_download_bytes` (a separate poll) can both read it.
+const MODEL_DOWNLOAD_DURATION_MS = 25_000;
+// The real Qwen3-4B GGUF blob size in bytes (hf-hub `.part` file), used to cap
+// the simulated byte ramp just under the real total rather than at a round number.
+const MODEL_BLOB_BYTES = 2_497_281_120;
+let downloadStartedAt: number | null = null;
+let downloadingModelId: string | null = null;
+
+// --- setup wizard: daemon row probe memory (store_memory / get_memory_detail /
+// delete_memory) ---
+// The wizard's runtime row proves the write path by storing a probe memory,
+// reading it straight back, and deleting it. Proxying store_memory to the
+// real daemon (as this used to) meant every open of the wizard in a pixel
+// review left a REAL memory in the maintainer's live knowledge base — seven
+// of these leaked in before this was caught. Same precedent as `add_source`
+// below: synthesize instead of mutating production data. Keyed by the
+// synthesized id so get_memory_detail/delete_memory can find their own
+// probes while still falling through to the live daemon for every other
+// (real) memory id the rest of the app might ask about.
+const PREVIEW_PROBES = new Map<string, unknown>();
+let previewProbeSeq = 0;
+
+function downloadComplete(): boolean {
+  return downloadStartedAt !== null && Date.now() - downloadStartedAt >= MODEL_DOWNLOAD_DURATION_MS;
+}
+
+// Exported (not just module-local) so the parity test below can read the
+// covered-command key sets without re-parsing this file.
+export const HANDLERS: Record<string, (a: any) => Promise<unknown>> = {
   // --- pages (mirrors search.rs exactly) ---
   get_page: async (a) => {
     try {
@@ -75,8 +107,11 @@ const HANDLERS: Record<string, (a: any) => Promise<unknown>> = {
     get(`/api/memory/recent${qs({ limit: a?.limit, since_ms: a?.sinceMs })}`).then(
       (r) => r.memories ?? r,
     ),
-  get_memory_detail: (a) =>
-    get(`/api/memory/${enc(a.sourceId)}/detail`).then((r) => r?.memory ?? null),
+  get_memory_detail: (a) => {
+    const sourceId = a.sourceId as string;
+    if (PREVIEW_PROBES.has(sourceId)) return Promise.resolve(PREVIEW_PROBES.get(sourceId));
+    return get(`/api/memory/${enc(sourceId)}/detail`).then((r) => r?.memory ?? null);
+  },
   list_memories_by_ids: (a) =>
     get(`/api/memory/by-ids?ids=${(a.ids as string[]).map(enc).join(",")}`).then(
       (r) => r.memories ?? r,
@@ -164,25 +199,123 @@ const HANDLERS: Record<string, (a: any) => Promise<unknown>> = {
   pin_memory: (a) => post(`/api/memory/${enc(a.sourceId)}/pin`),
   unpin_memory: (a) => post(`/api/memory/${enc(a.sourceId)}/unpin`),
   confirm_memory: (a) => post(`/api/memory/confirm/${enc(a.sourceId)}`, { confirmed: true }),
-  delete_memory: (a) => del(`/api/memory/delete/${enc(a.sourceId)}`),
+  // The wizard's runtime row stores a probe memory, reads it straight back,
+  // then deletes it — proving the write path exists for the row to render at
+  // all. This USED to proxy to the real daemon on the theory that "the
+  // wizard deletes its own probe immediately, so it's harmless" — but the
+  // delete is best-effort (and, before this fix, silently swallowed on
+  // failure), so a slow/failed cleanup left a REAL "Wenlan setup check"
+  // memory behind in the maintainer's own knowledge base. Seven leaked in
+  // this way. Same precedent as `add_source` below: synthesize a probe
+  // (PREVIEW_PROBES, above) instead of writing anything real. See
+  // get_memory_detail and delete_memory above/below for the other two legs
+  // of this same round trip.
+  store_memory: (a) => {
+    const req = (a.req ?? {}) as { content?: string; source_agent?: string };
+    const sourceId = `preview-probe-${previewProbeSeq++}`;
+    const memory = {
+      source_id: sourceId,
+      title: (req.content ?? "Preview probe memory").slice(0, 60),
+      content: req.content ?? "",
+      summary: null,
+      memory_type: null,
+      domain: null,
+      source_agent: req.source_agent ?? null,
+      confidence: null,
+      confirmed: false,
+      pinned: false,
+      supersedes: null,
+      last_modified: Date.now(),
+      chunk_count: 0,
+    };
+    PREVIEW_PROBES.set(sourceId, memory);
+    return Promise.resolve({ source_id: sourceId, enrichment: "not_needed", hint: "" });
+  },
+  delete_memory: (a) => {
+    const sourceId = a.sourceId as string;
+    if (PREVIEW_PROBES.has(sourceId)) {
+      PREVIEW_PROBES.delete(sourceId);
+      return Promise.resolve({ deleted: true });
+    }
+    return del(`/api/memory/delete/${enc(sourceId)}`);
+  },
   update_memory_cmd: (a) => put(`/api/memory/${enc(a.sourceId)}/update`, { content: a.content }),
   get_pipeline_status: () => get("/api/debug/pipeline"),
   list_onboarding_milestones: () =>
     get("/api/onboarding/milestones").then((r) => r.milestones ?? r),
+
+  // --- setup wizard: import row (RegisteredSource / SyncStats shapes,
+  // src/lib/tauri.ts) — synthesized rather than proxied to the real daemon,
+  // since a preview click-through must not register a real source or ingest
+  // real files into the maintainer's local database. ---
+  add_source: (a) =>
+    Promise.resolve({
+      id: `preview-source-${enc(a.path)}`,
+      source_type: a.sourceType,
+      path: a.path,
+      status: "Active",
+      last_sync: null,
+      file_count: 0,
+      memory_count: 0,
+    }),
+  sync_registered_source: () =>
+    Promise.resolve({
+      files_found: 12,
+      ingested: 12,
+      skipped: 0,
+      errors: 0,
+    }),
+
+  // --- setup wizard: on-device model row (OnDeviceModelResponse shape,
+  // src/lib/tauri.ts). Dynamic, not a DEFAULTS literal: the download-progress
+  // state below has to be visible through here for the ramp to render at all
+  // — see MODEL_DOWNLOAD_DURATION_MS above. ---
+  download_on_device_model: async (a) => {
+    downloadStartedAt = Date.now();
+    downloadingModelId = String(a.modelId);
+    await new Promise((resolve) => setTimeout(resolve, MODEL_DOWNLOAD_DURATION_MS));
+  },
+  get_on_device_model: async () => {
+    const complete = downloadComplete();
+    const cachedFor = (id: string) => (id === downloadingModelId ? complete : true);
+    return {
+      loaded: complete ? downloadingModelId : null,
+      selected: downloadingModelId,
+      models: [
+        { id: "qwen3-4b", display_name: "Qwen 3 4B", param_count: "4B", ram_required_gb: 3.0, file_size_gb: 2.7, cached: cachedFor("qwen3-4b") },
+        { id: "qwen3.5-9b", display_name: "Qwen 3.5 9B", param_count: "9B", ram_required_gb: 6.0, file_size_gb: 5.5, cached: cachedFor("qwen3.5-9b") },
+      ],
+    };
+  },
+  // The byte count an in-flight hf-hub download has written so far (stats
+  // `~/.cache/huggingface/hub/models--*/blobs/<etag>.part`), or null when
+  // nothing is downloading. Ramps so a progress bar has something to show;
+  // reaches the cap right around when the download above resolves.
+  on_device_model_download_bytes: async () => {
+    if (downloadStartedAt === null) return null;
+    const elapsedSeconds = (Date.now() - downloadStartedAt) / 1000;
+    return Math.min(elapsedSeconds * 100e6, MODEL_BLOB_BYTES);
+  },
 };
 
 // App-local commands (no daemon route) → static defaults that route the UI
 // to the main screen and render panels empty rather than crashing.
-const DEFAULTS: Record<string, unknown> = {
+export const DEFAULTS: Record<string, unknown> = {
   should_show_wizard: false,
   get_setup_completed: true,
-  get_setup_status: { completed: true },
+  // Shapes below mirror src/lib/tauri.ts exactly. A stub that returns null or the
+  // wrong keys where the Rust command returns a struct doesn't just render empty —
+  // it white-screens the step (RemoteAccessPanel reads status.status unguarded).
+  get_setup_status: {
+    setup_completed: true,
+    mode: "basic-memory",
+    anthropic_key_configured: false,
+    local_model_selected: null,
+    local_model_loaded: null,
+    local_model_cached: false,
+  },
   set_traffic_lights_visible: null,
   set_setup_completed: null,
-  get_clipboard_enabled: false,
-  get_screen_capture_enabled: false,
-  check_screen_permission: true,
-  get_private_browsing_detection: false,
   is_run_at_login_enabled: false,
   list_watch_paths: [],
   list_sources: [],
@@ -198,11 +331,56 @@ const DEFAULTS: Record<string, unknown> = {
   get_api_key: null,
   get_model_choice: [null, null],
   get_external_llm: [null, null],
-  get_on_device_model: null,
   get_system_info: null,
-  get_remote_access_status: null,
+  get_remote_access_status: { status: "off" },
+  // The five clients a real machine actually reports (this is verbatim what
+  // detect_mcp_clients_cmd returns on the maintainer's Mac, incl. one already
+  // configured). This used to be `[]`, which meant the preview only ever showed
+  // the wizard's EMPTY state — so the redesigned common case, which IS the
+  // screen, could not be pixel-reviewed at all. An empty fixture doesn't render
+  // "nothing to see"; it renders a different, misleading screen.
+  detect_mcp_clients_cmd: [
+    { name: "Cursor", client_type: "cursor", config_path: "~/.cursor/mcp.json", detected: true, already_configured: false },
+    { name: "Claude Desktop", client_type: "claude_desktop", config_path: "~/Library/Application Support/Claude/claude_desktop_config.json", detected: true, already_configured: false },
+    { name: "Gemini CLI", client_type: "gemini_cli", config_path: "~/.gemini/settings.json", detected: true, already_configured: false },
+    { name: "Codex CLI", client_type: "codex_cli", config_path: "~/.codex/config.toml", detected: true, already_configured: true },
+    { name: "Claude Code", client_type: "claude_code", config_path: "~/.claude.json", detected: true, already_configured: false },
+  ],
+  // WireState (src/lib/tauri.ts) — the "setting up" step's daemon row reads
+  // `wire.daemon.reachable` unguarded (app/src/wire_state.rs never returns
+  // null, so the frontend never null-checks it either); a stub that omits
+  // the field crashes the step instead of rendering it. `mcp_binary` and
+  // `clients` mirror a real resolved machine: an installed binary (plus the
+  // rest of app/src/mcp_config.rs's candidate trail, missing paths included
+  // per wire_state.rs's own docs), and the same 5 clients as
+  // `detect_mcp_clients_cmd` above, routed the way app/src/wire_state.rs's
+  // `route_for` actually routes them (`claude_code`/`codex_cli` always to
+  // "plugin", the rest to "config" unless already configured).
+  wire_state: {
+    daemon: {
+      base_url: "http://127.0.0.1:7878",
+      reachable: true,
+      version: "0.12.0",
+      error: null,
+    },
+    mcp_binary: {
+      command: "/Users/preview/.wenlan/bin/wenlan-mcp",
+      args: [],
+      candidates: [
+        { path: "/Users/preview/.wenlan/bin/wenlan-mcp", exists: true, source: "installed" },
+        { path: "/Applications/Wenlan.app/Contents/MacOS/wenlan-mcp", exists: false, source: "bundled" },
+        { path: "/Users/preview/.cargo/bin/wenlan-mcp", exists: false, source: "cargo" },
+      ],
+    },
+    clients: [
+      { client_type: "cursor", name: "Cursor", detected: true, config_path: "~/.cursor/mcp.json", has_raw_entry: false, has_plugin: false, route: "config" },
+      { client_type: "claude_desktop", name: "Claude Desktop", detected: true, config_path: "~/Library/Application Support/Claude/claude_desktop_config.json", has_raw_entry: false, has_plugin: false, route: "config" },
+      { client_type: "gemini_cli", name: "Gemini CLI", detected: true, config_path: "~/.gemini/settings.json", has_raw_entry: false, has_plugin: false, route: "config" },
+      { client_type: "codex_cli", name: "Codex CLI", detected: true, config_path: "~/.codex/config.toml", has_raw_entry: false, has_plugin: true, route: "plugin" },
+      { client_type: "claude_code", name: "Claude Code", detected: true, config_path: "~/.claude.json", has_raw_entry: false, has_plugin: false, route: "plugin" },
+    ],
+  },
   get_wenlan_mcp_entry: null,
-  detect_mcp_clients_cmd: [],
   get_avatar_data_url: null,
   get_knowledge_path: null,
   get_session_snapshots: [],

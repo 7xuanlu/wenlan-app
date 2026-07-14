@@ -10,7 +10,7 @@ import {
 } from "../../../../lib/tauri";
 import { describeTrustLevel, resolveAgentDisplayName, TRUST_LEVELS } from "../../../../lib/agents";
 import { RemoteAccessPanel } from "../../RemoteAccessPanel";
-import { SectionHeader, Toggle } from "../primitives";
+import { Button, Card, SectionHeader, Select, Tag, Toggle } from "../primitives";
 import WebPlatformCards from "../../../connect/WebPlatformCards";
 import ClientSetupList from "../../../connect/ClientSetupList";
 
@@ -72,7 +72,7 @@ export default function AgentsSection({ onSetupAgent }: { onSetupAgent?: () => v
           <p
             style={{
               fontFamily: "var(--mem-font-mono)",
-              fontSize: "10px",
+              fontSize: "var(--mem-text-2xs)",
               fontWeight: 600,
               letterSpacing: "0.05em",
               textTransform: "uppercase",
@@ -83,65 +83,42 @@ export default function AgentsSection({ onSetupAgent }: { onSetupAgent?: () => v
             {t("settings.agents.trustLevels")}
           </p>
           <div className="flex flex-col gap-1.5">
-            {(Object.keys(TRUST_LEVELS) as Array<keyof typeof TRUST_LEVELS>).map((level) => {
-              const d = TRUST_LEVELS[level];
-              return (
-                <div key={level} className="flex items-start gap-2">
-                  <span
-                    className="shrink-0 px-1.5 py-0.5 rounded"
-                    style={{
-                      fontFamily: "var(--mem-font-mono)",
-                      fontSize: "10px",
-                      fontWeight: 500,
-                      color: d.accent,
-                      border: `1px solid ${d.accent}`,
-                      backgroundColor: "transparent",
-                      minWidth: 52,
-                      textAlign: "center",
-                    }}
-                  >
-                    {d.label}
-                  </span>
-                  <span
-                    style={{
-                      fontFamily: "var(--mem-font-body)",
-                      fontSize: "12px",
-                      color: "var(--mem-text-secondary)",
-                      lineHeight: 1.5,
-                    }}
-                  >
-                    {d.summary}
-                  </span>
-                </div>
-              );
-            })}
+            {(Object.keys(TRUST_LEVELS) as Array<keyof typeof TRUST_LEVELS>).map((level) => (
+              <div key={level} className="flex items-start gap-2">
+                <span className="shrink-0">
+                  <Tag tone="neutral">{t(`settings.agents.trust.${level}`)}</Tag>
+                </span>
+                <span
+                  style={{
+                    fontFamily: "var(--mem-font-body)",
+                    fontSize: "var(--mem-text-sm)",
+                    color: "var(--mem-text-secondary)",
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {t(`settings.agents.trustSummary.${level}`)}
+                </span>
+              </div>
+            ))}
           </div>
         </div>
-        <div className="rounded-xl bg-[var(--mem-surface)] border border-[var(--mem-border)]">
+        <Card padding={agents.length === 0 && pendingClients.length === 0 ? "none" : "rows"}>
           {agents.length === 0 && pendingClients.length === 0 ? (
             <div className="px-5 py-6 text-center space-y-3">
-              <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "13px", color: "var(--mem-text-tertiary)" }}>
+              <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-base)", color: "var(--mem-text-tertiary)" }}>
                 {t("settings.agents.noAgents")}
               </p>
-              <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-tertiary)", opacity: 0.7, lineHeight: "1.5" }}>
+              <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text-tertiary)", opacity: 0.7, lineHeight: "1.5" }}>
                 {t("settings.agents.noAgentsDescription")}
               </p>
               {onSetupAgent && (
-                <button
-                  onClick={onSetupAgent}
-                  className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors duration-150"
-                  style={{
-                    fontFamily: "var(--mem-font-body)",
-                    backgroundColor: "var(--mem-accent-indigo)",
-                    color: "white",
-                  }}
-                >
+                <Button variant="primary" size="sm" onClick={onSetupAgent}>
                   {t("settings.agents.setupTool")}
-                </button>
+                </Button>
               )}
             </div>
           ) : (
-            <div className="divide-y divide-[var(--mem-border)]">
+            <>
               {pendingClients.map((client) => (
                 <div
                   key={client.client_type}
@@ -153,17 +130,17 @@ export default function AgentsSection({ onSetupAgent }: { onSetupAgent?: () => v
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "14px", fontWeight: 500, color: "var(--mem-text)" }}>
+                        <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-md)", fontWeight: 500, color: "var(--mem-text)" }}>
                           {client.name}
                         </span>
                         <span
                           className="px-1.5 py-0.5 rounded"
-                          style={{ fontFamily: "var(--mem-font-mono)", fontSize: "10px", backgroundColor: "rgba(251, 191, 36, 0.1)", color: "var(--mem-accent-amber)" }}
+                          style={{ fontFamily: "var(--mem-font-mono)", fontSize: "var(--mem-text-2xs)", backgroundColor: "var(--mem-status-warning-bg)", color: "var(--mem-accent-amber)" }}
                         >
                           {t("settings.agents.configured")}
                         </span>
                       </div>
-                      <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)", marginTop: "2px" }}>
+                      <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", color: "var(--mem-text-tertiary)", marginTop: "2px" }}>
                         {t("settings.agents.restartToActivate", { name: client.name })}
                       </p>
                     </div>
@@ -183,39 +160,33 @@ export default function AgentsSection({ onSetupAgent }: { onSetupAgent?: () => v
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         {/* Display name (prominent, what the user cares about) */}
-                        <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "14px", fontWeight: 500, color: "var(--mem-text)" }}>
+                        <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-md)", fontWeight: 500, color: "var(--mem-text)" }}>
                           {resolveAgentDisplayName(agent.name, agents)}
                         </span>
-                        <span
-                          className="px-1.5 py-0.5 rounded"
-                          style={{ fontFamily: "var(--mem-font-mono)", fontSize: "10px", backgroundColor: "var(--mem-hover)", color: "var(--mem-text-tertiary)" }}
-                        >
-                          {agent.agent_type}
-                        </span>
                         {/* Trust badge lives in the right-hand action cluster
-                            below — it's a styled `<select>` that doubles as
-                            both the display and the editor. */}
+                            below — it's a `Select` that doubles as both the
+                            display and the editor. */}
                       </div>
                       <div className="flex items-center gap-3 mt-1 flex-wrap">
-                        {/* Canonical technical ID (secondary, only if it differs from display) */}
-                        {resolveAgentDisplayName(agent.name, agents) !== agent.name && (
-                          <span
-                            title={t("settings.agents.canonicalIdTitle")}
-                            style={{
-                              fontFamily: "var(--mem-font-mono)",
-                              fontSize: "10px",
-                              color: "var(--mem-text-tertiary)",
-                              opacity: 0.75,
-                            }}
-                          >
-                            {agent.name}
-                          </span>
-                        )}
-                        <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)" }}>
+                        {/* Canonical technical ID + machine type — always
+                            shown as a mono subtitle, every row gets identical
+                            anatomy. Machine identifiers are never chips. */}
+                        <span
+                          title={t("settings.agents.canonicalIdTitle")}
+                          style={{
+                            fontFamily: "var(--mem-font-mono)",
+                            fontSize: "var(--mem-text-2xs)",
+                            color: "var(--mem-text-tertiary)",
+                            opacity: 0.75,
+                          }}
+                        >
+                          {agent.name} · {agent.agent_type}
+                        </span>
+                        <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", color: "var(--mem-text-tertiary)" }}>
                           {t("settings.agents.memories", { count: agent.memory_count })}
                         </span>
                         {agent.last_seen_at && (
-                          <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)" }}>
+                          <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", color: "var(--mem-text-tertiary)" }}>
                             {t("settings.agents.lastSeen", {
                               date: new Date(agent.last_seen_at * 1000).toLocaleDateString(),
                             })}
@@ -224,21 +195,19 @@ export default function AgentsSection({ onSetupAgent }: { onSetupAgent?: () => v
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      {/* Trust selector — the <select> is wrapped so a chevron
-                          can sit as a sibling (selects don't accept reliable
-                          pseudo-elements across browsers). The chevron carries
-                          the affordance; the pill border matches the legend
-                          above. Hovering shows the level's summary as a
-                          tooltip AND tints the background subtly so the
-                          control clearly reads as interactive. */}
+                      {/* Trust selector — width-safety wrapper is required:
+                          `Select`'s wrapper span and inner <select> are both
+                          `w-full`, so it needs a `w-fit` ancestor to avoid
+                          stretching to fill this flex row. */}
                       {(() => {
-                        const d = describeTrustLevel(agent.trust_level);
+                        const trustLevel = describeTrustLevel(agent.trust_level).level;
                         return (
                           <div
-                            className="relative shrink-0 inline-flex"
-                            title={d.summary}
+                            className="w-fit shrink-0"
+                            title={t(`settings.agents.trustSummary.${trustLevel}`)}
                           >
-                            <select
+                            <Select
+                              size="sm"
                               value={agent.trust_level}
                               onChange={(e) =>
                                 updateAgentMut.mutate({
@@ -246,74 +215,11 @@ export default function AgentsSection({ onSetupAgent }: { onSetupAgent?: () => v
                                   updates: { trustLevel: e.target.value },
                                 })
                               }
-                              className="rounded focus:outline-none cursor-pointer transition-colors duration-150"
-                              style={{
-                                fontFamily: "var(--mem-font-mono)",
-                                fontSize: "10px",
-                                fontWeight: 500,
-                                color: d.accent,
-                                border: `1px solid ${d.accent}`,
-                                backgroundColor: "transparent",
-                                minWidth: 56,
-                                // Asymmetric padding — paddingRight reserves
-                                // room for the chevron so the closed-state
-                                // text doesn't collide with it. `textAlignLast`
-                                // centers the visible value within the
-                                // content area; the slight left bias compensates
-                                // for the chevron's visual weight on the right.
-                                textAlign: "center",
-                                textAlignLast: "center",
-                                paddingTop: 4,
-                                paddingBottom: 4,
-                                paddingLeft: 8,
-                                paddingRight: 17,
-                                appearance: "none",
-                                WebkitAppearance: "none",
-                                MozAppearance: "none",
-                                backgroundImage: "none",
-                                lineHeight: 1.2,
-                              }}
-                              onMouseEnter={(e) => {
-                                // Subtle tint so the badge reads as "press me".
-                                // `currentColor` isn't easy to reference in
-                                // inline styles, so we rebuild the rgba from
-                                // the accent var at hover time via the browser.
-                                (e.currentTarget as HTMLElement).style.backgroundColor =
-                                  "var(--mem-hover)";
-                              }}
-                              onMouseLeave={(e) => {
-                                (e.currentTarget as HTMLElement).style.backgroundColor =
-                                  "transparent";
-                              }}
                             >
                               <option value="full">{t("settings.agents.trust.full")}</option>
                               <option value="review">{t("settings.agents.trust.review")}</option>
                               <option value="unknown">{t("settings.agents.trust.unknown")}</option>
-                            </select>
-                            {/* Chevron — absolutely positioned, pointer-events:none
-                                so clicks pass through to the select. Color
-                                matches the trust accent so the whole control
-                                reads as one unit. */}
-                            <svg
-                              width="8"
-                              height="8"
-                              viewBox="0 0 8 8"
-                              fill="none"
-                              stroke={d.accent}
-                              strokeWidth="1.5"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              aria-hidden
-                              style={{
-                                position: "absolute",
-                                right: 6,
-                                top: "50%",
-                                transform: "translateY(-50%)",
-                                pointerEvents: "none",
-                              }}
-                            >
-                              <polyline points="1.5 3 4 5.5 6.5 3" />
-                            </svg>
+                            </Select>
                           </div>
                         );
                       })()}
@@ -333,7 +239,7 @@ export default function AgentsSection({ onSetupAgent }: { onSetupAgent?: () => v
                               deleteAgentMut.mutate(agent.name);
                               setDeletingAgent(null);
                             }}
-                            className="px-2 py-0.5 rounded text-xs bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors"
+                            className="px-2 py-0.5 rounded text-xs bg-[var(--mem-status-danger-bg)] text-[var(--mem-status-danger-text)] hover:bg-[var(--mem-status-danger-border)] transition-colors"
                             style={{ fontFamily: "var(--mem-font-body)" }}
                           >
                             {t("settings.agents.confirm")}
@@ -349,7 +255,7 @@ export default function AgentsSection({ onSetupAgent }: { onSetupAgent?: () => v
                       ) : (
                         <button
                           onClick={() => setDeletingAgent(agent.name)}
-                          className="p-1 text-[var(--mem-text-tertiary)] hover:text-red-400 transition-colors"
+                          className="p-1 text-[var(--mem-text-tertiary)] hover:text-[var(--mem-status-danger-text)] transition-colors"
                         >
                           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -371,9 +277,9 @@ export default function AgentsSection({ onSetupAgent }: { onSetupAgent?: () => v
                   </button>
                 </div>
               )}
-            </div>
+            </>
           )}
-        </div>
+        </Card>
       </section>
 
       {/* ── Remote Access ─────────────────────────────────────────── */}
@@ -386,7 +292,7 @@ export default function AgentsSection({ onSetupAgent }: { onSetupAgent?: () => v
           }
           label={t("settings.agents.remoteAccess")}
         />
-        <RemoteAccessPanel mode="full" />
+        <RemoteAccessPanel />
       </section>
 
       {/* ── Web — Claude.ai & ChatGPT ─────────────────────────────── */}

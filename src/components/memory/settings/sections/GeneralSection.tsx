@@ -18,7 +18,7 @@ import {
   setLocalePreference,
   type StoredLocale,
 } from "../../../../i18n";
-import { SectionHeader, SettingRow } from "../primitives";
+import { Button, Card, Field, Input, SectionHeader, Select, SettingRow } from "../primitives";
 import ProfileAvatar from "../../ProfileAvatar";
 
 type ThemeLabelKey =
@@ -31,7 +31,7 @@ const THEME_OPTIONS: { value: Theme; labelKey: ThemeLabelKey; icon: React.ReactN
     value: "system",
     labelKey: "settings.theme.auto",
     icon: (
-      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <svg aria-hidden="true" className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
       </svg>
     ),
@@ -40,7 +40,7 @@ const THEME_OPTIONS: { value: Theme; labelKey: ThemeLabelKey; icon: React.ReactN
     value: "light",
     labelKey: "settings.theme.light",
     icon: (
-      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <svg aria-hidden="true" className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
       </svg>
     ),
@@ -49,7 +49,7 @@ const THEME_OPTIONS: { value: Theme; labelKey: ThemeLabelKey; icon: React.ReactN
     value: "dark",
     labelKey: "settings.theme.dark",
     icon: (
-      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <svg aria-hidden="true" className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
       </svg>
     ),
@@ -137,7 +137,7 @@ function ProfileSettingsBlock() {
           </svg>
         }
       />
-      <div className="bg-[var(--mem-surface)] rounded-xl border border-[var(--mem-border)] px-5 py-4">
+      <Card padding="card">
         <div className="flex items-start gap-4">
           <div className="flex shrink-0 flex-col items-center gap-2">
             <ProfileAvatar
@@ -152,7 +152,7 @@ function ProfileSettingsBlock() {
               className="rounded-md px-2 py-1 transition-colors duration-150 hover:bg-[var(--mem-hover)]"
               style={{
                 fontFamily: "var(--mem-font-body)",
-                fontSize: "11px",
+                fontSize: "var(--mem-text-xs)",
                 color: "var(--mem-text-secondary)",
               }}
             >
@@ -165,7 +165,7 @@ function ProfileSettingsBlock() {
                 className="rounded-md px-2 py-1 transition-colors duration-150 hover:bg-[var(--mem-hover)]"
                 style={{
                   fontFamily: "var(--mem-font-body)",
-                  fontSize: "11px",
+                  fontSize: "var(--mem-text-xs)",
                   color: "var(--mem-text-tertiary)",
                 }}
               >
@@ -175,22 +175,8 @@ function ProfileSettingsBlock() {
           </div>
 
           <div className="min-w-0 flex-1 space-y-3">
-            <label className="block">
-              <span
-                style={{
-                  display: "block",
-                  fontFamily: "var(--mem-font-mono)",
-                  fontSize: "10px",
-                  fontWeight: 600,
-                  letterSpacing: "0.05em",
-                  textTransform: "uppercase",
-                  color: "var(--mem-text-tertiary)",
-                  marginBottom: 4,
-                }}
-              >
-                {t("settings.profile.displayName")}
-              </span>
-              <input
+            <Field label={t("settings.profile.displayName")} htmlFor="profile-display-name">
+              <Input
                 value={nameDraft}
                 onChange={(event) => setNameDraft(event.target.value)}
                 onBlur={saveName}
@@ -201,21 +187,14 @@ function ProfileSettingsBlock() {
                     event.currentTarget.blur();
                   }
                 }}
-                className="w-full rounded-lg border px-3 py-2 outline-none transition-colors duration-150 focus:border-[var(--mem-accent-indigo)]"
-                style={{
-                  borderColor: "var(--mem-border)",
-                  backgroundColor: "var(--mem-bg)",
-                  color: "var(--mem-text)",
-                  fontFamily: "var(--mem-font-body)",
-                  fontSize: "14px",
-                }}
+                className="w-full"
               />
-            </label>
+            </Field>
 
             <p
               style={{
                 fontFamily: "var(--mem-font-mono)",
-                fontSize: "11px",
+                fontSize: "var(--mem-text-xs)",
                 color: "var(--mem-text-tertiary)",
               }}
             >
@@ -223,7 +202,7 @@ function ProfileSettingsBlock() {
             </p>
           </div>
         </div>
-      </div>
+      </Card>
     </section>
   );
 }
@@ -254,24 +233,18 @@ export default function GeneralSection() {
           label={t("settings.general.appSection")}
           icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" /></svg>}
         />
-        <div className="bg-[var(--mem-surface)] rounded-xl overflow-hidden border border-[var(--mem-border)]">
+        <Card padding="rows">
           <SettingRow
             title={t("settings.general.runAtLoginTitle")}
             description={t("settings.general.runAtLoginDescription")}
             enabled={runAtLoginQuery.data ?? false}
             onToggle={() => runAtLoginMutation.mutate(!(runAtLoginQuery.data ?? false))}
           />
-        </div>
-        {/* Theme — folded into General; previously its own "Appearance" sidebar entry. */}
-        <div className="bg-[var(--mem-surface)] rounded-xl overflow-hidden border border-[var(--mem-border)] mt-4">
-          <div className="px-5 py-4">
-            <div className="flex items-center justify-between gap-4">
-              <div className="min-w-0">
-                <div style={{ fontFamily: "var(--mem-font-body)", fontSize: "14px", fontWeight: 500, color: "var(--mem-text)" }}>{t("settings.theme.label")}</div>
-                <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-secondary)", marginTop: "2px", lineHeight: "1.5" }}>
-                  {t("settings.theme.description")}
-                </p>
-              </div>
+          {/* Theme — folded into General; previously its own "Appearance" sidebar entry. */}
+          <SettingRow
+            title={t("settings.theme.label")}
+            description={t("settings.theme.description")}
+            control={
               <div className="relative flex bg-[var(--mem-hover)] rounded-lg p-0.5 shrink-0">
                 <div
                   className="absolute top-0.5 bottom-0.5 rounded-md shadow-sm transition-transform duration-200 ease-out"
@@ -288,62 +261,49 @@ export default function GeneralSection() {
                     onClick={() => setThemeValue(opt.value)}
                     className={`relative z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-colors duration-200 ${
                       theme === opt.value
-                        ? "text-white"
+                        ? "text-[var(--mem-text-on-accent)]"
                         : "text-[var(--mem-text-secondary)] hover:text-[var(--mem-text)]"
                     }`}
-                    style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", fontWeight: 500 }}
+                    style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", fontWeight: 500 }}
                   >
                     {opt.icon}
                     {t(opt.labelKey)}
                   </button>
                 ))}
               </div>
-            </div>
-          </div>
-        </div>
-        <div className="bg-[var(--mem-surface)] rounded-xl overflow-hidden border border-[var(--mem-border)] mt-4">
-          <div className="px-5 py-4">
-            <div className="flex items-center justify-between gap-4">
-              <div className="min-w-0">
-                <label
-                  htmlFor="settings-language"
-                  style={{ fontFamily: "var(--mem-font-body)", fontSize: "14px", fontWeight: 500, color: "var(--mem-text)" }}
+            }
+          />
+          <SettingRow
+            title={t("settings.language.label")}
+            description={t("settings.language.description")}
+            control={
+              <div className="w-fit shrink-0">
+                <Select
+                  size="sm"
+                  aria-label={t("settings.language.label")}
+                  value={languagePreference}
+                  onChange={(event) => {
+                    const nextPreference = event.currentTarget.value as StoredLocale;
+                    setLanguagePreference(nextPreference);
+                    void setLocalePreference(nextPreference);
+                  }}
                 >
-                  {t("settings.language.label")}
-                </label>
-                <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-secondary)", marginTop: "2px", lineHeight: "1.5" }}>
-                  {t("settings.language.description")}
-                </p>
+                  <option value="system">{t("settings.language.system")}</option>
+                  <option value="en">{t("settings.language.english")}</option>
+                  <option value="zh-Hans">{t("settings.language.simplifiedChinese")}</option>
+                  <option value="zh-Hant">{t("settings.language.traditionalChinese")}</option>
+                </Select>
               </div>
-              <select
-                id="settings-language"
-                value={languagePreference}
-                onChange={(event) => {
-                  const nextPreference = event.currentTarget.value as StoredLocale;
-                  setLanguagePreference(nextPreference);
-                  void setLocalePreference(nextPreference);
-                }}
-                className="rounded-lg px-3 py-1.5 shrink-0"
-                style={{
-                  backgroundColor: "var(--mem-hover)",
-                  border: "1px solid var(--mem-border)",
-                  color: "var(--mem-text)",
-                  fontFamily: "var(--mem-font-body)",
-                  fontSize: "12px",
-                }}
-              >
-                <option value="system">{t("settings.language.system")}</option>
-                <option value="en">{t("settings.language.english")}</option>
-                <option value="zh-Hans">{t("settings.language.simplifiedChinese")}</option>
-                <option value="zh-Hant">{t("settings.language.traditionalChinese")}</option>
-              </select>
-            </div>
-          </div>
-        </div>
+            }
+          />
+        </Card>
         {/* Re-run setup wizard. Confirmation prevents accidental restart;
             data is preserved regardless. */}
         <div className="px-2 pt-4">
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
+            className="hover:underline"
             onClick={async () => {
               const ok = window.confirm(
                 t("settings.general.rerunSetupConfirm")
@@ -352,15 +312,9 @@ export default function GeneralSection() {
               await setSetupCompleted(false);
               queryClient.invalidateQueries({ queryKey: ["shouldShowWizard"] });
             }}
-            className="transition-colors hover:underline"
-            style={{
-              fontFamily: "var(--mem-font-body)",
-              fontSize: "13px",
-              color: "var(--mem-text-secondary)",
-            }}
           >
             {t("settings.general.rerunSetup")}
-          </button>
+          </Button>
         </div>
       </section>
     </>

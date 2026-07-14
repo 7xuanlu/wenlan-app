@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { startListening, stopListening, onClipboardChange } from "tauri-plugin-clipboard-x-api";
 import { emit, listen } from "@tauri-apps/api/event";
 import { resizeWindow, resizeWindowCentered } from "./lib/resizeWindow";
-import { ingestClipboard, getClipboardEnabled, shouldSkipClipboardChange, setTrafficLightsVisible, shouldShowWizard, setSetupCompleted, type IndexedFileInfo } from "./lib/tauri";
+import { setTrafficLightsVisible, shouldShowWizard, setSetupCompleted, type IndexedFileInfo } from "./lib/tauri";
 import { markProcessing, clearProcessing } from "./lib/processingStore";
 import { recordCapture } from "./lib/captureHeartbeat";
 import Spotlight from "./components/Spotlight";
@@ -18,24 +17,24 @@ import UpdaterDialog from "./components/UpdaterDialog";
 const MEMORY_WIDTH = 1280;
 const MEMORY_HEIGHT = 720;
 
-// Start clipboard watcher once at module level — must not run inside React
-// effects because StrictMode double-invokes them, creating duplicate watchers.
-// stopListening() first to clear any stale watcher from a previous HMR cycle.
-const clipboardReady = stopListening().catch(() => {}).then(() => startListening());
-
-// Clean up watcher when Vite hot-reloads this module
-if (import.meta.hot) {
-  import.meta.hot.dispose(() => { stopListening(); });
-}
-
 type Page = "spotlight" | "home" | "memory" | "recap" | "entity";
 
 export default function App() {
   const queryClient = useQueryClient();
-  const { data: showWizard, isLoading: wizardLoading } = useQuery({
+  const { data: showWizard, isPending: wizardPending, isError: wizardError } = useQuery({
     queryKey: ["shouldShowWizard"],
     queryFn: shouldShowWizard,
     staleTime: Infinity,
+    // Overrides main.tsx's global retry:false — the first-run daemon install
+    // (app/src/lib.rs) is spawned async and races this query, so it needs to
+    // survive that window (~12s) instead of failing on the first miss.
+    retry: 5,
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 3000),
+    // This is a Tauri IPC call to a daemon on localhost, not a network request.
+    // The default "online" mode would PAUSE it whenever navigator.onLine is
+    // false (fetchStatus "paused", never "fetching"), so an offline machine
+    // would strand the gate below with no data and no error.
+    networkMode: "always",
   });
 
   async function handleWizardComplete() {
@@ -51,52 +50,11 @@ export default function App() {
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
   const [initialView, setInitialView] = useState<"import" | null>(null);
   const [prevPage, setPrevPage] = useState<Page>("spotlight");
-  const clipboardEnabledRef = useRef(true);
 
   // Signal backend that the webview has loaded, so it can focus the already
   // visible main window after the frontend is ready.
   useEffect(() => {
     emit("app-ready");
-  }, []);
-
-  // Keep clipboard enabled state in sync
-  useEffect(() => {
-    getClipboardEnabled().then((enabled) => {
-      clipboardEnabledRef.current = enabled;
-    });
-  }, [page]); // re-check when leaving settings
-
-  // Clipboard change listener
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    let cancelled = false;
-
-    async function setup() {
-      await clipboardReady;
-      if (cancelled) return;
-      unlisten = await onClipboardChange(async (result) => {
-        if (cancelled) return;
-        if (!clipboardEnabledRef.current) return;
-        if (shouldSkipClipboardChange()) return;
-        const text = result.text?.value;
-        if (text && text.trim().length >= 4) {
-          try {
-            const chunks = await ingestClipboard(text);
-            if (chunks > 0) {
-              const firstLine = text.trim().split("\n")[0];
-              const summary = firstLine.length > 50 ? firstLine.slice(0, 50) + "..." : firstLine;
-              await emit("capture-event", { source: "clipboard", summary, chunks });
-            }
-          } catch (e) {
-            console.error("Failed to ingest clipboard:", e);
-          }
-        }
-      });
-      if (cancelled) unlisten?.();
-    }
-
-    setup();
-    return () => { cancelled = true; unlisten?.(); };
   }, []);
 
   // Embedding migration progress overlay
@@ -197,11 +155,19 @@ export default function App() {
     prevPageRef.current = page;
   }, [page]);
 
-  if (wizardLoading) {
+  // isPending, not isLoading: isLoading is (isPending && isFetching), which goes
+  // false whenever the query is paused rather than fetching — that would fall
+  // through to Home with no answer. isPending is true until we actually have one.
+  if (wizardPending) {
     return <div className="w-screen min-h-screen bg-[var(--bg-secondary)]" />;
   }
 
-  if (showWizard) {
+  // ponytail: fail CLOSED. If the daemon is still unreachable after retries,
+  // show the wizard rather than silently falling through to Home — an
+  // existing user whose daemon is dead for 15s+ sees the wizard too, but its
+  // step-5 task thread already surfaces "daemon isn't reachable" + Retry,
+  // which is the intended repair surface for that tradeoff.
+  if (showWizard || wizardError) {
     return <SetupWizard onComplete={handleWizardComplete} />;
   }
 

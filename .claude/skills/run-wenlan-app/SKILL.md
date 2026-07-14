@@ -55,6 +55,13 @@ revert the edit. Mark such edits `// TEMP (do not commit)`.
 
 ## Gotchas
 
+- **`launch` must run unsandboxed.** The app inherits the shell's seatbelt
+  sandbox, which denies the mach lookup for the ViewBridge XPC service behind
+  `NSOpenPanel`. The app starts fine and then hard-crashes on the *first*
+  file/folder picker — `+[NSOpenPanel openPanel]` returns NULL and objc2
+  panics — hours after launch, looking exactly like a product bug. It is not:
+  the same call returns a panel normally outside the sandbox. `launch` now
+  refuses when it detects a sandboxed shell (canary: `pbpaste`).
 - `tauri dev` compiles sidecars inside `beforeDevCommand`, then waits only
   180s for vite — on a cold cache it dies with
   `Error Could not connect to `http://localhost:1420/` after 180s`.

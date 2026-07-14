@@ -9,6 +9,7 @@ import {
   type AgentActivityItem,
 } from "../../lib/tauri";
 import { resolveAgentDisplayName } from "../../lib/agents";
+import { Select } from "./settings/primitives";
 
 interface ActivityFeedProps {
   onNavigateMemory: (sourceId: string) => void;
@@ -330,9 +331,9 @@ function parseMemoryIds(memoryIds: string | null): string[] {
 }
 
 // ── Filter dropdown ───────────────────────────────────────────────────
-// Matches MemoryStream's toolbar select style exactly (transparent bg,
-// --mem-border 1px 6px-radius, --mem-font-body 12px, indigo accent when
-// active). Keep in sync if MemoryStream's toolbar chrome changes.
+// Uses the shared `Select` primitive. `w-fit` wrapper is required: Select's
+// wrapper span and inner <select> are both `w-full`, so it needs a `w-fit`
+// ancestor to avoid stretching to fill this flex-end toolbar row.
 
 function FilterSelect({
   label,
@@ -349,29 +350,21 @@ function FilterSelect({
 }) {
   const display = renderLabel ?? ((s: string) => s);
   return (
-    <select
-      value={selected ?? ""}
-      onChange={(e) => onSelect(e.target.value || null)}
-      style={{
-        fontFamily: "var(--mem-font-body)",
-        fontSize: "12px",
-        color: selected ? "var(--mem-accent-indigo)" : "var(--mem-text-tertiary)",
-        backgroundColor: "transparent",
-        border: "1px solid var(--mem-border)",
-        borderRadius: "6px",
-        padding: "5px 8px",
-        cursor: "pointer",
-        outline: "none",
-      }}
-      aria-label={label}
-    >
-      <option value="">{label}</option>
-      {items.map((a) => (
-        <option key={a} value={a}>
-          {display(a)}
-        </option>
-      ))}
-    </select>
+    <div className="w-fit shrink-0">
+      <Select
+        size="sm"
+        value={selected ?? ""}
+        onChange={(e) => onSelect(e.target.value || null)}
+        aria-label={label}
+      >
+        <option value="">{label}</option>
+        {items.map((a) => (
+          <option key={a} value={a}>
+            {display(a)}
+          </option>
+        ))}
+      </Select>
+    </div>
   );
 }
 

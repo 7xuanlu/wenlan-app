@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { quickCapture, type Space } from "../../lib/tauri";
+import { Button, Select } from "./settings/primitives";
 
 interface AddMemoryFormProps {
   spaces: Space[];
@@ -9,6 +11,7 @@ interface AddMemoryFormProps {
 }
 
 export default function AddMemoryForm({ spaces, onClose }: AddMemoryFormProps) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [content, setContent] = useState("");
   const [domain, setDomain] = useState("");
@@ -51,7 +54,7 @@ export default function AddMemoryForm({ spaces, onClose }: AddMemoryFormProps) {
           value={content}
           onChange={(e) => setContent(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="What do you want to remember?"
+          placeholder={t("addMemory.placeholder")}
           autoFocus
           rows={3}
           className="w-full bg-transparent resize-none outline-none placeholder:text-[var(--mem-text-tertiary)]"
@@ -65,48 +68,33 @@ export default function AddMemoryForm({ spaces, onClose }: AddMemoryFormProps) {
         <div className="flex items-center justify-between mt-3 pt-3" style={{ borderTop: "1px solid var(--mem-border)" }}>
           <div className="flex items-center gap-2">
             <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-tertiary)" }}>
-              Space:
+              {t("addMemory.spaceLabel")}
             </span>
-            <select
+            <Select
+              size="sm"
+              aria-label={t("addMemory.spaceLabel")}
               value={domain}
               onChange={(e) => setDomain(e.target.value)}
-              className="bg-transparent outline-none"
-              style={{
-                fontFamily: "var(--mem-font-body)",
-                fontSize: "12px",
-                color: "var(--mem-text-secondary)",
-              }}
             >
-              <option value="">No space</option>
+              <option value="">{t("addMemory.noSpace")}</option>
               {spaces.map((s) => (
                 <option key={s.id} value={s.name}>{s.name}</option>
               ))}
-            </select>
+            </Select>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={onClose}
-              style={{
-                fontFamily: "var(--mem-font-body)",
-                fontSize: "12px",
-                color: "var(--mem-text-tertiary)",
-              }}
-            >
-              Cancel
-            </button>
-            <button
+            <Button variant="ghost" size="sm" onClick={onClose}>
+              {t("addMemory.cancel")}
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={!content.trim()}
+              loading={mutation.isPending}
               onClick={() => content.trim() && mutation.mutate()}
-              disabled={!content.trim() || mutation.isPending}
-              className="px-3 py-1 rounded-md transition-colors duration-150 disabled:opacity-40"
-              style={{
-                fontFamily: "var(--mem-font-body)",
-                fontSize: "12px",
-                color: "white",
-                backgroundColor: "var(--mem-accent-indigo)",
-              }}
             >
-              Save
-            </button>
+              {t("addMemory.save")}
+            </Button>
           </div>
         </div>
       </div>

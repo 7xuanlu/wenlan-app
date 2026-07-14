@@ -188,6 +188,25 @@ impl WenlanClient {
         format!("{}{}", self.base_url, path)
     }
 
+    /// The base URL a reachability check runs against — exposed for
+    /// `wire_state`, which reports it verbatim in `DaemonWire`.
+    pub fn base_url(&self) -> &str {
+        &self.base_url
+    }
+
+    /// Points a client at an arbitrary `base_url` instead of the real daemon
+    /// port. Test-only: lets `wire_state`'s tests exercise an unreachable
+    /// daemon without touching the process-global `WENLAN_PORT`/`ORIGIN_PORT`
+    /// env vars `WenlanClient::new()` reads (shared with every other test in
+    /// this binary — see `env_lock` below).
+    #[cfg(test)]
+    pub(crate) fn with_base_url(base_url: String) -> Self {
+        Self {
+            client: build_http_client(CONNECT_TIMEOUT, REQUEST_TIMEOUT),
+            base_url,
+        }
+    }
+
     // ── Generic helpers ─────────────────────────────────────────────
 
     pub async fn get_json<T: DeserializeOwned>(&self, path: &str) -> Result<T, String> {
@@ -755,68 +774,12 @@ impl WenlanClient {
         Ok(())
     }
 
-    pub async fn get_clipboard_enabled(&self) -> Result<bool, String> {
-        Ok(self.get_config().await?.clipboard_enabled)
-    }
-
-    pub async fn set_clipboard_enabled(
-        &self,
-        enabled: bool,
-    ) -> Result<wenlan_types::responses::ConfigResponse, String> {
-        self.update_config(empty_update().with_clipboard_enabled(enabled))
-            .await
-    }
-
-    pub async fn get_screen_capture_enabled(&self) -> Result<bool, String> {
-        Ok(self.get_config().await?.screen_capture_enabled)
-    }
-
-    pub async fn set_screen_capture_enabled(
-        &self,
-        enabled: bool,
-    ) -> Result<wenlan_types::responses::ConfigResponse, String> {
-        self.update_config(empty_update().with_screen_capture_enabled(enabled))
-            .await
-    }
-
-    pub async fn get_private_browsing_detection(&self) -> Result<bool, String> {
-        Ok(self.get_config().await?.private_browsing_detection)
-    }
-
-    pub async fn set_private_browsing_detection(
-        &self,
-        enabled: bool,
-    ) -> Result<wenlan_types::responses::ConfigResponse, String> {
-        self.update_config(empty_update().with_private_browsing_detection(enabled))
-            .await
-    }
-
     pub async fn set_remote_access_enabled(
         &self,
         enabled: bool,
     ) -> Result<wenlan_types::responses::ConfigResponse, String> {
         self.update_config(empty_update().with_remote_access_enabled(enabled))
             .await
-    }
-
-    pub async fn get_skip_apps(&self) -> Result<Vec<String>, String> {
-        Ok(self.get_config().await?.skip_apps)
-    }
-
-    pub async fn set_skip_apps(&self, apps: Vec<String>) -> Result<(), String> {
-        self.update_config(empty_update().with_skip_apps(apps))
-            .await
-            .map(|_| ())
-    }
-
-    pub async fn get_skip_title_patterns(&self) -> Result<Vec<String>, String> {
-        Ok(self.get_config().await?.skip_title_patterns)
-    }
-
-    pub async fn set_skip_title_patterns(&self, patterns: Vec<String>) -> Result<(), String> {
-        self.update_config(empty_update().with_skip_title_patterns(patterns))
-            .await
-            .map(|_| ())
     }
 }
 
@@ -876,11 +839,6 @@ fn sparse_update_config(
 }
 
 trait UpdateConfigBuilder {
-    fn with_skip_apps(self, v: Vec<String>) -> Self;
-    fn with_skip_title_patterns(self, v: Vec<String>) -> Self;
-    fn with_clipboard_enabled(self, v: bool) -> Self;
-    fn with_screen_capture_enabled(self, v: bool) -> Self;
-    fn with_private_browsing_detection(self, v: bool) -> Self;
     fn with_remote_access_enabled(self, v: bool) -> Self;
     fn with_setup_completed(self, v: bool) -> Self;
     fn with_model_choice(
@@ -892,26 +850,6 @@ trait UpdateConfigBuilder {
 }
 
 impl UpdateConfigBuilder for wenlan_types::requests::UpdateConfigRequest {
-    fn with_skip_apps(mut self, v: Vec<String>) -> Self {
-        self.skip_apps = Some(v);
-        self
-    }
-    fn with_skip_title_patterns(mut self, v: Vec<String>) -> Self {
-        self.skip_title_patterns = Some(v);
-        self
-    }
-    fn with_clipboard_enabled(mut self, v: bool) -> Self {
-        self.clipboard_enabled = Some(v);
-        self
-    }
-    fn with_screen_capture_enabled(mut self, v: bool) -> Self {
-        self.screen_capture_enabled = Some(v);
-        self
-    }
-    fn with_private_browsing_detection(mut self, v: bool) -> Self {
-        self.private_browsing_detection = Some(v);
-        self
-    }
     fn with_remote_access_enabled(mut self, v: bool) -> Self {
         self.remote_access_enabled = Some(v);
         self
@@ -1065,30 +1003,10 @@ mod tests {
     }
 
     #[test]
-    fn update_config_builder_patches_capture_toggles_without_touching_other_config() {
-        let clipboard_req = empty_update().with_clipboard_enabled(true);
-        assert_eq!(clipboard_req.clipboard_enabled, Some(true));
-        assert_eq!(clipboard_req.screen_capture_enabled, None);
-        assert_eq!(clipboard_req.setup_completed, None);
-        assert_eq!(clipboard_req.routine_model, None);
-
-        let screen_req = empty_update().with_screen_capture_enabled(false);
-        assert_eq!(screen_req.screen_capture_enabled, Some(false));
-        assert_eq!(screen_req.clipboard_enabled, None);
-        assert_eq!(screen_req.setup_completed, None);
-        assert_eq!(screen_req.external_llm_endpoint, None);
-    }
-
-    #[test]
-    fn update_config_builder_patches_privacy_fields_without_touching_other_config() {
-        let private_req = empty_update().with_private_browsing_detection(false);
-        assert_eq!(private_req.private_browsing_detection, Some(false));
-        assert_eq!(private_req.clipboard_enabled, None);
-        assert_eq!(private_req.screen_capture_enabled, None);
-
+    fn update_config_builder_patches_remote_access_without_touching_other_config() {
         let remote_req = empty_update().with_remote_access_enabled(true);
         assert_eq!(remote_req.remote_access_enabled, Some(true));
-        assert_eq!(remote_req.private_browsing_detection, None);
+        assert_eq!(remote_req.setup_completed, None);
         assert_eq!(remote_req.skip_apps, None);
     }
 
@@ -1098,70 +1016,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn capture_toggles_use_daemon_config_endpoint() {
-        let config_body = r#"{"skip_apps":[],"skip_title_patterns":[],"private_browsing_detection":true,"setup_completed":true,"clipboard_enabled":true,"screen_capture_enabled":false,"remote_access_enabled":false}"#;
-        let (base_url, request) = serve_json_once(config_body).await;
-        let client = WenlanClient {
-            client: reqwest::Client::new(),
-            base_url,
-        };
-
-        let config = client.set_clipboard_enabled(true).await.unwrap();
-
-        assert!(config.clipboard_enabled);
-        let request = request.await.unwrap();
-        assert_eq!(
-            request.lines().next().unwrap_or_default(),
-            "PUT /api/config HTTP/1.1"
-        );
-        assert_eq!(
-            request_body(&request),
-            serde_json::json!({"clipboard_enabled": true})
-        );
-
-        let config_body = r#"{"skip_apps":[],"skip_title_patterns":[],"private_browsing_detection":true,"setup_completed":true,"clipboard_enabled":true,"screen_capture_enabled":true,"remote_access_enabled":false}"#;
-        let (base_url, request) = serve_json_once(config_body).await;
-        let client = WenlanClient {
-            client: reqwest::Client::new(),
-            base_url,
-        };
-
-        let config = client.set_screen_capture_enabled(true).await.unwrap();
-
-        assert!(config.screen_capture_enabled);
-        let request = request.await.unwrap();
-        assert_eq!(
-            request.lines().next().unwrap_or_default(),
-            "PUT /api/config HTTP/1.1"
-        );
-        assert_eq!(
-            request_body(&request),
-            serde_json::json!({"screen_capture_enabled": true})
-        );
-    }
-
-    #[tokio::test]
-    async fn privacy_config_fields_use_daemon_patch_endpoint() {
-        let config_body = r#"{"skip_apps":[],"skip_title_patterns":[],"private_browsing_detection":false,"setup_completed":true,"clipboard_enabled":true,"screen_capture_enabled":false,"remote_access_enabled":false}"#;
-        let (base_url, request) = serve_json_once(config_body).await;
-        let client = WenlanClient {
-            client: reqwest::Client::new(),
-            base_url,
-        };
-
-        let config = client.set_private_browsing_detection(false).await.unwrap();
-
-        assert!(!config.private_browsing_detection);
-        let request = request.await.unwrap();
-        assert_eq!(
-            request.lines().next().unwrap_or_default(),
-            "PUT /api/config HTTP/1.1"
-        );
-        assert_eq!(
-            request_body(&request),
-            serde_json::json!({"private_browsing_detection": false})
-        );
-
+    async fn remote_access_config_field_uses_daemon_patch_endpoint() {
         let config_body = r#"{"skip_apps":[],"skip_title_patterns":[],"private_browsing_detection":true,"setup_completed":true,"clipboard_enabled":true,"screen_capture_enabled":false,"remote_access_enabled":true}"#;
         let (base_url, request) = serve_json_once(config_body).await;
         let client = WenlanClient {

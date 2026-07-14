@@ -13,11 +13,9 @@ vi.mock("../../lib/theme", () => ({
 }));
 
 vi.mock("../../lib/tauri", () => ({
-  checkScreenPermission: vi.fn(() => Promise.resolve(false)),
   deleteAgent: vi.fn(() => Promise.resolve()),
   detectMcpClients: vi.fn(() => Promise.resolve([])),
   getCaptureStats: vi.fn(() => Promise.resolve({ clipboard: 0, screen: 0 })),
-  getClipboardEnabled: vi.fn(() => Promise.resolve(true)),
   getProfile: vi.fn(() => Promise.resolve({
     id: "p1",
     name: "Lucian",
@@ -27,14 +25,10 @@ vi.mock("../../lib/tauri", () => ({
     avatar_path: null,
     created_at: 0,
   })),
-  getScreenCaptureEnabled: vi.fn(() => Promise.resolve(false)),
   isRunAtLoginEnabled: vi.fn(() => Promise.resolve(false)),
   listAgents: vi.fn(() => Promise.resolve([])),
-  requestScreenPermission: vi.fn(() => Promise.resolve(false)),
-  setClipboardEnabled: vi.fn(() => Promise.resolve()),
   setAvatar: vi.fn(() => Promise.resolve()),
   setRunAtLogin: vi.fn(() => Promise.resolve()),
-  setScreenCaptureEnabled: vi.fn(() => Promise.resolve()),
   setSetupCompleted: vi.fn(() => Promise.resolve()),
   removeAvatar: vi.fn(() => Promise.resolve()),
   updateAgent: vi.fn(() => Promise.resolve()),
@@ -54,7 +48,7 @@ vi.mock("./RemoteAccessPanel", () => ({
 }));
 
 vi.mock("../intelligence/IntelligenceSetup", () => ({
-  ApiKeyCard: () => <div />,
+  AnthropicFields: () => <div />,
   OnDeviceModelCard: () => <div />,
   useApiKeyStatus: () => ({
     data: { hasAnthropic: false, hasOpenAI: false },
@@ -76,7 +70,7 @@ function renderSettingsPage() {
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <SettingsPage section="general" onBack={() => {}} />
+      <SettingsPage section="general" onBack={() => {}} onImport={() => {}} />
     </QueryClientProvider>,
   );
 }
