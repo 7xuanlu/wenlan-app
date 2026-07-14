@@ -932,10 +932,19 @@ function SettingUpStep({
             // recency read off the memories table, not a search/embedding
             // index that could lag behind the write — so it proves the
             // memory came BACK, not merely that the store call resolved.
+            // The nonce is load-bearing, not decoration. The daemon rejects a
+            // store whose first 200 chars prefix-match an existing memory
+            // (`has_memory_content`, LIKE '<prefix>%'), so a fixed probe
+            // sentence would 422 as a duplicate on the second run — and a
+            // wall-clock timestamp isn't enough either: React StrictMode
+            // double-invokes this effect inside the same millisecond, which
+            // 422s the second write and reds the row. Keep the nonce, and keep
+            // the whole string under 200 chars so the nonce is inside the
+            // window the daemon actually compares.
             const probeContent =
               "Wenlan setup check: confirms this device can store and " +
               "recall a memory. Safe to ignore — it deletes itself right " +
-              `after this check. (${new Date().toISOString()})`;
+              `after this check. (${crypto.randomUUID()})`;
             storeMemory({ content: probeContent, source_agent: "wenlan-setup" })
               .then((stored) =>
                 listRecentMemories(5).then((recent) => {
@@ -953,7 +962,7 @@ function SettingUpStep({
                   // Best-effort cleanup: the round trip above already proved
                   // the pipeline works, so a failed delete of our own probe
                   // memory must not fail the row.
-                  deleteMemory(sourceId).catch(() => {});
+                  void deleteMemory(sourceId).catch(() => {});
                 },
                 (err) => {
                   setStatuses((prev) => ({ ...prev, [row.id]: "failed" }));

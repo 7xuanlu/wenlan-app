@@ -260,7 +260,6 @@ const UNSTUBBED_DEBT = new Set([
   "set_model_choice",
   "set_run_at_login",
   "set_stability_cmd",
-  "store_memory",
   "sync_source",
   "test_external_llm",
   "test_remote_mcp_connection",

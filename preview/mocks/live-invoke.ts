@@ -182,6 +182,13 @@ export const HANDLERS: Record<string, (a: any) => Promise<unknown>> = {
   pin_memory: (a) => post(`/api/memory/${enc(a.sourceId)}/pin`),
   unpin_memory: (a) => post(`/api/memory/${enc(a.sourceId)}/unpin`),
   confirm_memory: (a) => post(`/api/memory/confirm/${enc(a.sourceId)}`, { confirmed: true }),
+  // The wizard's runtime row stores a probe memory and reads it straight back,
+  // so an unmapped `store_memory` resolves to null here and the row dies on
+  // `stored.source_id` — the whole setting-up step becomes unreviewable. Unlike
+  // `add_source` (synthesized, because ingesting a real folder from a pixel
+  // review would be a heavy, lasting write), this one proxies for real: the
+  // wizard deletes its own probe immediately, which is the entire point of it.
+  store_memory: (a) => post("/api/memory/store", a.req),
   delete_memory: (a) => del(`/api/memory/delete/${enc(a.sourceId)}`),
   update_memory_cmd: (a) => put(`/api/memory/${enc(a.sourceId)}/update`, { content: a.content }),
   get_pipeline_status: () => get("/api/debug/pipeline"),

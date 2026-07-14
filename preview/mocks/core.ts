@@ -92,9 +92,23 @@ export async function invoke(
     case "list_unconfirmed_memories":
       if (REVIEW_FAIL.queue) throw new Error("[preview] simulated queue failure");
       return REVIEW_STATE.captures;
-    case "confirm_memory":
-    case "delete_memory": {
+    case "confirm_memory": {
       const id = args?.sourceId as string;
+      REVIEW_STATE.captures = REVIEW_STATE.captures.filter((c) => c.id !== id);
+      return null;
+    }
+    case "delete_memory": {
+      // Only a review-queue fixture capture is deleted from the fixture. The
+      // wizard's runtime row stores a REAL probe memory (store_memory and
+      // list_recent_memories both fall through to the live daemon) and then
+      // deletes it — fixturing that delete swallowed it, so every open of the
+      // wizard preview left a real "Wenlan setup check" memory behind in the
+      // developer's own knowledge base. Anything this fixture doesn't own is
+      // a live id and gets a live delete.
+      const id = args?.sourceId as string;
+      if (!REVIEW_STATE.captures.some((c) => c.id === id)) {
+        return liveInvoke(cmd, args);
+      }
       REVIEW_STATE.captures = REVIEW_STATE.captures.filter((c) => c.id !== id);
       return null;
     }
