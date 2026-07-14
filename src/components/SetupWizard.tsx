@@ -13,7 +13,7 @@ import {
   addSource,
   syncRegisteredSource,
   storeMemory,
-  listRecentMemories,
+  getMemoryDetail,
   deleteMemory,
   type McpClient,
   type ImportResult,
@@ -755,6 +755,10 @@ function taskRowDescId(rowId: string): string {
   return `setting-up-desc-${rowId}`;
 }
 
+function taskRowWarningDescId(rowId: string): string {
+  return `setting-up-warning-${rowId}`;
+}
+
 function modelProgressDescId(rowId: string): string {
   return `setting-up-progress-${rowId}`;
 }
@@ -793,6 +797,40 @@ const NODE_RING_COLOR: Record<TaskStatus, string> = {
   done: "var(--mem-accent-sage)",
   failed: "var(--mem-status-danger-text)",
 };
+
+/** Turns concurrent, out-of-order completions into a serial top-to-bottom
+ *  RENDER — without serializing the actual work (a slow plugin `git clone`
+ *  or a multi-GB model download must never park in front of everything
+ *  else). Rows still resolve concurrently and in whatever order they
+ *  finish; this only decides what each row is allowed to SHOW.
+ *
+ *  Rule: a row's terminal state ("done" or "failed") is only revealed once
+ *  every row above it is also terminal. A terminal row with a
+ *  still-pending/running row above it displays as "running" instead — a
+ *  failed row above never blocks the reveal, since "failed" is terminal
+ *  too. Non-terminal statuses always display unchanged.
+ *
+ *  Pure and exported so the rule is independently testable. This is a
+ *  RENDER-ONLY transform: the rail draws from its output, but every piece
+ *  of control flow — the retry buttons, the error/warning text, whether the
+ *  wizard could ever gate on "everything finished" — must keep reading the
+ *  real `statuses` this function takes as input, never what it returns.
+ *  Gating that logic on the gated view risks waiting on a reveal that a
+ *  stuck row above never delivers. */
+export function displayedStatuses(
+  rows: { id: string }[],
+  statuses: Record<string, TaskStatus>,
+): Record<string, TaskStatus> {
+  const out: Record<string, TaskStatus> = {};
+  let precedingAllTerminal = true;
+  for (const row of rows) {
+    const real = statuses[row.id] ?? "pending";
+    const isTerminal = real === "done" || real === "failed";
+    out[row.id] = isTerminal && !precedingAllTerminal ? "running" : real;
+    precedingAllTerminal = precedingAllTerminal && isTerminal;
+  }
+  return out;
+}
 
 function SettingUpStep({
   selected,
@@ -866,6 +904,10 @@ function SettingUpStep({
     Object.fromEntries(rows.map((row) => [row.id, "pending" as TaskStatus])),
   );
   const [errors, setErrors] = useState<Record<string, string>>({});
+  // Non-fatal per-row notes — today only the daemon row's cleanup-delete
+  // warning uses this, but it's keyed like `errors` so any future row can.
+  // Never fails the row: see the daemon branch of runRow below.
+  const [warnings, setWarnings] = useState<Record<string, string>>({});
   const [importStats, setImportStats] = useState<SyncStats | null>(null);
   // Gates the model-load poll below: the download POST resolving is not
   // proof of anything — only `getOnDeviceModel().loaded` is.
@@ -878,6 +920,12 @@ function SettingUpStep({
     (row: TaskRow) => {
       setStatuses((prev) => ({ ...prev, [row.id]: "running" }));
       setErrors((prev) => {
+        if (!(row.id in prev)) return prev;
+        const next = { ...prev };
+        delete next[row.id];
+        return next;
+      });
+      setWarnings((prev) => {
         if (!(row.id in prev)) return prev;
         const next = { ...prev };
         delete next[row.id];
@@ -928,10 +976,12 @@ function SettingUpStep({
             // Reachable only proves the daemon answers HTTP — not that it can
             // actually store and recall a memory. Prove the real write path:
             // store a marked, self-identifying probe memory, then read it
-            // straight back through the recent-memories feed. That's a direct
-            // recency read off the memories table, not a search/embedding
-            // index that could lag behind the write — so it proves the
-            // memory came BACK, not merely that the store call resolved.
+            // straight back BY ID. A read by id can't race anything — unlike
+            // the recent-memories feed (a fixed-size recency window), which
+            // the concurrently-running import row can flood with real
+            // ingested memories between the store and the read, evicting the
+            // probe from the window and failing this row on exactly the
+            // installs that have data to import.
             // The nonce is load-bearing, not decoration. The daemon rejects a
             // store whose first 200 chars prefix-match an existing memory
             // (`has_memory_content`, LIKE '<prefix>%'), so a fixed probe
@@ -947,8 +997,8 @@ function SettingUpStep({
               `after this check. (${crypto.randomUUID()})`;
             storeMemory({ content: probeContent, source_agent: "wenlan-setup" })
               .then((stored) =>
-                listRecentMemories(5).then((recent) => {
-                  if (!recent.some((item) => item.id === stored.source_id)) {
+                getMemoryDetail(stored.source_id).then((detail) => {
+                  if (!detail || detail.source_id !== stored.source_id) {
                     throw new Error(
                       "Stored a test memory but couldn't read it back.",
                     );
@@ -959,10 +1009,21 @@ function SettingUpStep({
               .then(
                 (sourceId) => {
                   setStatuses((prev) => ({ ...prev, [row.id]: "done" }));
-                  // Best-effort cleanup: the round trip above already proved
-                  // the pipeline works, so a failed delete of our own probe
-                  // memory must not fail the row.
-                  void deleteMemory(sourceId).catch(() => {});
+                  // Cleanup: the round trip above already proved the pipeline
+                  // works, so a failed delete must never fail the row — but
+                  // silently swallowing it (the old `.catch(() => {})`)
+                  // strands a Wenlan-authored memory in the user's knowledge
+                  // base while the row's own copy claims "it deletes itself
+                  // right after this check". One retry, then a non-fatal
+                  // warning the row surfaces instead of a lie.
+                  void deleteMemory(sourceId).catch(() =>
+                    deleteMemory(sourceId).catch(() => {
+                      setWarnings((prev) => ({
+                        ...prev,
+                        [row.id]: t("setup.settingUp.daemonCleanupWarning"),
+                      }));
+                    }),
+                  );
                 },
                 (err) => {
                   setStatuses((prev) => ({ ...prev, [row.id]: "failed" }));
@@ -1086,6 +1147,14 @@ function SettingUpStep({
 
   const statusOf = (row: TaskRow): TaskStatus => statuses[row.id] ?? "pending";
 
+  // Render-only view: see displayedStatuses' own comment for the rule. Every
+  // control-flow read in this component (retry, error/warning text, the
+  // aggregate anyFailed/anyRunning below) stays on `statusOf`/`statuses` —
+  // only the row's cosmetic status word, color, and node/rail styling read
+  // through this.
+  const displayed = useMemo(() => displayedStatuses(rows, statuses), [rows, statuses]);
+  const displayedStatusOf = (row: TaskRow): TaskStatus => displayed[row.id] ?? "pending";
+
   // The daemon reports no byte count, but it does report whether the file is
   // cached. That splits one undifferentiated spinner into the two waits the
   // user actually has — minutes of download, then seconds of load — and lets
@@ -1154,11 +1223,11 @@ function SettingUpStep({
       // Done reads as proof ("it stored and recalled a test memory"), not as
       // a restated ping — the same done/not-done split every other row uses.
       return t(
-        statusOf(row) === "done" ? "setup.settingUp.daemonDoneSub" : "setup.settingUp.daemonSub",
+        displayedStatusOf(row) === "done" ? "setup.settingUp.daemonDoneSub" : "setup.settingUp.daemonSub",
       );
     }
     if (row.kind === "model") {
-      if (statusOf(row) === "done") {
+      if (displayedStatusOf(row) === "done") {
         return t("setup.settingUp.modelDoneSub", { model: pendingModelId ?? "" });
       }
       if (modelDownloading) {
@@ -1179,7 +1248,7 @@ function SettingUpStep({
       return t("setup.settingUp.modelLoadingSub");
     }
     if (row.kind === "import") {
-      if (statusOf(row) === "done" && importStats) {
+      if (displayedStatusOf(row) === "done" && importStats) {
         return t("setup.settingUp.importDoneSub", {
           ingested: importStats.ingested,
           skipped: importStats.skipped,
@@ -1193,13 +1262,13 @@ function SettingUpStep({
     }
     // "Adding Wenlan to X's configuration file" is a lie once it's added.
     return t(
-      statusOf(row) === "done" ? "setup.settingUp.configDoneSub" : "setup.settingUp.configSub",
+      displayedStatusOf(row) === "done" ? "setup.settingUp.configDoneSub" : "setup.settingUp.configSub",
       { name: row.client!.name },
     );
   };
 
   const statusTextOf = (row: TaskRow): string => {
-    const status = statusOf(row);
+    const status = displayedStatusOf(row);
     if (status === "pending") return t("setup.settingUp.statusPending");
     if (status === "running") {
       // "Setting up…" for six minutes of model download is not a status, it's
@@ -1268,9 +1337,15 @@ function SettingUpStep({
         style={{ display: "flex", flexDirection: "column" }}
       >
         {rows.map((row, index) => {
-          const status = statusOf(row);
+          // Cosmetic only: what the row's word/color/node actually show,
+          // gated top-to-bottom by displayedStatuses. Retry, the error text,
+          // and the warning text below all stay on the REAL per-row state —
+          // an actionable failure (or the cleanup warning) is never held
+          // back by a still-running row above it.
+          const status = displayedStatusOf(row);
           const error = errors[row.id];
-          const canRetry = status === "failed";
+          const warning = warnings[row.id];
+          const canRetry = statusOf(row) === "failed";
           const isDone = status === "done";
           const isFirst = index === 0;
           const isLast = index === rows.length - 1;
@@ -1424,7 +1499,13 @@ function SettingUpStep({
                   <div className="flex items-center gap-2 shrink-0">
                     <span
                       data-testid={`task-status-${row.id}`}
-                      aria-describedby={error ? taskRowDescId(row.id) : undefined}
+                      aria-describedby={
+                        error
+                          ? taskRowDescId(row.id)
+                          : warning
+                            ? taskRowWarningDescId(row.id)
+                            : undefined
+                      }
                       style={{
                         fontFamily: "var(--mem-font-mono)",
                         fontSize: "var(--mem-text-sm)",
@@ -1460,6 +1541,22 @@ function SettingUpStep({
                     }}
                   >
                     {error}
+                  </p>
+                )}
+
+                {!error && warning && (
+                  <p
+                    id={taskRowWarningDescId(row.id)}
+                    role="alert"
+                    style={{
+                      fontFamily: "var(--mem-font-body)",
+                      fontSize: "var(--mem-text-sm)",
+                      color: "var(--mem-status-warning-text)",
+                      lineHeight: "1.5",
+                      marginTop: "8px",
+                    }}
+                  >
+                    {warning}
                   </p>
                 )}
               </div>

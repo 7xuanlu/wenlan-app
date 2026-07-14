@@ -8,12 +8,16 @@ vi.mock("./live-invoke", () => ({
   liveInvoke: vi.fn(async () => ({ deleted: true })),
 }));
 
-// The wizard's runtime row stores a REAL memory in the maintainer's own daemon
-// (store_memory and list_recent_memories both fall through to liveInvoke) and
-// then deletes it. When this fixture owned every `delete_memory`, that delete
-// was swallowed and each preview of the wizard left a real "Wenlan setup check"
-// memory behind in the developer's database. The fixture may only delete what
-// the fixture itself owns.
+// The wizard's runtime row used to store a REAL memory in the maintainer's own
+// daemon (store_memory fell through to liveInvoke, which proxied it) and then
+// delete it. When this fixture owned every `delete_memory`, that delete was
+// swallowed and each preview of the wizard left a real "Wenlan setup check"
+// memory behind in the developer's database. store_memory is now synthesized
+// in liveInvoke itself (PREVIEW_PROBES — see live-invoke.ts), so it no longer
+// touches the daemon at all; this still covers the other half of the fix —
+// the fixture may only delete what the fixture itself owns, and every other
+// id (a real memory, or the wizard's synthesized probe id) still needs to
+// reach delete_memory, which is what actually clears it.
 describe("preview core.ts — delete_memory in fixture mode", () => {
   beforeEach(() => {
     vi.mocked(liveInvoke).mockClear();

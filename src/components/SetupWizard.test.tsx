@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, within, fireEvent, waitFor, act } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { SetupWizard } from "./SetupWizard";
+import { SetupWizard, displayedStatuses } from "./SetupWizard";
 import { i18n } from "../i18n";
 
 vi.mock("@tauri-apps/api/event", () => ({
@@ -88,6 +88,26 @@ vi.mock("../lib/tauri", () => ({
       badge: { kind: "none" },
     },
   ]),
+  // Echoes the id back in a MemoryItem-shaped object so it always matches
+  // whatever storeMemory resolved with, by default — tests that need a
+  // mismatch (or a missing memory) override this per-test.
+  getMemoryDetail: vi.fn().mockImplementation((sourceId: string) =>
+    Promise.resolve({
+      source_id: sourceId,
+      title: "Wenlan setup check",
+      content: "Wenlan setup check: confirms this device can store and recall a memory.",
+      summary: null,
+      memory_type: null,
+      domain: null,
+      source_agent: "wenlan-setup",
+      confidence: null,
+      confirmed: false,
+      pinned: false,
+      supersedes: null,
+      last_modified: Date.now(),
+      chunk_count: 0,
+    }),
+  ),
   deleteMemory: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -106,6 +126,7 @@ import {
   syncRegisteredSource,
   storeMemory,
   listRecentMemories,
+  getMemoryDetail,
   deleteMemory,
 } from "../lib/tauri";
 
@@ -172,6 +193,23 @@ describe("SetupWizard", () => {
         badge: { kind: "none" },
       },
     ]);
+    (getMemoryDetail as ReturnType<typeof vi.fn>).mockImplementation((sourceId: string) =>
+      Promise.resolve({
+        source_id: sourceId,
+        title: "Wenlan setup check",
+        content: "Wenlan setup check: confirms this device can store and recall a memory.",
+        summary: null,
+        memory_type: null,
+        domain: null,
+        source_agent: "wenlan-setup",
+        confidence: null,
+        confirmed: false,
+        pinned: false,
+        supersedes: null,
+        last_modified: Date.now(),
+        chunk_count: 0,
+      }),
+    );
     (deleteMemory as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
   });
 
@@ -1370,19 +1408,28 @@ describe("SetupWizard", () => {
 
   // Reachable is not the same as working: the row must prove the actual
   // write path, not just that the daemon answered a ping. It stores a marked
-  // probe memory, reads it straight back, then cleans up after itself.
-  it("the runtime row proves the write path — stores a probe memory, reads it back, then deletes it", async () => {
+  // probe memory, reads it straight back BY ID, then cleans up after itself.
+  // The read-back must never depend on the recent-memories feed: the import
+  // row runs concurrently and can flood that feed with real ingested
+  // memories between the store and the read, evicting the probe from a
+  // fixed-size window and failing this row on exactly the installs that
+  // have data to import.
+  it("the runtime row proves the write path by id — a flood of unrelated recent memories does not red the row", async () => {
     (storeMemory as ReturnType<typeof vi.fn>).mockResolvedValue({ source_id: "mem_probe-1" });
-    (listRecentMemories as ReturnType<typeof vi.fn>).mockResolvedValue([
-      {
+    // Simulates the exact race this fix closes: the import row raced ahead
+    // and pushed enough real memories that the probe would have fallen out
+    // of any fixed-size "recent" window. The row must not care — it never
+    // reads this feed at all anymore.
+    (listRecentMemories as ReturnType<typeof vi.fn>).mockResolvedValue(
+      ["mem_flood-1", "mem_flood-2", "mem_flood-3", "mem_flood-4", "mem_flood-5"].map((id) => ({
         kind: "memory",
-        id: "mem_probe-1",
-        title: "Wenlan setup check",
+        id,
+        title: "Imported note",
         snippet: null,
         timestamp_ms: Date.now(),
         badge: { kind: "none" },
-      },
-    ]);
+      })),
+    );
 
     renderWizard({ initialStep: "setting-up" });
 
@@ -1392,21 +1439,21 @@ describe("SetupWizard", () => {
 
     // The row proves it, not just pings it: content is a self-identifying
     // setup check, and the read-back is a real lookup by the id the store
-    // call returned — not merely that the store call resolved.
+    // call returned — not a read off a feed a concurrent import can flood.
     expect(storeMemory).toHaveBeenCalledWith(
       expect.objectContaining({ content: expect.stringContaining("setup check") }),
     );
-    expect(listRecentMemories).toHaveBeenCalled();
+    expect(getMemoryDetail).toHaveBeenCalledWith("mem_probe-1");
     await waitFor(() => {
       expect(deleteMemory).toHaveBeenCalledWith("mem_probe-1");
     });
   });
 
-  it("the runtime row fails when the stored probe memory can't be read back — reachable is not enough", async () => {
+  it("the runtime row fails when the read-back by id comes back null — reachable is not enough", async () => {
     (storeMemory as ReturnType<typeof vi.fn>).mockResolvedValue({ source_id: "mem_probe-2" });
     // The read-back comes back empty: the write never lands, or lands
-    // somewhere the recent-memories feed can't see it either way.
-    (listRecentMemories as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    // somewhere the daemon can't find it by id either way.
+    (getMemoryDetail as ReturnType<typeof vi.fn>).mockResolvedValue(null);
 
     renderWizard({ initialStep: "setting-up" });
 
@@ -1421,27 +1468,56 @@ describe("SetupWizard", () => {
     expect(deleteMemory).not.toHaveBeenCalled();
   });
 
-  it("a failed cleanup delete does not fail the runtime row — the round trip already proved the pipeline", async () => {
+  it("a delete that fails once then succeeds on retry leaves the runtime row done, with no warning", async () => {
     (storeMemory as ReturnType<typeof vi.fn>).mockResolvedValue({ source_id: "mem_probe-3" });
-    (listRecentMemories as ReturnType<typeof vi.fn>).mockResolvedValue([
-      {
-        kind: "memory",
-        id: "mem_probe-3",
-        title: "Wenlan setup check",
-        snippet: null,
-        timestamp_ms: Date.now(),
-        badge: { kind: "none" },
-      },
-    ]);
+    (deleteMemory as ReturnType<typeof vi.fn>)
+      .mockRejectedValueOnce(new Error("delete failed"))
+      .mockResolvedValueOnce(undefined);
+
+    renderWizard({ initialStep: "setting-up" });
+
+    await waitFor(() => {
+      expect(deleteMemory).toHaveBeenCalledTimes(2);
+    });
+    expect(deleteMemory).toHaveBeenNthCalledWith(1, "mem_probe-3");
+    expect(deleteMemory).toHaveBeenNthCalledWith(2, "mem_probe-3");
+    expect(screen.getByTestId("task-status-daemon")).toHaveTextContent("Running");
+    expect(
+      screen.queryByText(
+        "Couldn't remove the test memory — you can delete it from your knowledge base.",
+      ),
+    ).not.toBeInTheDocument();
+  });
+
+  it("a delete that fails twice (the retry also fails) leaves the runtime row done, with the cleanup warning surfaced", async () => {
+    (storeMemory as ReturnType<typeof vi.fn>).mockResolvedValue({ source_id: "mem_probe-4" });
     (deleteMemory as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("delete failed"));
 
     renderWizard({ initialStep: "setting-up" });
 
     await waitFor(() => {
-      expect(deleteMemory).toHaveBeenCalledWith("mem_probe-3");
+      expect(deleteMemory).toHaveBeenCalledTimes(2);
     });
+    expect(deleteMemory).toHaveBeenNthCalledWith(1, "mem_probe-4");
+    expect(deleteMemory).toHaveBeenNthCalledWith(2, "mem_probe-4");
+
+    // The round trip already proved the pipeline works, so a cleanup
+    // failure — even after a retry — must never red the row.
     expect(screen.getByTestId("task-status-daemon")).toHaveTextContent("Running");
     expect(screen.queryByText("delete failed")).not.toBeInTheDocument();
+
+    const warningText =
+      "Couldn't remove the test memory — you can delete it from your knowledge base.";
+    await waitFor(() => {
+      expect(screen.getByText(warningText)).toBeInTheDocument();
+    });
+    // Announced accessibly the same way `errors` already are: the status
+    // span describes itself via the warning paragraph's id.
+    const statusSpan = screen.getByTestId("task-status-daemon");
+    const describedBy = statusSpan.getAttribute("aria-describedby");
+    expect(describedBy).toBeTruthy();
+    const warningEl = document.getElementById(describedBy!);
+    expect(warningEl).toHaveTextContent(warningText);
   });
 
   // The rows run concurrently and independently. A dead daemon is the single
@@ -1553,5 +1629,49 @@ describe("SetupWizard", () => {
       expect(screen.getByTestId("task-status-cursor")).toHaveTextContent("Configured");
     });
     expect(screen.getByText("Wenlan is in Cursor's configuration file.")).toBeInTheDocument();
+  });
+});
+
+// Pure display-gating rule behind the setting-up rail: a row's terminal
+// state only reveals once every row above it is also terminal, so
+// concurrent, out-of-order completions still SHOW as a serial top-to-bottom
+// sweep even though the underlying work never was serialized.
+describe("displayedStatuses", () => {
+  const rows = [{ id: "a" }, { id: "b" }, { id: "c" }];
+
+  it("a terminal row below a still-running row displays as running", () => {
+    const statuses = { a: "running", b: "done", c: "pending" } as const;
+    expect(displayedStatuses(rows, statuses)).toEqual({
+      a: "running",
+      b: "running",
+      c: "pending",
+    });
+  });
+
+  it("once the row above goes terminal, the row below reveals its real status", () => {
+    const statuses = { a: "done", b: "done", c: "pending" } as const;
+    expect(displayedStatuses(rows, statuses)).toEqual({
+      a: "done",
+      b: "done",
+      c: "pending",
+    });
+  });
+
+  it("a failed row above does not block the reveal below it — failed is terminal too", () => {
+    const statuses = { a: "failed", b: "done", c: "running" } as const;
+    expect(displayedStatuses(rows, statuses)).toEqual({
+      a: "failed",
+      b: "done",
+      c: "running",
+    });
+  });
+
+  it("a pending row is unaffected either way — non-terminal statuses never change", () => {
+    const statuses = { a: "pending", b: "done", c: "done" } as const;
+    expect(displayedStatuses(rows, statuses)).toEqual({
+      a: "pending",
+      b: "running",
+      c: "running",
+    });
   });
 });

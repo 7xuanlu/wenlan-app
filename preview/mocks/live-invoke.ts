@@ -48,6 +48,20 @@ const MODEL_BLOB_BYTES = 2_497_281_120;
 let downloadStartedAt: number | null = null;
 let downloadingModelId: string | null = null;
 
+// --- setup wizard: daemon row probe memory (store_memory / get_memory_detail /
+// delete_memory) ---
+// The wizard's runtime row proves the write path by storing a probe memory,
+// reading it straight back, and deleting it. Proxying store_memory to the
+// real daemon (as this used to) meant every open of the wizard in a pixel
+// review left a REAL memory in the maintainer's live knowledge base — seven
+// of these leaked in before this was caught. Same precedent as `add_source`
+// below: synthesize instead of mutating production data. Keyed by the
+// synthesized id so get_memory_detail/delete_memory can find their own
+// probes while still falling through to the live daemon for every other
+// (real) memory id the rest of the app might ask about.
+const PREVIEW_PROBES = new Map<string, unknown>();
+let previewProbeSeq = 0;
+
 function downloadComplete(): boolean {
   return downloadStartedAt !== null && Date.now() - downloadStartedAt >= MODEL_DOWNLOAD_DURATION_MS;
 }
@@ -93,8 +107,11 @@ export const HANDLERS: Record<string, (a: any) => Promise<unknown>> = {
     get(`/api/memory/recent${qs({ limit: a?.limit, since_ms: a?.sinceMs })}`).then(
       (r) => r.memories ?? r,
     ),
-  get_memory_detail: (a) =>
-    get(`/api/memory/${enc(a.sourceId)}/detail`).then((r) => r?.memory ?? null),
+  get_memory_detail: (a) => {
+    const sourceId = a.sourceId as string;
+    if (PREVIEW_PROBES.has(sourceId)) return Promise.resolve(PREVIEW_PROBES.get(sourceId));
+    return get(`/api/memory/${enc(sourceId)}/detail`).then((r) => r?.memory ?? null);
+  },
   list_memories_by_ids: (a) =>
     get(`/api/memory/by-ids?ids=${(a.ids as string[]).map(enc).join(",")}`).then(
       (r) => r.memories ?? r,
@@ -182,14 +199,46 @@ export const HANDLERS: Record<string, (a: any) => Promise<unknown>> = {
   pin_memory: (a) => post(`/api/memory/${enc(a.sourceId)}/pin`),
   unpin_memory: (a) => post(`/api/memory/${enc(a.sourceId)}/unpin`),
   confirm_memory: (a) => post(`/api/memory/confirm/${enc(a.sourceId)}`, { confirmed: true }),
-  // The wizard's runtime row stores a probe memory and reads it straight back,
-  // so an unmapped `store_memory` resolves to null here and the row dies on
-  // `stored.source_id` — the whole setting-up step becomes unreviewable. Unlike
-  // `add_source` (synthesized, because ingesting a real folder from a pixel
-  // review would be a heavy, lasting write), this one proxies for real: the
-  // wizard deletes its own probe immediately, which is the entire point of it.
-  store_memory: (a) => post("/api/memory/store", a.req),
-  delete_memory: (a) => del(`/api/memory/delete/${enc(a.sourceId)}`),
+  // The wizard's runtime row stores a probe memory, reads it straight back,
+  // then deletes it — proving the write path exists for the row to render at
+  // all. This USED to proxy to the real daemon on the theory that "the
+  // wizard deletes its own probe immediately, so it's harmless" — but the
+  // delete is best-effort (and, before this fix, silently swallowed on
+  // failure), so a slow/failed cleanup left a REAL "Wenlan setup check"
+  // memory behind in the maintainer's own knowledge base. Seven leaked in
+  // this way. Same precedent as `add_source` below: synthesize a probe
+  // (PREVIEW_PROBES, above) instead of writing anything real. See
+  // get_memory_detail and delete_memory above/below for the other two legs
+  // of this same round trip.
+  store_memory: (a) => {
+    const req = (a.req ?? {}) as { content?: string; source_agent?: string };
+    const sourceId = `preview-probe-${previewProbeSeq++}`;
+    const memory = {
+      source_id: sourceId,
+      title: (req.content ?? "Preview probe memory").slice(0, 60),
+      content: req.content ?? "",
+      summary: null,
+      memory_type: null,
+      domain: null,
+      source_agent: req.source_agent ?? null,
+      confidence: null,
+      confirmed: false,
+      pinned: false,
+      supersedes: null,
+      last_modified: Date.now(),
+      chunk_count: 0,
+    };
+    PREVIEW_PROBES.set(sourceId, memory);
+    return Promise.resolve({ source_id: sourceId, enrichment: "not_needed", hint: "" });
+  },
+  delete_memory: (a) => {
+    const sourceId = a.sourceId as string;
+    if (PREVIEW_PROBES.has(sourceId)) {
+      PREVIEW_PROBES.delete(sourceId);
+      return Promise.resolve({ deleted: true });
+    }
+    return del(`/api/memory/delete/${enc(sourceId)}`);
+  },
   update_memory_cmd: (a) => put(`/api/memory/${enc(a.sourceId)}/update`, { content: a.content }),
   get_pipeline_status: () => get("/api/debug/pipeline"),
   list_onboarding_milestones: () =>

@@ -80,6 +80,8 @@ const en = {
       daemonSub:
         "Storing a test memory and reading it back — Wenlan deletes it right after.",
       daemonDoneSub: "Wenlan is running — it stored a test memory and read it straight back.",
+      daemonCleanupWarning:
+        "Couldn't remove the test memory — you can delete it from your knowledge base.",
       daemonUnreachable: "The Wenlan daemon isn't reachable.",
       modelLabel: "On-device model",
       modelSub: "Downloading and loading the model you chose — this can take a few minutes.",
@@ -1168,6 +1170,7 @@ const zhHans = {
       daemonLabel: "文澜运行时",
       daemonSub: "正在存入一条测试记忆并读回——文澜随后会自动删除它。",
       daemonDoneSub: "文澜正在运行——它已存入一条测试记忆并成功读回。",
+      daemonCleanupWarning: "未能删除这条测试记忆——你可以从知识库中手动删除它。",
       daemonUnreachable: "无法连接到文澜守护进程。",
       modelLabel: "本机模型",
       modelSub: "正在下载并加载你选择的模型——这可能需要几分钟。",
@@ -2231,6 +2234,7 @@ const zhHant = {
       daemonLabel: "文瀾執行時",
       daemonSub: "正在存入一則測試記憶並讀回——文瀾隨後會自動刪除它。",
       daemonDoneSub: "文瀾正在執行——它已存入一則測試記憶並成功讀回。",
+      daemonCleanupWarning: "未能刪除這則測試記憶——你可以從知識庫中手動刪除它。",
       daemonUnreachable: "無法連接到文瀾守護行程。",
       modelLabel: "裝置端模型",
       modelSub: "正在下載並載入你選擇的模型——這可能需要幾分鐘。",
