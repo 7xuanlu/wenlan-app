@@ -64,7 +64,8 @@ const en = {
       statusDownloading: "Downloading…",
       statusLoading: "Loading…",
       statusImporting: "Importing…",
-      pluginSub: "Wenlan sets itself up inside {{name}} — nothing for you to type.",
+      pluginSub:
+        "Wenlan sets itself up inside {{name}}. It downloads what it needs, so this takes longer than the others — nothing for you to type.",
       configSub: "Adding Wenlan to {{name}}'s configuration file.",
       configDoneSub: "Wenlan is in {{name}}'s configuration file.",
       codexLabel: "Codex CLI & ChatGPT desktop",
@@ -121,7 +122,8 @@ const en = {
   },
   vaultConnect: {
     title: "Connect a notes folder",
-    description: "Wenlan watches the folder and keeps your notes indexed as they change.",
+    description:
+      "Your notes become sources your wiki pages cite. Wenlan reads the folder — it never writes to it.",
     supportsObsidian: "Obsidian vaults — indexes your Markdown notes",
     supportsFolder: "Any folder — indexes .md, .txt, and .pdf files",
     browse: "Browse…",
@@ -1157,7 +1159,8 @@ const zhHans = {
       statusDownloading: "下载中…",
       statusLoading: "加载中…",
       statusImporting: "导入中…",
-      pluginSub: "文澜会自行接入 {{name}}，你无需输入任何命令。",
+      pluginSub:
+        "文澜会自行接入 {{name}}。它需要下载所需内容，因此比其他项耗时更久 — 你无需输入任何命令。",
       configSub: "正在把文澜写入 {{name}} 的配置文件。",
       configDoneSub: "文澜已写入 {{name}} 的配置文件。",
       codexLabel: "Codex CLI 与 ChatGPT 桌面版",
@@ -1207,7 +1210,7 @@ const zhHans = {
   },
   vaultConnect: {
     title: "连接笔记文件夹",
-    description: "Wenlan 会监视该文件夹，并在笔记变化时保持索引更新。",
+    description: "你的笔记会成为维基页面引用的来源。文澜只读取该文件夹 — 从不写入。",
     supportsObsidian: "Obsidian 仓库 — 索引你的 Markdown 笔记",
     supportsFolder: "任意文件夹 — 索引 .md、.txt 和 .pdf 文件",
     browse: "浏览…",
@@ -2222,7 +2225,8 @@ const zhHant = {
       statusDownloading: "下載中…",
       statusLoading: "載入中…",
       statusImporting: "匯入中…",
-      pluginSub: "文瀾會自行接入 {{name}}，你無需輸入任何命令。",
+      pluginSub:
+        "文瀾會自行接入 {{name}}。它需要下載所需內容，因此比其他項耗時更久 — 你無需輸入任何命令。",
       configSub: "正在把文瀾寫入 {{name}} 的設定檔。",
       configDoneSub: "文瀾已寫入 {{name}} 的設定檔。",
       codexLabel: "Codex CLI 與 ChatGPT 桌面版",
@@ -2272,7 +2276,7 @@ const zhHant = {
   },
   vaultConnect: {
     title: "連接筆記資料夾",
-    description: "Wenlan 會監看該資料夾，並在筆記變動時保持索引更新。",
+    description: "你的筆記會成為維基頁面引用的來源。文瀾只讀取該資料夾 — 從不寫入。",
     supportsObsidian: "Obsidian 儲存庫 — 索引你的 Markdown 筆記",
     supportsFolder: "任意資料夾 — 索引 .md、.txt 和 .pdf 檔案",
     browse: "瀏覽…",
