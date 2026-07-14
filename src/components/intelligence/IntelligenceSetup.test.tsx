@@ -93,7 +93,7 @@ describe("AnthropicFields", () => {
     mocks.getModelChoice.mockResolvedValue([null, null]);
     renderCard();
     await screen.findByText("sk-ant-***configured");
-    expect(await screen.findByRole("combobox", { name: "Choose routine model" })).toBeInTheDocument();
+    expect(await screen.findByRole("combobox", { name: "Choose everyday model" })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Choose synthesis model" })).toBeInTheDocument();
   });
 });

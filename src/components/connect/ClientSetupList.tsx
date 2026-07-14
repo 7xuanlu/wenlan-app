@@ -9,6 +9,7 @@ import {
   type McpClient,
 } from "../../lib/tauri";
 import { isPluginClient } from "./pluginClients";
+import { clientTypeFamily } from "../../lib/agents";
 import ClientRow from "./ClientRow";
 import { Button } from "../memory/settings/primitives";
 
@@ -17,18 +18,31 @@ import { Button } from "../memory/settings/primitives";
  *  thing that decides: Claude Code and Codex get the Wenlan plugin (which
  *  registers the MCP server itself), everyone else gets an MCP config write.
  *  Writing a config for a plugin client would register Wenlan twice, so this
- *  surface obeys the same invariant the wizard does. */
-export default function ClientSetupList() {
+ *  surface obeys the same invariant the wizard does.
+ *
+ *  `connectedFamilies` (the tool families the roster above already shows as
+ *  connected) is the single source of truth for what to hide here: a client
+ *  whose family already has an identity is represented above, so re-listing
+ *  it — even when its own config file looks unconfigured — is the duplication
+ *  the user vetoed. */
+export default function ClientSetupList({
+  connectedFamilies,
+}: {
+  connectedFamilies?: Set<string>;
+} = {}) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [busy, setBusy] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const { data: clients } = useQuery({ queryKey: ["mcp-clients"], queryFn: detectMcpClients });
-  // Configured clients are already represented in the Connected group above —
-  // showing them again here with nothing left to do is the duplication the
-  // user vetoed.
-  const actionable = (clients ?? []).filter((client) => !client.already_configured);
+  // Hide a client that is already configured (nothing left to do) OR whose
+  // tool family is already connected in the roster above.
+  const actionable = (clients ?? []).filter(
+    (client) =>
+      !client.already_configured &&
+      !(connectedFamilies?.has(clientTypeFamily(client.client_type)) ?? false),
+  );
 
   const setUp = async (clientType: string) => {
     setBusy(clientType);

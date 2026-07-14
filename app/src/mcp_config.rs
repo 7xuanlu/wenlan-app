@@ -566,6 +566,90 @@ pub fn write_wenlan_entry_toml(config_path: &std::path::Path) -> Result<(), AppE
     Ok(())
 }
 
+/// Remove the raw `wenlan`/legacy `origin` `mcpServers` entries from a JSON
+/// client config — the inverse of `write_wenlan_entry`, and the fix for the
+/// double-registration Diagnostics surfaces (a plugin *and* a raw entry for
+/// one client). Symmetric with detection: it removes exactly the keys
+/// `has_configured_entry` recognizes, so `client_config_has_raw_entry` reads
+/// `false` afterwards. Every sibling server and unrelated key survives.
+/// A missing file, or a file with neither key present, is `Err` — there is
+/// nothing to remove, and the caller surfaces that verbatim. Backs the file
+/// up first (like `write_wenlan_entry`), but only once a removal is certain,
+/// so the no-op error path leaves no stray `.bak`.
+pub fn remove_wenlan_entry(config_path: &std::path::Path) -> Result<(), AppError> {
+    if !config_path.exists() {
+        return Err(AppError::Generic(
+            "No config file found — nothing to remove".into(),
+        ));
+    }
+    let contents = std::fs::read_to_string(config_path)?;
+    let mut root = serde_json::from_str::<serde_json::Value>(&contents).map_err(|e| {
+        AppError::Generic(format!("Invalid JSON in {}: {}", config_path.display(), e))
+    })?;
+
+    let removed = root
+        .get_mut("mcpServers")
+        .and_then(|servers| servers.as_object_mut())
+        .map(|servers| {
+            let wenlan = servers.remove(MCP_SERVER_KEY).is_some();
+            let legacy = servers.remove(LEGACY_MCP_SERVER_KEY).is_some();
+            wenlan || legacy
+        })
+        .unwrap_or(false);
+
+    if !removed {
+        return Err(AppError::Generic(
+            "No Wenlan MCP entry found to remove".into(),
+        ));
+    }
+
+    let backup_path = config_path.with_extension("json.bak");
+    std::fs::copy(config_path, &backup_path)?;
+    let formatted =
+        serde_json::to_string_pretty(&root).map_err(|e| AppError::Generic(e.to_string()))?;
+    std::fs::write(config_path, formatted)?;
+    Ok(())
+}
+
+/// TOML variant for Codex CLI (`[mcp_servers.*]` tables) — mirrors
+/// `remove_wenlan_entry`'s contract and `has_configured_entry_toml`'s key set,
+/// using the same format-preserving `toml_edit` round-trip
+/// `write_wenlan_entry_toml` writes with.
+pub fn remove_wenlan_entry_toml(config_path: &std::path::Path) -> Result<(), AppError> {
+    use toml_edit::DocumentMut;
+
+    if !config_path.exists() {
+        return Err(AppError::Generic(
+            "No config file found — nothing to remove".into(),
+        ));
+    }
+    let contents = std::fs::read_to_string(config_path)?;
+    let mut doc: DocumentMut = contents.parse().map_err(|e| {
+        AppError::Generic(format!("Invalid TOML in {}: {}", config_path.display(), e))
+    })?;
+
+    let removed = doc
+        .get_mut("mcp_servers")
+        .and_then(|servers| servers.as_table_like_mut())
+        .map(|servers| {
+            let wenlan = servers.remove(MCP_SERVER_KEY).is_some();
+            let legacy = servers.remove(LEGACY_MCP_SERVER_KEY).is_some();
+            wenlan || legacy
+        })
+        .unwrap_or(false);
+
+    if !removed {
+        return Err(AppError::Generic(
+            "No Wenlan MCP entry found to remove".into(),
+        ));
+    }
+
+    let backup_path = config_path.with_extension("toml.bak");
+    std::fs::copy(config_path, &backup_path)?;
+    std::fs::write(config_path, doc.to_string())?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1345,5 +1429,145 @@ args = ["--flag"]
         let config_path = tmp.path().join("config.toml");
         std::fs::write(&config_path, "not toml [").unwrap();
         assert!(write_wenlan_entry_toml(&config_path).is_err());
+    }
+
+    // ── remove_wenlan_entry (JSON) ──────────────────────────────────────
+
+    #[test]
+    fn test_remove_wenlan_entry_removes_only_the_wenlan_entry() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config_path = tmp.path().join("config.json");
+        let existing = r#"{"mcpServers": {"wenlan": {"command": "npx"}, "other": {"command": "other-cmd"}}}"#;
+        std::fs::write(&config_path, existing).unwrap();
+
+        remove_wenlan_entry(&config_path).unwrap();
+
+        let parsed: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&config_path).unwrap()).unwrap();
+        assert!(parsed["mcpServers"]["wenlan"].is_null());
+        // The sibling server survives untouched.
+        assert_eq!(parsed["mcpServers"]["other"]["command"], "other-cmd");
+    }
+
+    #[test]
+    fn test_remove_wenlan_entry_preserves_unrelated_structure() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config_path = tmp.path().join("config.json");
+        let existing = r#"{"theme": "dark", "mcpServers": {"wenlan": {"command": "npx"}}}"#;
+        std::fs::write(&config_path, existing).unwrap();
+
+        remove_wenlan_entry(&config_path).unwrap();
+
+        let parsed: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&config_path).unwrap()).unwrap();
+        assert_eq!(parsed["theme"], "dark");
+        assert!(parsed["mcpServers"]["wenlan"].is_null());
+    }
+
+    #[test]
+    fn test_remove_wenlan_entry_removes_legacy_origin() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config_path = tmp.path().join("config.json");
+        let existing = r#"{"mcpServers": {"origin": {"command": "npx", "args": ["-y", "origin-mcp"]}}}"#;
+        std::fs::write(&config_path, existing).unwrap();
+
+        remove_wenlan_entry(&config_path).unwrap();
+
+        let parsed: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&config_path).unwrap()).unwrap();
+        assert!(parsed["mcpServers"]["origin"].is_null());
+    }
+
+    #[test]
+    fn test_remove_wenlan_entry_errs_when_no_entry_present() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config_path = tmp.path().join("config.json");
+        std::fs::write(&config_path, r#"{"mcpServers": {"other": {}}}"#).unwrap();
+        assert!(remove_wenlan_entry(&config_path).is_err());
+        // No-op error path leaves no stray backup behind.
+        assert!(!config_path.with_extension("json.bak").exists());
+    }
+
+    #[test]
+    fn test_remove_wenlan_entry_errs_when_file_missing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config_path = tmp.path().join("does-not-exist.json");
+        assert!(remove_wenlan_entry(&config_path).is_err());
+    }
+
+    #[test]
+    fn test_remove_wenlan_entry_leaves_client_config_has_raw_entry_false() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config_path = tmp.path().join("config.json");
+        let existing = r#"{"mcpServers": {"wenlan": {"command": "npx"}, "other": {"command": "x"}}}"#;
+        std::fs::write(&config_path, existing).unwrap();
+        // Precondition: detection sees the raw entry before removal.
+        assert!(client_config_has_raw_entry("cursor", &config_path));
+
+        remove_wenlan_entry(&config_path).unwrap();
+
+        // The written file still parses and detection no longer sees an entry.
+        assert!(!client_config_has_raw_entry("cursor", &config_path));
+    }
+
+    // ── remove_wenlan_entry_toml (Codex CLI) ────────────────────────────
+
+    #[test]
+    fn test_remove_wenlan_entry_toml_removes_only_the_wenlan_entry() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config_path = tmp.path().join("config.toml");
+        let fixture = r#"# my codex config
+model = "gpt-5.5"
+
+[mcp_servers.other]
+command = "other-cmd"
+
+[mcp_servers.wenlan]
+command = "npx"
+args = ["-y", "wenlan-mcp"]
+"#;
+        std::fs::write(&config_path, fixture).unwrap();
+
+        remove_wenlan_entry_toml(&config_path).unwrap();
+
+        let contents = std::fs::read_to_string(&config_path).unwrap();
+        // The wenlan entry is gone; the sibling server and unrelated keys stay.
+        assert!(!has_configured_entry_toml(&contents));
+        let parsed: toml::Value = toml::from_str(&contents).unwrap();
+        assert_eq!(parsed["model"], toml::Value::from("gpt-5.5"));
+        assert_eq!(parsed["mcp_servers"]["other"]["command"], toml::Value::from("other-cmd"));
+        assert!(parsed["mcp_servers"].get("wenlan").is_none());
+    }
+
+    #[test]
+    fn test_remove_wenlan_entry_toml_errs_when_no_entry_present() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config_path = tmp.path().join("config.toml");
+        std::fs::write(&config_path, "model = \"gpt-5.5\"\n").unwrap();
+        assert!(remove_wenlan_entry_toml(&config_path).is_err());
+        assert!(!config_path.with_extension("toml.bak").exists());
+    }
+
+    #[test]
+    fn test_remove_wenlan_entry_toml_errs_when_file_missing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config_path = tmp.path().join("does-not-exist.toml");
+        assert!(remove_wenlan_entry_toml(&config_path).is_err());
+    }
+
+    #[test]
+    fn test_remove_wenlan_entry_toml_leaves_client_config_has_raw_entry_false() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config_path = tmp.path().join("config.toml");
+        std::fs::write(
+            &config_path,
+            "[mcp_servers.wenlan]\ncommand = \"npx\"\nargs = [\"-y\", \"wenlan-mcp\"]\n",
+        )
+        .unwrap();
+        assert!(client_config_has_raw_entry("codex_cli", &config_path));
+
+        remove_wenlan_entry_toml(&config_path).unwrap();
+
+        assert!(!client_config_has_raw_entry("codex_cli", &config_path));
     }
 }

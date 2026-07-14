@@ -179,7 +179,11 @@ export function AnthropicFields({
   );
 }
 
-export function ModelChoiceSection() {
+/** Just the routine-model half of the picker — extracted so the Intelligence
+ *  section's Everyday-model job row can embed exactly this Select in its
+ *  disclosure body, without forking the markup ModelChoiceSection also
+ *  renders below the Anthropic key form. */
+export function RoutineModelSelect() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { data: modelChoice } = useQuery({
@@ -189,51 +193,74 @@ export function ModelChoiceSection() {
   const [routineModel, synthesisModel] = modelChoice ?? [null, null];
 
   return (
+    <div className="flex items-center justify-between">
+      <div>
+        <div style={{ fontSize: "var(--mem-text-base)", fontWeight: 500, color: "var(--mem-text)", fontFamily: "var(--mem-font-body)" }}>{t("intelligence.routineModel")}</div>
+        <div style={{ fontSize: "var(--mem-text-xs)", color: "var(--mem-text-tertiary)", fontFamily: "var(--mem-font-body)" }}>{t("intelligence.routineModelDescription")}</div>
+      </div>
+      <div className="shrink-0 w-fit">
+        <Select
+          size="sm"
+          mono
+          aria-label={t("intelligence.chooseRoutineModel")}
+          value={routineModel ?? "claude-haiku-4-5-20251001"}
+          onChange={async (e) => {
+            await setModelChoice(e.target.value, synthesisModel);
+            queryClient.invalidateQueries({ queryKey: ["modelChoice"] });
+          }}
+        >
+          {ANTHROPIC_MODELS.map((m) => (
+            <option key={m.id} value={m.id}>{m.label} - {t(m.descKey)}</option>
+          ))}
+        </Select>
+      </div>
+    </div>
+  );
+}
+
+/** Synthesis-model half — see RoutineModelSelect's doc comment. */
+export function SynthesisModelSelect() {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const { data: modelChoice } = useQuery({
+    queryKey: ["modelChoice"],
+    queryFn: getModelChoice,
+  });
+  const [routineModel, synthesisModel] = modelChoice ?? [null, null];
+
+  return (
+    <div className="flex items-center justify-between">
+      <div>
+        <div style={{ fontSize: "var(--mem-text-base)", fontWeight: 500, color: "var(--mem-text)", fontFamily: "var(--mem-font-body)" }}>{t("intelligence.synthesisModel")}</div>
+        <div style={{ fontSize: "var(--mem-text-xs)", color: "var(--mem-text-tertiary)", fontFamily: "var(--mem-font-body)" }}>{t("intelligence.synthesisModelDescription")}</div>
+      </div>
+      <div className="shrink-0 w-fit">
+        <Select
+          size="sm"
+          mono
+          aria-label={t("intelligence.chooseSynthesisModel")}
+          value={synthesisModel ?? "claude-sonnet-4-6"}
+          onChange={async (e) => {
+            await setModelChoice(routineModel, e.target.value);
+            queryClient.invalidateQueries({ queryKey: ["modelChoice"] });
+          }}
+        >
+          {ANTHROPIC_MODELS.map((m) => (
+            <option key={m.id} value={m.id}>{m.label} - {t(m.descKey)}</option>
+          ))}
+        </Select>
+      </div>
+    </div>
+  );
+}
+
+export function ModelChoiceSection() {
+  return (
     <div className="mt-4 pt-3" style={{ borderTop: "1px solid var(--mem-border)" }}>
-      <div className="flex items-center justify-between mb-3">
-        <div>
-          <div style={{ fontSize: "var(--mem-text-base)", fontWeight: 500, color: "var(--mem-text)", fontFamily: "var(--mem-font-body)" }}>{t("intelligence.routineModel")}</div>
-          <div style={{ fontSize: "var(--mem-text-xs)", color: "var(--mem-text-tertiary)", fontFamily: "var(--mem-font-body)" }}>{t("intelligence.routineModelDescription")}</div>
-        </div>
-        <div className="shrink-0 w-fit">
-          <Select
-            size="sm"
-            mono
-            aria-label={t("intelligence.chooseRoutineModel")}
-            value={routineModel ?? "claude-haiku-4-5-20251001"}
-            onChange={async (e) => {
-              await setModelChoice(e.target.value, synthesisModel);
-              queryClient.invalidateQueries({ queryKey: ["modelChoice"] });
-            }}
-          >
-            {ANTHROPIC_MODELS.map((m) => (
-              <option key={m.id} value={m.id}>{m.label} - {t(m.descKey)}</option>
-            ))}
-          </Select>
-        </div>
+      <div className="mb-3">
+        <RoutineModelSelect />
       </div>
-      <div className="flex items-center justify-between">
-        <div>
-          <div style={{ fontSize: "var(--mem-text-base)", fontWeight: 500, color: "var(--mem-text)", fontFamily: "var(--mem-font-body)" }}>{t("intelligence.synthesisModel")}</div>
-          <div style={{ fontSize: "var(--mem-text-xs)", color: "var(--mem-text-tertiary)", fontFamily: "var(--mem-font-body)" }}>{t("intelligence.synthesisModelDescription")}</div>
-        </div>
-        <div className="shrink-0 w-fit">
-          <Select
-            size="sm"
-            mono
-            aria-label={t("intelligence.chooseSynthesisModel")}
-            value={synthesisModel ?? "claude-sonnet-4-6"}
-            onChange={async (e) => {
-              await setModelChoice(routineModel, e.target.value);
-              queryClient.invalidateQueries({ queryKey: ["modelChoice"] });
-            }}
-          >
-            {ANTHROPIC_MODELS.map((m) => (
-              <option key={m.id} value={m.id}>{m.label} - {t(m.descKey)}</option>
-            ))}
-          </Select>
-        </div>
-      </div>
+      <SynthesisModelSelect />
     </div>
   );
 }
@@ -241,6 +268,7 @@ export function ModelChoiceSection() {
 export function OnDeviceModelCard({
   deferDownload = false,
   onModelChosen,
+  bare = false,
 }: {
   /** Wizard step 2: record the choice, don't download here — step 5 does
    *  the download and proves it landed (`loaded === modelId`), not just
@@ -248,6 +276,10 @@ export function OnDeviceModelCard({
    *  download this card has always done. */
   deferDownload?: boolean;
   onModelChosen?: (modelId: string | null) => void;
+  /** Skip the <Card> wrapper and the title/status-chip header — the host
+   *  (a disclosure row) already shows both. Default false keeps every
+   *  existing call site unchanged. */
+  bare?: boolean;
 } = {}) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -304,15 +336,16 @@ export function OnDeviceModelCard({
 
   const statusBadge = isLoaded ? t("intelligence.running") : t("intelligence.notLoaded");
 
-  return (
-    <Card padding="card">
+  const body = (
       <div className="flex flex-col" style={{ gap: "10px" }}>
-        <div className="flex items-center justify-between">
-          <h3 style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-lg)", fontWeight: 600, color: "var(--mem-text)" }}>
-            {t("intelligence.onDeviceModel")}
-          </h3>
-          <StatusChip state={isLoaded ? { kind: "up" } : { kind: "idle" }} label={statusBadge} />
-        </div>
+        {!bare && (
+          <div className="flex items-center justify-between">
+            <h3 style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-lg)", fontWeight: 600, color: "var(--mem-text)" }}>
+              {t("intelligence.onDeviceModel")}
+            </h3>
+            <StatusChip state={isLoaded ? { kind: "up" } : { kind: "idle" }} label={statusBadge} />
+          </div>
+        )}
         <p
           style={{
             fontFamily: "var(--mem-font-body)",
@@ -445,6 +478,7 @@ export function OnDeviceModelCard({
           </p>
         )}
       </div>
-    </Card>
   );
+
+  return bare ? body : <Card padding="card">{body}</Card>;
 }

@@ -68,7 +68,16 @@ function pickDefaultPresetId(list: ProviderPreset[]): string {
   return list[0]?.id ?? "custom";
 }
 
-export default function AnyProviderCard({ groups }: { groups?: PresetGroup[] }) {
+export default function AnyProviderCard({
+  groups,
+  bare = false,
+}: {
+  groups?: PresetGroup[];
+  /** Skip the <Card> wrapper and the title/description block — the host
+   *  (a disclosure row) already supplies both. Default false keeps every
+   *  existing call site (the wizard's cloud/local steps) unchanged. */
+  bare?: boolean;
+}) {
   const { t } = useTranslation();
   const { supportsHotSwap, supportsExternalKey } = useDaemonVersion();
   const anthropic = useApiKeyStatus();
@@ -381,24 +390,25 @@ export default function AnyProviderCard({ groups }: { groups?: PresetGroup[] }) 
             host: hostOf(preset.endpoint),
           });
 
-  return (
-    <Card padding="card">
-      <div className="flex flex-col" style={{ gap: "12px" }}>
-        <div>
-          <h3
-            style={{
-              fontFamily: "var(--mem-font-body)",
-              fontSize: "var(--mem-text-lg)",
-              fontWeight: 600,
-              color: "var(--mem-text)",
-            }}
-          >
-            {t(titleKey)}
-          </h3>
-          <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text-secondary)", lineHeight: 1.5, marginTop: "4px" }}>
-            {t(descriptionKey)}
-          </p>
-        </div>
+  const body = (
+    <div className="flex flex-col" style={{ gap: "12px" }}>
+        {!bare && (
+          <div>
+            <h3
+              style={{
+                fontFamily: "var(--mem-font-body)",
+                fontSize: "var(--mem-text-lg)",
+                fontWeight: 600,
+                color: "var(--mem-text)",
+              }}
+            >
+              {t(titleKey)}
+            </h3>
+            <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text-secondary)", lineHeight: 1.5, marginTop: "4px" }}>
+              {t(descriptionKey)}
+            </p>
+          </div>
+        )}
 
         {anthropic.isConfigured && !preset.native && (
           <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-accent-amber)", lineHeight: 1.5 }}>
@@ -604,7 +614,8 @@ export default function AnyProviderCard({ groups }: { groups?: PresetGroup[] }) 
             )}
           </>
         )}
-      </div>
-    </Card>
+    </div>
   );
+
+  return bare ? body : <Card padding="card">{body}</Card>;
 }

@@ -171,4 +171,26 @@ describe("ClientSetupList — one Set up button, two different jobs behind it", 
 
     expect(await screen.findByText("Every detected tool is already connected")).toBeInTheDocument();
   });
+
+  // Coherence pass: the roster above is the single source of truth for what
+  // is connected. A client whose tool family already has an identity there is
+  // hidden here even when its OWN config file reads unconfigured (the live
+  // Cursor identities did not carry `already_configured`). Family, not the
+  // per-file flag, decides.
+  it("hides a detected-but-unconfigured client whose family is already connected, still shows others", async () => {
+    mocks.detectMcpClients.mockResolvedValue([
+      { name: "Cursor", client_type: "cursor", config_path: "~/.cursor/mcp.json", detected: true, already_configured: false },
+      { name: "Gemini CLI", client_type: "gemini_cli", config_path: "~/.gemini/settings.json", detected: true, already_configured: false },
+    ]);
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <ClientSetupList connectedFamilies={new Set(["cursor"])} />
+      </QueryClientProvider>,
+    );
+
+    // Gemini's family is not connected → it still offers a Set up button.
+    await screen.findByText("Gemini CLI");
+    expect(screen.queryByText("Cursor")).not.toBeInTheDocument();
+  });
 });

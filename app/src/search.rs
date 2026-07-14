@@ -370,6 +370,22 @@ pub async fn write_mcp_config(client_type: String) -> Result<(), String> {
     crate::mcp_config::write_wenlan_entry(&config_path, is_claude_code).map_err(|e| e.to_string())
 }
 
+/// Removes the raw `wenlan`/legacy `origin` MCP entry from `client_type`'s
+/// config file — the fix Diagnostics offers for a double registration (a
+/// plugin *and* a raw entry for one client). Symmetric with detection: it
+/// clears exactly what `has_configured_entry` recognizes, leaving every
+/// sibling server and unrelated key intact. A missing file or absent entry
+/// is an `Err` the UI surfaces verbatim.
+#[tauri::command]
+pub async fn remove_raw_mcp_entry(client_type: String) -> Result<(), String> {
+    let config_path = crate::mcp_config::client_config_path(&client_type)
+        .ok_or(format!("Unknown client type: {}", client_type))?;
+    if client_type == "codex_cli" {
+        return crate::mcp_config::remove_wenlan_entry_toml(&config_path).map_err(|e| e.to_string());
+    }
+    crate::mcp_config::remove_wenlan_entry(&config_path).map_err(|e| e.to_string())
+}
+
 /// Returns the current `wenlan` MCP server entry (command + args) that Wenlan
 /// uses when writing client configs. Prefers a local binary in dev, falls back
 /// to `npx -y wenlan-mcp` otherwise. The frontend uses this to build a

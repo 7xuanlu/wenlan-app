@@ -1935,6 +1935,14 @@ export async function writeMcpConfig(clientType: string): Promise<void> {
   return invoke("write_mcp_config", { clientType });
 }
 
+/** Removes the raw `wenlan`/legacy `origin` MCP entry from `clientType`'s
+ *  config file — the Diagnostics fix for a double registration (a plugin plus
+ *  a raw entry). Leaves sibling servers and unrelated config intact. Rejects
+ *  with a plain error if the file is missing or has no such entry. */
+export async function removeRawMcpEntry(clientType: string): Promise<void> {
+  return invoke("remove_raw_mcp_entry", { clientType });
+}
+
 export interface WenlanMcpEntry {
   command: string;
   args: string[];

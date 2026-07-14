@@ -5,22 +5,28 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import AgentsSection from "./AgentsSection";
 
 // Unlike AgentsSection.test.tsx, this file does NOT stub out
-// RemoteAccessPanel/WebPlatformCards/ClientSetupList — it renders the real
-// composition so the no-auth warning consolidation (redesign spec §6/§8) is
-// proven against the actual composed Settings screen, not a component that
-// merely intends to be the sole renderer.
+// RemoteAccessPanel/ClientSetupList — it renders the real composition so the
+// no-auth warning consolidation (redesign spec §6/§8) is proven against the
+// actual composed Settings screen, not a component that merely intends to be
+// the sole renderer.
 vi.mock("../../../../lib/tauri", () => ({
   listAgents: vi.fn().mockResolvedValue([]),
   updateAgent: vi.fn().mockResolvedValue(null),
   deleteAgent: vi.fn().mockResolvedValue(null),
   detectMcpClients: vi.fn().mockResolvedValue([]),
   writeMcpConfig: vi.fn().mockResolvedValue(undefined),
+  installClientPlugin: vi.fn().mockResolvedValue(undefined),
   clipboardWrite: vi.fn().mockResolvedValue(undefined),
   getRemoteAccessStatus: vi.fn().mockResolvedValue({
     status: "connected",
     tunnel_url: "https://x.trycloudflare.com",
     token: "t",
     relay_url: null,
+  }),
+  getWireState: vi.fn().mockResolvedValue({
+    daemon: { base_url: "", reachable: true, version: null, error: null },
+    mcp_binary: { command: "", args: [], candidates: [] },
+    clients: [],
   }),
   testRemoteMcpConnection: vi.fn().mockResolvedValue({ ok: true }),
   toggleRemoteAccess: vi.fn().mockResolvedValue(undefined),

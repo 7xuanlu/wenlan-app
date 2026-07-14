@@ -4,13 +4,22 @@ import { render, screen, waitFor, fireEvent, act } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import DiagnosticsSection from "./DiagnosticsSection";
-import { getPipelineStatus, getWireState, clipboardWrite, type WireState } from "../../../../lib/tauri";
+import {
+  getPipelineStatus,
+  getWireState,
+  clipboardWrite,
+  removeRawMcpEntry,
+  setSetupCompleted,
+  type WireState,
+} from "../../../../lib/tauri";
 import { i18n } from "../../../../i18n";
 
 vi.mock("../../../../lib/tauri", () => ({
   getPipelineStatus: vi.fn(),
   getWireState: vi.fn(),
   clipboardWrite: vi.fn().mockResolvedValue(undefined),
+  removeRawMcpEntry: vi.fn().mockResolvedValue(undefined),
+  setSetupCompleted: vi.fn().mockResolvedValue(undefined),
 }));
 
 function renderDiagnostics() {
@@ -334,6 +343,81 @@ describe("DiagnosticsSection", () => {
       // the screen.
       const wiringCard = screen.getByText("Wiring").closest("section");
       expect(wiringCard?.textContent).not.toMatch(/plugin/i);
+    });
+  });
+
+  // ── Every red carries a fix or a Retry ─────────────────────────────────
+
+  describe("actionable wiring reds", () => {
+    it("the double-registration fix removes the raw entry for that client and refreshes wiring", async () => {
+      renderDiagnostics();
+
+      await screen.findByText("Wenlan runtime");
+      const callsBefore = vi.mocked(getWireState).mock.calls.length;
+
+      // Claude Desktop is the double-registered client in the fixture
+      // (has_plugin && has_raw_entry); Claude Code is not.
+      fireEvent.click(screen.getByText("Remove duplicate entry"));
+
+      await waitFor(() => expect(removeRawMcpEntry).toHaveBeenCalledWith("claude_desktop"));
+      // onSuccess invalidates ["wireState"], which refetches the wire query.
+      await waitFor(() =>
+        expect(vi.mocked(getWireState).mock.calls.length).toBeGreaterThan(callsBefore),
+      );
+    });
+
+    it("offers a Retry that refetches the wire state when the daemon is unreachable", async () => {
+      vi.mocked(getWireState).mockResolvedValue({
+        ...wireFixture,
+        daemon: {
+          base_url: "http://127.0.0.1:7878",
+          reachable: false,
+          version: null,
+          error: "connection refused",
+        },
+      });
+
+      renderDiagnostics();
+
+      await screen.findByText("Unreachable");
+      const callsBefore = vi.mocked(getWireState).mock.calls.length;
+      fireEvent.click(screen.getByText("Retry"));
+
+      await waitFor(() =>
+        expect(vi.mocked(getWireState).mock.calls.length).toBeGreaterThan(callsBefore),
+      );
+    });
+
+    it("does not offer the reinstall-via-setup action while an MCP binary candidate still exists", async () => {
+      // Default fixture: the installed candidate exists — nothing to reinstall.
+      renderDiagnostics();
+
+      // Resolve the wiring rows first, then assert absence (an absence assertion
+      // made before the rows render would pass vacuously).
+      await screen.findByText("Wenlan runtime");
+      await screen.findByText("MCP server binary");
+      expect(screen.queryByText("Run setup again")).not.toBeInTheDocument();
+    });
+
+    it("with every MCP binary candidate missing, reinstall clears setup and re-arms the wizard", async () => {
+      vi.mocked(getWireState).mockResolvedValue({
+        ...wireFixture,
+        mcp_binary: {
+          ...wireFixture.mcp_binary,
+          candidates: [
+            { path: "/Users/x/.wenlan/bin/wenlan-mcp", exists: false, source: "installed" },
+            { path: "/Users/x/.cargo/bin/wenlan-mcp", exists: false, source: "cargo" },
+          ],
+        },
+      });
+
+      renderDiagnostics();
+
+      fireEvent.click(await screen.findByText("Run setup again"));
+      // ConfirmActionButton arms an inline two-step confirm.
+      fireEvent.click(await screen.findByText("Confirm"));
+
+      await waitFor(() => expect(setSetupCompleted).toHaveBeenCalledWith(false));
     });
   });
 
