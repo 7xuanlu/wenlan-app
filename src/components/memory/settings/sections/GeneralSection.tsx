@@ -19,9 +19,9 @@ import {
   type StoredLocale,
 } from "../../../../i18n";
 import {
+  Button,
   Card,
   ConfirmActionButton,
-  Field,
   Input,
   SectionHeader,
   SegmentedControl,
@@ -139,46 +139,42 @@ function ProfileSettingsBlock() {
     <section className="mem-fade-up" style={{ animationDelay: "0ms" }}>
       {/* No icon: in settings the sidebar owns iconography; eyebrows are type-only. */}
       <SectionHeader label={t("settings.profile.label")} />
-      <Card padding="card">
-        <div className="flex items-start gap-4">
-          <div className="flex shrink-0 flex-col items-center gap-2">
-            <ProfileAvatar
-              avatarPath={profile.avatar_path}
-              displayName={displayName}
-              size={56}
-              fontSize={20}
-            />
-            <button
-              type="button"
-              onClick={handlePickAvatar}
-              className="rounded-md px-2 py-1 transition-colors duration-150 hover:bg-[var(--mem-hover)]"
-              style={{
-                fontFamily: "var(--mem-font-body)",
-                fontSize: "var(--mem-text-xs)",
-                color: "var(--mem-text-secondary)",
-              }}
-            >
-              {t("settings.profile.changePhoto")}
-            </button>
-            {profile.avatar_path && (
-              <button
-                type="button"
-                onClick={() => removeAvatarMutation.mutate()}
-                className="rounded-md px-2 py-1 transition-colors duration-150 hover:bg-[var(--mem-hover)]"
-                style={{
-                  fontFamily: "var(--mem-font-body)",
-                  fontSize: "var(--mem-text-xs)",
-                  color: "var(--mem-text-tertiary)",
-                }}
-              >
-                {t("settings.profile.removePhoto")}
-              </button>
-            )}
+      <Card padding="rows">
+        <div className="px-5 py-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-md)", fontWeight: 500, color: "var(--mem-text)" }}>
+                {t("settings.profile.photo")}
+              </div>
+            </div>
+            <div className="mt-0.5 flex items-center gap-2">
+              <ProfileAvatar
+                avatarPath={profile.avatar_path}
+                displayName={displayName}
+                size={32}
+                fontSize={13}
+              />
+              <Button variant="secondary" size="sm" onClick={handlePickAvatar}>
+                {t("settings.profile.changePhoto")}
+              </Button>
+              {profile.avatar_path && (
+                <Button variant="ghost" size="sm" onClick={() => removeAvatarMutation.mutate()}>
+                  {t("settings.profile.removePhoto")}
+                </Button>
+              )}
+            </div>
           </div>
-
-          <div className="min-w-0 flex-1 space-y-3">
-            <Field label={t("settings.profile.displayName")} htmlFor="profile-display-name">
+        </div>
+        <div className="px-5 py-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-md)", fontWeight: 500, color: "var(--mem-text)" }}>
+                {t("settings.profile.displayName")}
+              </div>
+            </div>
+            <div className="mt-0.5">
               <Input
+                aria-label={t("settings.profile.displayName")}
                 value={nameDraft}
                 onChange={(event) => setNameDraft(event.target.value)}
                 onBlur={saveName}
@@ -189,22 +185,22 @@ function ProfileSettingsBlock() {
                     event.currentTarget.blur();
                   }
                 }}
-                className="w-full"
+                style={{ width: "200px" }}
               />
-            </Field>
-
-            <p
-              style={{
-                fontFamily: "var(--mem-font-mono)",
-                fontSize: "var(--mem-text-xs)",
-                color: "var(--mem-text-tertiary)",
-              }}
-            >
-              {t("settings.profile.joined", { date: formatProfileMonth(profile.created_at) })}
-            </p>
+            </div>
           </div>
         </div>
       </Card>
+      <p
+        className="px-1 pt-2"
+        style={{
+          fontFamily: "var(--mem-font-mono)",
+          fontSize: "var(--mem-text-xs)",
+          color: "var(--mem-text-tertiary)",
+        }}
+      >
+        {t("settings.profile.joined", { date: formatProfileMonth(profile.created_at) })}
+      </p>
     </section>
   );
 }
@@ -233,12 +229,6 @@ export default function GeneralSection() {
       <section className="mem-fade-up" style={{ animationDelay: "0ms" }}>
         <SectionHeader label={t("settings.general.appSection")} />
         <Card padding="rows">
-          <SettingRow
-            title={t("settings.general.runAtLoginTitle")}
-            description={t("settings.general.runAtLoginDescription")}
-            enabled={runAtLoginQuery.data ?? false}
-            onToggle={() => runAtLoginMutation.mutate(!(runAtLoginQuery.data ?? false))}
-          />
           {/* Theme — folded into General; previously its own "Appearance" sidebar entry. */}
           <SettingRow
             title={t("settings.theme.label")}
@@ -278,6 +268,12 @@ export default function GeneralSection() {
                 </Select>
               </div>
             }
+          />
+          <SettingRow
+            title={t("settings.general.runAtLoginTitle")}
+            description={t("settings.general.runAtLoginDescription")}
+            enabled={runAtLoginQuery.data ?? false}
+            onToggle={() => runAtLoginMutation.mutate(!(runAtLoginQuery.data ?? false))}
           />
           {/* Re-run setup wizard — a proper row with an inline two-step
               confirm; data is preserved regardless. */}

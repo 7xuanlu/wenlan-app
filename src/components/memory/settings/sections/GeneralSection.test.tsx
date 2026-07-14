@@ -41,16 +41,19 @@ function renderGeneralSection() {
 
 // S6: run-at-login, theme, and language used to be three separate
 // `Card padding="rows"` blocks. They now share one. `.divide-y` is the class
-// `Card` only applies for padding="rows", so counting it (scoped past
-// ProfileSettingsBlock's own padding="card" block, which never gets that
-// class) proves the merge instead of just trusting the JSX shape.
+// `Card` only applies for padding="rows", so counting it proves the merge
+// instead of just trusting the JSX shape. ProfileSettingsBlock also renders
+// a `rows` Card (Photo + Display name), so scope to the card that contains
+// "Language" — unique to the App section — rather than every `.divide-y`.
 describe("GeneralSection app card merge", () => {
   it("renders run-at-login, theme, and language inside a single rows Card", async () => {
     renderGeneralSection();
 
     await screen.findByLabelText("Language");
 
-    const rowsCards = document.querySelectorAll(".divide-y");
+    const rowsCards = Array.from(document.querySelectorAll(".divide-y")).filter((el) =>
+      el.textContent?.includes("Language"),
+    );
     expect(rowsCards).toHaveLength(1);
 
     const merged = rowsCards[0];

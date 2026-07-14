@@ -2,18 +2,16 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import { clipboardWrite, getRemoteAccessStatus, listAgents } from "../../lib/tauri";
 import { Button, Card } from "../memory/settings/primitives";
 
-const CLAUDE_CONNECTOR_URL = "https://claude.ai/settings/connectors?modal=add-custom-connector";
-
 /** Per-platform web connect cards (spec §2a group 1; §9.3 round 2: the
- *  Claude card is plugin-first — step 1 installs the Wenlan plugin via the
- *  Directory's Add-marketplace dialog, step 2 wires memory access via the
- *  custom connector). Verification is the existing listAgents delta poll —
- *  best-effort attribution: a new agent in the poll window flips the
- *  last-copied card (hint, not proof). */
+ *  Claude card is install-only — step 1 installs Wenlan via the Directory's
+ *  Add-marketplace dialog, and once Remote access is on the connector reaches
+ *  memory through the relay automatically, so there is no URL to paste. Only
+ *  ChatGPT still pastes a Server URL). Verification is the existing listAgents
+ *  delta poll — best-effort attribution: a new agent in the poll window flips
+ *  the last-copied card (hint, not proof). */
 export default function WebPlatformCards() {
   const { t } = useTranslation();
   const [copiedPlatform, setCopiedPlatform] = useState<string | null>(null);
@@ -112,8 +110,10 @@ export default function WebPlatformCards() {
         "claude",
         t("connectMatrix.claudeTitle"),
         <>
-          {/* Step 1 — install the Wenlan plugin (§9.3: actionable today via
-              Directory → Plugins → + Add marketplace, Personal tab). */}
+          {/* Install-only (§9.3: actionable today via Directory → Plugins →
+              + Add marketplace, Personal tab). The connector step and its URL
+              paste are gone — once Remote access is on, the relay carries memory
+              to the installed Wenlan with nothing to configure. */}
           {stepHeading(t("connectMatrix.claudePluginStepTitle"))}
           {stepList([
             t("connectMatrix.claudePluginStep1"),
@@ -123,26 +123,9 @@ export default function WebPlatformCards() {
           <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", color: "var(--mem-text-tertiary)", lineHeight: 1.5, margin: 0 }}>
             {t("connectMatrix.claudePluginNote")}
           </p>
-          {/* Step 2 — memory access: a public plugin cannot carry a
-              user-specific tunnel URL, so chat still needs the connector. */}
-          {stepHeading(t("connectMatrix.claudeConnectorStepTitle"))}
-          {stepList([
-            t("connectMatrix.claudeStep1"),
-            t("connectMatrix.claudeStep2"),
-            t("connectMatrix.claudeStep3"),
-          ])}
-          {urlRow("claude")}
-          {url && (
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={() => shellOpen(CLAUDE_CONNECTOR_URL)}
-              className="self-start"
-            >
-              {t("connectMatrix.openConnectorSettings")}
-            </Button>
-          )}
+          <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", color: "var(--mem-text-tertiary)", lineHeight: 1.5, margin: 0 }}>
+            {t("connectMatrix.claudeRelayNote")}
+          </p>
         </>,
       )}
       {cardShell(

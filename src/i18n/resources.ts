@@ -361,8 +361,8 @@ const en = {
         hint: "Daemon pipeline health",
       },
       agents: {
-        label: "Agents",
-        hint: "Connected clients and remote access",
+        label: "Connections",
+        hint: "What can reach your memory, and how much you trust it",
       },
       sources: {
         label: "Sources",
@@ -396,6 +396,7 @@ const en = {
     },
     profile: {
       label: "Profile",
+      photo: "Photo",
       choosePhoto: "Choose a profile photo",
       images: "Images",
       changePhoto: "Change photo",
@@ -420,7 +421,7 @@ const en = {
       more: "More",
     },
     agents: {
-      connectedAgents: "Connected Agents",
+      connectedAgents: "Connected",
       trustLevels: "Trust levels",
       noAgents: "No agents connected yet.",
       noAgentsDescription:
@@ -436,7 +437,6 @@ const en = {
       cancel: "Cancel",
       deleteAgent: "Delete {{name}}",
       setupAnotherTool: "+ Set up another tool",
-      remoteAccess: "Remote Access",
       trust: {
         full: "Full",
         review: "Review",
@@ -1042,12 +1042,9 @@ const en = {
   connectMatrix: {
     claudeTitle: "Claude.ai",
     chatgptTitle: "ChatGPT.com",
-    claudeStep1: "Open Claude.ai → Settings → Connectors",
-    claudeStep2: "Choose \"Add custom connector\"",
-    claudeStep3: "Paste your Remote Access URL below",
-    chatgptStep1: "Open ChatGPT.com → Settings → Connectors",
-    chatgptStep2: "Enable Advanced / developer mode",
-    chatgptStep3: "Add the Remote Access URL below as an MCP connector",
+    chatgptStep1: "In ChatGPT, open Settings → Plugins and create a New Plugin.",
+    chatgptStep2: "Under Connection choose Server URL, then paste the address below.",
+    chatgptStep3: "Set Authentication to None, acknowledge the risk notice, and save.",
     copyUrl: "Copy URL",
     copied: "Copied",
     tunnelOff: "Turn on Remote Access above to get your connection URL.",
@@ -1056,8 +1053,9 @@ const en = {
     settingUp: "Setting up…",
     configured: "Configured",
     notDetected: "Not installed",
+    allConnected: "Every detected tool is already connected",
     appsTitle: "Apps & CLIs",
-    webTitle: "Web — Claude.ai & ChatGPT",
+    webRemoteTitle: "Web & remote",
     manualTitle: "Manual / anything else",
     claudePluginStepTitle: "Step 1 — Add Wenlan to claude.ai",
     claudePluginStep1: "Open Directory → Plugins → + Add marketplace",
@@ -1065,18 +1063,21 @@ const en = {
     claudePluginStep3: "Install Wenlan from the marketplace",
     claudePluginNote:
       "Wenlan's skills work in chat; Cowork also gets the MCP connectors.",
-    claudeConnectorStepTitle: "Step 2 — Connect your memory",
-    openConnectorSettings: "Open connector settings",
+    claudeRelayNote:
+      "Once Remote access is on, the connector reaches your memory through Wenlan's relay automatically — nothing to paste.",
   },
   status: {
     notVerified: "Not verified yet",
   },
   remoteAccess: {
     title: "Share with web-based AI tools",
+    description:
+      "When on, your connected tools can reach your memory from anywhere through Wenlan's relay — nothing to configure.",
     noAuthWarning:
       "Creates a public HTTPS URL with no authentication for Claude.ai and ChatGPT. Anyone with the URL can access Wenlan; turn Remote Access off when unused.",
     urlLabel: "Your MCP URL",
     urlLabelStable: "Your MCP URL (stable)",
+    viewUrl: "View relay URL",
     copyUrl: "Copy URL",
     copied: "Copied!",
     testConnection: "Test connection",
@@ -1087,12 +1088,6 @@ const en = {
     statusConnecting: "Connecting…",
     statusConnected: "Connected",
     statusConnectedLatency: "Connected ({{ms}} ms)",
-    howTo: "How to connect Claude.ai and ChatGPT",
-    claudeAi: "Claude.ai",
-    chatGpt: "ChatGPT",
-    claudeSteps: "Settings → Connectors → Add Custom Connector → Paste URL",
-    chatgptSteps:
-      "Settings → Apps → Advanced settings → Enable Developer mode → Back → Create app → Paste URL (No Auth)",
     tunnelChangesNote:
       "This tunnel URL changes when your Mac sleeps or restarts. Enable a stable relay in Settings → Agents to avoid reconnecting.",
     stableNote: "This URL is stable — it won't change when your Mac sleeps or restarts.",
@@ -1452,8 +1447,8 @@ const zhHans = {
         hint: "守护进程流水线健康状态",
       },
       agents: {
-        label: "代理",
-        hint: "已连接客户端和远程访问",
+        label: "连接",
+        hint: "哪些工具可以访问你的记忆，以及你对它们的信任程度",
       },
       sources: {
         label: "来源",
@@ -1487,6 +1482,7 @@ const zhHans = {
     },
     profile: {
       label: "个人资料",
+      photo: "头像",
       choosePhoto: "选择个人照片",
       images: "图片",
       changePhoto: "更换照片",
@@ -1511,7 +1507,7 @@ const zhHans = {
       more: "更多",
     },
     agents: {
-      connectedAgents: "已连接代理",
+      connectedAgents: "已连接",
       trustLevels: "信任等级",
       noAgents: "还没有连接代理。",
       noAgentsDescription:
@@ -1527,7 +1523,6 @@ const zhHans = {
       cancel: "取消",
       deleteAgent: "删除 {{name}}",
       setupAnotherTool: "+ 设置另一个工具",
-      remoteAccess: "远程访问",
       trust: {
         full: "完整",
         review: "需审阅",
@@ -2116,12 +2111,9 @@ const zhHans = {
   connectMatrix: {
     claudeTitle: "Claude.ai",
     chatgptTitle: "ChatGPT.com",
-    claudeStep1: "打开 Claude.ai → 设置 → 连接器",
-    claudeStep2: "选择「添加自定义连接器」",
-    claudeStep3: "粘贴下方的远程访问 URL",
-    chatgptStep1: "打开 ChatGPT.com → 设置 → 连接器",
-    chatgptStep2: "启用高级 / 开发者模式",
-    chatgptStep3: "将下方的远程访问 URL 添加为 MCP 连接器",
+    chatgptStep1: "在 ChatGPT 中打开 设置 → 插件，新建一个插件。",
+    chatgptStep2: "在 Connection 中选择 Server URL，然后粘贴下方地址。",
+    chatgptStep3: "将 Authentication 设为 None，确认风险提示后保存。",
     copyUrl: "复制 URL",
     copied: "已复制",
     tunnelOff: "先在上方开启远程访问以获取连接 URL。",
@@ -2130,26 +2122,29 @@ const zhHans = {
     settingUp: "设置中…",
     configured: "已配置",
     notDetected: "未安装",
+    allConnected: "已检测到的工具都已连接",
     appsTitle: "应用与命令行工具",
-    webTitle: "网页 — Claude.ai 与 ChatGPT",
+    webRemoteTitle: "网页与远程",
     manualTitle: "手动 / 其他工具",
     claudePluginStepTitle: "第 1 步 — 将 Wenlan 添加到 claude.ai",
     claudePluginStep1: "打开 Directory → 插件 → 「+ 添加市场」",
     claudePluginStep2: "输入市场仓库 7xuanlu/wenlan，然后选择同步",
     claudePluginStep3: "从市场安装 Wenlan",
     claudePluginNote: "Wenlan 的技能可在聊天中使用；Cowork 还能使用 MCP 连接器。",
-    claudeConnectorStepTitle: "第 2 步 — 连接你的记忆",
-    openConnectorSettings: "打开连接器设置",
+    claudeRelayNote: "开启远程访问后，连接器会自动通过 Wenlan 中继连接你的记忆——无需粘贴任何内容。",
   },
   status: {
     notVerified: "尚未验证",
   },
   remoteAccess: {
     title: "与网页版 AI 工具共享",
+    description:
+      "开启后，你已连接的工具可以通过 Wenlan 中继随时随地访问你的记忆——无需任何配置。",
     noAuthWarning:
       "将为 Claude.ai 与 ChatGPT 创建一个无需身份验证的公开 HTTPS 地址。任何拥有该地址的人都能访问 Wenlan；不使用时请关闭远程访问。",
     urlLabel: "你的 MCP 地址",
     urlLabelStable: "你的 MCP 地址（稳定）",
+    viewUrl: "查看中继地址",
     copyUrl: "复制地址",
     copied: "已复制!",
     testConnection: "测试连接",
@@ -2160,12 +2155,6 @@ const zhHans = {
     statusConnecting: "正在连接…",
     statusConnected: "已连接",
     statusConnectedLatency: "已连接（{{ms}} 毫秒）",
-    howTo: "如何连接 Claude.ai 与 ChatGPT",
-    claudeAi: "Claude.ai",
-    chatGpt: "ChatGPT",
-    claudeSteps: "Settings → Connectors → Add Custom Connector → Paste URL",
-    chatgptSteps:
-      "Settings → Apps → Advanced settings → Enable Developer mode → Back → Create app → Paste URL (No Auth)",
     tunnelChangesNote:
       "此隧道地址会在 Mac 休眠或重启后变化。可在“设置 → Agents”中启用稳定中继,免去重新连接。",
     stableNote: "此地址是稳定的——不会在 Mac 休眠或重启后变化。",
@@ -2525,8 +2514,8 @@ const zhHant = {
         hint: "守護程式流程健康狀態",
       },
       agents: {
-        label: "代理",
-        hint: "已連接客戶端和遠端存取",
+        label: "連線",
+        hint: "哪些工具可以存取你的記憶，以及你對它們的信任程度",
       },
       sources: {
         label: "來源",
@@ -2560,6 +2549,7 @@ const zhHant = {
     },
     profile: {
       label: "個人資料",
+      photo: "頭像",
       choosePhoto: "選擇個人照片",
       images: "圖片",
       changePhoto: "更換照片",
@@ -2584,7 +2574,7 @@ const zhHant = {
       more: "更多",
     },
     agents: {
-      connectedAgents: "已連接代理",
+      connectedAgents: "已連線",
       trustLevels: "信任等級",
       noAgents: "還沒有連接代理。",
       noAgentsDescription:
@@ -2600,7 +2590,6 @@ const zhHant = {
       cancel: "取消",
       deleteAgent: "刪除 {{name}}",
       setupAnotherTool: "+ 設定另一個工具",
-      remoteAccess: "遠端存取",
       trust: {
         full: "完整",
         review: "需審閱",
@@ -3189,12 +3178,9 @@ const zhHant = {
   connectMatrix: {
     claudeTitle: "Claude.ai",
     chatgptTitle: "ChatGPT.com",
-    claudeStep1: "開啟 Claude.ai → 設定 → 連接器",
-    claudeStep2: "選擇「新增自訂連接器」",
-    claudeStep3: "貼上下方的遠端存取 URL",
-    chatgptStep1: "開啟 ChatGPT.com → 設定 → 連接器",
-    chatgptStep2: "啟用進階 / 開發者模式",
-    chatgptStep3: "將下方的遠端存取 URL 新增為 MCP 連接器",
+    chatgptStep1: "在 ChatGPT 中開啟 設定 → 外掛程式，新增一個外掛程式。",
+    chatgptStep2: "在 Connection 中選擇 Server URL，然後貼上下方位址。",
+    chatgptStep3: "將 Authentication 設為 None，確認風險提示後儲存。",
     copyUrl: "複製 URL",
     copied: "已複製",
     tunnelOff: "先在上方開啟遠端存取以取得連接 URL。",
@@ -3203,26 +3189,29 @@ const zhHant = {
     settingUp: "設定中…",
     configured: "已設定",
     notDetected: "未安裝",
+    allConnected: "偵測到的工具都已連線",
     appsTitle: "應用程式與命令列工具",
-    webTitle: "網頁 — Claude.ai 與 ChatGPT",
+    webRemoteTitle: "網頁與遠端",
     manualTitle: "手動 / 其他工具",
     claudePluginStepTitle: "第 1 步 — 將 Wenlan 新增到 claude.ai",
     claudePluginStep1: "開啟 Directory → 外掛 → 「+ 新增市集」",
     claudePluginStep2: "輸入市集儲存庫 7xuanlu/wenlan，然後選擇同步",
     claudePluginStep3: "從市集安裝 Wenlan",
     claudePluginNote: "Wenlan 的技能可在聊天中使用；Cowork 還能使用 MCP 連接器。",
-    claudeConnectorStepTitle: "第 2 步 — 連接你的記憶",
-    openConnectorSettings: "開啟連接器設定",
+    claudeRelayNote: "開啟遠端存取後，連接器會自動透過 Wenlan 中繼連接你的記憶——無需貼上任何內容。",
   },
   status: {
     notVerified: "尚未驗證",
   },
   remoteAccess: {
     title: "與網頁版 AI 工具共享",
+    description:
+      "開啟後，你已連線的工具可以透過 Wenlan 中繼隨時隨地存取你的記憶——無需任何設定。",
     noAuthWarning:
       "將為 Claude.ai 與 ChatGPT 建立一個無需身份驗證的公開 HTTPS 位址。任何擁有該位址的人都能存取 Wenlan；不使用時請關閉遠端存取。",
     urlLabel: "你的 MCP 位址",
     urlLabelStable: "你的 MCP 位址（穩定）",
+    viewUrl: "檢視中繼位址",
     copyUrl: "複製位址",
     copied: "已複製!",
     testConnection: "測試連線",
@@ -3233,12 +3222,6 @@ const zhHant = {
     statusConnecting: "正在連線…",
     statusConnected: "已連線",
     statusConnectedLatency: "已連線（{{ms}} 毫秒）",
-    howTo: "如何連接 Claude.ai 與 ChatGPT",
-    claudeAi: "Claude.ai",
-    chatGpt: "ChatGPT",
-    claudeSteps: "Settings → Connectors → Add Custom Connector → Paste URL",
-    chatgptSteps:
-      "Settings → Apps → Advanced settings → Enable Developer mode → Back → Create app → Paste URL (No Auth)",
     tunnelChangesNote:
       "此隧道位址會在 Mac 休眠或重啟後變化。可在「設定 → Agents」中啟用穩定中繼,免去重新連線。",
     stableNote: "此位址是穩定的——不會在 Mac 休眠或重啟後變化。",

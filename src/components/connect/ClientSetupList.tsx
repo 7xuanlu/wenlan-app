@@ -25,6 +25,10 @@ export default function ClientSetupList() {
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const { data: clients } = useQuery({ queryKey: ["mcp-clients"], queryFn: detectMcpClients });
+  // Configured clients are already represented in the Connected group above —
+  // showing them again here with nothing left to do is the duplication the
+  // user vetoed.
+  const actionable = (clients ?? []).filter((client) => !client.already_configured);
 
   const setUp = async (clientType: string) => {
     setBusy(clientType);
@@ -50,29 +54,34 @@ export default function ClientSetupList() {
   );
 
   const trailing = (client: McpClient) =>
-    client.already_configured
-      ? null
-      : client.detected
-        ? (
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={() => setUp(client.client_type)}
-              disabled={busy === client.client_type}
-            >
-              {busy === client.client_type ? t("connectMatrix.settingUp") : t("connectMatrix.setUp")}
-            </Button>
-          )
-        : notInstalled;
+    client.detected ? (
+      <Button
+        type="button"
+        variant="secondary"
+        size="sm"
+        onClick={() => setUp(client.client_type)}
+        disabled={busy === client.client_type}
+      >
+        {busy === client.client_type ? t("connectMatrix.settingUp") : t("connectMatrix.setUp")}
+      </Button>
+    ) : (
+      notInstalled
+    );
+
+  if (clients && actionable.length === 0) {
+    return (
+      <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", color: "var(--mem-text-tertiary)" }}>
+        {t("connectMatrix.allConnected")}
+      </span>
+    );
+  }
 
   return (
     <div className="flex flex-col" style={{ gap: "8px" }}>
-      {(clients ?? []).map((client) => (
+      {actionable.map((client) => (
         <ClientRow
           key={client.client_type}
           client={client}
-          showConfigPath
           configured={client.already_configured}
           error={errors[client.client_type]}
           trailing={trailing(client)}

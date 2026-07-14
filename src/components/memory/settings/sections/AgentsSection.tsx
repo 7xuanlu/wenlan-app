@@ -247,22 +247,19 @@ export default function AgentsSection({ onSetupAgent }: { onSetupAgent?: () => v
         </details>
       </section>
 
-      {/* ── Remote Access ─────────────────────────────────────────── */}
-      <section className="mem-fade-up" style={{ animationDelay: "30ms" }}>
-        <SectionHeader label={t("settings.agents.remoteAccess")} />
-        <RemoteAccessPanel />
-      </section>
-
-      {/* ── Web — Claude.ai & ChatGPT ─────────────────────────────── */}
-      <section className="mem-fade-up" style={{ animationDelay: "45ms" }}>
-        <SectionHeader label={t("connectMatrix.webTitle")} />
-        <WebPlatformCards />
-      </section>
-
       {/* ── Apps & CLIs ───────────────────────────────────────────── */}
-      <section className="mem-fade-up" style={{ animationDelay: "60ms" }}>
+      <section className="mem-fade-up" style={{ animationDelay: "30ms" }}>
         <SectionHeader label={t("connectMatrix.appsTitle")} />
         <ClientSetupList />
+      </section>
+
+      {/* ── Web & remote ──────────────────────────────────────────── */}
+      <section className="mem-fade-up" style={{ animationDelay: "60ms" }}>
+        <SectionHeader label={t("connectMatrix.webRemoteTitle")} />
+        <div className="flex flex-col" style={{ gap: "12px" }}>
+          <RemoteAccessPanel />
+          <WebPlatformCards />
+        </div>
       </section>
     </>
   );

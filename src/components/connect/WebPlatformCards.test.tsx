@@ -2,7 +2,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import "../../i18n";
 
 const mocks = vi.hoisted(() => ({
@@ -77,7 +76,7 @@ describe("WebPlatformCards", () => {
     });
   });
 
-  it("Claude card leads with the claude.ai install steps (Claude card only)", async () => {
+  it("Claude card is install-only — the claude.ai install steps, a relay note, and no connector step", async () => {
     mocks.getRemoteAccessStatus.mockResolvedValue({
       status: "connected", tunnel_url: "https://x.trycloudflare.com", token: "t", relay_url: null,
     });
@@ -106,15 +105,15 @@ describe("WebPlatformCards", () => {
         "Wenlan's skills work in chat; Cowork also gets the MCP connectors.",
       ),
     ).toBeInTheDocument();
-    // Step 2 framing of the existing connector flow.
-    const step2Heading = screen.getByText("Step 2 — Connect your memory");
-    expect(step2Heading).toBeInTheDocument();
-    // Order matters: the install step (step 1) must precede the connector
-    // step (step 2) in DOM order, not just both be present somewhere.
-    const step1Heading = screen.getByText("Step 1 — Add Wenlan to claude.ai");
+    // The relay note replaces the old Step-2 connector flow: the plugin now
+    // reaches memory through the relay, so there is nothing to paste.
     expect(
-      step1Heading.compareDocumentPosition(step2Heading) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+      screen.getByText(
+        "Once Remote access is on, the connector reaches your memory through Wenlan's relay automatically — nothing to paste.",
+      ),
+    ).toBeInTheDocument();
+    // The connector step is gone and must not reappear.
+    expect(screen.queryByText("Step 2 — Connect your memory")).not.toBeInTheDocument();
   });
 
   it("install steps render even when the tunnel is off (install is independent of the connector)", async () => {
@@ -126,15 +125,34 @@ describe("WebPlatformCards", () => {
     expect((await screen.findAllByText(/Turn on Remote Access/)).length).toBeGreaterThan(0);
   });
 
-  it("opens the Claude connector settings via the deep link (step 2)", async () => {
+  // Behavior (b), mutation-proof: with remote connected, the URL row lives only
+  // in the ChatGPT card. The Claude card is install-only — no URL, no connector
+  // step, no connector-settings button. Re-add urlRow("claude") or the connector
+  // step and one of these assertions fails.
+  it("renders the URL row only in the ChatGPT card, never the Claude card", async () => {
     mocks.getRemoteAccessStatus.mockResolvedValue({
-      status: "connected", tunnel_url: "https://x.trycloudflare.com", token: "t", relay_url: null,
+      status: "connected", tunnel_url: "https://x.trycloudflare.com", token: "t",
+      relay_url: "https://relay.example/abc",
     });
-    vi.mocked(shellOpen).mockClear();
     renderCards();
-    fireEvent.click(await screen.findByRole("button", { name: "Open connector settings" }));
-    expect(shellOpen).toHaveBeenCalledWith(
-      "https://claude.ai/settings/connectors?modal=add-custom-connector",
-    );
+    // Wait for the remote-status query to resolve: the URL then appears exactly
+    // once — the ChatGPT card only, never the Claude card (getAllByText length 1
+    // catches both a missing URL and a duplicated one).
+    await waitFor(() => {
+      expect(screen.getAllByText("https://relay.example/abc")).toHaveLength(1);
+    });
+    // The Claude card rendered its install-only relay note (no connector step).
+    expect(
+      screen.getByText(
+        "Once Remote access is on, the connector reaches your memory through Wenlan's relay automatically — nothing to paste.",
+      ),
+    ).toBeInTheDocument();
+    // Exactly one Copy URL button (ChatGPT); none in the Claude card.
+    expect(screen.getAllByRole("button", { name: "Copy URL" })).toHaveLength(1);
+    // The deleted connector affordances must not reappear.
+    expect(screen.queryByText("Step 2 — Connect your memory")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Open connector settings" }),
+    ).not.toBeInTheDocument();
   });
 });

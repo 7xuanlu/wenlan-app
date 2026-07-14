@@ -60,6 +60,9 @@ describe("RemoteAccessPanel", () => {
       expect(screen.getByText("Share with web-based AI tools")).toBeInTheDocument();
     });
     expect(screen.queryByText("Off")).not.toBeInTheDocument();
+    // Off is a pure toggle now: turning it on IS the action, so there is no
+    // standalone Reconnect button to press while disabled.
+    expect(screen.queryByRole("button", { name: "Reconnect" })).not.toBeInTheDocument();
   });
 
   it("states the no-auth URL boundary before Remote Access is enabled", async () => {
@@ -82,7 +85,12 @@ describe("RemoteAccessPanel", () => {
     });
   });
 
-  it("renders 'Connected' and URL when connected", async () => {
+  // Behavior (a), mutation-proof: the relay URL is viewable, never setup — it
+  // stays out of the DOM until the "View relay URL" disclosure is expanded.
+  // Guard against a false-green absence assertion by first proving the
+  // connected state actually rendered (the "Connected" chip), THEN asserting
+  // the URL is absent, THEN expanding and asserting it appears.
+  it("keeps the relay URL hidden until 'View relay URL' is expanded", async () => {
     (getRemoteAccessStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
       status: "connected",
       tunnel_url: "https://example.trycloudflare.com",
@@ -93,7 +101,15 @@ describe("RemoteAccessPanel", () => {
     await waitFor(() => {
       expect(screen.getByText("Connected")).toBeInTheDocument();
     });
-    expect(screen.getByText("https://relay.origin.dev/abcdef/mcp")).toBeInTheDocument();
+    // Collapsed by default: the URL is not in the document.
+    expect(
+      screen.queryByText("https://relay.origin.dev/abcdef/mcp"),
+    ).not.toBeInTheDocument();
+    // Expanding the disclosure reveals it.
+    fireEvent.click(screen.getByRole("button", { name: "View relay URL" }));
+    expect(
+      screen.getByText("https://relay.origin.dev/abcdef/mcp"),
+    ).toBeInTheDocument();
   });
 
   it("clicking toggle calls toggleRemoteAccess", async () => {
@@ -122,6 +138,7 @@ describe("RemoteAccessPanel", () => {
     await waitFor(() => {
       expect(screen.getByText("Connected")).toBeInTheDocument();
     });
+    fireEvent.click(screen.getByRole("button", { name: "View relay URL" }));
     const copyBtn = screen.getByRole("button", { name: /^Copy URL$/i });
     fireEvent.click(copyBtn);
     await waitFor(() => {
@@ -147,6 +164,7 @@ describe("RemoteAccessPanel", () => {
     await waitFor(() => {
       expect(screen.getByText("Connected")).toBeInTheDocument();
     });
+    fireEvent.click(screen.getByRole("button", { name: "View relay URL" }));
     const testBtn = screen.getByRole("button", { name: /Test connection/i });
     fireEvent.click(testBtn);
     await waitFor(() => {
@@ -173,6 +191,7 @@ describe("RemoteAccessPanel", () => {
     await waitFor(() => {
       expect(screen.getByText("Connected")).toBeInTheDocument();
     });
+    fireEvent.click(screen.getByRole("button", { name: "View relay URL" }));
     fireEvent.click(screen.getByRole("button", { name: /Test connection/i }));
     await waitFor(() => {
       expect(screen.getByText(/timeout after 5s/i)).toBeInTheDocument();
@@ -229,7 +248,7 @@ describe("RemoteAccessPanel", () => {
     expect(screen.queryByText(/Connecting/i)).not.toBeInTheDocument();
   });
 
-  it("connected state: renders translated URL label, copy/test/reconnect controls, tunnel note, and instructions in zh-Hans", async () => {
+  it("connected state: renders translated URL label, copy/test/reconnect controls, and tunnel note inside the disclosure in zh-Hans", async () => {
     (getRemoteAccessStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
       status: "connected",
       tunnel_url: "https://example.trycloudflare.com",
@@ -242,6 +261,8 @@ describe("RemoteAccessPanel", () => {
     await waitFor(() => {
       expect(screen.getByText("已连接")).toBeInTheDocument();
     });
+    // Expand the translated disclosure to reach the URL and its controls.
+    fireEvent.click(screen.getByRole("button", { name: "查看中继地址" }));
     expect(screen.getByText("你的 MCP 地址")).toBeInTheDocument();
 
     const copyBtn = screen.getByRole("button", { name: /^复制地址$/ });
@@ -266,18 +287,6 @@ describe("RemoteAccessPanel", () => {
         "此隧道地址会在 Mac 休眠或重启后变化。可在“设置 → Agents”中启用稳定中继,免去重新连接。",
       ),
     ).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "如何连接 Claude.ai 与 ChatGPT" }));
-    expect(screen.getByText("Claude.ai")).toBeInTheDocument();
-    expect(screen.getByText("ChatGPT")).toBeInTheDocument();
-    expect(
-      screen.getByText("Settings → Connectors → Add Custom Connector → Paste URL"),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "Settings → Apps → Advanced settings → Enable Developer mode → Back → Create app → Paste URL (No Auth)",
-      ),
-    ).toBeInTheDocument();
   });
 
   it("connected + stable relay: renders the stable URL label and stable note in zh-Hans", async () => {
@@ -293,6 +302,7 @@ describe("RemoteAccessPanel", () => {
     await waitFor(() => {
       expect(screen.getByText("已连接")).toBeInTheDocument();
     });
+    fireEvent.click(screen.getByRole("button", { name: "查看中继地址" }));
     expect(screen.getByText("你的 MCP 地址（稳定）")).toBeInTheDocument();
     expect(
       screen.getByText("此地址是稳定的——不会在 Mac 休眠或重启后变化。"),

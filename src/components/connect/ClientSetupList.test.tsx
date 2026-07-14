@@ -148,4 +148,27 @@ describe("ClientSetupList — one Set up button, two different jobs behind it", 
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/Codex CLI not found/);
   });
+
+  // Configured clients are already shown in the Connected group above —
+  // repeating them here (with nothing left to do) was the duplication the
+  // user vetoed. Mixed detected list proves the filter, not just the empty case.
+  it("hides already-configured clients — only clients with something left to do render", async () => {
+    mocks.detectMcpClients.mockResolvedValue([
+      { name: "Claude Code", client_type: "claude_code", config_path: "~/.claude.json", detected: true, already_configured: true },
+      { name: "Cursor", client_type: "cursor", config_path: "~/.cursor/mcp.json", detected: true, already_configured: false },
+    ]);
+    renderList();
+
+    await screen.findByText("Cursor");
+    expect(screen.queryByText("Claude Code")).not.toBeInTheDocument();
+  });
+
+  it("shows an all-connected note when every detected client is already configured", async () => {
+    mocks.detectMcpClients.mockResolvedValue([
+      { name: "Claude Code", client_type: "claude_code", config_path: "~/.claude.json", detected: true, already_configured: true },
+    ]);
+    renderList();
+
+    expect(await screen.findByText("Every detected tool is already connected")).toBeInTheDocument();
+  });
 });
