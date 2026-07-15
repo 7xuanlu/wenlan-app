@@ -292,4 +292,55 @@ describe("IntelligenceSection", () => {
     expect(await screen.findByText("The pinned source is currently unavailable — using OpenAI for now.")).toBeInTheDocument();
     expect(screen.queryByText(/Pinned to/)).not.toBeInTheDocument();
   });
+
+  // ── Empty-state defect: nothing connected, Synthesis resolves to "none" in
+  // LEGACY mode. The expanded body must give an actionable next step, and the
+  // cloud-required string must appear EXACTLY ONCE (collapsed meta only) —
+  // never duplicated by a body branch. Mutation proof: restoring the old
+  // `source === "none"` body line that re-rendered pageSynthesisRequiresCloud
+  // makes the count 2 and fails toHaveLength(1).
+  it("synthesis 'none' expanded: shows connect-provider guidance, cloud-required meta appears once", async () => {
+    // All beforeEach defaults: no key, no external, no on-device, routing null
+    // (LEGACY). Everyday resolves to "basic", Synthesis to "none".
+    renderSection();
+
+    const synthesisRow = (await screen.findByText("Synthesis model")).closest("button")!;
+    const rowRoot = synthesisRow.parentElement!;
+    await userEvent.click(synthesisRow);
+
+    // Waiting on the guidance settles the queries before the count assertion,
+    // so the count can't false-green on a still-loading row.
+    expect(
+      await screen.findByText("Connect a cloud provider or local server below to serve this job.")
+    ).toBeInTheDocument();
+    // The collapsed meta keeps the cloud-required string; the body no longer repeats it.
+    expect(
+      within(rowRoot).getAllByText("Page synthesis requires a cloud or local-server model")
+    ).toHaveLength(1);
+  });
+
+  // ── Empty-state defect: PINNED mode with nothing configured must still show
+  // the source picker (a fresh user has to SEE what's choosable), with every
+  // option disabled. Mutation proof: re-gating the pinned select on
+  // isProviderSource drops it for a "none" source and fails findByLabelText.
+  it("pinned mode, nothing configured: the source select renders with every option disabled", async () => {
+    mocks.getResolvedRouting.mockResolvedValue({
+      everyday: { source: "basic", model: null, mode: "auto", pin: null },
+      synthesis: { source: "none", model: null, mode: "auto", pin: null },
+      pool: {
+        anthropic: { configured: false, everyday_model: null, synthesis_model: null },
+        external: null,
+        on_device: null,
+      },
+    });
+    renderSection();
+
+    const synthesisRow = (await screen.findByText("Synthesis model")).closest("button")!;
+    await userEvent.click(synthesisRow);
+
+    const sourceSelect = await screen.findByLabelText("Choose source");
+    const options = within(sourceSelect).getAllByRole("option") as HTMLOptionElement[];
+    expect(options.length).toBeGreaterThan(0);
+    expect(options.filter((o) => !o.disabled)).toHaveLength(0);
+  });
 });

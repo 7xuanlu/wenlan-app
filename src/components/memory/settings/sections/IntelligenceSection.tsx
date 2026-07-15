@@ -197,24 +197,33 @@ function JobPicker({
 
   return (
     <div className="flex flex-col gap-3">
-      {isProviderSource &&
-        (isPinned ? (
-          <div className="flex items-center justify-between">
-            <div style={labelStyle}>{t("intelligence.sourceLabel")}</div>
-            <div className="shrink-0 w-fit">
-              <Select
-                size="sm"
-                aria-label={t("intelligence.chooseSource")}
-                value={source}
-                onChange={(e) => onPickSource(e.target.value as PinSource)}
-              >
-                {sourceOptions.map((o) => (
-                  <option key={o.source} value={o.source} disabled={!o.available}>{o.label}</option>
-                ))}
-              </Select>
-            </div>
+      {isPinned ? (
+        // PINNED mode always renders the source picker — even when nothing is
+        // configured (source resolves to "basic"/"none") a fresh user must SEE
+        // what can be chosen. A disabled placeholder holds the empty slot.
+        <div className="flex items-center justify-between">
+          <div style={labelStyle}>{t("intelligence.sourceLabel")}</div>
+          <div className="shrink-0 w-fit">
+            <Select
+              size="sm"
+              aria-label={t("intelligence.chooseSource")}
+              value={isProviderSource ? source : ""}
+              onChange={(e) => onPickSource(e.target.value as PinSource)}
+            >
+              {!isProviderSource && (
+                <option value="" disabled>{t("intelligence.chooseSource")}</option>
+              )}
+              {sourceOptions.map((o) => (
+                <option key={o.source} value={o.source} disabled={!o.available}>{o.label}</option>
+              ))}
+            </Select>
           </div>
-        ) : (
+        </div>
+      ) : (
+        // LEGACY mode: a read-only source line only makes sense for a real
+        // provider source. For "basic"/"none" the guidance caption below
+        // carries the row instead.
+        isProviderSource && (
           <div>
             <div className="flex items-center justify-between">
               <div style={labelStyle}>{t("intelligence.sourceLabel")}</div>
@@ -222,7 +231,8 @@ function JobPicker({
             </div>
             <p style={captionStyle}>{t("intelligence.sourcePinLegacyHint")}</p>
           </div>
-        ))}
+        )
+      )}
 
       {source === "anthropic" && (job === "everyday" ? <RoutineModelSelect /> : <SynthesisModelSelect />)}
       {source === "external" && external && <ExternalModelSelect endpoint={external.endpoint} model={external.model} />}
@@ -232,8 +242,11 @@ function JobPicker({
           <p style={captionStyle}>{t("intelligence.onDeviceManagedBelow")}</p>
         </div>
       )}
-      {source === "basic" && <p style={metaLineStyle}>{t("intelligenceStrip.servingBasic")}</p>}
-      {source === "none" && <p style={metaLineStyle}>{t("intelligence.pageSynthesisRequiresCloud")}</p>}
+      {/* "basic"/"none" carry their state in the collapsed meta already; the
+          body gives an actionable next step instead of repeating it. */}
+      {(source === "basic" || source === "none") && (
+        <p style={captionStyle}>{t("intelligence.connectProviderBelowHint")}</p>
+      )}
 
       {source === "external" && <p style={captionStyle}>{t("intelligence.sharedSlotCaption")}</p>}
       {isPinned && degraded && (
