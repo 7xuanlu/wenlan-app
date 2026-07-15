@@ -12,7 +12,6 @@ import {
   setExternalLlm,
   setSourcePin,
 } from "../../../../lib/tauri";
-import ActiveIntelligenceStrip from "../../../intelligence/ActiveIntelligenceStrip";
 import AnyProviderCard from "../../../intelligence/AnyProviderCard";
 import {
   ANTHROPIC_MODELS,
@@ -396,7 +395,7 @@ export default function IntelligenceSection({ delay }: { delay: number }) {
       case "on_device":
         return onDeviceLabel ?? t("intelligence.sourceOnDevice");
       case "basic":
-        return t("intelligenceStrip.servingBasic");
+        return t("intelligence.servingBasic");
       default:
         return t("intelligence.synthesisNoSourceHint");
     }
@@ -501,8 +500,6 @@ export default function IntelligenceSection({ delay }: { delay: number }) {
   return (
     <section className="mem-fade-up" style={{ animationDelay: `${delay}ms` }}>
       <div className="flex flex-col gap-3">
-        <ActiveIntelligenceStrip />
-
         <div className="mem-fade-up" style={{ animationDelay: `${delay + 30}ms` }}>
           <SectionHeader label={t("intelligence.modelsTitle")} />
           <Card padding="rows">

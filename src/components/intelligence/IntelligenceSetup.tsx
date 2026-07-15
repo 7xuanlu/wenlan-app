@@ -60,9 +60,9 @@ export function AnthropicFields({
   const { maskedKey, isConfigured } = useApiKeyStatus();
 
   // A save/clear here changes what the daemon is actually serving (the
-  // Anthropic key is hot-loaded even on 0.12), so the strip's status
-  // queries must be invalidated alongside the key itself — otherwise
-  // ActiveIntelligenceStrip keeps showing stale state until remount.
+  // Anthropic key is hot-loaded even on 0.12), so the routing queries the
+  // job summary rows read from must be invalidated alongside the key
+  // itself — otherwise the rows keep showing stale state until remount.
   const invalidateIntelligenceQueries = () => {
     queryClient.invalidateQueries({ queryKey: ["apiKey"] });
     queryClient.invalidateQueries({ queryKey: ["setup-status"] });

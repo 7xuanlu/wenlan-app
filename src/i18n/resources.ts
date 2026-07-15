@@ -180,18 +180,6 @@ const en = {
     localNotDetectedChip: "Not detected at {{host}} — is {{name}} running?",
     localProbing: "Checking {{name}}…",
   },
-  intelligenceStrip: {
-    chain: "Priority: Anthropic → external endpoint → on-device → basic memory",
-    servingAnthropic: "Serving: Anthropic",
-    servingExternal: "Serving: external endpoint",
-    servingOnDevice: "Serving: on-device model",
-    servingBasic: "Basic memory — no model configured",
-    externalRestartPending: "External endpoint configured — restart pending",
-    externalUnverified: "External endpoint configured (unverified)",
-    pinnedSummary: "Everyday: {{everyday}} · Synthesis: {{synthesis}}",
-    sourceBasic: "Basic memory",
-    sourceOff: "Off",
-  },
   main: {
     home: "Home",
     activity: "Activity",
@@ -994,7 +982,7 @@ const en = {
     running: "Running",
     notLoaded: "Not loaded",
     localModelDescription:
-      "Runs everyday tasks on this device — classification and entity extraction — and can serve page synthesis when you pick it for that job.",
+      "Handles everyday work — organizing and connecting new memories — entirely on this device. It can also serve page synthesis when you pick it for that job.",
     systemInfo: "Your system: {{ram}}GB RAM{{accelerators}}.",
     modelDetails:
       "{{params}} params · {{downloadSize}}GB download · needs {{ram}}GB RAM",
@@ -1025,6 +1013,7 @@ const en = {
     sourceAnthropic: "Anthropic",
     sourceOnDevice: "On-device",
     sourceConnectedProvider: "Connected provider",
+    servingBasic: "Basic memory — no model configured",
     sourceRecommended: "Recommended",
     sourceUnavailableSuffix: " (connect below first)",
     sourcePinLegacyHint: "Changing the source needs the updated Wenlan runtime.",
@@ -1309,18 +1298,6 @@ const zhHans = {
     localNoModelsChip: "{{name}} 正在运行 — 尚未安装模型",
     localNotDetectedChip: "未在 {{host}} 检测到 — {{name}} 是否正在运行？",
     localProbing: "正在检查 {{name}}…",
-  },
-  intelligenceStrip: {
-    chain: "优先级：Anthropic → 外部端点 → 本机模型 → 基础记忆",
-    servingAnthropic: "当前使用：Anthropic",
-    servingExternal: "当前使用：外部端点",
-    servingOnDevice: "当前使用：本机模型",
-    servingBasic: "基础记忆 — 未配置模型",
-    externalRestartPending: "外部端点已配置 — 等待重启",
-    externalUnverified: "外部端点已配置（未验证）",
-    pinnedSummary: "日常：{{everyday}} · 综合：{{synthesis}}",
-    sourceBasic: "基础记忆",
-    sourceOff: "关闭",
   },
   main: {
     home: "首页",
@@ -2107,7 +2084,7 @@ const zhHans = {
     running: "运行中",
     notLoaded: "未加载",
     localModelDescription:
-      "在本机运行日常任务——分类与实体抽取——当你为综合任务选择它时，也可驱动页面综合。",
+      "在本机完成日常工作——整理并关联新的记忆——全部在本地进行。当你为综合任务选择它时，也可用于页面综合。",
     systemInfo: "你的系统：{{ram}}GB RAM{{accelerators}}。",
     modelDetails:
       "{{params}} 参数 · {{downloadSize}}GB 下载 · 需要 {{ram}}GB RAM",
@@ -2138,6 +2115,7 @@ const zhHans = {
     sourceAnthropic: "Anthropic",
     sourceOnDevice: "本机",
     sourceConnectedProvider: "已连接的供应方",
+    servingBasic: "基础记忆 — 未配置模型",
     sourceRecommended: "推荐",
     sourceUnavailableSuffix: "（请先在下方连接）",
     sourcePinLegacyHint: "更改来源需要更新后的 Wenlan 运行时。",
@@ -2420,18 +2398,6 @@ const zhHant = {
     localNoModelsChip: "{{name}} 正在執行 — 尚未安裝模型",
     localNotDetectedChip: "未在 {{host}} 偵測到 — {{name}} 是否正在執行？",
     localProbing: "正在檢查 {{name}}…",
-  },
-  intelligenceStrip: {
-    chain: "優先順序:Anthropic → 外部端點 → 本機模型 → 基礎記憶",
-    servingAnthropic: "目前使用:Anthropic",
-    servingExternal: "目前使用:外部端點",
-    servingOnDevice: "目前使用:本機模型",
-    servingBasic: "基礎記憶 — 未設定模型",
-    externalRestartPending: "外部端點已設定 — 等待重新啟動",
-    externalUnverified: "外部端點已設定（未驗證）",
-    pinnedSummary: "日常：{{everyday}} · 綜合：{{synthesis}}",
-    sourceBasic: "基礎記憶",
-    sourceOff: "關閉",
   },
   main: {
     home: "首頁",
@@ -3218,7 +3184,7 @@ const zhHant = {
     running: "執行中",
     notLoaded: "未載入",
     localModelDescription:
-      "在本機執行日常任務——分類與實體擷取——當你為綜合任務選擇它時，也可驅動頁面綜合。",
+      "在本機完成日常工作——整理並關聯新的記憶——全部在本機進行。當你為綜合任務選擇它時，也可用於頁面綜合。",
     systemInfo: "你的系統：{{ram}}GB RAM{{accelerators}}。",
     modelDetails:
       "{{params}} 參數 · {{downloadSize}}GB 下載 · 需要 {{ram}}GB RAM",
@@ -3249,6 +3215,7 @@ const zhHant = {
     sourceAnthropic: "Anthropic",
     sourceOnDevice: "本機",
     sourceConnectedProvider: "已連接的供應方",
+    servingBasic: "基礎記憶 — 未設定模型",
     sourceRecommended: "推薦",
     sourceUnavailableSuffix: "（請先在下方連接）",
     sourcePinLegacyHint: "變更來源需要更新後的 Wenlan 執行環境。",
