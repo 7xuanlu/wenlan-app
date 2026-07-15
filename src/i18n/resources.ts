@@ -966,7 +966,7 @@ const en = {
       "Enables Claude Haiku for better memory titles and larger cluster distillation.",
     clear: "Clear",
     save: "Save",
-    pageSynthesisRequiresCloud: "Page synthesis requires a cloud model",
+    pageSynthesisRequiresCloud: "Page synthesis requires a cloud or local-server model",
     memorySafe:
       "Your memories are safe — search, recall, and entity linking work on-device.",
     addApiKey:
@@ -2050,7 +2050,7 @@ const zhHans = {
       "启用 Claude Haiku，以生成更好的记忆标题和更大的集群蒸馏。",
     clear: "清除",
     save: "保存",
-    pageSynthesisRequiresCloud: "页面综合需要云端模型",
+    pageSynthesisRequiresCloud: "页面综合需要云端或本地服务器模型",
     memorySafe:
       "你的记忆是安全的：搜索、回忆和实体连接都在本机工作。",
     addApiKey:
@@ -3132,7 +3132,7 @@ const zhHant = {
       "啟用 Claude Haiku，以產生更好的記憶標題和更大的叢集蒸餾。",
     clear: "清除",
     save: "儲存",
-    pageSynthesisRequiresCloud: "頁面綜合需要雲端模型",
+    pageSynthesisRequiresCloud: "頁面綜合需要雲端或本機伺服器模型",
     memorySafe:
       "你的記憶是安全的：搜尋、回憶和實體連結都在本機運作。",
     addApiKey:

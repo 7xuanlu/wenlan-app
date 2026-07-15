@@ -153,7 +153,7 @@ describe("IntelligenceSection", () => {
     expect(await within(everydayRow).findByText("Qwen3 4B Instruct")).toBeInTheDocument();
 
     const synthesisRow = screen.getByText("Synthesis model").closest("button")!;
-    expect(within(synthesisRow).getByText("Page synthesis requires a cloud model")).toBeInTheDocument();
+    expect(within(synthesisRow).getByText("Page synthesis requires a cloud or local-server model")).toBeInTheDocument();
   });
 
   it("shows the On-device row's capability hint alongside its state-derived meta", async () => {
