@@ -173,7 +173,7 @@ describe("IntelligenceSection", () => {
     expect(await within(everydayRow).findByText("Qwen3 4B Instruct")).toBeInTheDocument();
 
     const synthesisRow = screen.getByText("Synthesis model").closest("button")!;
-    expect(within(synthesisRow).getByText("No model is assigned — pages still update whenever your AI tools use Wenlan. Connect a provider below or pick the on-device model for background synthesis.")).toBeInTheDocument();
+    expect(within(synthesisRow).getByText("No model is assigned — pages still update whenever your AI tools use Wenlan.")).toBeInTheDocument();
   });
 
   it("shows the On-device row's capability hint alongside its state-derived meta", async () => {
@@ -310,7 +310,7 @@ describe("IntelligenceSection", () => {
     ).toBeInTheDocument();
     // The collapsed meta keeps the cloud-required string; the body no longer repeats it.
     expect(
-      within(rowRoot).getAllByText("No model is assigned — pages still update whenever your AI tools use Wenlan. Connect a provider below or pick the on-device model for background synthesis.")
+      within(rowRoot).getAllByText("No model is assigned — pages still update whenever your AI tools use Wenlan.")
     ).toHaveLength(1);
   });
 
