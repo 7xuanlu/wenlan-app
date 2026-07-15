@@ -1063,6 +1063,51 @@ describe("SetupWizard", () => {
     expect(screen.queryByText(/Everyday tasks:/)).not.toBeInTheDocument();
   });
 
+  // The full first-onboarding run is the ONLY path that wires, and the render
+  // site `wireRouting={!initialStep}` is the load-bearing link the DoneStep-
+  // direct tests can't cover (they pass the prop explicitly). Drive
+  // welcome→done end-to-end with a configured pool and prove the pins land +
+  // the summary renders. Mutation-proof: force `wireRouting={false}` at the
+  // render site (which kills the feature in production) → exactly this fails.
+  it("full onboarding run (welcome→done) writes the derived pins and shows the summary", async () => {
+    (getResolvedRouting as ReturnType<typeof vi.fn>).mockResolvedValue({
+      everyday: { source: "basic", model: null, mode: "auto", pin: null },
+      synthesis: { source: "none", model: null, mode: "auto", pin: null },
+      pool: {
+        anthropic: { configured: true, everyday_model: null, synthesis_model: null },
+        external: null,
+        on_device: { selected: "qwen3-4b-instruct-2507", loaded: true },
+      },
+    });
+
+    renderWizard(); // no initialStep → full run → wireRouting=true
+
+    // welcome → intelligence (default device model, committed on Continue)
+    fireEvent.click(screen.getByText("Get started"));
+    await waitFor(() =>
+      expect(screen.getByTestId("on-device-model-deferred-note")).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByText("Continue"));
+    // intelligence → import → connect → setting-up (skip the optional steps)
+    await waitFor(() => expect(screen.getByText("Bring what you already know")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("Skip"));
+    await waitFor(() => expect(screen.getByText("Connect your AI tools")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("Skip"));
+    // setting-up → done
+    await waitFor(() =>
+      expect(screen.getByTestId("task-status-daemon")).toHaveTextContent("Running"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    // DoneStep's effect runs on the full run: derived pins written, summary shown.
+    await waitFor(() => expect(setSourcePin).toHaveBeenCalledWith("on_device", "anthropic"));
+    expect(
+      await screen.findByText(
+        "Everyday tasks: On-device. Page synthesis: Anthropic. Change this anytime in Settings → Intelligence.",
+      ),
+    ).toBeInTheDocument();
+  });
+
   // ── Round 2: steps 2-4 collect only; step 5 does + proves everything ────
 
   it("intelligence step 2 records the on-device model choice but does not download it — only step 5 does", async () => {
