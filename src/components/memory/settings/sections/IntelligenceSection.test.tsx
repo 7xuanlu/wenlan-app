@@ -178,7 +178,7 @@ describe("IntelligenceSection", () => {
     expect(await within(everydayRow).findByText("Qwen3 4B Instruct")).toBeInTheDocument();
 
     const synthesisRow = screen.getByText("Synthesis model").closest("button")!;
-    expect(within(synthesisRow).getByText("Page synthesis requires a cloud or local-server model")).toBeInTheDocument();
+    expect(within(synthesisRow).getByText("Nothing is serving synthesis yet — connect a provider below or use the on-device model.")).toBeInTheDocument();
   });
 
   it("shows the On-device row's capability hint alongside its state-derived meta", async () => {
@@ -191,7 +191,7 @@ describe("IntelligenceSection", () => {
 
     const onDeviceRow = screen.getByText("On-device model").closest("button")!;
     expect(
-      within(onDeviceRow).getByText("Handles everyday tasks entirely on this device — too small for synthesis")
+      within(onDeviceRow).getByText("Runs entirely on this device. Larger cloud or server models usually give better synthesis quality.")
     ).toBeInTheDocument();
     expect(await within(onDeviceRow).findByText("Qwen3 4B Instruct · Running")).toBeInTheDocument();
   });
@@ -295,11 +295,11 @@ describe("IntelligenceSection", () => {
 
   // ── Empty-state defect: nothing connected, Synthesis resolves to "none" in
   // LEGACY mode. The expanded body must give an actionable next step, and the
-  // cloud-required string must appear EXACTLY ONCE (collapsed meta only) —
+  // none-state meta string must appear EXACTLY ONCE (collapsed meta only) —
   // never duplicated by a body branch. Mutation proof: restoring the old
-  // `source === "none"` body line that re-rendered pageSynthesisRequiresCloud
-  // makes the count 2 and fails toHaveLength(1).
-  it("synthesis 'none' expanded: shows connect-provider guidance, cloud-required meta appears once", async () => {
+  // `source === "none"` body line that re-rendered the none-state meta
+  // (synthesisNoSourceHint) makes the count 2 and fails toHaveLength(1).
+  it("synthesis 'none' expanded: shows connect-provider guidance, none-state meta appears once", async () => {
     // All beforeEach defaults: no key, no external, no on-device, routing null
     // (LEGACY). Everyday resolves to "basic", Synthesis to "none".
     renderSection();
@@ -315,7 +315,7 @@ describe("IntelligenceSection", () => {
     ).toBeInTheDocument();
     // The collapsed meta keeps the cloud-required string; the body no longer repeats it.
     expect(
-      within(rowRoot).getAllByText("Page synthesis requires a cloud or local-server model")
+      within(rowRoot).getAllByText("Nothing is serving synthesis yet — connect a provider below or use the on-device model.")
     ).toHaveLength(1);
   });
 
@@ -342,5 +342,63 @@ describe("IntelligenceSection", () => {
     const options = within(sourceSelect).getAllByRole("option") as HTMLOptionElement[];
     expect(options.length).toBeGreaterThan(0);
     expect(options.filter((o) => !o.disabled)).toHaveLength(0);
+  });
+
+  // ── Synthesis can now use on-device (daemon #357 makes synthesis=on_device a
+  // valid pin). The Synthesis row must OFFER on-device as an enabled source
+  // when a model is loaded, and picking it must pin synthesis→on_device (the
+  // (everyday, synthesis) arg pair means null in the everyday slot). Mutation
+  // proof: dropping "on_device" from the synthesis branch of buildOptions'
+  // `order` removes the option and fails the getByRole("option", { name:
+  // "On-device" }) query.
+  it("synthesis offers an available On-device source and pins synthesis→on_device", async () => {
+    // pinnedRouting()'s pool has on_device configured, so the option is enabled.
+    mocks.getResolvedRouting.mockResolvedValue(pinnedRouting());
+    renderSection();
+
+    const synthesisRow = (await screen.findByText("Synthesis model")).closest("button")!;
+    await userEvent.click(synthesisRow);
+
+    const sourceSelect = await screen.findByLabelText("Choose source");
+    const onDeviceOption = within(sourceSelect).getByRole("option", { name: "On-device" }) as HTMLOptionElement;
+    expect(onDeviceOption.disabled).toBe(false);
+
+    await userEvent.selectOptions(sourceSelect, "on_device");
+    expect(mocks.setSourcePin).toHaveBeenCalledWith(null, "on_device");
+  });
+
+  // ── The on-device job row exposes a model dropdown (jobs choose — no "managed
+  // below" deflection). Cached models are selectable, uncached ones disabled
+  // with a pointer to the provider row, and switching reuses OnDeviceModelCard's
+  // exact mechanism: downloadOnDeviceModel(id) (loads if cached). Mutation proof:
+  // no-op'ing the `await downloadOnDeviceModel(e.target.value)` in
+  // OnDeviceJobModelSelect.onChange makes the switch write nothing and fails
+  // toHaveBeenCalledWith("qwen3-8b") — and only this test.
+  it("on-device job row: dropdown lists cached (enabled) + uncached (disabled), switching loads the picked model", async () => {
+    mocks.getResolvedRouting.mockResolvedValue(
+      pinnedRouting({ everyday: { source: "on_device", model: "qwen3-4b-instruct-2507", mode: "pinned" } })
+    );
+    mocks.getOnDeviceModel.mockResolvedValue({
+      loaded: "qwen3-4b-instruct-2507",
+      selected: "qwen3-4b-instruct-2507",
+      models: [
+        { id: "qwen3-4b-instruct-2507", display_name: "Qwen3 4B", param_count: "4B", ram_required_gb: 6, file_size_gb: 2.7, cached: true },
+        { id: "qwen3-8b", display_name: "Qwen3 8B", param_count: "8B", ram_required_gb: 10, file_size_gb: 5.2, cached: true },
+        { id: "qwen3-14b", display_name: "Qwen3 14B", param_count: "14B", ram_required_gb: 16, file_size_gb: 9.0, cached: false },
+      ],
+    });
+    renderSection();
+
+    const everydayRow = (await screen.findByText("Everyday model")).closest("button")!;
+    await userEvent.click(everydayRow);
+
+    const modelSelect = await screen.findByLabelText("Choose on-device model");
+    expect((within(modelSelect).getByRole("option", { name: "Qwen3 8B" }) as HTMLOptionElement).disabled).toBe(false);
+    expect((within(modelSelect).getByRole("option", { name: "Qwen3 14B" }) as HTMLOptionElement).disabled).toBe(true);
+    // The uncached entry surfaces the download pointer to the provider row.
+    expect(screen.getByText("Uncached models download from the On-device model row below.")).toBeInTheDocument();
+
+    await userEvent.selectOptions(modelSelect, "qwen3-8b");
+    expect(mocks.downloadOnDeviceModel).toHaveBeenCalledWith("qwen3-8b");
   });
 });

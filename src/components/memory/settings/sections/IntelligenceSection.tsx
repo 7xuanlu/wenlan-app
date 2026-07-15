@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
+  downloadOnDeviceModel,
   getExternalLlm,
   getModelChoice,
   getOnDeviceModel,
@@ -153,6 +154,52 @@ function ExternalModelSelect({ endpoint, model }: { endpoint: string; model: str
   );
 }
 
+/** The on-device model chosen in a job row. Reuses OnDeviceModelCard's exact
+ *  switch mechanism — there is no dedicated "select" command, so loading a
+ *  cached model is `downloadOnDeviceModel(id)` (it loads if cached, downloads
+ *  if not) followed by invalidating ["onDeviceModel"]. Cached models are
+ *  selectable; uncached ones are disabled with a pointer to the provider row. */
+function OnDeviceJobModelSelect() {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const { data: modelData } = useQuery({ queryKey: ["onDeviceModel"], queryFn: getOnDeviceModel });
+  const models = modelData?.models ?? [];
+  const loadedId = modelData?.loaded ?? null;
+  const selectedId = modelData?.selected ?? null;
+  const currentId = loadedId ?? selectedId ?? models[0]?.id ?? null;
+  const hasUncached = models.some((m) => !m.cached);
+
+  if (models.length === 0) {
+    return <p style={metaLineStyle}>{t("intelligence.modelCatalogUnavailable")}</p>;
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between">
+        <div style={labelStyle}>{t("intelligence.modelLabel")}</div>
+        <div className="shrink-0 w-fit">
+          <Select
+            size="sm"
+            mono
+            aria-label={t("intelligence.chooseOnDeviceModel")}
+            value={currentId ?? ""}
+            onChange={async (e) => {
+              await downloadOnDeviceModel(e.target.value);
+              queryClient.invalidateQueries({ queryKey: ["onDeviceModel"] });
+              queryClient.invalidateQueries({ queryKey: ["resolvedRouting"] });
+            }}
+          >
+            {models.map((m) => (
+              <option key={m.id} value={m.id} disabled={!m.cached}>{m.display_name}</option>
+            ))}
+          </Select>
+        </div>
+      </div>
+      {hasUncached && <p style={captionStyle}>{t("intelligence.onDeviceDownloadHint")}</p>}
+    </div>
+  );
+}
+
 interface SourceOption {
   source: PinSource;
   label: string;
@@ -176,7 +223,6 @@ interface JobView {
   pinnedDisplay: string | null;
   sourceOptions: SourceOption[];
   external: { endpoint: string; model: string } | null;
-  onDeviceLabel: string | null;
 }
 
 /** The expanded body of a job row: source picker (interactive in PINNED mode,
@@ -192,7 +238,7 @@ function JobPicker({
   onPickSource: (source: PinSource) => void;
 }) {
   const { t } = useTranslation();
-  const { job, source, sourceDisplay, degraded, pinnedDisplay, sourceOptions, external, onDeviceLabel } = view;
+  const { job, source, sourceDisplay, degraded, pinnedDisplay, sourceOptions, external } = view;
   const isProviderSource = source === "anthropic" || source === "external" || source === "on_device";
 
   return (
@@ -236,12 +282,7 @@ function JobPicker({
 
       {source === "anthropic" && (job === "everyday" ? <RoutineModelSelect /> : <SynthesisModelSelect />)}
       {source === "external" && external && <ExternalModelSelect endpoint={external.endpoint} model={external.model} />}
-      {source === "on_device" && (
-        <div>
-          <div style={metaLineStyle}>{onDeviceLabel ?? t("intelligence.sourceOnDevice")}</div>
-          <p style={captionStyle}>{t("intelligence.onDeviceManagedBelow")}</p>
-        </div>
-      )}
+      {source === "on_device" && <OnDeviceJobModelSelect />}
       {/* "basic"/"none" carry their state in the collapsed meta already; the
           body gives an actionable next step instead of repeating it. */}
       {(source === "basic" || source === "none") && (
@@ -352,7 +393,7 @@ export default function IntelligenceSection({ delay }: { delay: number }) {
       case "basic":
         return t("intelligenceStrip.servingBasic");
       default:
-        return t("intelligence.pageSynthesisRequiresCloud");
+        return t("intelligence.synthesisNoSourceHint");
     }
   };
 
@@ -374,9 +415,10 @@ export default function IntelligenceSection({ delay }: { delay: number }) {
   };
 
   const buildOptions = (job: JobRowId): SourceOption[] => {
-    // No vendor privilege: everyday leads with the recommended on-device option,
-    // synthesis lists its two peers. Synthesis omits on-device (daemon rejects).
-    const order: PinSource[] = job === "everyday" ? ["on_device", "anthropic", "external"] : ["anthropic", "external"];
+    // No vendor privilege: everyday leads with the recommended on-device option;
+    // synthesis lists cloud/server first (better synthesis quality) then offers
+    // on-device last — pinnable once the daemon accepts synthesis=on_device.
+    const order: PinSource[] = job === "everyday" ? ["on_device", "anthropic", "external"] : ["anthropic", "external", "on_device"];
     const suffix = t("intelligence.sourceUnavailableSuffix");
     return order.map((s) => {
       const available = avail[s];
@@ -426,7 +468,6 @@ export default function IntelligenceSection({ delay }: { delay: number }) {
       pinnedDisplay: pin ? sourceLabel(pin) : null,
       sourceOptions: buildOptions(job),
       external: routedExternal,
-      onDeviceLabel,
     };
   };
 
