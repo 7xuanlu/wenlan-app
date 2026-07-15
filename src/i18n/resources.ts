@@ -108,6 +108,8 @@ const en = {
         "Keep using your AI tools normally. Wenlan turns what they learn into pages you can read and cite.",
       allSetBody2:
         "Pages refresh between sessions, so the next one starts where the last ended.",
+      routingSummary:
+        "Everyday tasks: {{everyday}}. Page synthesis: {{synthesis}}. Change this anytime in Settings → Intelligence.",
       memoriesImported_one: "{{count}} memory imported",
       memoriesImported_other: "{{count}} memories imported",
       topics: "Topics",
@@ -1233,6 +1235,8 @@ const zhHans = {
       allSetTitle: "全部设置完成。",
       allSetBody1: "继续照常使用你的 AI 工具。文澜会把它们学到的内容变成可阅读、可引用的页面。",
       allSetBody2: "页面会在会话之间刷新，让下一次对话从上一次结束的地方继续。",
+      routingSummary:
+        "日常任务：{{everyday}}。页面综合：{{synthesis}}。可随时在“设置 → 智能”中更改。",
       memoriesImported_one: "已导入 {{count}} 条记忆",
       memoriesImported_other: "已导入 {{count}} 条记忆",
       topics: "主题",
@@ -2335,6 +2339,8 @@ const zhHant = {
       allSetTitle: "全部設定完成。",
       allSetBody1: "繼續照常使用你的 AI 工具。文瀾會把它們學到的內容變成可閱讀、可引用的頁面。",
       allSetBody2: "頁面會在工作階段之間更新，讓下一次對話從上一次結束的地方繼續。",
+      routingSummary:
+        "日常任務：{{everyday}}。頁面綜合：{{synthesis}}。可隨時在「設定 → 智慧」中更改。",
       memoriesImported_one: "已匯入 {{count}} 則記憶",
       memoriesImported_other: "已匯入 {{count}} 則記憶",
       topics: "主題",

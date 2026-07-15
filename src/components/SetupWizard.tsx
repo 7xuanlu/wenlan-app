@@ -10,6 +10,8 @@ import {
   downloadOnDeviceModel,
   getOnDeviceModel,
   onDeviceModelDownloadBytes,
+  getResolvedRouting,
+  setSourcePin,
   addSource,
   syncRegisteredSource,
   storeMemory,
@@ -18,6 +20,7 @@ import {
   type McpClient,
   type ImportResult,
   type SyncStats,
+  type ResolvedRouting,
 } from "../lib/tauri";
 import { ImportView } from "./memory/ImportView";
 import VaultConnectCard, { type VaultPick } from "./memory/sources/VaultConnectCard";
@@ -1648,6 +1651,42 @@ function Stat({ label, value }: { label: string; value: number }) {
 
 // ── Done Step ───────────────────────────────────────────────────────────
 
+type OnboardingPin = "anthropic" | "external" | "on_device";
+
+/** First-onboarding routing derivation from what the daemon reports configured.
+ *  everyday prefers on-device (private, free, the recommended everyday source),
+ *  then a connected provider; synthesis prefers a connected provider (better
+ *  synthesis quality), with on-device as the fallback. When both cloud and an
+ *  external provider are configured, synthesis prefers Anthropic — the summary
+ *  names it, so the choice is visible.
+ *
+ *  Invariant: everyday and synthesis are both null or both set — "nothing
+ *  configured at all" is the only null case, so a partial pin write never
+ *  happens (the caller relies on this to decide write-or-skip). */
+export function deriveOnboardingPins(pool: ResolvedRouting["pool"]): {
+  everyday: OnboardingPin | null;
+  synthesis: OnboardingPin | null;
+} {
+  const hasAnthropic = pool.anthropic.configured;
+  const hasExternal = pool.external != null;
+  const hasOnDevice = pool.on_device != null;
+  const everyday: OnboardingPin | null = hasOnDevice
+    ? "on_device"
+    : hasAnthropic
+      ? "anthropic"
+      : hasExternal
+        ? "external"
+        : null;
+  const synthesis: OnboardingPin | null = hasAnthropic
+    ? "anthropic"
+    : hasExternal
+      ? "external"
+      : hasOnDevice
+        ? "on_device"
+        : null;
+  return { everyday, synthesis };
+}
+
 // Defect 4: raw canonical agent ids (e.g. two ids that both mean "Codex")
 // must never render. Every entry is resolved through resolveAgentDisplayName
 // and deduped by resolved display name; the list is capped so the row never
@@ -1694,6 +1733,57 @@ function DoneStep({
   const visibleAgentNames = resolvedAgentNames.slice(0, MAX_AGENT_CHIPS);
   const overflowAgentCount = resolvedAgentNames.length - visibleAgentNames.length;
 
+  // Onboarding completion wires explicit per-job pins from what the user
+  // configured, so the defaults are visible instead of silent. Feature-detect
+  // first (a legacy daemon returns null → wire nothing); the write is
+  // non-blocking (a failure must not break completion) and the summary line
+  // only shows on a write that actually landed.
+  const [wired, setWired] = useState<{ everyday: OnboardingPin; synthesis: OnboardingPin } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      let routing: ResolvedRouting | null = null;
+      try {
+        routing = await getResolvedRouting();
+      } catch (e) {
+        console.error("onboarding: routing lookup failed; skipping pin wiring", e);
+        return;
+      }
+      if (cancelled || !routing) return; // LEGACY daemon: no endpoint to pin.
+      const { everyday, synthesis } = deriveOnboardingPins(routing.pool);
+      if (!everyday || !synthesis) return; // nothing configured → no write, no line.
+      try {
+        await setSourcePin(everyday, synthesis);
+        if (!cancelled) setWired({ everyday, synthesis });
+      } catch (e) {
+        console.error("onboarding: pin write failed; continuing without wiring", e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const wiredSourceLabel = (s: OnboardingPin): string =>
+    s === "anthropic"
+      ? t("intelligence.sourceAnthropic")
+      : s === "on_device"
+        ? t("intelligence.sourceOnDevice")
+        : t("intelligence.sourceConnectedProvider");
+  const routingSummary = wired
+    ? t("setup.done.routingSummary", {
+        everyday: wiredSourceLabel(wired.everyday),
+        synthesis: wiredSourceLabel(wired.synthesis),
+      })
+    : null;
+  const routingSummaryStyle = {
+    fontFamily: "var(--mem-font-body)",
+    fontSize: "13px",
+    color: "var(--mem-text-tertiary)",
+    lineHeight: 1.6,
+    margin: 0,
+  } as const;
+
   if (isSkipPath) {
     return (
       <StepShell
@@ -1735,6 +1825,7 @@ function DoneStep({
         >
           {t("setup.done.readyBody2")}
         </p>
+        {routingSummary && <p style={routingSummaryStyle}>{routingSummary}</p>}
       </div>
       </StepShell>
     );
@@ -1819,6 +1910,7 @@ function DoneStep({
         >
           {t("setup.done.allSetBody2")}
         </p>
+        {routingSummary && <p style={routingSummaryStyle}>{routingSummary}</p>}
       </div>
 
       {/* Import stats card — surfaces the essential value Wenlan extracted:

@@ -56,6 +56,8 @@ vi.mock("../lib/tauri", () => ({
   testExternalLlm: vi.fn().mockResolvedValue({ response: "pong" }),
   listExternalModels: vi.fn().mockResolvedValue([]),
   getExternalLlmKeyConfigured: vi.fn().mockResolvedValue(false),
+  getResolvedRouting: vi.fn().mockResolvedValue(null),
+  setSourcePin: vi.fn().mockResolvedValue(undefined),
   detectObsidianVaults: vi.fn().mockResolvedValue([]),
   addSource: vi.fn().mockResolvedValue({
     id: "src-1",
@@ -121,6 +123,8 @@ import {
   getOnDeviceModel,
   downloadOnDeviceModel,
   onDeviceModelDownloadBytes,
+  getResolvedRouting,
+  setSourcePin,
   detectObsidianVaults,
   addSource,
   syncRegisteredSource,
@@ -129,6 +133,7 @@ import {
   getMemoryDetail,
   deleteMemory,
 } from "../lib/tauri";
+import { deriveOnboardingPins } from "./SetupWizard";
 
 /** An agent write that lands AFTER the wizard was entered — the only kind that
  *  proves the config we just wrote actually works. `wizardEnteredAt` is stamped
@@ -182,6 +187,10 @@ describe("SetupWizard", () => {
     });
     (detectObsidianVaults as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     (onDeviceModelDownloadBytes as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    // Default to LEGACY (no routing endpoint) so existing done-step tests wire
+    // nothing; the onboarding-pin tests override getResolvedRouting per case.
+    (getResolvedRouting as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    (setSourcePin as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
     (storeMemory as ReturnType<typeof vi.fn>).mockResolvedValue({ source_id: "mem_setup-check" });
     (listRecentMemories as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
@@ -1675,5 +1684,129 @@ describe("displayedStatuses", () => {
       b: "running",
       c: "running",
     });
+  });
+});
+
+// ── Onboarding routing wiring ───────────────────────────────────────────
+// First-onboarding writes explicit per-job pins so the defaults are visible,
+// not silent. Pure derivation is unit-tested; the effect (feature-detect →
+// write → summary) is tested through the rendered Done step.
+
+describe("deriveOnboardingPins", () => {
+  const pool = (
+    over: Partial<Parameters<typeof deriveOnboardingPins>[0]> = {},
+  ): Parameters<typeof deriveOnboardingPins>[0] => ({
+    anthropic: { configured: false, everyday_model: null, synthesis_model: null },
+    external: null,
+    on_device: null,
+    ...over,
+  });
+
+  it("on-device only → both jobs pin on_device", () => {
+    expect(
+      deriveOnboardingPins(pool({ on_device: { selected: "qwen3-4b-instruct-2507", loaded: true } })),
+    ).toEqual({ everyday: "on_device", synthesis: "on_device" });
+  });
+
+  it("cloud key + on-device model → everyday on_device, synthesis anthropic", () => {
+    expect(
+      deriveOnboardingPins(
+        pool({
+          anthropic: { configured: true, everyday_model: null, synthesis_model: null },
+          on_device: { selected: "qwen3-4b-instruct-2507", loaded: true },
+        }),
+      ),
+    ).toEqual({ everyday: "on_device", synthesis: "anthropic" });
+  });
+
+  it("external only, no on-device model → both jobs pin external", () => {
+    expect(
+      deriveOnboardingPins(pool({ external: { endpoint: "http://localhost:11434/v1", model: "llama3.2" } })),
+    ).toEqual({ everyday: "external", synthesis: "external" });
+  });
+
+  it("both providers, no on-device → everyday anthropic, synthesis prefers anthropic", () => {
+    expect(
+      deriveOnboardingPins(
+        pool({
+          anthropic: { configured: true, everyday_model: null, synthesis_model: null },
+          external: { endpoint: "https://api.openai.com/v1", model: "gpt-5.2" },
+        }),
+      ),
+    ).toEqual({ everyday: "anthropic", synthesis: "anthropic" });
+  });
+
+  it("nothing configured → no pins (caller writes nothing)", () => {
+    expect(deriveOnboardingPins(pool())).toEqual({ everyday: null, synthesis: null });
+  });
+});
+
+describe("SetupWizard onboarding routing wiring", () => {
+  type Pool = Parameters<typeof deriveOnboardingPins>[0];
+  const routing = (pool: Pool) => ({
+    everyday: { source: "basic", model: null, mode: "auto", pin: null },
+    synthesis: { source: "none", model: null, mode: "auto", pin: null },
+    pool,
+  });
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    await i18n.changeLanguage("en");
+    (listAgents as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (setSourcePin as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+    // Legacy by default; the pinned cases override per test.
+    (getResolvedRouting as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+  });
+
+  it("pinned daemon: writes the derived pins and shows the wired-routing summary", async () => {
+    (getResolvedRouting as ReturnType<typeof vi.fn>).mockResolvedValue(
+      routing({
+        anthropic: { configured: true, everyday_model: null, synthesis_model: null },
+        external: null,
+        on_device: { selected: "qwen3-4b-instruct-2507", loaded: true },
+      }),
+    );
+    renderWizard({ initialStep: "done" });
+
+    await waitFor(() => expect(setSourcePin).toHaveBeenCalledWith("on_device", "anthropic"));
+    expect(
+      await screen.findByText(
+        "Everyday tasks: On-device. Page synthesis: Anthropic. Change this anytime in Settings → Intelligence.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("legacy daemon: never writes a pin and shows no routing summary", async () => {
+    renderWizard({ initialStep: "done" });
+
+    await screen.findByText("Open Wenlan");
+    await waitFor(() => expect(getResolvedRouting).toHaveBeenCalled());
+    // Flush the feature-detect continuation so a wrongful write/summary would show.
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(setSourcePin).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Everyday tasks:/)).not.toBeInTheDocument();
+  });
+
+  it("pinned daemon but nothing configured: writes no pin and shows no summary", async () => {
+    (getResolvedRouting as ReturnType<typeof vi.fn>).mockResolvedValue(
+      routing({
+        anthropic: { configured: false, everyday_model: null, synthesis_model: null },
+        external: null,
+        on_device: null,
+      }),
+    );
+    renderWizard({ initialStep: "done" });
+
+    await screen.findByText("Open Wenlan");
+    await waitFor(() => expect(getResolvedRouting).toHaveBeenCalled());
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(setSourcePin).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Everyday tasks:/)).not.toBeInTheDocument();
   });
 });
