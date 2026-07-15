@@ -1061,6 +1061,10 @@ describe("SetupWizard", () => {
     });
     expect(setSourcePin).not.toHaveBeenCalled();
     expect(screen.queryByText(/Everyday tasks:/)).not.toBeInTheDocument();
+    // Re-run entry (wireRouting=false): neither the summary nor the no-model line.
+    expect(
+      screen.queryByText(/Your wiki updates whenever your AI tools use Wenlan/),
+    ).not.toBeInTheDocument();
   });
 
   // The full first-onboarding run is the ONLY path that wires, and the render
@@ -1106,6 +1110,10 @@ describe("SetupWizard", () => {
         "Everyday tasks: On-device. Page synthesis: Anthropic. Change this anytime in Settings → Intelligence.",
       ),
     ).toBeInTheDocument();
+    // Exclusivity: a wired routing shows the summary, never the no-model line.
+    expect(
+      screen.queryByText(/Your wiki updates whenever your AI tools use Wenlan/),
+    ).not.toBeInTheDocument();
   });
 
   // ── Round 2: steps 2-4 collect only; step 5 does + proves everything ────
@@ -1889,6 +1897,10 @@ describe("DoneStep onboarding routing wiring (wireRouting=true)", () => {
         "Everyday tasks: On-device. Page synthesis: Anthropic. Change this anytime in Settings → Intelligence.",
       ),
     ).toBeInTheDocument();
+    // Exclusivity: a wired routing shows the summary, never the no-model line.
+    expect(
+      screen.queryByText(/Your wiki updates whenever your AI tools use Wenlan/),
+    ).not.toBeInTheDocument();
   });
 
   it("legacy daemon: never writes a pin and shows no routing summary", async () => {
@@ -1903,6 +1915,10 @@ describe("DoneStep onboarding routing wiring (wireRouting=true)", () => {
     });
     expect(setSourcePin).not.toHaveBeenCalled();
     expect(screen.queryByText(/Everyday tasks:/)).not.toBeInTheDocument();
+    // Concluded without wiring (legacy daemon) → the no-model assurance shows.
+    expect(
+      await screen.findByText(/Your wiki updates whenever your AI tools use Wenlan/),
+    ).toBeInTheDocument();
   });
 
   it("pinned daemon but nothing configured: writes no pin and shows no summary", async () => {
@@ -1923,5 +1939,9 @@ describe("DoneStep onboarding routing wiring (wireRouting=true)", () => {
     });
     expect(setSourcePin).not.toHaveBeenCalled();
     expect(screen.queryByText(/Everyday tasks:/)).not.toBeInTheDocument();
+    // Concluded without wiring (nothing configured) → the no-model assurance shows.
+    expect(
+      await screen.findByText(/Your wiki updates whenever your AI tools use Wenlan/),
+    ).toBeInTheDocument();
   });
 });

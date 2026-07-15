@@ -1743,25 +1743,33 @@ export function DoneStep({
   // the write is non-blocking (a failure must not break completion) and the
   // summary line only shows on a write that actually landed.
   const [wired, setWired] = useState<{ everyday: OnboardingPin; synthesis: OnboardingPin } | null>(null);
+  // Whether the wiring effect has run to a conclusion (wired or not). Gates the
+  // no-model assurance line so it never flashes before the async determination
+  // settles, and stays false on re-run entries (the effect returns early there).
+  const [wiringSettled, setWiringSettled] = useState(false);
   useEffect(() => {
     if (!wireRouting) return; // re-run paths (e.g. connect-agent) leave pins alone.
     let cancelled = false;
     (async () => {
-      let routing: ResolvedRouting | null = null;
       try {
-        routing = await getResolvedRouting();
-      } catch (e) {
-        console.error("onboarding: routing lookup failed; skipping pin wiring", e);
-        return;
-      }
-      if (cancelled || !routing) return; // LEGACY daemon: no endpoint to pin.
-      const { everyday, synthesis } = deriveOnboardingPins(routing.pool);
-      if (!everyday || !synthesis) return; // nothing configured → no write, no line.
-      try {
-        await setSourcePin(everyday, synthesis);
-        if (!cancelled) setWired({ everyday, synthesis });
-      } catch (e) {
-        console.error("onboarding: pin write failed; continuing without wiring", e);
+        let routing: ResolvedRouting | null = null;
+        try {
+          routing = await getResolvedRouting();
+        } catch (e) {
+          console.error("onboarding: routing lookup failed; skipping pin wiring", e);
+          return;
+        }
+        if (cancelled || !routing) return; // LEGACY daemon: no endpoint to pin.
+        const { everyday, synthesis } = deriveOnboardingPins(routing.pool);
+        if (!everyday || !synthesis) return; // nothing configured → no write, no line.
+        try {
+          await setSourcePin(everyday, synthesis);
+          if (!cancelled) setWired({ everyday, synthesis });
+        } catch (e) {
+          console.error("onboarding: pin write failed; continuing without wiring", e);
+        }
+      } finally {
+        if (!cancelled) setWiringSettled(true);
       }
     })();
     return () => {
@@ -1781,6 +1789,12 @@ export function DoneStep({
         synthesis: wiredSourceLabel(wired.synthesis),
       })
     : null;
+  // Counterpart to routingSummary: when the effect concluded without wiring a
+  // pin (nothing configured, legacy daemon, or a write failure), reassure the
+  // user the wiki still updates through their AI tools. Mutually exclusive with
+  // routingSummary by the !wired guard; never on re-run entries (wireRouting).
+  const assurance =
+    wireRouting && wiringSettled && !wired ? t("setup.done.noModelAssurance") : null;
   const routingSummaryStyle = {
     fontFamily: "var(--mem-font-body)",
     fontSize: "13px",
@@ -1831,6 +1845,7 @@ export function DoneStep({
           {t("setup.done.readyBody2")}
         </p>
         {routingSummary && <p style={routingSummaryStyle}>{routingSummary}</p>}
+        {assurance && <p style={routingSummaryStyle}>{assurance}</p>}
       </div>
       </StepShell>
     );
@@ -1916,6 +1931,7 @@ export function DoneStep({
           {t("setup.done.allSetBody2")}
         </p>
         {routingSummary && <p style={routingSummaryStyle}>{routingSummary}</p>}
+        {assurance && <p style={routingSummaryStyle}>{assurance}</p>}
       </div>
 
       {/* Import stats card — surfaces the essential value Wenlan extracted:
