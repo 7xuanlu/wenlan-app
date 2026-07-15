@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   getSetupStatus: vi.fn(),
   getExternalLlm: vi.fn(),
   getDaemonVersion: vi.fn(),
+  getResolvedRouting: vi.fn(),
 }));
 vi.mock("../../lib/tauri", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../lib/tauri")>();
@@ -25,6 +26,18 @@ const BASE_STATUS = {
   local_model_cached: false,
 };
 
+// Pinned daemon (routing endpoint present): everyday on-device, synthesis
+// Anthropic — the case the legacy vendor-priority chain gets wrong.
+const PINNED_ROUTING = {
+  everyday: { source: "on_device", model: "qwen3-4b", mode: "pinned", pin: "on_device" },
+  synthesis: { source: "anthropic", model: "claude-3-5-haiku", mode: "pinned", pin: "anthropic" },
+  pool: {
+    anthropic: { configured: true, everyday_model: null, synthesis_model: null },
+    external: null,
+    on_device: { selected: "qwen3-4b", loaded: true },
+  },
+};
+
 function renderStrip() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -40,6 +53,8 @@ describe("ActiveIntelligenceStrip", () => {
     mocks.getDaemonVersion.mockResolvedValue("0.12.0");
     mocks.getSetupStatus.mockResolvedValue(BASE_STATUS);
     mocks.getExternalLlm.mockResolvedValue([null, null]);
+    // Default: no routing endpoint ⇒ legacy derived chain (what today's daemon returns).
+    mocks.getResolvedRouting.mockResolvedValue(null);
   });
 
   it("anthropic key configured tops the chain", async () => {
@@ -130,5 +145,34 @@ describe("ActiveIntelligenceStrip", () => {
     expect(chip).not.toBeNull();
     expect(chip?.className).toContain("mem-status-success-text");
     expect(chip?.className).not.toContain("mem-status-danger-text");
+  });
+
+  it("pinned daemon reflects per-job routing, not the vendor-priority chain", async () => {
+    // getSetupStatus alone would top the chain with "Serving: Anthropic" (key
+    // configured), hiding that everyday runs on-device. The routing endpoint
+    // is authoritative here — the strip must show both jobs and drop the chain.
+    mocks.getResolvedRouting.mockResolvedValue(PINNED_ROUTING);
+    renderStrip();
+    expect(
+      await screen.findByText("Everyday: On-device · Synthesis: Anthropic")
+    ).toBeInTheDocument();
+    // The "Priority: Anthropic → …" caption is legacy-only; independent pins
+    // have no single chain to describe.
+    expect(screen.queryByText(/Priority:/)).not.toBeInTheDocument();
+  });
+
+  it("pinned + degraded job goes amber (stale), never green", async () => {
+    // A pin whose source is unavailable falls back — that is not "serving as
+    // asked", so the chip must not claim success.
+    mocks.getResolvedRouting.mockResolvedValue({
+      ...PINNED_ROUTING,
+      everyday: { ...PINNED_ROUTING.everyday, mode: "pinned_degraded" },
+    });
+    renderStrip();
+    const chipLabel = await screen.findByText(/Everyday:/);
+    const chip = chipLabel.closest('[aria-live="polite"]');
+    expect(chip).not.toBeNull();
+    expect(chip?.className).toContain("mem-text-tertiary");
+    expect(chip?.className).not.toContain("mem-status-success-text");
   });
 });

@@ -2071,6 +2071,22 @@ export async function getWireState(): Promise<WireState> {
   return invoke("wire_state");
 }
 
+/** Outcome of an on-demand daemon start. Discriminated by `status`: the daemon
+ *  was already up (`already_running`), launchd owns it (`launchd_managed`), we
+ *  spawned it (`started`), or we could not (`failed`, with a reason to show). */
+export type DaemonStartResult =
+  | { status: "started" }
+  | { status: "already_running" }
+  | { status: "launchd_managed" }
+  | { status: "failed"; message: string };
+
+/** Start the wenlan-server sidecar if nothing already serves it — the healing
+ *  action behind Diagnostics' daemon-down state. Guarded app-side: a live port
+ *  or a launchd-managed daemon is never double-spawned. */
+export async function startDaemonSidecar(): Promise<DaemonStartResult> {
+  return invoke("start_daemon_sidecar");
+}
+
 // ===== Onboarding Journey Milestones =====
 
 export type MilestoneId =

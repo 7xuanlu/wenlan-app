@@ -10,6 +10,7 @@ import {
   removeLegacyMcpEntry,
   removeRawMcpEntry,
   setSetupCompleted,
+  startDaemonSidecar,
   type BinaryWire,
   type ClientWire,
   type DaemonWire,
@@ -448,16 +449,50 @@ function CopyReportButton({ wire }: { wire: WireState }) {
 
 function WiringError({ onRetry }: { onRetry: () => void }) {
   const { t } = useTranslation();
+  const [failure, setFailure] = useState<string | null>(null);
+  // Diagnostics is reached when the daemon is down, but Retry only re-probes —
+  // it can't bring a dead daemon back. Start actually respawns the sidecar
+  // (guarded app-side against double-spawn), then re-probes the wiring.
+  const start = useMutation({
+    mutationFn: startDaemonSidecar,
+    onSuccess: (result) => {
+      if (result.status === "failed") {
+        setFailure(result.message);
+        return;
+      }
+      // started / already_running / launchd_managed — re-probe the wiring.
+      setFailure(null);
+      onRetry();
+    },
+    onError: (err) => setFailure(err instanceof Error ? err.message : String(err)),
+  });
   return (
     <div className="px-5 py-4">
       <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-status-danger-text)", lineHeight: "1.5" }}>
         {t("settings.diagnostics.wiring.unavailable")}
       </p>
-      <div className="mt-3">
+      <div className="mt-3 flex items-center gap-2">
+        <Button variant="secondary" size="sm" onClick={() => start.mutate()} disabled={start.isPending}>
+          {start.isPending
+            ? t("settings.diagnostics.wiring.starting")
+            : t("settings.diagnostics.wiring.start")}
+        </Button>
         <Button variant="secondary" size="sm" onClick={onRetry}>
           {t("settings.diagnostics.wiring.retry")}
         </Button>
       </div>
+      {failure && (
+        <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-status-danger-text)", lineHeight: "1.5", marginTop: "8px" }}>
+          {t("settings.diagnostics.wiring.startFailed", { message: failure })}
+        </p>
+      )}
+      {!failure && start.data?.status === "started" && (
+        // The daemon needs a moment to bind the port after spawn; the immediate
+        // re-probe can still see it down. Tell the user, don't leave them guessing.
+        <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text-secondary)", lineHeight: "1.5", marginTop: "8px" }}>
+          {t("settings.diagnostics.wiring.startedHint")}
+        </p>
+      )}
     </div>
   );
 }

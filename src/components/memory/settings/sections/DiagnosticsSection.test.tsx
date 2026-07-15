@@ -11,6 +11,7 @@ import {
   removeLegacyMcpEntry,
   removeRawMcpEntry,
   setSetupCompleted,
+  startDaemonSidecar,
   type WireState,
 } from "../../../../lib/tauri";
 import { i18n } from "../../../../i18n";
@@ -22,6 +23,7 @@ vi.mock("../../../../lib/tauri", () => ({
   removeLegacyMcpEntry: vi.fn().mockResolvedValue(undefined),
   removeRawMcpEntry: vi.fn().mockResolvedValue(undefined),
   setSetupCompleted: vi.fn().mockResolvedValue(undefined),
+  startDaemonSidecar: vi.fn(),
 }));
 
 function renderDiagnostics() {
@@ -151,6 +153,46 @@ describe("DiagnosticsSection", () => {
       // resolved pipeline data branch.
       expect(await screen.findByText("classified")).toBeInTheDocument();
       expect(await screen.findByText("Wiring information unavailable")).toBeInTheDocument();
+    });
+
+    it("Start Wenlan respawns the daemon, then re-probes the wiring", async () => {
+      // Daemon down ⇒ WiringError. Retry alone can't heal it; Start must invoke
+      // the respawn command AND re-probe (refetch) so a recovered daemon shows.
+      vi.mocked(getWireState).mockRejectedValue(new Error("connection refused"));
+      vi.mocked(startDaemonSidecar).mockResolvedValue({ status: "started" });
+
+      renderDiagnostics();
+      await screen.findByText("Wiring information unavailable");
+      const callsBefore = vi.mocked(getWireState).mock.calls.length;
+
+      fireEvent.click(screen.getByText("Start Wenlan"));
+
+      await waitFor(() => expect(startDaemonSidecar).toHaveBeenCalledTimes(1));
+      // A refetch of the wire query is the whole point — a bare invoke that
+      // never re-probes would leave the red frozen.
+      await waitFor(() =>
+        expect(vi.mocked(getWireState).mock.calls.length).toBeGreaterThan(callsBefore),
+      );
+    });
+
+    it("surfaces a start failure inline, without re-probing", async () => {
+      vi.mocked(getWireState).mockRejectedValue(new Error("connection refused"));
+      vi.mocked(startDaemonSidecar).mockResolvedValue({
+        status: "failed",
+        message: "sidecar quarantined",
+      });
+
+      renderDiagnostics();
+      await screen.findByText("Wiring information unavailable");
+      const callsBefore = vi.mocked(getWireState).mock.calls.length;
+
+      fireEvent.click(screen.getByText("Start Wenlan"));
+
+      expect(
+        await screen.findByText("Couldn't start Wenlan — sidecar quarantined"),
+      ).toBeInTheDocument();
+      // A failed start must not claim to have re-probed.
+      expect(vi.mocked(getWireState).mock.calls.length).toBe(callsBefore);
     });
   });
 

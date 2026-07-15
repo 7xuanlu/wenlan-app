@@ -409,6 +409,8 @@ export const DEFAULTS: Record<string, unknown> = {
   suggest_tags: [],
   quit_wenlan_full: null,
   quit_origin_full: null,
+  // Preview's daemon is reachable (wire_state above), so a Start would find it up.
+  start_daemon_sidecar: { status: "already_running" },
 };
 
 export async function liveInvoke(cmd: string, args?: Args): Promise<unknown> {

@@ -188,6 +188,9 @@ const en = {
     servingBasic: "Basic memory — no model configured",
     externalRestartPending: "External endpoint configured — restart pending",
     externalUnverified: "External endpoint configured (unverified)",
+    pinnedSummary: "Everyday: {{everyday}} · Synthesis: {{synthesis}}",
+    sourceBasic: "Basic memory",
+    sourceOff: "Off",
   },
   main: {
     home: "Home",
@@ -495,6 +498,10 @@ const en = {
           "{{name}}'s config lists Wenlan twice — as wenlan and under its old name origin. {{name}} starts two copies until the old entry is removed.",
         removeLegacyEntry: "Remove the old entry",
         retry: "Retry",
+        start: "Start Wenlan",
+        starting: "Starting…",
+        startedHint: "Wenlan is starting — give it a few seconds, then Retry.",
+        startFailed: "Couldn't start Wenlan — {{message}}",
         reinstallViaSetup: "Run setup again",
       },
     },
@@ -987,7 +994,7 @@ const en = {
     running: "Running",
     notLoaded: "Not loaded",
     localModelDescription:
-      "Local LLM used for classification, entity extraction, and fallback distillation.",
+      "Runs everyday tasks on this device — classification and entity extraction — and can serve page synthesis when you pick it for that job.",
     systemInfo: "Your system: {{ram}}GB RAM{{accelerators}}.",
     modelDetails:
       "{{params}} params · {{downloadSize}}GB download · needs {{ram}}GB RAM",
@@ -1311,6 +1318,9 @@ const zhHans = {
     servingBasic: "基础记忆 — 未配置模型",
     externalRestartPending: "外部端点已配置 — 等待重启",
     externalUnverified: "外部端点已配置（未验证）",
+    pinnedSummary: "日常：{{everyday}} · 综合：{{synthesis}}",
+    sourceBasic: "基础记忆",
+    sourceOff: "关闭",
   },
   main: {
     home: "首页",
@@ -1618,6 +1628,10 @@ const zhHans = {
           "{{name}} 的配置中出现了两个 Wenlan——一个名为 wenlan，另一个是旧名称 origin。在移除旧条目之前，{{name}} 会启动两个副本。",
         removeLegacyEntry: "移除旧条目",
         retry: "重试",
+        start: "启动 Wenlan",
+        starting: "正在启动…",
+        startedHint: "Wenlan 正在启动——请稍候几秒，然后点击重试。",
+        startFailed: "无法启动 Wenlan——{{message}}",
         reinstallViaSetup: "重新运行安装向导",
       },
     },
@@ -2093,7 +2107,7 @@ const zhHans = {
     running: "运行中",
     notLoaded: "未加载",
     localModelDescription:
-      "用于分类、实体抽取和备用蒸馏的本地 LLM。",
+      "在本机运行日常任务——分类与实体抽取——当你为综合任务选择它时，也可驱动页面综合。",
     systemInfo: "你的系统：{{ram}}GB RAM{{accelerators}}。",
     modelDetails:
       "{{params}} 参数 · {{downloadSize}}GB 下载 · 需要 {{ram}}GB RAM",
@@ -2415,6 +2429,9 @@ const zhHant = {
     servingBasic: "基礎記憶 — 未設定模型",
     externalRestartPending: "外部端點已設定 — 等待重新啟動",
     externalUnverified: "外部端點已設定（未驗證）",
+    pinnedSummary: "日常：{{everyday}} · 綜合：{{synthesis}}",
+    sourceBasic: "基礎記憶",
+    sourceOff: "關閉",
   },
   main: {
     home: "首頁",
@@ -2722,6 +2739,10 @@ const zhHant = {
           "{{name}} 的設定中出現了兩個 Wenlan——一個名為 wenlan，另一個是舊名稱 origin。在移除舊條目之前，{{name}} 會啟動兩個副本。",
         removeLegacyEntry: "移除舊條目",
         retry: "重試",
+        start: "啟動 Wenlan",
+        starting: "正在啟動…",
+        startedHint: "Wenlan 正在啟動——請稍候幾秒，然後點擊重試。",
+        startFailed: "無法啟動 Wenlan——{{message}}",
         reinstallViaSetup: "重新執行安裝精靈",
       },
     },
@@ -3197,7 +3218,7 @@ const zhHant = {
     running: "執行中",
     notLoaded: "未載入",
     localModelDescription:
-      "用於分類、實體擷取和備用蒸餾的本機 LLM。",
+      "在本機執行日常任務——分類與實體擷取——當你為綜合任務選擇它時，也可驅動頁面綜合。",
     systemInfo: "你的系統：{{ram}}GB RAM{{accelerators}}。",
     modelDetails:
       "{{params}} 參數 · {{downloadSize}}GB 下載 · 需要 {{ram}}GB RAM",
