@@ -974,10 +974,21 @@ const en = {
     addApiKey:
       "Add an Anthropic API key above to enable page distillation.",
     routineModel: "Everyday model",
-    routineModelDescription: "Files and connects new memories in the background",
+    routineModelDescription: "Files and links new memories in the background",
+    routineModelTipTitle: "Background organization",
+    routineModelTipBody:
+      "As memories arrive, the everyday model files, links, and tags them in the background, flagging anything unclear for you to confirm. Without a model, this runs only when your AI tools use Wenlan.",
+    routineNoModelTipBody:
+      "Add a model and Wenlan files and links new memories in the background as they arrive. Until then, they're still filed whenever your AI tools use Wenlan.",
     chooseRoutineModel: "Choose everyday model",
     synthesisModel: "Synthesis model",
-    synthesisModelDescription: "Writes and updates wiki pages in the background",
+    synthesisModelDescription: "Drafts and updates your wiki pages in the background",
+    synthesisModelTipTitle: "Background wiki upkeep",
+    synthesisModelTipBody:
+      "The synthesis model drafts and revises your wiki pages in the background as memories accumulate, surfacing contradictions and revisions for you to review. Without a model, pages update only when your AI tools run a synthesis.",
+    synthesisNoModelTipBody:
+      "Add a model and Wenlan drafts and updates your wiki pages in the background. Until then, pages still update whenever your AI tools use Wenlan.",
+    noModelTipTitle: "What a model adds",
     chooseSynthesisModel: "Choose synthesis model",
     onDeviceModel: "On-device model",
     chooseOnDeviceModel: "Choose on-device model",
@@ -2079,9 +2090,20 @@ const zhHans = {
       "在上方添加 Anthropic API key 以启用页面蒸馏。",
     routineModel: "日常模型",
     routineModelDescription: "在后台整理并关联新的记忆",
+    routineModelTipTitle: "后台整理",
+    routineModelTipBody:
+      "每当有新记忆进入，日常模型会在后台整理、关联并标注它们，并把拿不准的内容标记出来交给你确认。未配置模型时，这只在你的 AI 工具使用文澜时才会进行。",
+    routineNoModelTipBody:
+      "配置模型后，文澜会在新记忆进入时于后台整理并关联它们。在此之前，每当你的 AI 工具使用文澜时，它们仍会被整理。",
     chooseRoutineModel: "选择日常模型",
     synthesisModel: "综合模型",
-    synthesisModelDescription: "在后台撰写并更新维基页面",
+    synthesisModelDescription: "在后台起草并更新你的维基页面",
+    synthesisModelTipTitle: "后台维基维护",
+    synthesisModelTipBody:
+      "随着记忆的积累，综合模型会在后台起草并修订你的维基页面，并把矛盾之处和修订建议呈现给你审阅。未配置模型时，页面只在你的 AI 工具执行综合时才会更新。",
+    synthesisNoModelTipBody:
+      "配置模型后，文澜会在后台起草并更新你的维基页面。在此之前，每当你的 AI 工具使用文澜时，页面仍会更新。",
+    noModelTipTitle: "配置模型后会增加什么",
     chooseSynthesisModel: "选择综合模型",
     onDeviceModel: "本地模型",
     chooseOnDeviceModel: "选择本地模型",
@@ -3181,9 +3203,20 @@ const zhHant = {
       "在上方加入 Anthropic API key 以啟用頁面蒸餾。",
     routineModel: "日常模型",
     routineModelDescription: "在背景整理並關聯新的記憶",
+    routineModelTipTitle: "背景整理",
+    routineModelTipBody:
+      "每當有新記憶進入，日常模型會在背景整理、關聯並標註它們，並把拿不準的內容標記出來交給你確認。未設定模型時，這只在你的 AI 工具使用文瀾時才會進行。",
+    routineNoModelTipBody:
+      "設定模型後，文瀾會在新記憶進入時於背景整理並關聯它們。在此之前，每當你的 AI 工具使用文瀾時，它們仍會被整理。",
     chooseRoutineModel: "選擇日常模型",
     synthesisModel: "綜合模型",
-    synthesisModelDescription: "在背景撰寫並更新維基頁面",
+    synthesisModelDescription: "在背景起草並更新你的維基頁面",
+    synthesisModelTipTitle: "背景維基維護",
+    synthesisModelTipBody:
+      "隨著記憶的累積，綜合模型會在背景起草並修訂你的維基頁面，並把矛盾之處與修訂建議呈現給你審閱。未設定模型時，頁面只在你的 AI 工具執行綜合時才會更新。",
+    synthesisNoModelTipBody:
+      "設定模型後，文瀾會在背景起草並更新你的維基頁面。在此之前，每當你的 AI 工具使用文瀾時，頁面仍會更新。",
+    noModelTipTitle: "設定模型後會增加什麼",
     chooseSynthesisModel: "選擇綜合模型",
     onDeviceModel: "本機模型",
     chooseOnDeviceModel: "選擇本機模型",

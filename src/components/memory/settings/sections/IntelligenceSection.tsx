@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
@@ -49,14 +49,38 @@ const metaLineStyle = { fontFamily: "var(--mem-font-body)", fontSize: "var(--mem
 const captionStyle = { fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", color: "var(--mem-text-tertiary)", marginTop: "4px", lineHeight: 1.5 } as const;
 const amberStyle = { fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", color: "var(--mem-status-warning-text)", marginTop: "4px", lineHeight: 1.5 } as const;
 
-/** One disclosure row inside a Models/Providers card: header button (name /
- *  optional hint / meta / status chip / chevron) plus an expanded body slot.
- *  Mirrors the chevron affordance RemoteAccessPanel's URL disclosure used
- *  (aria-expanded + rotate-90 svg). */
+/** A ⓘ affordance that discloses "what a configured model adds" on hover/focus.
+ *  Pure CSS reveal (.mem-infotip in index.css) — no popover lib, no JS state.
+ *  Stops propagation so clicking/pressing it never toggles the parent row. */
+function InfoTip({ title, body }: { title: string; body: string }) {
+  const popId = useId();
+  return (
+    <span
+      className="mem-infotip"
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      <button type="button" className="mem-infotip-btn" aria-label={title} aria-describedby={popId}>
+        i
+      </button>
+      <span id={popId} className="mem-infotip-pop" role="tooltip">
+        <span className="mem-infotip-h">{title}</span>
+        <span className="mem-infotip-b">{body}</span>
+      </span>
+    </span>
+  );
+}
+
+/** One disclosure row inside a Models/Providers card: header (name / optional
+ *  hint / meta / optional ⓘ / status chip / chevron) plus an expanded body slot.
+ *  The name column is the keyboard toggle <button> (aria-expanded); the whole
+ *  header row also toggles on mouse click. The ⓘ is a sibling, not nested — a
+ *  button inside a button is invalid — so it keeps its own hover/focus tooltip. */
 function ProviderRow({
   name,
   hint,
   meta,
+  tip,
   chipState,
   chipLabel,
   expanded,
@@ -64,12 +88,15 @@ function ProviderRow({
   children,
 }: {
   name: string;
-  /** Static capability/recommendation caption shown above the state-derived
-   *  meta line. Job rows always pass one ("what this job does"); among
-   *  source rows only On-device does — Cloud/Local fold the same kind of
-   *  copy into their meta's unconfigured fallback instead. */
+  /** State-aware value line above the meta. Job rows pass their "what this does
+   *  for you" summary when a model serves the job (omitted when none does — the
+   *  meta carries the no-model status instead); among source rows only On-device
+   *  passes one. */
   hint?: string;
   meta: string;
+  /** Optional ⓘ detail affordance (title + body) rendered before the chip. Job
+   *  rows use it to disclose what a configured model adds. */
+  tip?: { title: string; body: string };
   chipState: ProbeState;
   chipLabel: string;
   expanded: boolean;
@@ -78,13 +105,19 @@ function ProviderRow({
 }) {
   return (
     <div>
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={expanded}
-        className="w-full flex items-center gap-3 px-5 py-4 text-left"
-      >
-        <div className="min-w-0 flex-1">
+      {/* Mouse click anywhere on the header toggles; keyboard flows through the
+          name <button>. No eslint here, and the a11y contract is unchanged from
+          when the whole row was one button (chip/chevron were never focusable). */}
+      <div className="w-full flex items-center gap-3 px-5 py-4" onClick={onToggle}>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggle();
+          }}
+          aria-expanded={expanded}
+          className="min-w-0 flex-1 text-left"
+        >
           <div style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-md)", fontWeight: 500, color: "var(--mem-text)" }}>
             {name}
           </div>
@@ -96,7 +129,8 @@ function ProviderRow({
           <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text-secondary)", marginTop: "2px", lineHeight: 1.5 }}>
             {meta}
           </p>
-        </div>
+        </button>
+        {tip && <InfoTip title={tip.title} body={tip.body} />}
         <StatusChip state={chipState} label={chipLabel} />
         <svg
           className="w-3 h-3 shrink-0 transition-transform"
@@ -108,7 +142,7 @@ function ProviderRow({
         >
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
         </svg>
-      </button>
+      </div>
       {expanded && <div className="px-5 pb-4">{children}</div>}
     </div>
   );
@@ -483,19 +517,35 @@ export default function IntelligenceSection({ delay }: { delay: number }) {
     queryClient.invalidateQueries({ queryKey: ["resolvedRouting"] });
   };
 
-  const jobRow = (view: JobView, id: JobRowId, name: string, hint: string) => (
-    <ProviderRow
-      name={name}
-      hint={hint}
-      meta={view.meta}
-      chipState={view.connected ? { kind: "up" } : { kind: "idle" }}
-      chipLabel={view.connected ? t("intelligence.connected") : t("intelligence.notConfigured")}
-      expanded={expandedJob === id}
-      onToggle={() => toggleJob(id)}
-    >
-      <JobPicker view={view} isPinned={isPinned} onPickSource={(s) => pickSource(id, s)} />
-    </ProviderRow>
-  );
+  // With a model, the row leads with the everyday-value summary and its ⓘ carries
+  // the "how it works, human-gated" detail. Without one, the summary is dropped
+  // (the meta already states the no-model reality) and the ⓘ becomes "what a model
+  // adds". buildView's `connected` is the switch.
+  const jobRow = (view: JobView, id: JobRowId, name: string, summary: string) => {
+    const on = view.connected;
+    const tip = on
+      ? id === "everyday"
+        ? { title: t("intelligence.routineModelTipTitle"), body: t("intelligence.routineModelTipBody") }
+        : { title: t("intelligence.synthesisModelTipTitle"), body: t("intelligence.synthesisModelTipBody") }
+      : {
+          title: t("intelligence.noModelTipTitle"),
+          body: id === "everyday" ? t("intelligence.routineNoModelTipBody") : t("intelligence.synthesisNoModelTipBody"),
+        };
+    return (
+      <ProviderRow
+        name={name}
+        hint={on ? summary : undefined}
+        meta={view.meta}
+        tip={tip}
+        chipState={view.connected ? { kind: "up" } : { kind: "idle" }}
+        chipLabel={view.connected ? t("intelligence.connected") : t("intelligence.notConfigured")}
+        expanded={expandedJob === id}
+        onToggle={() => toggleJob(id)}
+      >
+        <JobPicker view={view} isPinned={isPinned} onPickSource={(s) => pickSource(id, s)} />
+      </ProviderRow>
+    );
+  };
 
   return (
     <section className="mem-fade-up" style={{ animationDelay: `${delay}ms` }}>

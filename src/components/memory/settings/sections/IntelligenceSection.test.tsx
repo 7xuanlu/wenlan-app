@@ -402,4 +402,43 @@ describe("IntelligenceSection", () => {
     await userEvent.selectOptions(modelSelect, "qwen3-8b");
     expect(mocks.downloadOnDeviceModel).toHaveBeenCalledWith("qwen3-8b");
   });
+
+  // ── Value disclosure (with a model): the everyday row leads with its "what you
+  // get" summary and the ⓘ carries the background-organization detail. Mutation
+  // proof: flipping jobRow's `hint={on ? summary : undefined}` to always-undefined
+  // drops the summary and fails the getByText; swapping the connected tip branch
+  // (using the no-model tip) changes the ⓘ's accessible name and fails getByRole.
+  it("everyday row with a model: shows the value summary and the with-model ⓘ tip", async () => {
+    mocks.getApiKey.mockResolvedValue("sk-ant-***configured");
+    mocks.getModelChoice.mockResolvedValue(["claude-haiku-4-5-20251001", "claude-sonnet-4-6"]);
+    renderSection();
+
+    const everydayRow = (await screen.findByText("Everyday model")).closest("button")!;
+    // Model resolved → the meta names it and the summary sits above it.
+    await within(everydayRow).findByText("Anthropic · Haiku 4.5");
+    expect(within(everydayRow).getByText("Files and links new memories in the background")).toBeInTheDocument();
+    // The ⓘ is a sibling of the row button, so scope to the header row. Its
+    // accessible name is the with-model tip title, not the no-model one.
+    const header = everydayRow.parentElement!;
+    expect(within(header).getByRole("button", { name: "Background organization" })).toBeInTheDocument();
+    expect(within(header).queryByRole("button", { name: "What a model adds" })).not.toBeInTheDocument();
+  });
+
+  // ── Value disclosure (no model): the everyday row drops the summary (the meta
+  // already states the no-model reality) and the ⓘ flips to "what a model adds".
+  // Mutation proof: flipping `hint={on ? summary : undefined}` to always-`summary`
+  // renders the summary here and fails the queryByText absence; swapping the tip
+  // branch (using the with-model tip) changes the ⓘ name and fails getByRole.
+  it("everyday row without a model: drops the summary and the ⓘ becomes 'what a model adds'", async () => {
+    // All beforeEach defaults → everyday resolves to "basic" (no model serves it).
+    renderSection();
+
+    const everydayRow = (await screen.findByText("Everyday model")).closest("button")!;
+    await within(everydayRow).findByText("No background model — your wiki updates through your AI tools.");
+    // The with-model summary must NOT appear when nothing serves the job.
+    expect(within(everydayRow).queryByText("Files and links new memories in the background")).not.toBeInTheDocument();
+    const header = everydayRow.parentElement!;
+    expect(within(header).getByRole("button", { name: "What a model adds" })).toBeInTheDocument();
+    expect(within(header).queryByRole("button", { name: "Background organization" })).not.toBeInTheDocument();
+  });
 });
