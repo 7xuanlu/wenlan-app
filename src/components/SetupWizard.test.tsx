@@ -263,9 +263,11 @@ describe("SetupWizard", () => {
     renderWizard();
     fireEvent.click(screen.getByText("Get started"));
 
-    expect(screen.getByText("On-device model")).toBeInTheDocument();
-    expect(screen.getByText("Cloud model")).toBeInTheDocument();
-    expect(screen.getByText("Your own local server")).toBeInTheDocument();
+    // The on-device tile is selected by default, so its pane's <h3> shares
+    // the tile's exact text — query at the role level to hit the tiles only.
+    expect(screen.getByRole("button", { name: /On-device model/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Cloud model/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Your own local server/ })).toBeInTheDocument();
   });
 
   it("recommends on-device — the same tile that's selected by default, not cloud", async () => {
