@@ -133,7 +133,7 @@ import {
   getMemoryDetail,
   deleteMemory,
 } from "../lib/tauri";
-import { deriveOnboardingPins } from "./SetupWizard";
+import { deriveOnboardingPins, DoneStep } from "./SetupWizard";
 
 /** An agent write that lands AFTER the wizard was entered — the only kind that
  *  proves the config we just wrote actually works. `wizardEnteredAt` is stamped
@@ -1013,6 +1013,56 @@ describe("SetupWizard", () => {
     expect(screen.queryByText("Tool H")).not.toBeInTheDocument();
   });
 
+  // Fix-back: the same DoneStep renders for the in-app connect-agent re-run
+  // (Main.tsx mounts <SetupWizard initialStep="connect"> post-onboarding). Its
+  // pin-wiring effect must NOT re-derive and overwrite an existing user's pins
+  // — only the full first-onboarding run (no initialStep → wireRouting) wires.
+  // Even with a fully configured pool (which would otherwise write), the re-run
+  // leaves pins alone.
+  it("connect-agent re-run (initialStep=connect) never wires pins and shows no routing summary", async () => {
+    (getResolvedRouting as ReturnType<typeof vi.fn>).mockResolvedValue({
+      everyday: { source: "basic", model: null, mode: "auto", pin: null },
+      synthesis: { source: "none", model: null, mode: "auto", pin: null },
+      pool: {
+        anthropic: { configured: true, everyday_model: null, synthesis_model: null },
+        external: null,
+        on_device: { selected: "qwen3-4b-instruct-2507", loaded: true },
+      },
+    });
+    (detectMcpClients as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        name: "Cursor",
+        client_type: "cursor",
+        config_path: "/path/to/cursor",
+        detected: true,
+        already_configured: false,
+      },
+    ]);
+    // A fresh agent drives the done screen to the full "all set" branch.
+    (listAgents as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { name: "cursor", last_seen_at: FRESH(), memory_count: 1 },
+    ]);
+
+    renderWizard({ initialStep: "connect" });
+
+    await screen.findByRole("checkbox", { name: "Cursor" });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("task-status-daemon")).toHaveTextContent("Running");
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    await screen.findByText("You're all set.");
+    // Flush any effect continuation so a wrongful write/summary would surface.
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(setSourcePin).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Everyday tasks:/)).not.toBeInTheDocument();
+  });
+
   // ── Round 2: steps 2-4 collect only; step 5 does + proves everything ────
 
   it("intelligence step 2 records the on-device model choice but does not download it — only step 5 does", async () => {
@@ -1741,13 +1791,33 @@ describe("deriveOnboardingPins", () => {
   });
 });
 
-describe("SetupWizard onboarding routing wiring", () => {
+// The wiring effect lives in DoneStep and only runs on the full first-onboarding
+// run (wireRouting), which the wizard reaches from `welcome` with no initialStep.
+// The test architecture jumps to steps via initialStep (→ wireRouting=false), so
+// the write/feature-detect cases render DoneStep directly with wireRouting=true;
+// a separate wizard-level test proves the re-run path passes wireRouting=false.
+describe("DoneStep onboarding routing wiring (wireRouting=true)", () => {
   type Pool = Parameters<typeof deriveOnboardingPins>[0];
   const routing = (pool: Pool) => ({
     everyday: { source: "basic", model: null, mode: "auto", pin: null },
     synthesis: { source: "none", model: null, mode: "auto", pin: null },
     pool,
   });
+
+  function renderDone(wireRouting: boolean) {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return render(
+      <QueryClientProvider client={queryClient}>
+        <DoneStep
+          wireRouting={wireRouting}
+          hideDots={false}
+          importResult={null}
+          connectedAgents={[]}
+          onComplete={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+  }
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -1766,7 +1836,7 @@ describe("SetupWizard onboarding routing wiring", () => {
         on_device: { selected: "qwen3-4b-instruct-2507", loaded: true },
       }),
     );
-    renderWizard({ initialStep: "done" });
+    renderDone(true);
 
     await waitFor(() => expect(setSourcePin).toHaveBeenCalledWith("on_device", "anthropic"));
     expect(
@@ -1777,7 +1847,7 @@ describe("SetupWizard onboarding routing wiring", () => {
   });
 
   it("legacy daemon: never writes a pin and shows no routing summary", async () => {
-    renderWizard({ initialStep: "done" });
+    renderDone(true);
 
     await screen.findByText("Open Wenlan");
     await waitFor(() => expect(getResolvedRouting).toHaveBeenCalled());
@@ -1798,7 +1868,7 @@ describe("SetupWizard onboarding routing wiring", () => {
         on_device: null,
       }),
     );
-    renderWizard({ initialStep: "done" });
+    renderDone(true);
 
     await screen.findByText("Open Wenlan");
     await waitFor(() => expect(getResolvedRouting).toHaveBeenCalled());

@@ -1693,16 +1693,18 @@ export function deriveOnboardingPins(pool: ResolvedRouting["pool"]): {
 // runs unbounded.
 const MAX_AGENT_CHIPS = 6;
 
-function DoneStep({
+export function DoneStep({
   importResult,
   connectedAgents,
   onComplete,
   hideDots,
+  wireRouting,
 }: {
   importResult: ImportResult | null;
   connectedAgents: string[];
   onComplete: () => void;
   hideDots: boolean;
+  wireRouting: boolean;
 }) {
   const { t } = useTranslation();
   const { data: agentConnections } = useQuery({ queryKey: ["agents"], queryFn: listAgents });
@@ -1734,12 +1736,15 @@ function DoneStep({
   const overflowAgentCount = resolvedAgentNames.length - visibleAgentNames.length;
 
   // Onboarding completion wires explicit per-job pins from what the user
-  // configured, so the defaults are visible instead of silent. Feature-detect
-  // first (a legacy daemon returns null → wire nothing); the write is
-  // non-blocking (a failure must not break completion) and the summary line
-  // only shows on a write that actually landed.
+  // configured, so the defaults are visible instead of silent. Only on the
+  // full first-onboarding run (wireRouting) — the same DoneStep is reused for
+  // the in-app "connect agent" flow, which must NOT rewrite an existing user's
+  // pins. Feature-detect first (a legacy daemon returns null → wire nothing);
+  // the write is non-blocking (a failure must not break completion) and the
+  // summary line only shows on a write that actually landed.
   const [wired, setWired] = useState<{ everyday: OnboardingPin; synthesis: OnboardingPin } | null>(null);
   useEffect(() => {
+    if (!wireRouting) return; // re-run paths (e.g. connect-agent) leave pins alone.
     let cancelled = false;
     (async () => {
       let routing: ResolvedRouting | null = null;
@@ -1762,7 +1767,7 @@ function DoneStep({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [wireRouting]);
 
   const wiredSourceLabel = (s: OnboardingPin): string =>
     s === "anthropic"
@@ -2136,6 +2141,7 @@ export function SetupWizard({
   return (
     <DoneStep
       hideDots={hideDots}
+      wireRouting={!initialStep}
       importResult={importResult}
       connectedAgents={connectedAgents}
       onComplete={onComplete}
