@@ -167,7 +167,7 @@ export function AnthropicFields({
           }}
         >
           <div style={{ fontWeight: 500, color: "var(--mem-text)", marginBottom: 2, fontSize: "var(--mem-text-sm)" }}>
-            {t("intelligence.pageSynthesisRequiresCloud")}
+            {t("intelligence.synthesisCloudRecommendation")}
           </div>
           <div>{t("intelligence.memorySafe")}</div>
           <div style={{ marginTop: 6 }}>{t("intelligence.addApiKey")}</div>
