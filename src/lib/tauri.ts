@@ -1982,6 +1982,15 @@ export async function removeRawMcpEntry(clientType: string): Promise<void> {
   return invoke("remove_raw_mcp_entry", { clientType });
 }
 
+/** Removes ONLY the legacy `origin` MCP entry from `clientType`'s config,
+ *  keeping the live `wenlan` entry — the Diagnostics fix for a raw+raw
+ *  duplicate (both `wenlan` and `origin` present, on a no-plugin client).
+ *  Unlike removeRawMcpEntry, it never drops `wenlan`. Rejects with a plain
+ *  error if the file is missing or has no `origin` entry. */
+export async function removeLegacyMcpEntry(clientType: string): Promise<void> {
+  return invoke("remove_legacy_mcp_entry", { clientType });
+}
+
 export interface WenlanMcpEntry {
   command: string;
   args: string[];
@@ -2034,6 +2043,11 @@ export interface ClientWire {
   detected: boolean;
   config_path: string;
   has_raw_entry: boolean;
+  /** Config holds BOTH a `wenlan` and a legacy `origin` raw entry — the
+   *  raw+raw duplicate. For a no-plugin client (Cursor, Gemini CLI) this is
+   *  the only signal of a duplicate, and it routes to `removeLegacyMcpEntry`,
+   *  which removes only `origin`. */
+  has_raw_duplicate: boolean;
   has_plugin: boolean;
   route: "plugin" | "config" | "skip";
 }

@@ -389,11 +389,15 @@ export const DEFAULTS: Record<string, unknown> = {
       ],
     },
     clients: [
-      { client_type: "cursor", name: "Cursor", detected: true, config_path: "~/.cursor/mcp.json", has_raw_entry: false, has_plugin: false, route: "config" },
-      { client_type: "claude_desktop", name: "Claude Desktop", detected: true, config_path: "~/Library/Application Support/Claude/claude_desktop_config.json", has_raw_entry: false, has_plugin: false, route: "config" },
-      { client_type: "gemini_cli", name: "Gemini CLI", detected: true, config_path: "~/.gemini/settings.json", has_raw_entry: false, has_plugin: false, route: "config" },
-      { client_type: "codex_cli", name: "Codex CLI", detected: true, config_path: "~/.codex/config.toml", has_raw_entry: false, has_plugin: true, route: "plugin" },
-      { client_type: "claude_code", name: "Claude Code", detected: true, config_path: "~/.claude.json", has_raw_entry: false, has_plugin: false, route: "plugin" },
+      // Cursor carries the raw+raw duplicate (both wenlan and legacy origin,
+      // no plugin path) — verbatim the real ~/.cursor/mcp.json shape on this
+      // machine, so the Diagnostics "remove the old entry" warnbox is
+      // pixel-reviewable in preview.
+      { client_type: "cursor", name: "Cursor", detected: true, config_path: "~/.cursor/mcp.json", has_raw_entry: true, has_raw_duplicate: true, has_plugin: false, route: "config" },
+      { client_type: "claude_desktop", name: "Claude Desktop", detected: true, config_path: "~/Library/Application Support/Claude/claude_desktop_config.json", has_raw_entry: false, has_raw_duplicate: false, has_plugin: false, route: "config" },
+      { client_type: "gemini_cli", name: "Gemini CLI", detected: true, config_path: "~/.gemini/settings.json", has_raw_entry: false, has_raw_duplicate: false, has_plugin: false, route: "config" },
+      { client_type: "codex_cli", name: "Codex CLI", detected: true, config_path: "~/.codex/config.toml", has_raw_entry: false, has_raw_duplicate: false, has_plugin: true, route: "plugin" },
+      { client_type: "claude_code", name: "Claude Code", detected: true, config_path: "~/.claude.json", has_raw_entry: false, has_raw_duplicate: false, has_plugin: false, route: "plugin" },
     ],
   },
   get_wenlan_mcp_entry: null,

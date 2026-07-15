@@ -489,6 +489,9 @@ const en = {
         doubleRegistrationBody:
           "Wenlan is registered twice for {{name}}. Remove the manual MCP entry — Wenlan is already connected automatically.",
         removeDuplicate: "Remove duplicate entry",
+        rawDuplicateBody:
+          "{{name}}'s config lists Wenlan twice — as wenlan and under its old name origin. {{name}} starts two copies until the old entry is removed.",
+        removeLegacyEntry: "Remove the old entry",
         retry: "Retry",
         reinstallViaSetup: "Run setup again",
       },
@@ -1603,6 +1606,9 @@ const zhHans = {
         doubleRegistrationBody:
           "Wenlan 在 {{name}} 中被重复注册。请删除手动添加的 MCP 记录——Wenlan 已经自动连接。",
         removeDuplicate: "移除重复条目",
+        rawDuplicateBody:
+          "{{name}} 的配置中出现了两个 Wenlan——一个名为 wenlan，另一个是旧名称 origin。在移除旧条目之前，{{name}} 会启动两个副本。",
+        removeLegacyEntry: "移除旧条目",
         retry: "重试",
         reinstallViaSetup: "重新运行安装向导",
       },
@@ -2698,6 +2704,9 @@ const zhHant = {
         doubleRegistrationBody:
           "Wenlan 在 {{name}} 中被重複註冊。請移除手動新增的 MCP 記錄——Wenlan 已經自動連線。",
         removeDuplicate: "移除重複條目",
+        rawDuplicateBody:
+          "{{name}} 的設定中出現了兩個 Wenlan——一個名為 wenlan，另一個是舊名稱 origin。在移除舊條目之前，{{name}} 會啟動兩個副本。",
+        removeLegacyEntry: "移除舊條目",
         retry: "重試",
         reinstallViaSetup: "重新執行安裝精靈",
       },

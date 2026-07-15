@@ -8,6 +8,7 @@ import {
   getPipelineStatus,
   getWireState,
   clipboardWrite,
+  removeLegacyMcpEntry,
   removeRawMcpEntry,
   setSetupCompleted,
   type WireState,
@@ -18,6 +19,7 @@ vi.mock("../../../../lib/tauri", () => ({
   getPipelineStatus: vi.fn(),
   getWireState: vi.fn(),
   clipboardWrite: vi.fn().mockResolvedValue(undefined),
+  removeLegacyMcpEntry: vi.fn().mockResolvedValue(undefined),
   removeRawMcpEntry: vi.fn().mockResolvedValue(undefined),
   setSetupCompleted: vi.fn().mockResolvedValue(undefined),
 }));
@@ -54,6 +56,7 @@ const wireFixture: WireState = {
       detected: true,
       config_path: "/Users/x/.claude.json",
       has_raw_entry: false,
+      has_raw_duplicate: false,
       has_plugin: true,
       route: "plugin",
     },
@@ -63,6 +66,7 @@ const wireFixture: WireState = {
       detected: true,
       config_path: "/Users/x/Library/Application Support/Claude/claude_desktop_config.json",
       has_raw_entry: true,
+      has_raw_duplicate: false,
       has_plugin: true,
       route: "plugin",
     },
@@ -326,6 +330,7 @@ describe("DiagnosticsSection", () => {
             config_path: "/Users/x/.cursor/mcp.json",
             has_plugin: false,
             has_raw_entry: false,
+            has_raw_duplicate: false,
             route: "config",
           },
         ],
@@ -344,6 +349,51 @@ describe("DiagnosticsSection", () => {
       const wiringCard = screen.getByText("Wiring").closest("section");
       expect(wiringCard?.textContent).not.toMatch(/plugin/i);
     });
+
+    it("PROPERTY 5: a raw+raw duplicate is flagged on a no-plugin client, never on a plugin client", async () => {
+      vi.mocked(getWireState).mockResolvedValue({
+        ...wireFixture,
+        clients: [
+          // Cursor: no plugin, both `wenlan` and legacy `origin` raw entries.
+          {
+            client_type: "cursor",
+            name: "Cursor",
+            detected: true,
+            config_path: "/Users/x/.cursor/mcp.json",
+            has_raw_entry: true,
+            has_raw_duplicate: true,
+            has_plugin: false,
+            route: "config",
+          },
+          // Claude Code: the plugin AND a raw duplicate. The plugin+raw box
+          // owns this case (its fix removes both raw entries, plugin remains),
+          // so the raw+raw box — which keeps `wenlan` — must NOT also fire.
+          {
+            client_type: "claude_code",
+            name: "Claude Code",
+            detected: true,
+            config_path: "/Users/x/.claude.json",
+            has_raw_entry: true,
+            has_raw_duplicate: true,
+            has_plugin: true,
+            route: "plugin",
+          },
+        ],
+      });
+
+      renderDiagnostics();
+
+      await screen.findByText("Wenlan runtime");
+      expect(
+        screen.getByText(
+          "Cursor's config lists Wenlan twice — as wenlan and under its old name origin. Cursor starts two copies until the old entry is removed.",
+        ),
+      ).toBeInTheDocument();
+      // The `!has_plugin` gate: the plugin client never shows the raw+raw box.
+      expect(
+        screen.queryByText(/Claude Code's config lists Wenlan twice/),
+      ).not.toBeInTheDocument();
+    });
   });
 
   // ── Every red carries a fix or a Retry ─────────────────────────────────
@@ -361,6 +411,40 @@ describe("DiagnosticsSection", () => {
 
       await waitFor(() => expect(removeRawMcpEntry).toHaveBeenCalledWith("claude_desktop"));
       // onSuccess invalidates ["wireState"], which refetches the wire query.
+      await waitFor(() =>
+        expect(vi.mocked(getWireState).mock.calls.length).toBeGreaterThan(callsBefore),
+      );
+    });
+
+    it("the raw+raw fix removes only the legacy origin entry (keeps wenlan) and refreshes wiring", async () => {
+      vi.mocked(getWireState).mockResolvedValue({
+        ...wireFixture,
+        clients: [
+          {
+            client_type: "cursor",
+            name: "Cursor",
+            detected: true,
+            config_path: "/Users/x/.cursor/mcp.json",
+            has_raw_entry: true,
+            has_raw_duplicate: true,
+            has_plugin: false,
+            route: "config",
+          },
+        ],
+      });
+
+      renderDiagnostics();
+
+      await screen.findByText("Wenlan runtime");
+      const callsBefore = vi.mocked(getWireState).mock.calls.length;
+
+      fireEvent.click(screen.getByText("Remove the old entry"));
+
+      await waitFor(() => expect(removeLegacyMcpEntry).toHaveBeenCalledWith("cursor"));
+      // Headline (b): the raw+raw fix must be removeLegacyMcpEntry — NOT
+      // removeRawMcpEntry, which would delete the live `wenlan` entry too and
+      // sever Cursor's only connection.
+      expect(removeRawMcpEntry).not.toHaveBeenCalled();
       await waitFor(() =>
         expect(vi.mocked(getWireState).mock.calls.length).toBeGreaterThan(callsBefore),
       );

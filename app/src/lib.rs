@@ -913,6 +913,7 @@ pub fn run() {
             search::detect_mcp_clients_cmd,
             search::write_mcp_config,
             search::remove_raw_mcp_entry,
+            search::remove_legacy_mcp_entry,
             search::get_wenlan_mcp_entry,
             search::install_client_plugin,
             search::wire_state,

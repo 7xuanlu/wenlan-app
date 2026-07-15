@@ -66,6 +66,40 @@ fn has_configured_entry_toml(toml_str: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Check whether a JSON config holds BOTH the live `wenlan` entry AND the
+/// legacy `origin` entry under `mcpServers` — the raw+raw duplicate a client
+/// with no plugin path (Cursor, Gemini CLI) lands in after the origin→wenlan
+/// rename, where both entries launch a server against the same daemon. Distinct
+/// from `has_configured_entry`, which is an OR: the fix here removes only the
+/// stale `origin`, so detection has to know both are present, not just one.
+fn has_both_raw_entries(json_str: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(json_str)
+        .ok()
+        .and_then(|v| {
+            let servers = v.get("mcpServers")?;
+            Some(
+                servers.get(MCP_SERVER_KEY).is_some()
+                    && servers.get(LEGACY_MCP_SERVER_KEY).is_some(),
+            )
+        })
+        .unwrap_or(false)
+}
+
+/// TOML variant of `has_both_raw_entries` for Codex CLI (`[mcp_servers.*]`).
+fn has_both_raw_entries_toml(toml_str: &str) -> bool {
+    toml_str
+        .parse::<toml_edit::DocumentMut>()
+        .ok()
+        .and_then(|doc| {
+            let servers = doc.get("mcp_servers")?;
+            Some(
+                servers.get(MCP_SERVER_KEY).is_some()
+                    && servers.get(LEGACY_MCP_SERVER_KEY).is_some(),
+            )
+        })
+        .unwrap_or(false)
+}
+
 /// Whether a Claude Code `settings.json` blob has the Wenlan plugin enabled.
 /// `enabledPlugins` keys are `<plugin>@<marketplace>`, and the marketplace
 /// name varies by install (`wenlan@7xuanlu` fresh, `wenlan@7xuanlu-wenlan` on
@@ -275,6 +309,29 @@ pub(crate) fn client_config_has_raw_entry(client_type: &str, config_path: &Path)
                 has_configured_entry_toml(&s)
             } else {
                 has_configured_entry(&s)
+            }
+        })
+        .unwrap_or(false)
+}
+
+/// Whether `client_type`'s own config file holds BOTH the `wenlan` entry and
+/// the legacy `origin` entry — the raw+raw duplicate. Mirrors
+/// `client_config_has_raw_entry`'s file handling and TOML/JSON split, sharing
+/// `has_both_raw_entries`/`has_both_raw_entries_toml` so detection and the
+/// `remove_legacy_origin_entry` fix stay symmetric. This is the one signal a
+/// no-plugin client (cursor, gemini_cli) needs: those can never trip the
+/// plugin+raw double-registration path in `wire_state`, so without it their
+/// raw+raw duplicate is invisible.
+pub(crate) fn client_config_has_both_raw_entries(client_type: &str, config_path: &Path) -> bool {
+    if !config_path.exists() {
+        return false;
+    }
+    std::fs::read_to_string(config_path)
+        .map(|s| {
+            if client_type == "codex_cli" {
+                has_both_raw_entries_toml(&s)
+            } else {
+                has_both_raw_entries(&s)
             }
         })
         .unwrap_or(false)
@@ -641,6 +698,81 @@ pub fn remove_wenlan_entry_toml(config_path: &std::path::Path) -> Result<(), App
     if !removed {
         return Err(AppError::Generic(
             "No Wenlan MCP entry found to remove".into(),
+        ));
+    }
+
+    let backup_path = config_path.with_extension("toml.bak");
+    std::fs::copy(config_path, &backup_path)?;
+    std::fs::write(config_path, doc.to_string())?;
+    Ok(())
+}
+
+/// Remove ONLY the legacy `origin` `mcpServers` entry from a JSON client
+/// config, keeping the live `wenlan` entry — the fix for the raw+raw
+/// duplicate a no-plugin client (Cursor, Gemini CLI) lands in after the
+/// rename. Critically different from `remove_wenlan_entry`, which drops both
+/// keys: that is correct only where a plugin still provides the server, so
+/// applying it here would delete the client's only working connection. Every
+/// other server and unrelated key survives. A missing file, or one with no
+/// `origin` entry, is `Err` (nothing to remove) — surfaced verbatim by the
+/// caller. Backs the file up first (like `remove_wenlan_entry`), but only once
+/// a removal is certain, so the no-op error path leaves no stray `.bak`.
+pub fn remove_legacy_origin_entry(config_path: &std::path::Path) -> Result<(), AppError> {
+    if !config_path.exists() {
+        return Err(AppError::Generic(
+            "No config file found — nothing to remove".into(),
+        ));
+    }
+    let contents = std::fs::read_to_string(config_path)?;
+    let mut root = serde_json::from_str::<serde_json::Value>(&contents).map_err(|e| {
+        AppError::Generic(format!("Invalid JSON in {}: {}", config_path.display(), e))
+    })?;
+
+    let removed = root
+        .get_mut("mcpServers")
+        .and_then(|servers| servers.as_object_mut())
+        .map(|servers| servers.remove(LEGACY_MCP_SERVER_KEY).is_some())
+        .unwrap_or(false);
+
+    if !removed {
+        return Err(AppError::Generic(
+            "No legacy origin MCP entry found to remove".into(),
+        ));
+    }
+
+    let backup_path = config_path.with_extension("json.bak");
+    std::fs::copy(config_path, &backup_path)?;
+    let formatted =
+        serde_json::to_string_pretty(&root).map_err(|e| AppError::Generic(e.to_string()))?;
+    std::fs::write(config_path, formatted)?;
+    Ok(())
+}
+
+/// TOML variant for Codex CLI (`[mcp_servers.*]` tables) — mirrors
+/// `remove_legacy_origin_entry`'s contract (removes only `origin`, keeps
+/// `wenlan`) using the same format-preserving `toml_edit` round-trip.
+pub fn remove_legacy_origin_entry_toml(config_path: &std::path::Path) -> Result<(), AppError> {
+    use toml_edit::DocumentMut;
+
+    if !config_path.exists() {
+        return Err(AppError::Generic(
+            "No config file found — nothing to remove".into(),
+        ));
+    }
+    let contents = std::fs::read_to_string(config_path)?;
+    let mut doc: DocumentMut = contents.parse().map_err(|e| {
+        AppError::Generic(format!("Invalid TOML in {}: {}", config_path.display(), e))
+    })?;
+
+    let removed = doc
+        .get_mut("mcp_servers")
+        .and_then(|servers| servers.as_table_like_mut())
+        .map(|servers| servers.remove(LEGACY_MCP_SERVER_KEY).is_some())
+        .unwrap_or(false);
+
+    if !removed {
+        return Err(AppError::Generic(
+            "No legacy origin MCP entry found to remove".into(),
         ));
     }
 
@@ -1575,5 +1707,259 @@ args = ["-y", "wenlan-mcp"]
         remove_wenlan_entry_toml(&config_path).unwrap();
 
         assert!(!client_config_has_raw_entry("codex_cli", &config_path));
+    }
+
+    // ── has_both_raw_entries (raw+raw duplicate detection) ──────────────
+
+    #[test]
+    fn test_has_both_raw_entries_true_when_wenlan_and_origin_present() {
+        // The real ~/.cursor/mcp.json shape on this machine.
+        let json = r#"{"mcpServers": {
+            "origin": {"command": "npx", "args": ["-y", "origin-mcp"]},
+            "wenlan": {"command": "npx", "args": ["-y", "wenlan-mcp"]}
+        }}"#;
+        assert!(has_both_raw_entries(json));
+    }
+
+    #[test]
+    fn test_has_both_raw_entries_false_when_only_wenlan() {
+        let json = r#"{"mcpServers": {"wenlan": {"command": "npx"}}}"#;
+        assert!(!has_both_raw_entries(json));
+    }
+
+    #[test]
+    fn test_has_both_raw_entries_false_when_only_origin() {
+        let json = r#"{"mcpServers": {"origin": {"command": "npx"}}}"#;
+        assert!(!has_both_raw_entries(json));
+    }
+
+    #[test]
+    fn test_has_both_raw_entries_false_when_neither() {
+        assert!(!has_both_raw_entries(r#"{"mcpServers": {"other": {}}}"#));
+        assert!(!has_both_raw_entries(r#"{"theme": "dark"}"#));
+        assert!(!has_both_raw_entries("not json"));
+    }
+
+    #[test]
+    fn test_has_both_raw_entries_toml() {
+        assert!(has_both_raw_entries_toml(
+            "[mcp_servers.origin]\ncommand = \"npx\"\n[mcp_servers.wenlan]\ncommand = \"npx\"\n"
+        ));
+        assert!(!has_both_raw_entries_toml(
+            "[mcp_servers.wenlan]\ncommand = \"npx\"\n"
+        ));
+        assert!(!has_both_raw_entries_toml(
+            "[mcp_servers.origin]\ncommand = \"npx\"\n"
+        ));
+        assert!(!has_both_raw_entries_toml("model = \"gpt-5.5\"\n"));
+        assert!(!has_both_raw_entries_toml("not toml ["));
+    }
+
+    /// HEADLINE (a): a raw+raw duplicate on a no-plugin client (cursor) IS
+    /// flagged through the public detector, and neither single-entry case is.
+    #[test]
+    fn test_client_config_has_both_raw_entries_flags_cursor_duplicate() {
+        let tmp = tempfile::tempdir().unwrap();
+        let both = tmp.path().join("both.json");
+        std::fs::write(
+            &both,
+            r#"{"mcpServers": {"origin": {"command": "npx"}, "wenlan": {"command": "npx"}}}"#,
+        )
+        .unwrap();
+        assert!(client_config_has_both_raw_entries("cursor", &both));
+
+        let only_wenlan = tmp.path().join("only_wenlan.json");
+        std::fs::write(
+            &only_wenlan,
+            r#"{"mcpServers": {"wenlan": {"command": "npx"}}}"#,
+        )
+        .unwrap();
+        assert!(!client_config_has_both_raw_entries("cursor", &only_wenlan));
+
+        // A file that doesn't exist has no duplicate.
+        assert!(!client_config_has_both_raw_entries(
+            "cursor",
+            &tmp.path().join("missing.json")
+        ));
+    }
+
+    #[test]
+    fn test_client_config_has_both_raw_entries_toml_for_codex() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config_path = tmp.path().join("config.toml");
+        std::fs::write(
+            &config_path,
+            "[mcp_servers.origin]\ncommand = \"npx\"\n[mcp_servers.wenlan]\ncommand = \"npx\"\n",
+        )
+        .unwrap();
+        assert!(client_config_has_both_raw_entries(
+            "codex_cli",
+            &config_path
+        ));
+    }
+
+    // ── remove_legacy_origin_entry (removes origin, keeps wenlan) ────────
+
+    /// HEADLINE (b): the fix removes `origin` and KEEPS `wenlan`. Mutating
+    /// `remove_legacy_origin_entry` to also drop `wenlan` fails this test.
+    #[test]
+    fn test_remove_legacy_origin_entry_keeps_wenlan() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config_path = tmp.path().join("config.json");
+        let existing = r#"{"mcpServers": {
+            "origin": {"command": "npx", "args": ["-y", "origin-mcp"]},
+            "wenlan": {"command": "npx", "args": ["-y", "wenlan-mcp"]},
+            "other": {"command": "other-cmd"}
+        }}"#;
+        std::fs::write(&config_path, existing).unwrap();
+
+        remove_legacy_origin_entry(&config_path).unwrap();
+
+        let parsed: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&config_path).unwrap()).unwrap();
+        // origin is gone; wenlan and the sibling server stay.
+        assert!(parsed["mcpServers"]["origin"].is_null());
+        assert!(
+            parsed["mcpServers"]["wenlan"].is_object(),
+            "the live wenlan entry must survive — removing it would sever the client's connection"
+        );
+        assert_eq!(parsed["mcpServers"]["other"]["command"], "other-cmd");
+    }
+
+    #[test]
+    fn test_remove_legacy_origin_entry_clears_the_duplicate() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config_path = tmp.path().join("config.json");
+        std::fs::write(
+            &config_path,
+            r#"{"mcpServers": {"origin": {"command": "npx"}, "wenlan": {"command": "npx"}}}"#,
+        )
+        .unwrap();
+        assert!(client_config_has_both_raw_entries("cursor", &config_path));
+
+        remove_legacy_origin_entry(&config_path).unwrap();
+
+        // The duplicate is resolved, and a single wenlan entry remains.
+        assert!(!client_config_has_both_raw_entries("cursor", &config_path));
+        assert!(client_config_has_raw_entry("cursor", &config_path));
+    }
+
+    #[test]
+    fn test_remove_legacy_origin_entry_creates_backup() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config_path = tmp.path().join("config.json");
+        std::fs::write(
+            &config_path,
+            r#"{"mcpServers": {"origin": {"command": "npx"}, "wenlan": {"command": "npx"}}}"#,
+        )
+        .unwrap();
+
+        remove_legacy_origin_entry(&config_path).unwrap();
+
+        let backup = tmp.path().join("config.json.bak");
+        assert!(backup.exists());
+        assert!(std::fs::read_to_string(&backup).unwrap().contains("origin"));
+    }
+
+    #[test]
+    fn test_remove_legacy_origin_entry_errs_when_only_wenlan_present() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config_path = tmp.path().join("config.json");
+        std::fs::write(
+            &config_path,
+            r#"{"mcpServers": {"wenlan": {"command": "npx"}}}"#,
+        )
+        .unwrap();
+        assert!(remove_legacy_origin_entry(&config_path).is_err());
+        // No-op error path leaves no stray backup behind.
+        assert!(!config_path.with_extension("json.bak").exists());
+    }
+
+    #[test]
+    fn test_remove_legacy_origin_entry_errs_when_file_missing() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert!(remove_legacy_origin_entry(&tmp.path().join("nope.json")).is_err());
+    }
+
+    #[test]
+    fn test_remove_legacy_origin_entry_is_idempotent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config_path = tmp.path().join("config.json");
+        std::fs::write(
+            &config_path,
+            r#"{"mcpServers": {"origin": {"command": "npx"}, "wenlan": {"command": "npx"}}}"#,
+        )
+        .unwrap();
+        remove_legacy_origin_entry(&config_path).unwrap();
+        // Second run: origin already gone, so it's an Err (nothing to remove),
+        // and wenlan is left untouched.
+        assert!(remove_legacy_origin_entry(&config_path).is_err());
+        let parsed: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&config_path).unwrap()).unwrap();
+        assert!(parsed["mcpServers"]["wenlan"].is_object());
+    }
+
+    // ── remove_legacy_origin_entry_toml (Codex CLI) ─────────────────────
+
+    #[test]
+    fn test_remove_legacy_origin_entry_toml_keeps_wenlan() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config_path = tmp.path().join("config.toml");
+        let fixture = r#"# my codex config
+model = "gpt-5.5"
+
+[mcp_servers.origin]
+command = "npx"
+args = ["-y", "origin-mcp"]
+
+[mcp_servers.wenlan]
+command = "npx"
+args = ["-y", "wenlan-mcp"]
+"#;
+        std::fs::write(&config_path, fixture).unwrap();
+
+        remove_legacy_origin_entry_toml(&config_path).unwrap();
+
+        let contents = std::fs::read_to_string(&config_path).unwrap();
+        let parsed: toml::Value = toml::from_str(&contents).unwrap();
+        assert!(parsed["mcp_servers"].get("origin").is_none());
+        assert!(
+            parsed["mcp_servers"].get("wenlan").is_some(),
+            "the live wenlan entry must survive"
+        );
+        assert_eq!(parsed["model"], toml::Value::from("gpt-5.5"));
+        assert!(client_config_has_raw_entry("codex_cli", &config_path));
+        assert!(!client_config_has_both_raw_entries(
+            "codex_cli",
+            &config_path
+        ));
+    }
+
+    #[test]
+    fn test_remove_legacy_origin_entry_toml_creates_backup() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config_path = tmp.path().join("config.toml");
+        std::fs::write(
+            &config_path,
+            "[mcp_servers.origin]\ncommand = \"npx\"\n[mcp_servers.wenlan]\ncommand = \"npx\"\n",
+        )
+        .unwrap();
+        remove_legacy_origin_entry_toml(&config_path).unwrap();
+        assert!(config_path.with_extension("toml.bak").exists());
+    }
+
+    #[test]
+    fn test_remove_legacy_origin_entry_toml_errs_when_only_wenlan_present() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config_path = tmp.path().join("config.toml");
+        std::fs::write(&config_path, "[mcp_servers.wenlan]\ncommand = \"npx\"\n").unwrap();
+        assert!(remove_legacy_origin_entry_toml(&config_path).is_err());
+        assert!(!config_path.with_extension("toml.bak").exists());
+    }
+
+    #[test]
+    fn test_remove_legacy_origin_entry_toml_errs_when_file_missing() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert!(remove_legacy_origin_entry_toml(&tmp.path().join("nope.toml")).is_err());
     }
 }

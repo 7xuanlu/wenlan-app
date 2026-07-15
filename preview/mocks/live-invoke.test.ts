@@ -244,6 +244,7 @@ const UNSTUBBED_DEBT = new Set([
   "regenerate_narrative",
   "reindex",
   "remove_avatar",
+  "remove_legacy_mcp_entry",
   "remove_raw_mcp_entry",
   "remove_source",
   "remove_space",

@@ -387,6 +387,23 @@ pub async fn remove_raw_mcp_entry(client_type: String) -> Result<(), String> {
     crate::mcp_config::remove_wenlan_entry(&config_path).map_err(|e| e.to_string())
 }
 
+/// Removes ONLY the legacy `origin` MCP entry from `client_type`'s config,
+/// keeping the live `wenlan` entry — the fix Diagnostics offers for a raw+raw
+/// duplicate (both `wenlan` and `origin` in one config, on a no-plugin client
+/// like Cursor). Unlike `remove_raw_mcp_entry`, which drops both keys, this
+/// leaves the working connection in place. A missing file or absent `origin`
+/// entry is an `Err` the UI surfaces verbatim.
+#[tauri::command]
+pub async fn remove_legacy_mcp_entry(client_type: String) -> Result<(), String> {
+    let config_path = crate::mcp_config::client_config_path(&client_type)
+        .ok_or(format!("Unknown client type: {}", client_type))?;
+    if client_type == "codex_cli" {
+        return crate::mcp_config::remove_legacy_origin_entry_toml(&config_path)
+            .map_err(|e| e.to_string());
+    }
+    crate::mcp_config::remove_legacy_origin_entry(&config_path).map_err(|e| e.to_string())
+}
+
 /// Returns the current `wenlan` MCP server entry (command + args) that Wenlan
 /// uses when writing client configs. Prefers a local binary in dev, falls back
 /// to `npx -y wenlan-mcp` otherwise. The frontend uses this to build a

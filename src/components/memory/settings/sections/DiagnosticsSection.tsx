@@ -7,6 +7,7 @@ import {
   clipboardWrite,
   getPipelineStatus,
   getWireState,
+  removeLegacyMcpEntry,
   removeRawMcpEntry,
   setSetupCompleted,
   type BinaryWire,
@@ -97,6 +98,9 @@ function buildWireReport(t: TFunction, wire: WireState): string {
     );
     if (client.has_plugin && client.has_raw_entry) {
       lines.push(`    ! ${t("settings.diagnostics.wiring.doubleRegistrationBody", { name: client.name })}`);
+    }
+    if (!client.has_plugin && client.has_raw_duplicate) {
+      lines.push(`    ! ${t("settings.diagnostics.wiring.rawDuplicateBody", { name: client.name })}`);
     }
   }
 
@@ -302,6 +306,63 @@ function DoubleRegistrationWarning({ client }: { client: ClientWire }) {
   );
 }
 
+/** The raw+raw duplicate warnbox with its one-action fix: remove only the
+ *  legacy `origin` entry, keeping the live `wenlan` one (`removeLegacyMcpEntry`).
+ *  Its own component for the same reason as DoubleRegistrationWarning — the
+ *  mutation's hooks stay at a component top level, not inside the clients
+ *  `.map`. Distinct from that box: this fires only for a no-plugin client
+ *  (Cursor, Gemini CLI), where both raw entries are the whole connection, so
+ *  the fix must keep `wenlan` rather than drop both. */
+function RawDuplicateWarning({ client }: { client: ClientWire }) {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const removeMutation = useMutation({
+    mutationFn: () => removeLegacyMcpEntry(client.client_type),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["wireState"] }),
+  });
+  const errorMessage =
+    removeMutation.error instanceof Error
+      ? removeMutation.error.message
+      : removeMutation.error != null
+        ? String(removeMutation.error)
+        : null;
+  return (
+    <div
+      className="flex items-start gap-2 mt-1"
+      style={{
+        background: "var(--mem-status-danger-bg)",
+        border: "1px solid var(--mem-status-danger-border)",
+        borderRadius: "var(--mem-radius-md)",
+        padding: "8px 10px",
+      }}
+    >
+      <svg aria-hidden="true" className="w-3.5 h-3.5 text-[var(--mem-status-danger-text)] shrink-0 mt-px" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.072 16.5c-.77.833.192 2.5 1.732 2.5z" />
+      </svg>
+      <div className="flex flex-col gap-2 min-w-0">
+        <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", color: "var(--mem-status-danger-text)", lineHeight: "1.5" }}>
+          {t("settings.diagnostics.wiring.rawDuplicateBody", { name: client.name })}
+        </p>
+        <div>
+          <Button
+            variant="danger"
+            size="sm"
+            loading={removeMutation.isPending}
+            onClick={() => removeMutation.mutate()}
+          >
+            {t("settings.diagnostics.wiring.removeLegacyEntry")}
+          </Button>
+        </div>
+        {errorMessage && (
+          <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", color: "var(--mem-status-danger-text)", lineHeight: "1.5", overflowWrap: "anywhere" }}>
+            {errorMessage}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ClientsWiring({ clients }: { clients: ClientWire[] }) {
   const { t } = useTranslation();
   return (
@@ -320,6 +381,11 @@ function ClientsWiring({ clients }: { clients: ClientWire[] }) {
             // registered twice for one client (plugin + a raw MCP entry).
             // Now carries its own one-action fix — see DoubleRegistrationWarning.
             const doubleRegistered = client.has_plugin && client.has_raw_entry;
+            // The raw+raw sibling: both `wenlan` and legacy `origin` raw
+            // entries in a no-plugin client's config. Gated on `!has_plugin`
+            // so it never double-fires with doubleRegistered (a plugin client
+            // is handled by the box above, whose fix removes both raw entries).
+            const rawDuplicate = !client.has_plugin && client.has_raw_duplicate;
             return (
               <div key={client.client_type} className="flex flex-col gap-1">
                 <div className="flex items-center gap-2 flex-wrap">
@@ -345,6 +411,7 @@ function ClientsWiring({ clients }: { clients: ClientWire[] }) {
                   {client.config_path}
                 </p>
                 {doubleRegistered && <DoubleRegistrationWarning client={client} />}
+                {rawDuplicate && <RawDuplicateWarning client={client} />}
               </div>
             );
           })}

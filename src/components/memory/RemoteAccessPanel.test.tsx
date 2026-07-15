@@ -36,6 +36,7 @@ function wireState(hasPlugin: boolean | null) {
               detected: true,
               config_path: "~/.claude.json",
               has_raw_entry: false,
+              has_raw_duplicate: false,
               has_plugin: hasPlugin,
               route: "plugin",
             },
