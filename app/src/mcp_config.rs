@@ -1437,7 +1437,8 @@ args = ["--flag"]
     fn test_remove_wenlan_entry_removes_only_the_wenlan_entry() {
         let tmp = tempfile::tempdir().unwrap();
         let config_path = tmp.path().join("config.json");
-        let existing = r#"{"mcpServers": {"wenlan": {"command": "npx"}, "other": {"command": "other-cmd"}}}"#;
+        let existing =
+            r#"{"mcpServers": {"wenlan": {"command": "npx"}, "other": {"command": "other-cmd"}}}"#;
         std::fs::write(&config_path, existing).unwrap();
 
         remove_wenlan_entry(&config_path).unwrap();
@@ -1468,7 +1469,8 @@ args = ["--flag"]
     fn test_remove_wenlan_entry_removes_legacy_origin() {
         let tmp = tempfile::tempdir().unwrap();
         let config_path = tmp.path().join("config.json");
-        let existing = r#"{"mcpServers": {"origin": {"command": "npx", "args": ["-y", "origin-mcp"]}}}"#;
+        let existing =
+            r#"{"mcpServers": {"origin": {"command": "npx", "args": ["-y", "origin-mcp"]}}}"#;
         std::fs::write(&config_path, existing).unwrap();
 
         remove_wenlan_entry(&config_path).unwrap();
@@ -1499,7 +1501,8 @@ args = ["--flag"]
     fn test_remove_wenlan_entry_leaves_client_config_has_raw_entry_false() {
         let tmp = tempfile::tempdir().unwrap();
         let config_path = tmp.path().join("config.json");
-        let existing = r#"{"mcpServers": {"wenlan": {"command": "npx"}, "other": {"command": "x"}}}"#;
+        let existing =
+            r#"{"mcpServers": {"wenlan": {"command": "npx"}, "other": {"command": "x"}}}"#;
         std::fs::write(&config_path, existing).unwrap();
         // Precondition: detection sees the raw entry before removal.
         assert!(client_config_has_raw_entry("cursor", &config_path));
@@ -1535,7 +1538,10 @@ args = ["-y", "wenlan-mcp"]
         assert!(!has_configured_entry_toml(&contents));
         let parsed: toml::Value = toml::from_str(&contents).unwrap();
         assert_eq!(parsed["model"], toml::Value::from("gpt-5.5"));
-        assert_eq!(parsed["mcp_servers"]["other"]["command"], toml::Value::from("other-cmd"));
+        assert_eq!(
+            parsed["mcp_servers"]["other"]["command"],
+            toml::Value::from("other-cmd")
+        );
         assert!(parsed["mcp_servers"].get("wenlan").is_none());
     }
 

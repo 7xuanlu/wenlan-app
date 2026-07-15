@@ -207,6 +207,7 @@ export function RoutineModelSelect() {
           onChange={async (e) => {
             await setModelChoice(e.target.value, synthesisModel);
             queryClient.invalidateQueries({ queryKey: ["modelChoice"] });
+            queryClient.invalidateQueries({ queryKey: ["resolvedRouting"] });
           }}
         >
           {ANTHROPIC_MODELS.map((m) => (
@@ -243,6 +244,7 @@ export function SynthesisModelSelect() {
           onChange={async (e) => {
             await setModelChoice(routineModel, e.target.value);
             queryClient.invalidateQueries({ queryKey: ["modelChoice"] });
+            queryClient.invalidateQueries({ queryKey: ["resolvedRouting"] });
           }}
         >
           {ANTHROPIC_MODELS.map((m) => (

@@ -104,6 +104,56 @@ pub struct MoveSpaceResponse {
     pub affected: usize,
 }
 
+// ── Resolved routing (daemon ≥ PR #357; GET /api/config/routing) ─────────
+// Local DTOs, NOT bumped into wenlan-types (the endpoint is unreleased). Shapes
+// mirror `wenlan-server::config_routes` exactly; no `deny_unknown_fields` so a
+// newer daemon can add fields without breaking this old app. Never carries key
+// material.
+
+/// Resolved route for one job class: which source serves it, the model, and how
+/// it was chosen. `mode`: "pinned" | "pinned_degraded" | "auto". `source`
+/// (everyday): "anthropic"|"external"|"on_device"|"basic"; (synthesis):
+/// "anthropic"|"external"|"on_device"|"none".
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct JobRoute {
+    pub source: String,
+    pub model: Option<String>,
+    pub mode: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AnthropicPool {
+    pub configured: bool,
+    pub everyday_model: Option<String>,
+    pub synthesis_model: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ExternalPool {
+    pub endpoint: String,
+    pub model: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct OnDevicePool {
+    pub selected: Option<String>,
+    pub loaded: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RoutingPool {
+    pub anthropic: AnthropicPool,
+    pub external: Option<ExternalPool>,
+    pub on_device: Option<OnDevicePool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ResolvedRouting {
+    pub everyday: JobRoute,
+    pub synthesis: JobRoute,
+    pub pool: RoutingPool,
+}
+
 #[derive(Debug, Clone, Serialize)]
 struct DistillReviewRequest {}
 
@@ -781,6 +831,51 @@ impl WenlanClient {
         self.update_config(empty_update().with_remote_access_enabled(enabled))
             .await
     }
+
+    /// GET /api/config/routing — resolved per-job routing (daemon ≥ PR #357).
+    /// Feature-detection point: a daemon without the endpoint answers 404, which
+    /// maps to `Ok(None)` (LEGACY mode) rather than an error. Any other non-2xx
+    /// is a real failure and surfaces as `Err`.
+    pub async fn get_resolved_routing(&self) -> Result<Option<ResolvedRouting>, String> {
+        let path = "/api/config/routing";
+        let resp = self
+            .client
+            .get(self.url(path))
+            .send()
+            .await
+            .map_err(|e| format!("HTTP GET {}: {}", path, e))?;
+        if resp.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        if !resp.status().is_success() {
+            return Err(format!("HTTP GET {} returned {}", path, resp.status()));
+        }
+        resp.json()
+            .await
+            .map(Some)
+            .map_err(|e| format!("Parse {}: {}", path, e))
+    }
+
+    /// PATCH the per-job source pins (daemon ≥ PR #357). Each arg: `None` leaves
+    /// the pin untouched, `Some("")` clears it (auto chain), `Some(source)` pins.
+    /// Written as raw JSON because the pinned `UpdateConfigRequest` predates these
+    /// fields (mirrors `set_external_llm`). Only call once the routing endpoint is
+    /// known present — never PATCH unknown fields at an old daemon.
+    pub async fn set_source_pin(
+        &self,
+        everyday_source: Option<String>,
+        synthesis_source: Option<String>,
+    ) -> Result<(), String> {
+        let mut body = sparse_update_config(empty_update())?;
+        if let Some(v) = everyday_source {
+            body["everyday_source"] = serde_json::Value::String(v);
+        }
+        if let Some(v) = synthesis_source {
+            body["synthesis_source"] = serde_json::Value::String(v);
+        }
+        let _resp: serde_json::Value = self.put_json("/api/config", &body).await?;
+        Ok(())
+    }
 }
 
 fn daemon_port() -> u16 {
@@ -1190,6 +1285,81 @@ mod tests {
         assert_eq!(
             request_body(&request),
             serde_json::json!({"external_llm_api_key": "sk-secret"})
+        );
+    }
+
+    /// Serves one request with a caller-chosen status line, then closes.
+    async fn serve_status_once(
+        status_line: &'static str,
+        body: &'static str,
+    ) -> (String, tokio::task::JoinHandle<String>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let handle = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut buf = [0_u8; 2048];
+            let n = stream.read(&mut buf).await.unwrap();
+            let request = String::from_utf8_lossy(&buf[..n]).to_string();
+            let response = format!(
+                "HTTP/1.1 {}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                status_line,
+                body.len(),
+                body
+            );
+            stream.write_all(response.as_bytes()).await.unwrap();
+            request
+        });
+        (format!("http://{}", addr), handle)
+    }
+
+    #[tokio::test]
+    async fn get_resolved_routing_maps_404_to_none() {
+        // Feature detection: an old daemon without the endpoint 404s, and that
+        // must read as LEGACY mode (Ok(None)), never as an error.
+        let (base_url, _request) = serve_status_once("404 Not Found", "not found").await;
+        let client = WenlanClient {
+            client: reqwest::Client::new(),
+            base_url,
+        };
+
+        assert_eq!(client.get_resolved_routing().await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn get_resolved_routing_parses_200_body() {
+        let body = r#"{"everyday":{"source":"on_device","model":"qwen3-4b","mode":"pinned"},"synthesis":{"source":"external","model":"gpt-5.2","mode":"auto"},"pool":{"anthropic":{"configured":false,"everyday_model":null,"synthesis_model":null},"external":{"endpoint":"https://api.openai.com/v1","model":"gpt-5.2"},"on_device":{"selected":"qwen3-4b","loaded":true}}}"#;
+        let (base_url, _request) = serve_json_once(body).await;
+        let client = WenlanClient {
+            client: reqwest::Client::new(),
+            base_url,
+        };
+
+        let routing = client.get_resolved_routing().await.unwrap().unwrap();
+        assert_eq!(routing.everyday.source, "on_device");
+        assert_eq!(routing.everyday.mode, "pinned");
+        assert_eq!(routing.synthesis.model.as_deref(), Some("gpt-5.2"));
+        assert!(!routing.pool.anthropic.configured);
+        assert!(routing.pool.on_device.unwrap().loaded);
+    }
+
+    #[tokio::test]
+    async fn set_source_pin_sends_only_named_pins() {
+        let config_body = r#"{"skip_apps":[],"skip_title_patterns":[],"private_browsing_detection":true,"setup_completed":true,"clipboard_enabled":true,"screen_capture_enabled":false,"remote_access_enabled":false}"#;
+        let (base_url, request) = serve_json_once(config_body).await;
+        let client = WenlanClient {
+            client: reqwest::Client::new(),
+            base_url,
+        };
+
+        client
+            .set_source_pin(Some("external".into()), None)
+            .await
+            .unwrap();
+
+        let request = request.await.unwrap();
+        assert_eq!(
+            request_body(&request),
+            serde_json::json!({"everyday_source": "external"})
         );
     }
 

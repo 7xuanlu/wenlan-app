@@ -354,6 +354,45 @@ export async function setModelChoice(
   return invoke("set_model_choice", { routineModel, synthesisModel });
 }
 
+// ── Resolved routing (daemon ≥ PR #357) ──────────────────────────────────
+// Feature detection: getResolvedRouting() resolves to null on a daemon that
+// predates the endpoint (the live 0.13.2 daemon) — callers render LEGACY mode.
+// Never contains key material.
+
+/** How one job resolves. `mode`: "pinned" | "pinned_degraded" | "auto".
+ *  `source` (everyday): "anthropic"|"external"|"on_device"|"basic";
+ *  (synthesis): "anthropic"|"external"|"on_device"|"none". */
+export interface JobRoute {
+  source: string;
+  model: string | null;
+  mode: string;
+}
+
+export interface ResolvedRouting {
+  everyday: JobRoute;
+  synthesis: JobRoute;
+  pool: {
+    anthropic: { configured: boolean; everyday_model: string | null; synthesis_model: string | null };
+    external: { endpoint: string; model: string } | null;
+    on_device: { selected: string | null; loaded: boolean } | null;
+  };
+}
+
+/** Resolved per-job routing, or null when the daemon lacks the endpoint (404).
+ *  A null return is the signal to render source pins read-only (LEGACY mode). */
+export async function getResolvedRouting(): Promise<ResolvedRouting | null> {
+  return invoke("get_resolved_routing");
+}
+
+// Patch-based like setModelChoice: null leaves a pin untouched, "" clears it, a
+// source name pins. Only call once getResolvedRouting() returned non-null.
+export async function setSourcePin(
+  everydaySource: string | null,
+  synthesisSource: string | null
+): Promise<void> {
+  return invoke("set_source_pin", { everydaySource, synthesisSource });
+}
+
 export interface SystemInfo {
   total_ram_gb: number;
   available_ram_gb: number;

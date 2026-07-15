@@ -1,8 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { getExternalLlm, getModelChoice, getOnDeviceModel } from "../../../../lib/tauri";
+import {
+  getExternalLlm,
+  getModelChoice,
+  getOnDeviceModel,
+  getResolvedRouting,
+  listExternalModels,
+  setExternalLlm,
+  setSourcePin,
+} from "../../../../lib/tauri";
 import ActiveIntelligenceStrip from "../../../intelligence/ActiveIntelligenceStrip";
 import AnyProviderCard from "../../../intelligence/AnyProviderCard";
 import {
@@ -13,7 +21,7 @@ import {
   useApiKeyStatus,
 } from "../../../intelligence/IntelligenceSetup";
 import { presetForEndpoint, type PresetGroup } from "../../../intelligence/providerPresets";
-import { Card, SectionHeader, StatusChip, type ProbeState } from "../primitives";
+import { Card, Select, SectionHeader, StatusChip, type ProbeState } from "../primitives";
 
 // Module-level so each is a stable reference across renders — AnyProviderCard
 // memoizes its preset list on these (same convention as SetupWizard's
@@ -32,6 +40,14 @@ function anthropicModelLabel(id: string): string {
 
 type JobRowId = "everyday" | "synthesis";
 type SourceRowId = "cloud" | "local" | "onDevice";
+/** A pinnable provider source. The daemon also reports the "no source" resolved
+ *  states ("basic" for everyday, "none" for synthesis), handled separately. */
+type PinSource = "anthropic" | "external" | "on_device";
+
+const labelStyle = { fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-base)", fontWeight: 500, color: "var(--mem-text)" } as const;
+const metaLineStyle = { fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text-secondary)", lineHeight: 1.5 } as const;
+const captionStyle = { fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", color: "var(--mem-text-tertiary)", marginTop: "4px", lineHeight: 1.5 } as const;
+const amberStyle = { fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", color: "var(--mem-status-warning-text)", marginTop: "4px", lineHeight: 1.5 } as const;
 
 /** One disclosure row inside a Models/Providers card: header button (name /
  *  optional hint / meta / status chip / chevron) plus an expanded body slot.
@@ -98,8 +114,133 @@ function ProviderRow({
   );
 }
 
+/** The external provider's single model, chosen in a job row. The daemon holds
+ *  ONE external slot, so both jobs that pin external share this model (surfaced
+ *  in a caption by the caller). Options come from live discovery against the
+ *  endpoint (works for local servers; a cloud provider whose key lives on the
+ *  provider row may return only the saved model — still selectable). */
+function ExternalModelSelect({ endpoint, model }: { endpoint: string; model: string }) {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const { data: discovered } = useQuery({
+    queryKey: ["externalModels", endpoint],
+    queryFn: () => listExternalModels(endpoint),
+    retry: false,
+  });
+  const options = Array.from(new Set([...(discovered ?? []), model].filter(Boolean)));
+
+  return (
+    <div className="flex items-center justify-between">
+      <div style={labelStyle}>{t("intelligence.modelLabel")}</div>
+      <div className="shrink-0 w-fit">
+        <Select
+          size="sm"
+          mono
+          aria-label={t("intelligence.chooseProviderModel")}
+          value={model}
+          onChange={async (e) => {
+            await setExternalLlm(endpoint, e.target.value);
+            queryClient.invalidateQueries({ queryKey: ["external-llm"] });
+            queryClient.invalidateQueries({ queryKey: ["resolvedRouting"] });
+          }}
+        >
+          {options.map((m) => (
+            <option key={m} value={m}>{m}</option>
+          ))}
+        </Select>
+      </div>
+    </div>
+  );
+}
+
+interface SourceOption {
+  source: PinSource;
+  label: string;
+  available: boolean;
+}
+
+interface JobView {
+  job: JobRowId;
+  /** Resolved/derived source: a PinSource, or "basic"/"none" (nothing serving). */
+  source: string;
+  /** Human label of `source`, reused for the legacy read-only line, the
+   *  degraded-fallback hint, and the collapsed meta. */
+  sourceDisplay: string;
+  meta: string;
+  connected: boolean;
+  degraded: boolean;
+  sourceOptions: SourceOption[];
+  external: { endpoint: string; model: string } | null;
+  onDeviceLabel: string | null;
+}
+
+/** The expanded body of a job row: source picker (interactive in PINNED mode,
+ *  read-only in LEGACY), the model picker for the chosen source, and the
+ *  resolved-state honesty hints. */
+function JobPicker({
+  view,
+  isPinned,
+  onPickSource,
+}: {
+  view: JobView;
+  isPinned: boolean;
+  onPickSource: (source: PinSource) => void;
+}) {
+  const { t } = useTranslation();
+  const { job, source, sourceDisplay, degraded, sourceOptions, external, onDeviceLabel } = view;
+  const isProviderSource = source === "anthropic" || source === "external" || source === "on_device";
+
+  return (
+    <div className="flex flex-col gap-3">
+      {isProviderSource &&
+        (isPinned ? (
+          <div className="flex items-center justify-between">
+            <div style={labelStyle}>{t("intelligence.sourceLabel")}</div>
+            <div className="shrink-0 w-fit">
+              <Select
+                size="sm"
+                aria-label={t("intelligence.chooseSource")}
+                value={source}
+                onChange={(e) => onPickSource(e.target.value as PinSource)}
+              >
+                {sourceOptions.map((o) => (
+                  <option key={o.source} value={o.source} disabled={!o.available}>{o.label}</option>
+                ))}
+              </Select>
+            </div>
+          </div>
+        ) : (
+          <div>
+            <div className="flex items-center justify-between">
+              <div style={labelStyle}>{t("intelligence.sourceLabel")}</div>
+              <div style={metaLineStyle}>{sourceDisplay}</div>
+            </div>
+            <p style={captionStyle}>{t("intelligence.sourcePinLegacyHint")}</p>
+          </div>
+        ))}
+
+      {source === "anthropic" && (job === "everyday" ? <RoutineModelSelect /> : <SynthesisModelSelect />)}
+      {source === "external" && external && <ExternalModelSelect endpoint={external.endpoint} model={external.model} />}
+      {source === "on_device" && (
+        <div>
+          <div style={metaLineStyle}>{onDeviceLabel ?? t("intelligence.sourceOnDevice")}</div>
+          <p style={captionStyle}>{t("intelligence.onDeviceManagedBelow")}</p>
+        </div>
+      )}
+      {source === "basic" && <p style={metaLineStyle}>{t("intelligenceStrip.servingBasic")}</p>}
+      {source === "none" && <p style={metaLineStyle}>{t("intelligence.pageSynthesisRequiresCloud")}</p>}
+
+      {source === "external" && <p style={captionStyle}>{t("intelligence.sharedSlotCaption")}</p>}
+      {isPinned && degraded && (
+        <p style={amberStyle}>{t("intelligence.pinnedDegradedHint", { fallback: sourceDisplay })}</p>
+      )}
+    </div>
+  );
+}
+
 export default function IntelligenceSection({ delay }: { delay: number }) {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
   const anthropic = useApiKeyStatus();
   const { data: external } = useQuery({ queryKey: ["external-llm"], queryFn: getExternalLlm });
   const { data: modelChoice } = useQuery({
@@ -108,6 +249,11 @@ export default function IntelligenceSection({ delay }: { delay: number }) {
     enabled: anthropic.isConfigured,
   });
   const { data: onDevice } = useQuery({ queryKey: ["onDeviceModel"], queryFn: getOnDeviceModel });
+  // Feature detection: null ⇒ the daemon has no routing endpoint (LEGACY mode);
+  // an object ⇒ per-job pins are live (PINNED mode). undefined while loading —
+  // treated as legacy, which is also what the live 0.13.2 daemon returns.
+  const { data: routing } = useQuery({ queryKey: ["resolvedRouting"], queryFn: getResolvedRouting });
+  const isPinned = routing != null;
 
   const [expandedJob, setExpandedJob] = useState<JobRowId | null>(null);
   const toggleJob = (row: JobRowId) => setExpandedJob((cur) => (cur === row ? null : row));
@@ -124,8 +270,11 @@ export default function IntelligenceSection({ delay }: { delay: number }) {
   const localConnected = externalPreset?.group === "local" || externalPreset?.group === "custom";
 
   const [routineId, synthesisId] = modelChoice ?? [null, null];
+
+  // Cloud provider row — connection-only meta (provider name + masked key style,
+  // per mockup). Per-job models live in the job rows now, never repeated here.
   const cloudMeta = anthropic.isConfigured
-    ? `Anthropic · ${t("intelligence.routineModel")}: ${anthropicModelLabel(routineId ?? DEFAULT_ROUTINE_MODEL)} · ${t("intelligence.synthesisModel")}: ${anthropicModelLabel(synthesisId ?? DEFAULT_SYNTHESIS_MODEL)}`
+    ? `Anthropic · ${anthropic.maskedKey}`
     : externalPreset?.group === "cloud"
       ? `${externalPreset.name} · ${externalModel}`
       : t("intelligence.cloudRowHint");
@@ -140,6 +289,7 @@ export default function IntelligenceSection({ delay }: { delay: number }) {
   const currentId = loadedId ?? selectedId ?? models[0]?.id ?? null;
   const current = currentId ? models.find((m) => m.id === currentId) : null;
   const onDeviceLoaded = !!current && loadedId === current.id;
+  const onDeviceLabel = current?.display_name ?? null;
 
   const onDeviceMeta = !current
     ? t("intelligence.modelCatalogUnavailable")
@@ -149,36 +299,132 @@ export default function IntelligenceSection({ delay }: { delay: number }) {
         ? `${current.display_name}${t("intelligence.downloadedNotLoaded")}`
         : `${current.display_name}${t("intelligence.notDownloaded")}`;
 
-  // The two jobs walk the same source-priority chain the strip uses
-  // (Anthropic → external → on-device → basic) — but independently, since
-  // mix-and-match is real: everyday tasks can run on-device while synthesis
-  // still needs a cloud key. Synthesis skips the on-device tier entirely —
-  // the small on-device model never runs synthesis (pageSynthesisRequiresCloud).
-  const everydayConnected = anthropic.isConfigured || externalConfigured || onDeviceLoaded;
-  const everydayMeta = anthropic.isConfigured
-    ? `Anthropic · ${anthropicModelLabel(routineId ?? DEFAULT_ROUTINE_MODEL)}`
-    : externalConfigured && externalPreset
-      ? `${externalPreset.name} · ${externalModel}`
-      : onDeviceLoaded && current
-        ? current.display_name
-        : t("intelligenceStrip.servingBasic");
-  const everydaySourceLine = externalConfigured && externalPreset
-    ? t("intelligenceStrip.servingExternal")
-    : onDeviceLoaded
-      ? t("intelligenceStrip.servingOnDevice")
-      : t("intelligenceStrip.servingBasic");
+  // Provider slot the app can attribute an external source to, in either mode.
+  const routedExternal = isPinned
+    ? routing.pool.external
+    : externalEndpoint && externalModel
+      ? { endpoint: externalEndpoint, model: externalModel }
+      : null;
+  const providerName = routedExternal ? presetForEndpoint(routedExternal.endpoint)?.name ?? null : null;
 
-  const synthesisConnected = anthropic.isConfigured || externalConfigured;
-  const synthesisMeta = anthropic.isConfigured
-    ? `Anthropic · ${anthropicModelLabel(synthesisId ?? DEFAULT_SYNTHESIS_MODEL)}`
-    : externalConfigured && externalPreset
-      ? `${externalPreset.name} · ${externalModel}`
-      : t("intelligence.pageSynthesisRequiresCloud");
-  const synthesisSourceLine = externalConfigured && externalPreset
-    ? t("intelligenceStrip.servingExternal")
-    : t("intelligence.pageSynthesisRequiresCloud");
+  // What each provider source can currently serve — drives option enable/disable
+  // in the pinned source select and the legacy derived chain.
+  const avail = isPinned
+    ? {
+        anthropic: routing.pool.anthropic.configured,
+        external: routing.pool.external != null,
+        on_device: routing.pool.on_device != null,
+      }
+    : { anthropic: anthropic.isConfigured, external: externalConfigured, on_device: onDeviceLoaded };
 
-  const sourceLineStyle = { fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text-secondary)", lineHeight: 1.5 } as const;
+  const sourceLabel = (source: string): string => {
+    switch (source) {
+      case "anthropic":
+        return t("intelligence.sourceAnthropic");
+      case "external":
+        return providerName ?? t("intelligence.sourceConnectedProvider");
+      case "on_device":
+        return onDeviceLabel ?? t("intelligence.sourceOnDevice");
+      case "basic":
+        return t("intelligenceStrip.servingBasic");
+      default:
+        return t("intelligence.pageSynthesisRequiresCloud");
+    }
+  };
+
+  // Collapsed meta for a resolved (source, model). Shared by both modes so the
+  // row reads identically whether the source came from the routing endpoint or
+  // the legacy derived chain.
+  const routeMeta = (job: JobRowId, source: string, model: string | null): string => {
+    const fallbackModel = job === "everyday" ? DEFAULT_ROUTINE_MODEL : DEFAULT_SYNTHESIS_MODEL;
+    switch (source) {
+      case "anthropic":
+        return `Anthropic · ${anthropicModelLabel(model ?? fallbackModel)}`;
+      case "external":
+        return `${providerName ?? t("intelligence.sourceConnectedProvider")} · ${model ?? routedExternal?.model ?? ""}`;
+      case "on_device":
+        return onDeviceLabel ?? model ?? t("intelligence.sourceOnDevice");
+      default:
+        return sourceLabel(source);
+    }
+  };
+
+  const buildOptions = (job: JobRowId): SourceOption[] => {
+    // No vendor privilege: everyday leads with the recommended on-device option,
+    // synthesis lists its two peers. Synthesis omits on-device (daemon rejects).
+    const order: PinSource[] = job === "everyday" ? ["on_device", "anthropic", "external"] : ["anthropic", "external"];
+    const suffix = t("intelligence.sourceUnavailableSuffix");
+    return order.map((s) => {
+      const available = avail[s];
+      let base =
+        s === "anthropic"
+          ? t("intelligence.sourceAnthropic")
+          : s === "on_device"
+            ? t("intelligence.sourceOnDevice")
+            : providerName ?? t("intelligence.sourceConnectedProvider");
+      if (s === "on_device" && job === "everyday" && available) {
+        base = `${base} · ${t("intelligence.sourceRecommended")}`;
+      }
+      return { source: s, label: available ? base : `${base}${suffix}`, available };
+    });
+  };
+
+  const buildView = (job: JobRowId): JobView => {
+    const source = isPinned
+      ? (job === "everyday" ? routing.everyday.source : routing.synthesis.source)
+      : job === "everyday"
+        ? anthropic.isConfigured
+          ? "anthropic"
+          : onDeviceLoaded
+            ? "on_device"
+            : "basic"
+        : anthropic.isConfigured
+          ? "anthropic"
+          : externalConfigured
+            ? "external"
+            : "none";
+    const model = isPinned
+      ? (job === "everyday" ? routing.everyday.model : routing.synthesis.model)
+      : source === "anthropic"
+        ? (job === "everyday" ? routineId : synthesisId)
+        : source === "external"
+          ? externalModel
+          : null;
+    const mode = isPinned ? (job === "everyday" ? routing.everyday.mode : routing.synthesis.mode) : "legacy";
+    return {
+      job,
+      source,
+      sourceDisplay: sourceLabel(source),
+      meta: routeMeta(job, source, model),
+      connected: source !== "basic" && source !== "none",
+      degraded: mode === "pinned_degraded",
+      sourceOptions: buildOptions(job),
+      external: routedExternal,
+      onDeviceLabel,
+    };
+  };
+
+  const everydayView = buildView("everyday");
+  const synthesisView = buildView("synthesis");
+
+  const pickSource = async (job: JobRowId, source: PinSource) => {
+    await setSourcePin(job === "everyday" ? source : null, job === "synthesis" ? source : null);
+    queryClient.invalidateQueries({ queryKey: ["resolvedRouting"] });
+  };
+
+  const jobRow = (view: JobView, id: JobRowId, name: string, hint: string) => (
+    <ProviderRow
+      name={name}
+      hint={hint}
+      meta={view.meta}
+      chipState={view.connected ? { kind: "up" } : { kind: "idle" }}
+      chipLabel={view.connected ? t("intelligence.connected") : t("intelligence.notConfigured")}
+      expanded={expandedJob === id}
+      onToggle={() => toggleJob(id)}
+    >
+      <JobPicker view={view} isPinned={isPinned} onPickSource={(s) => pickSource(id, s)} />
+    </ProviderRow>
+  );
 
   return (
     <section className="mem-fade-up" style={{ animationDelay: `${delay}ms` }}>
@@ -188,28 +434,8 @@ export default function IntelligenceSection({ delay }: { delay: number }) {
         <div className="mem-fade-up" style={{ animationDelay: `${delay + 30}ms` }}>
           <SectionHeader label={t("intelligence.modelsTitle")} />
           <Card padding="rows">
-            <ProviderRow
-              name={t("intelligence.routineModel")}
-              hint={t("intelligence.routineModelDescription")}
-              meta={everydayMeta}
-              chipState={everydayConnected ? { kind: "up" } : { kind: "idle" }}
-              chipLabel={everydayConnected ? t("intelligence.connected") : t("intelligence.notConfigured")}
-              expanded={expandedJob === "everyday"}
-              onToggle={() => toggleJob("everyday")}
-            >
-              {anthropic.isConfigured ? <RoutineModelSelect /> : <p style={sourceLineStyle}>{everydaySourceLine}</p>}
-            </ProviderRow>
-            <ProviderRow
-              name={t("intelligence.synthesisModel")}
-              hint={t("intelligence.synthesisModelDescription")}
-              meta={synthesisMeta}
-              chipState={synthesisConnected ? { kind: "up" } : { kind: "idle" }}
-              chipLabel={synthesisConnected ? t("intelligence.connected") : t("intelligence.notConfigured")}
-              expanded={expandedJob === "synthesis"}
-              onToggle={() => toggleJob("synthesis")}
-            >
-              {anthropic.isConfigured ? <SynthesisModelSelect /> : <p style={sourceLineStyle}>{synthesisSourceLine}</p>}
-            </ProviderRow>
+            {jobRow(everydayView, "everyday", t("intelligence.routineModel"), t("intelligence.routineModelDescription"))}
+            {jobRow(synthesisView, "synthesis", t("intelligence.synthesisModel"), t("intelligence.synthesisModelDescription"))}
           </Card>
         </div>
 

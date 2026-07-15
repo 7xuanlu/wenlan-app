@@ -296,6 +296,22 @@ export const HANDLERS: Record<string, (a: any) => Promise<unknown>> = {
     const elapsedSeconds = (Date.now() - downloadStartedAt) / 1000;
     return Math.min(elapsedSeconds * 100e6, MODEL_BLOB_BYTES);
   },
+  // Feature detection against the real daemon: the live 0.13.2 daemon has no
+  // routing endpoint and 404s, which maps to null (LEGACY mode) — exactly what
+  // WenlanClient::get_resolved_routing does. A newer daemon returns the object.
+  get_resolved_routing: async () => {
+    try {
+      return await get("/api/config/routing");
+    } catch (e) {
+      if (e instanceof HttpError && e.status === 404) return null;
+      throw e;
+    }
+  },
+  set_source_pin: (a) =>
+    put("/api/config", {
+      ...(a?.everydaySource != null ? { everyday_source: a.everydaySource } : {}),
+      ...(a?.synthesisSource != null ? { synthesis_source: a.synthesisSource } : {}),
+    }).then(() => undefined),
 };
 
 // App-local commands (no daemon route) → static defaults that route the UI

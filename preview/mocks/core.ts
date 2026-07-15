@@ -156,6 +156,23 @@ export async function invoke(
           score: 1 - index * 0.05,
         }));
     }
+    // PINNED-mode routing fixture so /preview/ settings can DOM-verify the
+    // post-#357 pickers the live 0.13.2 daemon can't reach: everyday pinned to
+    // on-device, synthesis pinned to the connected provider but degraded (its
+    // slot unavailable at resolve time → the amber hint). LEGACY mode is what
+    // the real app shows (live-invoke's get_resolved_routing 404s → null).
+    case "get_resolved_routing":
+      return {
+        everyday: { source: "on_device", model: "qwen3-4b", mode: "pinned" },
+        synthesis: { source: "external", model: "gpt-5.2", mode: "pinned_degraded" },
+        pool: {
+          anthropic: { configured: false, everyday_model: null, synthesis_model: null },
+          external: { endpoint: "https://api.openai.com/v1", model: "gpt-5.2" },
+          on_device: { selected: "qwen3-4b", loaded: true },
+        },
+      };
+    case "set_source_pin":
+      return undefined;
     default:
       // Anything this switch doesn't fixture falls through to the live map,
       // which already carries app-local defaults with the right struct shapes

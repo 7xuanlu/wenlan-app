@@ -958,6 +958,8 @@ pub fn run() {
             // Model choice + system info commands
             search::get_model_choice,
             search::set_model_choice,
+            search::get_resolved_routing,
+            search::set_source_pin,
             search::get_system_info,
             // External LLM provider commands
             search::get_external_llm,

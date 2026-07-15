@@ -381,7 +381,8 @@ pub async fn remove_raw_mcp_entry(client_type: String) -> Result<(), String> {
     let config_path = crate::mcp_config::client_config_path(&client_type)
         .ok_or(format!("Unknown client type: {}", client_type))?;
     if client_type == "codex_cli" {
-        return crate::mcp_config::remove_wenlan_entry_toml(&config_path).map_err(|e| e.to_string());
+        return crate::mcp_config::remove_wenlan_entry_toml(&config_path)
+            .map_err(|e| e.to_string());
     }
     crate::mcp_config::remove_wenlan_entry(&config_path).map_err(|e| e.to_string())
 }
@@ -3571,6 +3572,39 @@ pub async fn set_model_choice(
         .set_model_choice(routine_model, synthesis_model)
         .await?;
     log::info!("[settings] Model choice updated — restart daemon to apply");
+    Ok(())
+}
+
+/// Proxy for `GET /api/config/routing` (daemon ≥ PR #357). `None` means the
+/// daemon predates the endpoint (404) — the caller renders LEGACY mode.
+#[tauri::command]
+pub async fn get_resolved_routing(
+    state: tauri::State<'_, State>,
+) -> Result<Option<crate::api::ResolvedRouting>, String> {
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+    client.get_resolved_routing().await
+}
+
+/// Patch the per-job source pins (daemon ≥ PR #357). Each arg: `null` leaves the
+/// pin untouched, `""` clears it, a source name pins. Only call once
+/// `get_resolved_routing` returned `Some` — never at an old daemon.
+#[tauri::command]
+pub async fn set_source_pin(
+    state: tauri::State<'_, State>,
+    everyday_source: Option<String>,
+    synthesis_source: Option<String>,
+) -> Result<(), String> {
+    let client = {
+        let s = state.read().await;
+        s.client.clone()
+    };
+    client
+        .set_source_pin(everyday_source, synthesis_source)
+        .await?;
+    log::info!("[settings] Source pin updated — restart daemon to apply");
     Ok(())
 }
 

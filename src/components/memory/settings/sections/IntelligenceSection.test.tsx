@@ -20,6 +20,8 @@ const mocks = vi.hoisted(() => ({
   getSystemInfo: vi.fn(),
   downloadOnDeviceModel: vi.fn(),
   getSetupStatus: vi.fn(),
+  getResolvedRouting: vi.fn(),
+  setSourcePin: vi.fn(),
 }));
 vi.mock("../../../../lib/tauri", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../../../lib/tauri")>();
@@ -35,6 +37,24 @@ function renderSection(qc: QueryClient = new QueryClient({ defaultOptions: { que
     </QueryClientProvider>
   );
   return qc;
+}
+
+// A resolved-routing payload the app treats as PINNED mode. Callers override the
+// per-job routes; the pool below has all three sources configured so source
+// options render enabled.
+function pinnedRouting(over: {
+  everyday?: { source: string; model: string | null; mode: string };
+  synthesis?: { source: string; model: string | null; mode: string };
+} = {}) {
+  return {
+    everyday: over.everyday ?? { source: "anthropic", model: "claude-opus-4-6", mode: "pinned" },
+    synthesis: over.synthesis ?? { source: "anthropic", model: "claude-sonnet-4-6", mode: "pinned" },
+    pool: {
+      anthropic: { configured: true, everyday_model: "claude-opus-4-6", synthesis_model: "claude-sonnet-4-6" },
+      external: { endpoint: "https://api.openai.com/v1", model: "gpt-5.2" },
+      on_device: { selected: "qwen3-4b-instruct-2507", loaded: true },
+    },
+  };
 }
 
 describe("IntelligenceSection", () => {
@@ -74,24 +94,29 @@ describe("IntelligenceSection", () => {
       anthropic_key_configured: false,
       local_model_loaded: false,
     });
+    // Default to LEGACY mode — the live 0.13.2 daemon has no routing endpoint.
+    mocks.getResolvedRouting.mockResolvedValue(null);
+    mocks.setSourcePin.mockResolvedValue(undefined);
   });
 
-  it("shows both role labels and their model names in the cloud row meta when Anthropic is configured", async () => {
+  it("shows the connection-only cloud row meta (provider + masked key), not per-job models", async () => {
     mocks.getApiKey.mockResolvedValue("sk-ant-***configured");
     mocks.getModelChoice.mockResolvedValue(["claude-opus-4-6", "claude-haiku-4-5-20251001"]);
     renderSection();
 
-    expect(
-      await screen.findByText("Anthropic · Everyday model: Opus 4.6 · Synthesis model: Haiku 4.5")
-    ).toBeInTheDocument();
+    const cloudRow = (await screen.findByText("Cloud provider")).closest("button")!;
+    // Connection identity only — the per-job model names moved to the job rows.
+    expect(await within(cloudRow).findByText("Anthropic · sk-ant-***configured")).toBeInTheDocument();
+    expect(within(cloudRow).queryByText(/Everyday model:/)).not.toBeInTheDocument();
+    expect(within(cloudRow).queryByText(/Synthesis model:/)).not.toBeInTheDocument();
   });
 
   it("attributes an Ollama endpoint to the Local server row, not the Cloud provider row", async () => {
     mocks.getExternalLlm.mockResolvedValue(["http://localhost:11434/v1", "llama3.2:3b"]);
     renderSection();
 
-    // The Everyday/Synthesis job rows also surface "Ollama (local) ·
-    // llama3.2:3b" (mix-and-match), so scope to the Local server row itself.
+    // The Synthesis job row also surfaces "Ollama (local) · llama3.2:3b"
+    // (mix-and-match), so scope to the Local server row itself.
     const localRow = screen.getByText("Local server").closest("button")!;
     expect(await within(localRow).findByText("Ollama (local) · llama3.2:3b")).toBeInTheDocument();
     // Cloud row stays on its unconfigured hint — the same saved slot never
@@ -169,5 +194,76 @@ describe("IntelligenceSection", () => {
       within(onDeviceRow).getByText("Handles everyday tasks entirely on this device — too small for synthesis")
     ).toBeInTheDocument();
     expect(await within(onDeviceRow).findByText("Qwen3 4B Instruct · Running")).toBeInTheDocument();
+  });
+
+  // ── Headline (a): LEGACY mode — routing endpoint absent (null). The source
+  // is read-only with the updated-runtime hint, but the model select still
+  // works. Mutation proof: dropping the `isPinned ?` branch (rendering the
+  // interactive source select in legacy) makes the "Choose source" absence
+  // assertion fail; dropping the model select breaks the setModelChoice call.
+  it("legacy mode: source is read-only with a runtime hint, model select still functional", async () => {
+    mocks.getApiKey.mockResolvedValue("sk-ant-***configured");
+    mocks.getModelChoice.mockResolvedValue(["claude-opus-4-6", null]);
+    // routing stays null (LEGACY) from beforeEach.
+    renderSection();
+
+    const everydayRow = (await screen.findByText("Everyday model")).closest("button")!;
+    await within(everydayRow).findByText("Anthropic · Opus 4.6");
+    await userEvent.click(everydayRow);
+
+    // Read-only source line + the "needs the updated runtime" hint.
+    expect(await screen.findByText("Changing the source needs the updated Wenlan runtime.")).toBeInTheDocument();
+    // No interactive source picker in legacy mode.
+    expect(screen.queryByLabelText("Choose source")).not.toBeInTheDocument();
+
+    // The model select is live: switching off the current Opus value writes
+    // through setModelChoice (a different value, so onChange actually fires).
+    const modelSelect = screen.getByLabelText("Choose everyday model");
+    await userEvent.selectOptions(modelSelect, "claude-haiku-4-5-20251001");
+    expect(mocks.setModelChoice).toHaveBeenCalledWith("claude-haiku-4-5-20251001", null);
+    // A source pin is never written at a legacy daemon.
+    expect(mocks.setSourcePin).not.toHaveBeenCalled();
+  });
+
+  // ── Headline (b): PINNED mode — the row reflects the routing endpoint (not
+  // local derivation), and picking a source issues the pin write. Mutation
+  // proof: re-deriving the meta from modelChoice shows "Haiku 4.5" and fails
+  // the "Opus 4.6" assertion; a no-op source select never calls setSourcePin.
+  it("pinned mode: reflects endpoint routing and pins the picked source", async () => {
+    mocks.getApiKey.mockResolvedValue("sk-ant-***configured");
+    // Local knobs say Haiku; the endpoint says Opus. The row must show Opus.
+    mocks.getModelChoice.mockResolvedValue(["claude-haiku-4-5-20251001", "claude-sonnet-4-6"]);
+    mocks.getResolvedRouting.mockResolvedValue(
+      pinnedRouting({ everyday: { source: "anthropic", model: "claude-opus-4-6", mode: "pinned" } })
+    );
+    renderSection();
+
+    const everydayRow = (await screen.findByText("Everyday model")).closest("button")!;
+    // Reflected from routing, not re-derived from the Haiku modelChoice.
+    expect(await within(everydayRow).findByText("Anthropic · Opus 4.6")).toBeInTheDocument();
+    expect(within(everydayRow).queryByText("Anthropic · Haiku 4.5")).not.toBeInTheDocument();
+
+    await userEvent.click(everydayRow);
+    const sourceSelect = await screen.findByLabelText("Choose source");
+    await userEvent.selectOptions(sourceSelect, "external");
+    expect(mocks.setSourcePin).toHaveBeenCalledWith("external", null);
+  });
+
+  // ── Headline (c): PINNED_DEGRADED — the pinned source is unavailable, so the
+  // amber "using the fallback for now" hint renders. Mutation proof: removing
+  // the `isPinned && degraded` branch drops the hint and fails this assertion.
+  it("pinned_degraded mode: renders the amber pinned-source-unavailable hint", async () => {
+    mocks.getResolvedRouting.mockResolvedValue(
+      pinnedRouting({
+        everyday: { source: "on_device", model: "qwen3-4b-instruct-2507", mode: "pinned" },
+        synthesis: { source: "external", model: "gpt-5.2", mode: "pinned_degraded" },
+      })
+    );
+    renderSection();
+
+    const synthesisRow = (await screen.findByText("Synthesis model")).closest("button")!;
+    await userEvent.click(synthesisRow);
+
+    expect(await screen.findByText(/The pinned source is currently unavailable/)).toBeInTheDocument();
   });
 });
