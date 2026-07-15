@@ -342,6 +342,12 @@ describe("IntelligenceSection", () => {
     const options = within(sourceSelect).getAllByRole("option") as HTMLOptionElement[];
     expect(options.length).toBeGreaterThan(0);
     expect(options.filter((o) => !o.disabled)).toHaveLength(0);
+
+    // PINNED mode points at the select above (not the legacy connect-below-only
+    // wording — that renders in the "synthesis 'none' expanded" legacy test).
+    expect(
+      screen.getByText("Choose a source above, or connect a provider below to serve this job.")
+    ).toBeInTheDocument();
   });
 
   // ── Synthesis can now use on-device (daemon #357 makes synthesis=on_device a

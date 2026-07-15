@@ -284,9 +284,14 @@ function JobPicker({
       {source === "external" && external && <ExternalModelSelect endpoint={external.endpoint} model={external.model} />}
       {source === "on_device" && <OnDeviceJobModelSelect />}
       {/* "basic"/"none" carry their state in the collapsed meta already; the
-          body gives an actionable next step instead of repeating it. */}
+          body gives an actionable next step instead of repeating it. In PINNED
+          mode a source select sits above (on-device included when a model is
+          loaded), so point there too; LEGACY has no select and can't route
+          synthesis to on-device, so it only points below. */}
       {(source === "basic" || source === "none") && (
-        <p style={captionStyle}>{t("intelligence.connectProviderBelowHint")}</p>
+        <p style={captionStyle}>
+          {t(isPinned ? "intelligence.chooseSourceOrConnectHint" : "intelligence.connectProviderBelowHint")}
+        </p>
       )}
 
       {source === "external" && <p style={captionStyle}>{t("intelligence.sharedSlotCaption")}</p>}
