@@ -43,8 +43,8 @@ function renderSection(qc: QueryClient = new QueryClient({ defaultOptions: { que
 // per-job routes; the pool below has all three sources configured so source
 // options render enabled.
 function pinnedRouting(over: {
-  everyday?: { source: string; model: string | null; mode: string };
-  synthesis?: { source: string; model: string | null; mode: string };
+  everyday?: { source: string; model: string | null; mode: string; pin?: string | null };
+  synthesis?: { source: string; model: string | null; mode: string; pin?: string | null };
 } = {}) {
   return {
     everyday: over.everyday ?? { source: "anthropic", model: "claude-opus-4-6", mode: "pinned" },
@@ -250,13 +250,18 @@ describe("IntelligenceSection", () => {
   });
 
   // ── Headline (c): PINNED_DEGRADED — the pinned source is unavailable, so the
-  // amber "using the fallback for now" hint renders. Mutation proof: removing
-  // the `isPinned && degraded` branch drops the hint and fails this assertion.
-  it("pinned_degraded mode: renders the amber pinned-source-unavailable hint", async () => {
+  // amber hint names it: "Pinned to X — using Y for now". Mutation proof:
+  // removing the `isPinned && degraded` branch drops the hint and fails this
+  // assertion.
+  it("pinned_degraded mode: renders the amber hint naming the pinned source", async () => {
     mocks.getResolvedRouting.mockResolvedValue(
       pinnedRouting({
         everyday: { source: "on_device", model: "qwen3-4b-instruct-2507", mode: "pinned" },
-        synthesis: { source: "external", model: "gpt-5.2", mode: "pinned_degraded" },
+        // Pinned to Anthropic, but the daemon resolved it as degraded, so the
+        // route fell back to the connected external provider (OpenAI). The
+        // component trusts the wire values as-is — see the next test for the
+        // no-pin (pre-#357 daemon) fallback case.
+        synthesis: { source: "external", model: "gpt-5.2", mode: "pinned_degraded", pin: "anthropic" },
       })
     );
     renderSection();
@@ -264,6 +269,27 @@ describe("IntelligenceSection", () => {
     const synthesisRow = (await screen.findByText("Synthesis model")).closest("button")!;
     await userEvent.click(synthesisRow);
 
-    expect(await screen.findByText(/The pinned source is currently unavailable/)).toBeInTheDocument();
+    expect(await screen.findByText("Pinned to Anthropic — currently unavailable, using OpenAI for now.")).toBeInTheDocument();
+  });
+
+  // ── Headline (d): PINNED_DEGRADED with no pin on the wire (a daemon that
+  // predates #357's pin field) — falls back to the generic, unnamed hint
+  // rather than rendering "Pinned to null". Mutation proof: forcing
+  // `pinnedDisplay` to always resolve from `pin` (dropping the `pin ?` guard)
+  // renders the named hint here and fails the generic-hint assertion.
+  it("pinned_degraded mode with no pin on the wire: falls back to the generic hint", async () => {
+    mocks.getResolvedRouting.mockResolvedValue(
+      pinnedRouting({
+        everyday: { source: "on_device", model: "qwen3-4b-instruct-2507", mode: "pinned" },
+        synthesis: { source: "external", model: "gpt-5.2", mode: "pinned_degraded", pin: null },
+      })
+    );
+    renderSection();
+
+    const synthesisRow = (await screen.findByText("Synthesis model")).closest("button")!;
+    await userEvent.click(synthesisRow);
+
+    expect(await screen.findByText("The pinned source is currently unavailable — using OpenAI for now.")).toBeInTheDocument();
+    expect(screen.queryByText(/Pinned to/)).not.toBeInTheDocument();
   });
 });

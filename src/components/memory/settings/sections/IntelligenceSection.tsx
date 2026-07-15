@@ -169,6 +169,11 @@ interface JobView {
   meta: string;
   connected: boolean;
   degraded: boolean;
+  /** Human label of the raw configured pin (via `sourceLabel`), or `null`
+   *  when unpinned or on a daemon that predates the pin field. Distinct from
+   *  `sourceDisplay`: on a degraded route the two differ, naming what the
+   *  pin was versus what's actually serving. */
+  pinnedDisplay: string | null;
   sourceOptions: SourceOption[];
   external: { endpoint: string; model: string } | null;
   onDeviceLabel: string | null;
@@ -187,7 +192,7 @@ function JobPicker({
   onPickSource: (source: PinSource) => void;
 }) {
   const { t } = useTranslation();
-  const { job, source, sourceDisplay, degraded, sourceOptions, external, onDeviceLabel } = view;
+  const { job, source, sourceDisplay, degraded, pinnedDisplay, sourceOptions, external, onDeviceLabel } = view;
   const isProviderSource = source === "anthropic" || source === "external" || source === "on_device";
 
   return (
@@ -232,7 +237,13 @@ function JobPicker({
 
       {source === "external" && <p style={captionStyle}>{t("intelligence.sharedSlotCaption")}</p>}
       {isPinned && degraded && (
-        <p style={amberStyle}>{t("intelligence.pinnedDegradedHint", { fallback: sourceDisplay })}</p>
+        pinnedDisplay != null ? (
+          <p style={amberStyle}>
+            {t("intelligence.pinnedDegradedHintPinned", { pinned: pinnedDisplay, fallback: sourceDisplay })}
+          </p>
+        ) : (
+          <p style={amberStyle}>{t("intelligence.pinnedDegradedHint", { fallback: sourceDisplay })}</p>
+        )
       )}
     </div>
   );
@@ -391,6 +402,7 @@ export default function IntelligenceSection({ delay }: { delay: number }) {
           ? externalModel
           : null;
     const mode = isPinned ? (job === "everyday" ? routing.everyday.mode : routing.synthesis.mode) : "legacy";
+    const pin = isPinned ? (job === "everyday" ? routing.everyday.pin : routing.synthesis.pin) : null;
     return {
       job,
       source,
@@ -398,6 +410,7 @@ export default function IntelligenceSection({ delay }: { delay: number }) {
       meta: routeMeta(job, source, model),
       connected: source !== "basic" && source !== "none",
       degraded: mode === "pinned_degraded",
+      pinnedDisplay: pin ? sourceLabel(pin) : null,
       sourceOptions: buildOptions(job),
       external: routedExternal,
       onDeviceLabel,

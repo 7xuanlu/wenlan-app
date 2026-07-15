@@ -113,12 +113,18 @@ pub struct MoveSpaceResponse {
 /// Resolved route for one job class: which source serves it, the model, and how
 /// it was chosen. `mode`: "pinned" | "pinned_degraded" | "auto". `source`
 /// (everyday): "anthropic"|"external"|"on_device"|"basic"; (synthesis):
-/// "anthropic"|"external"|"on_device"|"none".
+/// "anthropic"|"external"|"on_device"|"none". `pin`: the raw configured source
+/// pin, or `None` when unpinned — distinct from `source` (the RESOLVED
+/// source): on a `pinned_degraded` result the two differ, letting the app say
+/// "Pinned to X — using Y". `#[serde(default)]` so a daemon that predates the
+/// field (pre-#357) still deserializes.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct JobRoute {
     pub source: String,
     pub model: Option<String>,
     pub mode: String,
+    #[serde(default)]
+    pub pin: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -1327,7 +1333,7 @@ mod tests {
 
     #[tokio::test]
     async fn get_resolved_routing_parses_200_body() {
-        let body = r#"{"everyday":{"source":"on_device","model":"qwen3-4b","mode":"pinned"},"synthesis":{"source":"external","model":"gpt-5.2","mode":"auto"},"pool":{"anthropic":{"configured":false,"everyday_model":null,"synthesis_model":null},"external":{"endpoint":"https://api.openai.com/v1","model":"gpt-5.2"},"on_device":{"selected":"qwen3-4b","loaded":true}}}"#;
+        let body = r#"{"everyday":{"source":"on_device","model":"qwen3-4b","mode":"pinned","pin":"on_device"},"synthesis":{"source":"external","model":"gpt-5.2","mode":"auto"},"pool":{"anthropic":{"configured":false,"everyday_model":null,"synthesis_model":null},"external":{"endpoint":"https://api.openai.com/v1","model":"gpt-5.2"},"on_device":{"selected":"qwen3-4b","loaded":true}}}"#;
         let (base_url, _request) = serve_json_once(body).await;
         let client = WenlanClient {
             client: reqwest::Client::new(),
@@ -1337,7 +1343,11 @@ mod tests {
         let routing = client.get_resolved_routing().await.unwrap().unwrap();
         assert_eq!(routing.everyday.source, "on_device");
         assert_eq!(routing.everyday.mode, "pinned");
+        assert_eq!(routing.everyday.pin.as_deref(), Some("on_device"));
         assert_eq!(routing.synthesis.model.as_deref(), Some("gpt-5.2"));
+        // synthesis's JSON omits "pin" entirely — a daemon that predates
+        // #357's pin field must still deserialize, defaulting to None.
+        assert_eq!(routing.synthesis.pin, None);
         assert!(!routing.pool.anthropic.configured);
         assert!(routing.pool.on_device.unwrap().loaded);
     }

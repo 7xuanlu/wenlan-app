@@ -361,11 +361,15 @@ export async function setModelChoice(
 
 /** How one job resolves. `mode`: "pinned" | "pinned_degraded" | "auto".
  *  `source` (everyday): "anthropic"|"external"|"on_device"|"basic";
- *  (synthesis): "anthropic"|"external"|"on_device"|"none". */
+ *  (synthesis): "anthropic"|"external"|"on_device"|"none". `pin`: the raw
+ *  configured source pin, or `null` when unpinned — distinct from `source`
+ *  (the RESOLVED source): on a `pinned_degraded` result the two differ,
+ *  letting the app say "Pinned to X — using Y". */
 export interface JobRoute {
   source: string;
   model: string | null;
   mode: string;
+  pin: string | null;
 }
 
 export interface ResolvedRouting {
