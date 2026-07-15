@@ -19,7 +19,6 @@ const mocks = vi.hoisted(() => ({
   getOnDeviceModel: vi.fn(),
   getSystemInfo: vi.fn(),
   downloadOnDeviceModel: vi.fn(),
-  getSetupStatus: vi.fn(),
   getResolvedRouting: vi.fn(),
   setSourcePin: vi.fn(),
 }));
@@ -90,10 +89,6 @@ describe("IntelligenceSection", () => {
       recommended_builtin: "qwen3-4b-instruct-2507",
     });
     mocks.downloadOnDeviceModel.mockResolvedValue(undefined);
-    mocks.getSetupStatus.mockResolvedValue({
-      anthropic_key_configured: false,
-      local_model_loaded: false,
-    });
     // Default to LEGACY mode — the live 0.13.2 daemon has no routing endpoint.
     mocks.getResolvedRouting.mockResolvedValue(null);
     mocks.setSourcePin.mockResolvedValue(undefined);

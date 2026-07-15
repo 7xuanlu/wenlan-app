@@ -178,7 +178,7 @@ export async function invoke(
     default:
       // Anything this switch doesn't fixture falls through to the live map,
       // which already carries app-local defaults with the right struct shapes
-      // (get_setup_status, get_remote_access_status, get_on_device_model...).
+      // (get_remote_access_status, get_on_device_model...).
       // Returning null here instead would white-screen the wizard and settings
       // modes, since those components read fields off the result unguarded.
       return liveInvoke(cmd, args);

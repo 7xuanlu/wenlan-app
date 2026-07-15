@@ -301,7 +301,6 @@ export default function AnyProviderCard({
       // The daemon may hot-load this config immediately, so the routing
       // queries the job summary rows read from must refresh alongside our
       // own prefill query — otherwise the rows keep showing stale state.
-      queryClient.invalidateQueries({ queryKey: ["setup-status"] });
       queryClient.invalidateQueries({ queryKey: ["external-llm"] });
       queryClient.invalidateQueries({ queryKey: ["external-llm-key-configured"] });
     } catch (err) {

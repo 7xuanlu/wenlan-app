@@ -322,14 +322,6 @@ export const DEFAULTS: Record<string, unknown> = {
   // Shapes below mirror src/lib/tauri.ts exactly. A stub that returns null or the
   // wrong keys where the Rust command returns a struct doesn't just render empty —
   // it white-screens the step (RemoteAccessPanel reads status.status unguarded).
-  get_setup_status: {
-    setup_completed: true,
-    mode: "basic-memory",
-    anthropic_key_configured: false,
-    local_model_selected: null,
-    local_model_loaded: null,
-    local_model_cached: false,
-  },
   set_traffic_lights_visible: null,
   set_setup_completed: null,
   is_run_at_login_enabled: false,

@@ -48,7 +48,7 @@ describe("AnthropicFields", () => {
     mocks.setModelChoice.mockResolvedValue(undefined);
   });
 
-  it("invalidates setup-status, external-llm, and external-llm-key-configured after saving a key (strip staleness fix)", async () => {
+  it("invalidates apiKey, external-llm, and external-llm-key-configured after saving a key (job rows re-read the routing)", async () => {
     const qc = renderCard();
     const invalidateSpy = vi.spyOn(qc, "invalidateQueries");
 
@@ -57,7 +57,6 @@ describe("AnthropicFields", () => {
 
     await waitFor(() => expect(mocks.setApiKey).toHaveBeenCalledWith("sk-ant-test-key"));
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["apiKey"] });
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["setup-status"] });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["external-llm"] });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["external-llm-key-configured"] });
   });
@@ -72,7 +71,6 @@ describe("AnthropicFields", () => {
 
     await waitFor(() => expect(mocks.setApiKey).toHaveBeenCalledWith(""));
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["apiKey"] });
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["setup-status"] });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["external-llm"] });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["external-llm-key-configured"] });
   });

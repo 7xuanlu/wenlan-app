@@ -65,7 +65,6 @@ export function AnthropicFields({
   // itself — otherwise the rows keep showing stale state until remount.
   const invalidateIntelligenceQueries = () => {
     queryClient.invalidateQueries({ queryKey: ["apiKey"] });
-    queryClient.invalidateQueries({ queryKey: ["setup-status"] });
     queryClient.invalidateQueries({ queryKey: ["external-llm"] });
     queryClient.invalidateQueries({ queryKey: ["external-llm-key-configured"] });
   };

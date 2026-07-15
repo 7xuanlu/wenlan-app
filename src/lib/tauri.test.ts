@@ -328,24 +328,6 @@ describe('enrichment status', () => {
   });
 });
 
-describe('setup status', () => {
-  it('gets daemon-backed setup status', async () => {
-    const status = {
-      setup_completed: false,
-      mode: 'basic-memory',
-      anthropic_key_configured: false,
-      local_model_selected: null,
-      local_model_loaded: null,
-      local_model_cached: false,
-    };
-    mockInvoke.mockResolvedValue(status);
-
-    await expect(tauri.getSetupStatus()).resolves.toEqual(status);
-
-    expect(mockInvoke).toHaveBeenCalledWith('get_setup_status');
-  });
-});
-
 describe('refinery queue', () => {
   it('lists daemon refinery proposals with a limit', async () => {
     const response = {
