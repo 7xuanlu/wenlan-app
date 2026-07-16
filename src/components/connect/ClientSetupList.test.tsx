@@ -148,4 +148,49 @@ describe("ClientSetupList — one Set up button, two different jobs behind it", 
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/Codex CLI not found/);
   });
+
+  // Configured clients are already shown in the Connected group above —
+  // repeating them here (with nothing left to do) was the duplication the
+  // user vetoed. Mixed detected list proves the filter, not just the empty case.
+  it("hides already-configured clients — only clients with something left to do render", async () => {
+    mocks.detectMcpClients.mockResolvedValue([
+      { name: "Claude Code", client_type: "claude_code", config_path: "~/.claude.json", detected: true, already_configured: true },
+      { name: "Cursor", client_type: "cursor", config_path: "~/.cursor/mcp.json", detected: true, already_configured: false },
+    ]);
+    renderList();
+
+    await screen.findByText("Cursor");
+    expect(screen.queryByText("Claude Code")).not.toBeInTheDocument();
+  });
+
+  it("shows an all-connected note when every detected client is already configured", async () => {
+    mocks.detectMcpClients.mockResolvedValue([
+      { name: "Claude Code", client_type: "claude_code", config_path: "~/.claude.json", detected: true, already_configured: true },
+    ]);
+    renderList();
+
+    expect(await screen.findByText("Every detected tool is already connected")).toBeInTheDocument();
+  });
+
+  // Coherence pass: the roster above is the single source of truth for what
+  // is connected. A client whose tool family already has an identity there is
+  // hidden here even when its OWN config file reads unconfigured (the live
+  // Cursor identities did not carry `already_configured`). Family, not the
+  // per-file flag, decides.
+  it("hides a detected-but-unconfigured client whose family is already connected, still shows others", async () => {
+    mocks.detectMcpClients.mockResolvedValue([
+      { name: "Cursor", client_type: "cursor", config_path: "~/.cursor/mcp.json", detected: true, already_configured: false },
+      { name: "Gemini CLI", client_type: "gemini_cli", config_path: "~/.gemini/settings.json", detected: true, already_configured: false },
+    ]);
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <ClientSetupList connectedFamilies={new Set(["cursor"])} />
+      </QueryClientProvider>,
+    );
+
+    // Gemini's family is not connected → it still offers a Set up button.
+    await screen.findByText("Gemini CLI");
+    expect(screen.queryByText("Cursor")).not.toBeInTheDocument();
+  });
 });

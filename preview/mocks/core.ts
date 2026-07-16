@@ -16,6 +16,7 @@ import {
   MERGE_SOURCES,
   RECENT_CHANGES,
   MEMORY_REVISIONS,
+  REGISTERED_SOURCES,
 } from "../fixtures";
 import { liveInvoke } from "./live-invoke";
 
@@ -55,7 +56,7 @@ export async function invoke(
       );
     }
     case "list_registered_sources":
-      return [];
+      return REGISTERED_SOURCES;
     case "update_page": {
       // Mirror the backend edit contract: content updates, citations reset.
       const page = PAGES[args?.id as string];
@@ -155,10 +156,29 @@ export async function invoke(
           score: 1 - index * 0.05,
         }));
     }
+    // PINNED-mode routing fixture so /preview/ settings can DOM-verify the
+    // post-#357 pickers the live 0.13.2 daemon can't reach: everyday pinned to
+    // on-device, synthesis pinned to Anthropic but degraded — Anthropic isn't
+    // configured (see pool.anthropic.configured below), so the auto chain
+    // falls back to the connected provider (→ the amber "Pinned to Anthropic
+    // — using OpenAI for now" hint). LEGACY mode is what the real app shows
+    // (live-invoke's get_resolved_routing 404s → null).
+    case "get_resolved_routing":
+      return {
+        everyday: { source: "on_device", model: "qwen3-4b", mode: "pinned", pin: "on_device" },
+        synthesis: { source: "external", model: "gpt-5.2", mode: "pinned_degraded", pin: "anthropic" },
+        pool: {
+          anthropic: { configured: false, everyday_model: null, synthesis_model: null },
+          external: { endpoint: "https://api.openai.com/v1", model: "gpt-5.2" },
+          on_device: { selected: "qwen3-4b", loaded: true },
+        },
+      };
+    case "set_source_pin":
+      return undefined;
     default:
       // Anything this switch doesn't fixture falls through to the live map,
       // which already carries app-local defaults with the right struct shapes
-      // (get_setup_status, get_remote_access_status, get_on_device_model...).
+      // (get_remote_access_status, get_on_device_model...).
       // Returning null here instead would white-screen the wizard and settings
       // modes, since those components read fields off the result unguarded.
       return liveInvoke(cmd, args);

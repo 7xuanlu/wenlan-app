@@ -269,10 +269,6 @@ src/components/memory/sources/AddSourceMenu.tsx	Update Wenlan	1
 src/components/memory/sources/AddSourceMenu.tsx	Your daemon needs an update to index files.	1
 src/components/memory/sources/SourcesSection.tsx	· updates automatically	1
 src/components/memory/sources/SourcesSection.tsx	&rdquo;?	1
-src/components/memory/sources/SourcesSection.tsx	↻ Sync	1
-src/components/memory/sources/SourcesSection.tsx	↻ Syncing…	1
-src/components/memory/sources/SourcesSection.tsx	+ Add source…	1
-src/components/memory/sources/SourcesSection.tsx	✓ Synced	1
 src/components/memory/sources/SourcesSection.tsx	Add your first source	1
 src/components/memory/sources/SourcesSection.tsx	Cancel	1
 src/components/memory/sources/SourcesSection.tsx	files ·	1
@@ -281,7 +277,6 @@ src/components/memory/sources/SourcesSection.tsx	Knowledge Directory	1
 src/components/memory/sources/SourcesSection.tsx	Loading…	1
 src/components/memory/sources/SourcesSection.tsx	More	2
 src/components/memory/sources/SourcesSection.tsx	No sources yet	1
-src/components/memory/sources/SourcesSection.tsx	Open in Finder →	1
 src/components/memory/sources/SourcesSection.tsx	Remove &ldquo;	1
 src/components/memory/sources/SourcesSection.tsx	Remove source	2
 src/components/memory/sources/SourcesSection.tsx	Removing…	1

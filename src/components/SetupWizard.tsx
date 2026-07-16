@@ -10,6 +10,8 @@ import {
   downloadOnDeviceModel,
   getOnDeviceModel,
   onDeviceModelDownloadBytes,
+  getResolvedRouting,
+  setSourcePin,
   addSource,
   syncRegisteredSource,
   storeMemory,
@@ -18,6 +20,7 @@ import {
   type McpClient,
   type ImportResult,
   type SyncStats,
+  type ResolvedRouting,
 } from "../lib/tauri";
 import { ImportView } from "./memory/ImportView";
 import VaultConnectCard, { type VaultPick } from "./memory/sources/VaultConnectCard";
@@ -1648,22 +1651,60 @@ function Stat({ label, value }: { label: string; value: number }) {
 
 // ── Done Step ───────────────────────────────────────────────────────────
 
+type OnboardingPin = "anthropic" | "external" | "on_device";
+
+/** First-onboarding routing derivation from what the daemon reports configured.
+ *  everyday prefers on-device (private, free, the recommended everyday source),
+ *  then a connected provider; synthesis prefers a connected provider (better
+ *  synthesis quality), with on-device as the fallback. When both cloud and an
+ *  external provider are configured, synthesis prefers Anthropic — the summary
+ *  names it, so the choice is visible.
+ *
+ *  Invariant: everyday and synthesis are both null or both set — "nothing
+ *  configured at all" is the only null case, so a partial pin write never
+ *  happens (the caller relies on this to decide write-or-skip). */
+export function deriveOnboardingPins(pool: ResolvedRouting["pool"]): {
+  everyday: OnboardingPin | null;
+  synthesis: OnboardingPin | null;
+} {
+  const hasAnthropic = pool.anthropic.configured;
+  const hasExternal = pool.external != null;
+  const hasOnDevice = pool.on_device != null;
+  const everyday: OnboardingPin | null = hasOnDevice
+    ? "on_device"
+    : hasAnthropic
+      ? "anthropic"
+      : hasExternal
+        ? "external"
+        : null;
+  const synthesis: OnboardingPin | null = hasAnthropic
+    ? "anthropic"
+    : hasExternal
+      ? "external"
+      : hasOnDevice
+        ? "on_device"
+        : null;
+  return { everyday, synthesis };
+}
+
 // Defect 4: raw canonical agent ids (e.g. two ids that both mean "Codex")
 // must never render. Every entry is resolved through resolveAgentDisplayName
 // and deduped by resolved display name; the list is capped so the row never
 // runs unbounded.
 const MAX_AGENT_CHIPS = 6;
 
-function DoneStep({
+export function DoneStep({
   importResult,
   connectedAgents,
   onComplete,
   hideDots,
+  wireRouting,
 }: {
   importResult: ImportResult | null;
   connectedAgents: string[];
   onComplete: () => void;
   hideDots: boolean;
+  wireRouting: boolean;
 }) {
   const { t } = useTranslation();
   const { data: agentConnections } = useQuery({ queryKey: ["agents"], queryFn: listAgents });
@@ -1693,6 +1734,74 @@ function DoneStep({
   }, [connectedAgents, agentConnections]);
   const visibleAgentNames = resolvedAgentNames.slice(0, MAX_AGENT_CHIPS);
   const overflowAgentCount = resolvedAgentNames.length - visibleAgentNames.length;
+
+  // Onboarding completion wires explicit per-job pins from what the user
+  // configured, so the defaults are visible instead of silent. Only on the
+  // full first-onboarding run (wireRouting) — the same DoneStep is reused for
+  // the in-app "connect agent" flow, which must NOT rewrite an existing user's
+  // pins. Feature-detect first (a legacy daemon returns null → wire nothing);
+  // the write is non-blocking (a failure must not break completion) and the
+  // summary line only shows on a write that actually landed.
+  const [wired, setWired] = useState<{ everyday: OnboardingPin; synthesis: OnboardingPin } | null>(null);
+  // Whether the wiring effect has run to a conclusion (wired or not). Gates the
+  // no-model assurance line so it never flashes before the async determination
+  // settles, and stays false on re-run entries (the effect returns early there).
+  const [wiringSettled, setWiringSettled] = useState(false);
+  useEffect(() => {
+    if (!wireRouting) return; // re-run paths (e.g. connect-agent) leave pins alone.
+    let cancelled = false;
+    (async () => {
+      try {
+        let routing: ResolvedRouting | null = null;
+        try {
+          routing = await getResolvedRouting();
+        } catch (e) {
+          console.error("onboarding: routing lookup failed; skipping pin wiring", e);
+          return;
+        }
+        if (cancelled || !routing) return; // LEGACY daemon: no endpoint to pin.
+        const { everyday, synthesis } = deriveOnboardingPins(routing.pool);
+        if (!everyday || !synthesis) return; // nothing configured → no write, no line.
+        try {
+          await setSourcePin(everyday, synthesis);
+          if (!cancelled) setWired({ everyday, synthesis });
+        } catch (e) {
+          console.error("onboarding: pin write failed; continuing without wiring", e);
+        }
+      } finally {
+        if (!cancelled) setWiringSettled(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [wireRouting]);
+
+  const wiredSourceLabel = (s: OnboardingPin): string =>
+    s === "anthropic"
+      ? t("intelligence.sourceAnthropic")
+      : s === "on_device"
+        ? t("intelligence.sourceOnDevice")
+        : t("intelligence.sourceConnectedProvider");
+  const routingSummary = wired
+    ? t("setup.done.routingSummary", {
+        everyday: wiredSourceLabel(wired.everyday),
+        synthesis: wiredSourceLabel(wired.synthesis),
+      })
+    : null;
+  // Counterpart to routingSummary: when the effect concluded without wiring a
+  // pin (nothing configured, legacy daemon, or a write failure), reassure the
+  // user the wiki still updates through their AI tools. Mutually exclusive with
+  // routingSummary by the !wired guard; never on re-run entries (wireRouting).
+  const assurance =
+    wireRouting && wiringSettled && !wired ? t("setup.done.noModelAssurance") : null;
+  const routingSummaryStyle = {
+    fontFamily: "var(--mem-font-body)",
+    fontSize: "13px",
+    color: "var(--mem-text-tertiary)",
+    lineHeight: 1.6,
+    margin: 0,
+  } as const;
 
   if (isSkipPath) {
     return (
@@ -1735,6 +1844,8 @@ function DoneStep({
         >
           {t("setup.done.readyBody2")}
         </p>
+        {routingSummary && <p style={routingSummaryStyle}>{routingSummary}</p>}
+        {assurance && <p style={routingSummaryStyle}>{assurance}</p>}
       </div>
       </StepShell>
     );
@@ -1819,6 +1930,8 @@ function DoneStep({
         >
           {t("setup.done.allSetBody2")}
         </p>
+        {routingSummary && <p style={routingSummaryStyle}>{routingSummary}</p>}
+        {assurance && <p style={routingSummaryStyle}>{assurance}</p>}
       </div>
 
       {/* Import stats card — surfaces the essential value Wenlan extracted:
@@ -2044,6 +2157,7 @@ export function SetupWizard({
   return (
     <DoneStep
       hideDots={hideDots}
+      wireRouting={!initialStep}
       importResult={importResult}
       connectedAgents={connectedAgents}
       onComplete={onComplete}

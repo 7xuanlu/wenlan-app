@@ -7,36 +7,57 @@ import {
   updateAgent,
   deleteAgent,
   detectMcpClients,
+  type AgentConnection,
+  type McpClient,
 } from "../../../../lib/tauri";
-import { describeTrustLevel, resolveAgentDisplayName, TRUST_LEVELS } from "../../../../lib/agents";
+import {
+  clientTypeFamily,
+  describeTrustLevel,
+  familyDisplayName,
+  resolveAgentDisplayName,
+  toolFamilyOf,
+  TRUST_LEVELS,
+} from "../../../../lib/agents";
 import { RemoteAccessPanel } from "../../RemoteAccessPanel";
-import { Button, Card, SectionHeader, Select, Tag, Toggle } from "../primitives";
-import WebPlatformCards from "../../../connect/WebPlatformCards";
+import { Button, Card, ConfirmActionButton, SectionHeader, Select, Tag, Toggle } from "../primitives";
 import ClientSetupList from "../../../connect/ClientSetupList";
+
+type AgentUpdate = { enabled?: boolean; trustLevel?: string };
+
+/** One coalesced tool row: every registered identity of a single physical
+ *  tool (Codex's `codex` + `codex-mcp-client` + …) folded together. */
+interface FamilyRow {
+  family: string;
+  identities: AgentConnection[];
+  /** The wizard's internal connection probe — rendered muted, sorted last. */
+  isProbe: boolean;
+  /** A configured-but-not-yet-active client sharing this family: show the
+   *  restart note in the row meta instead of as a separate pending row. */
+  hasPendingNote: boolean;
+  memoryCount: number;
+  latestLastSeen: number | null;
+  anyEnabled: boolean;
+  /** The shared trust level when every identity agrees, else `null` (mixed). */
+  uniformTrust: string | null;
+}
 
 export default function AgentsSection({ onSetupAgent }: { onSetupAgent?: () => void }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  // ── Connected Agents ───────────────────────────────────────────────
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+
   const { data: agents = [] } = useQuery({
     queryKey: ["agents"],
     queryFn: listAgents,
   });
 
-  // Detect configured MCP clients to show pending connections
   const { data: mcpClients = [] } = useQuery({
     queryKey: ["mcp-clients"],
     queryFn: detectMcpClients,
   });
 
-  // Show configured clients that have not written a first memory yet.
-  const registeredClientTypes = new Set(agents.map((agent) => agent.agent_type));
-  const pendingClients = mcpClients.filter(
-    (client) => client.already_configured && !registeredClientTypes.has(client.client_type),
-  );
-
   const updateAgentMut = useMutation({
-    mutationFn: ({ name, updates }: { name: string; updates: { enabled?: boolean; trustLevel?: string } }) =>
+    mutationFn: ({ name, updates }: { name: string; updates: AgentUpdate }) =>
       updateAgent(name, updates),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["agents"] }),
   });
@@ -46,43 +67,146 @@ export default function AgentsSection({ onSetupAgent }: { onSetupAgent?: () => v
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["agents"] }),
   });
 
-  const [deletingAgent, setDeletingAgent] = useState<string | null>(null);
+  const updateOne = (name: string, updates: AgentUpdate) =>
+    updateAgentMut.mutate({ name, updates });
+  const updateAll = (identities: AgentConnection[], updates: AgentUpdate) =>
+    identities.forEach((a) => updateAgentMut.mutate({ name: a.name, updates }));
+
+  // ── Coalesce identities into one row per tool family ─────────────────
+  const familyMap = new Map<string, AgentConnection[]>();
+  for (const agent of agents) {
+    const family = toolFamilyOf(agent);
+    const list = familyMap.get(family);
+    if (list) list.push(agent);
+    else familyMap.set(family, [agent]);
+  }
+  const connectedFamilies = new Set(familyMap.keys());
+
+  // A configured client with no connected identity in its family is a pending
+  // tool row of its own; one whose family IS already connected folds in as a
+  // "restart to activate" note on that family's row (mockup: Codex).
+  const pendingNoteFamilies = new Set<string>();
+  const pendingClients: McpClient[] = [];
+  for (const client of mcpClients) {
+    if (!client.already_configured) continue;
+    const family = clientTypeFamily(client.client_type) || client.client_type;
+    if (connectedFamilies.has(family)) pendingNoteFamilies.add(family);
+    else pendingClients.push(client);
+  }
+
+  const familyRows: FamilyRow[] = [...familyMap.entries()].map(([family, identities]) => {
+    const firstTrust = identities[0]?.trust_level ?? "unknown";
+    return {
+      family,
+      identities,
+      isProbe: family === "wenlan-setup",
+      hasPendingNote: pendingNoteFamilies.has(family),
+      memoryCount: identities.reduce((n, a) => n + a.memory_count, 0),
+      latestLastSeen: identities.reduce<number | null>(
+        (max, a) =>
+          a.last_seen_at != null && (max === null || a.last_seen_at > max) ? a.last_seen_at : max,
+        null,
+      ),
+      anyEnabled: identities.some((a) => a.enabled),
+      uniformTrust: identities.every((a) => a.trust_level === firstTrust) ? firstTrust : null,
+    };
+  });
+
+  // Sort: pending-only rows first, then connected families by latest activity
+  // (desc), the wizard probe always last.
+  const probeRows = familyRows.filter((r) => r.isProbe);
+  const connectedRows = familyRows
+    .filter((r) => !r.isProbe)
+    .sort((a, b) => (b.latestLastSeen ?? 0) - (a.latestLastSeen ?? 0));
+
+  const isEmpty = familyRows.length === 0 && pendingClients.length === 0;
 
   return (
     <>
       {/* ── Connected Agents ─────────────────────────────────────── */}
       <section className="mem-fade-up" style={{ animationDelay: "0ms" }}>
-        <SectionHeader
-          icon={
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-            </svg>
-          }
-          label={t("settings.agents.connectedAgents")}
-        />
-        {/* Trust level explainer — makes it clear what the badges mean and how
-            Wenlan gates context for each tier. */}
-        <div
-          className="rounded-xl mb-3 px-4 py-3"
-          style={{
-            backgroundColor: "var(--mem-hover)",
-            border: "1px solid var(--mem-border)",
-          }}
-        >
-          <p
+        <SectionHeader label={t("settings.agents.connectedAgents")} />
+        <Card padding={isEmpty ? "none" : "rows"}>
+          {isEmpty ? (
+            <div className="px-5 py-6 text-center space-y-3">
+              <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-base)", color: "var(--mem-text-tertiary)" }}>
+                {t("settings.agents.noAgents")}
+              </p>
+              <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text-tertiary)", opacity: 0.7, lineHeight: "1.5" }}>
+                {t("settings.agents.noAgentsDescription")}
+              </p>
+              {onSetupAgent && (
+                <Button variant="primary" size="sm" onClick={onSetupAgent}>
+                  {t("settings.agents.setupTool")}
+                </Button>
+              )}
+            </div>
+          ) : (
+            <>
+              {pendingClients.map((client) => (
+                <PendingClientRow key={client.client_type} client={client} />
+              ))}
+              {connectedRows.map((row) => (
+                <ToolFamilyRow
+                  key={row.family}
+                  row={row}
+                  agents={agents}
+                  expanded={!!expanded[row.family]}
+                  onToggleExpand={() =>
+                    setExpanded((prev) => ({ ...prev, [row.family]: !prev[row.family] }))
+                  }
+                  updateOne={updateOne}
+                  updateAll={updateAll}
+                  onDelete={(name) => deleteAgentMut.mutate(name)}
+                />
+              ))}
+              {probeRows.map((row) => (
+                <ToolFamilyRow
+                  key={row.family}
+                  row={row}
+                  agents={agents}
+                  expanded={!!expanded[row.family]}
+                  onToggleExpand={() =>
+                    setExpanded((prev) => ({ ...prev, [row.family]: !prev[row.family] }))
+                  }
+                  updateOne={updateOne}
+                  updateAll={updateAll}
+                  onDelete={(name) => deleteAgentMut.mutate(name)}
+                />
+              ))}
+              {onSetupAgent && (
+                <div className="px-3 py-2">
+                  <Button variant="ghost" size="sm" onClick={onSetupAgent}>
+                    {t("settings.agents.setupAnotherTool")}
+                  </Button>
+                </div>
+              )}
+            </>
+          )}
+        </Card>
+        {/* Trust legend — collapsed by default; native <details> keeps the
+            keyboard/screen-reader contract for free. */}
+        <details className="group px-1 pt-2">
+          <summary
+            className="inline-flex cursor-pointer list-none items-center gap-1.5 rounded-[var(--mem-radius-sm)] px-1 py-0.5 [&::-webkit-details-marker]:hidden focus-visible:outline-2 focus-visible:outline-[var(--mem-focus-ring)] focus-visible:outline-offset-2"
             style={{
-              fontFamily: "var(--mem-font-mono)",
-              fontSize: "var(--mem-text-2xs)",
-              fontWeight: 600,
-              letterSpacing: "0.05em",
-              textTransform: "uppercase",
+              fontFamily: "var(--mem-font-body)",
+              fontSize: "var(--mem-text-xs)",
               color: "var(--mem-text-tertiary)",
-              marginBottom: 8,
             }}
           >
+            <svg
+              aria-hidden="true"
+              className="h-3 w-3 shrink-0 transition-transform duration-[var(--mem-dur-fast)] group-open:rotate-90"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
             {t("settings.agents.trustLevels")}
-          </p>
-          <div className="flex flex-col gap-1.5">
+          </summary>
+          <div className="flex flex-col gap-1.5 px-1 pt-2">
             {(Object.keys(TRUST_LEVELS) as Array<keyof typeof TRUST_LEVELS>).map((level) => (
               <div key={level} className="flex items-start gap-2">
                 <span className="shrink-0">
@@ -101,225 +225,259 @@ export default function AgentsSection({ onSetupAgent }: { onSetupAgent?: () => v
               </div>
             ))}
           </div>
-        </div>
-        <Card padding={agents.length === 0 && pendingClients.length === 0 ? "none" : "rows"}>
-          {agents.length === 0 && pendingClients.length === 0 ? (
-            <div className="px-5 py-6 text-center space-y-3">
-              <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-base)", color: "var(--mem-text-tertiary)" }}>
-                {t("settings.agents.noAgents")}
-              </p>
-              <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text-tertiary)", opacity: 0.7, lineHeight: "1.5" }}>
-                {t("settings.agents.noAgentsDescription")}
-              </p>
-              {onSetupAgent && (
-                <Button variant="primary" size="sm" onClick={onSetupAgent}>
-                  {t("settings.agents.setupTool")}
-                </Button>
-              )}
-            </div>
-          ) : (
-            <>
-              {pendingClients.map((client) => (
-                <div
-                  key={client.client_type}
-                  className="px-5 py-3"
-                  style={{
-                    opacity: 0.7,
-                  }}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-md)", fontWeight: 500, color: "var(--mem-text)" }}>
-                          {client.name}
-                        </span>
-                        <span
-                          className="px-1.5 py-0.5 rounded"
-                          style={{ fontFamily: "var(--mem-font-mono)", fontSize: "var(--mem-text-2xs)", backgroundColor: "var(--mem-status-warning-bg)", color: "var(--mem-accent-amber)" }}
-                        >
-                          {t("settings.agents.configured")}
-                        </span>
-                      </div>
-                      <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", color: "var(--mem-text-tertiary)", marginTop: "2px" }}>
-                        {t("settings.agents.restartToActivate", { name: client.name })}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-              {agents.map((agent) => (
-                <div
-                  key={agent.id}
-                  className="px-5 py-3 transition-opacity"
-                  style={{
-                    /* no left border strip */
-                    opacity: agent.enabled ? 1 : 0.5,
-                  }}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {/* Display name (prominent, what the user cares about) */}
-                        <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-md)", fontWeight: 500, color: "var(--mem-text)" }}>
-                          {resolveAgentDisplayName(agent.name, agents)}
-                        </span>
-                        {/* Trust badge lives in the right-hand action cluster
-                            below — it's a `Select` that doubles as both the
-                            display and the editor. */}
-                      </div>
-                      <div className="flex items-center gap-3 mt-1 flex-wrap">
-                        {/* Canonical technical ID + machine type — always
-                            shown as a mono subtitle, every row gets identical
-                            anatomy. Machine identifiers are never chips. */}
-                        <span
-                          title={t("settings.agents.canonicalIdTitle")}
-                          style={{
-                            fontFamily: "var(--mem-font-mono)",
-                            fontSize: "var(--mem-text-2xs)",
-                            color: "var(--mem-text-tertiary)",
-                            opacity: 0.75,
-                          }}
-                        >
-                          {agent.name} · {agent.agent_type}
-                        </span>
-                        <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", color: "var(--mem-text-tertiary)" }}>
-                          {t("settings.agents.memories", { count: agent.memory_count })}
-                        </span>
-                        {agent.last_seen_at && (
-                          <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", color: "var(--mem-text-tertiary)" }}>
-                            {t("settings.agents.lastSeen", {
-                              date: new Date(agent.last_seen_at * 1000).toLocaleDateString(),
-                            })}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      {/* Trust selector — width-safety wrapper is required:
-                          `Select`'s wrapper span and inner <select> are both
-                          `w-full`, so it needs a `w-fit` ancestor to avoid
-                          stretching to fill this flex row. */}
-                      {(() => {
-                        const trustLevel = describeTrustLevel(agent.trust_level).level;
-                        return (
-                          <div
-                            className="w-fit shrink-0"
-                            title={t(`settings.agents.trustSummary.${trustLevel}`)}
-                          >
-                            <Select
-                              size="sm"
-                              value={agent.trust_level}
-                              onChange={(e) =>
-                                updateAgentMut.mutate({
-                                  name: agent.name,
-                                  updates: { trustLevel: e.target.value },
-                                })
-                              }
-                            >
-                              <option value="full">{t("settings.agents.trust.full")}</option>
-                              <option value="review">{t("settings.agents.trust.review")}</option>
-                              <option value="unknown">{t("settings.agents.trust.unknown")}</option>
-                            </Select>
-                          </div>
-                        );
-                      })()}
-                      <Toggle
-                        enabled={agent.enabled}
-                        onToggle={() =>
-                          updateAgentMut.mutate({
-                            name: agent.name,
-                            updates: { enabled: !agent.enabled },
-                          })
-                        }
-                      />
-                      {deletingAgent === agent.name ? (
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => {
-                              deleteAgentMut.mutate(agent.name);
-                              setDeletingAgent(null);
-                            }}
-                            className="px-2 py-0.5 rounded text-xs bg-[var(--mem-status-danger-bg)] text-[var(--mem-status-danger-text)] hover:bg-[var(--mem-status-danger-border)] transition-colors"
-                            style={{ fontFamily: "var(--mem-font-body)" }}
-                          >
-                            {t("settings.agents.confirm")}
-                          </button>
-                          <button
-                            onClick={() => setDeletingAgent(null)}
-                            className="px-2 py-0.5 rounded text-xs text-[var(--mem-text-tertiary)] hover:text-[var(--mem-text)] transition-colors"
-                            style={{ fontFamily: "var(--mem-font-body)" }}
-                          >
-                            {t("settings.agents.cancel")}
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => setDeletingAgent(agent.name)}
-                          className="p-1 text-[var(--mem-text-tertiary)] hover:text-[var(--mem-status-danger-text)] transition-colors"
-                        >
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))}
-              {onSetupAgent && (
-                <div className="px-5 py-3">
-                  <button
-                    onClick={onSetupAgent}
-                    className="text-xs transition-colors"
-                    style={{ fontFamily: "var(--mem-font-body)", color: "var(--mem-accent-indigo)" }}
-                  >
-                    {t("settings.agents.setupAnotherTool")}
-                  </button>
-                </div>
-              )}
-            </>
-          )}
-        </Card>
+        </details>
       </section>
 
-      {/* ── Remote Access ─────────────────────────────────────────── */}
+      {/* ── Add a tool ────────────────────────────────────────────── */}
       <section className="mem-fade-up" style={{ animationDelay: "30ms" }}>
-        <SectionHeader
-          icon={
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          }
-          label={t("settings.agents.remoteAccess")}
-        />
+        <SectionHeader label={t("connectMatrix.addToolTitle")} />
+        <ClientSetupList connectedFamilies={connectedFamilies} />
+      </section>
+
+      {/* ── Web access ────────────────────────────────────────────── */}
+      <section className="mem-fade-up" style={{ animationDelay: "60ms" }}>
+        <SectionHeader label={t("connectMatrix.webRemoteTitle")} />
         <RemoteAccessPanel />
       </section>
-
-      {/* ── Web — Claude.ai & ChatGPT ─────────────────────────────── */}
-      <section className="mem-fade-up" style={{ animationDelay: "45ms" }}>
-        <SectionHeader
-          icon={
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A11.953 11.953 0 0112 13.5c-2.998 0-5.74-1.1-7.843-2.918m0 0A8.959 8.959 0 003 12c0-.778.099-1.533.284-2.253" />
-            </svg>
-          }
-          label={t("connectMatrix.webTitle")}
-        />
-        <WebPlatformCards />
-      </section>
-
-      {/* ── Apps & CLIs ───────────────────────────────────────────── */}
-      <section className="mem-fade-up" style={{ animationDelay: "60ms" }}>
-        <SectionHeader
-          icon={
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6.75 7.5l3 2.25-3 2.25m4.5 0h3m-9-9h13.5c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125H4.5A1.125 1.125 0 013.375 16.5v-9.75c0-.621.504-1.125 1.125-1.125z" />
-            </svg>
-          }
-          label={t("connectMatrix.appsTitle")}
-        />
-        <ClientSetupList />
-      </section>
     </>
+  );
+}
+
+/** A tool that wrote its MCP config but hasn't sent a first memory yet, and
+ *  whose family has no connected identity — a row of its own until it
+ *  activates. */
+function PendingClientRow({ client }: { client: McpClient }) {
+  const { t } = useTranslation();
+  return (
+    <div className="px-5 py-3" style={{ opacity: 0.7 }}>
+      <div className="flex items-center gap-2 flex-wrap">
+        <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-md)", fontWeight: 500, color: "var(--mem-text)" }}>
+          {client.name}
+        </span>
+        <Tag tone="neutral">{t("settings.agents.configured")}</Tag>
+      </div>
+      <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", color: "var(--mem-text-tertiary)", marginTop: "2px" }}>
+        {t("settings.agents.restartToActivate", { name: client.name })}
+      </p>
+    </div>
+  );
+}
+
+/** The coalesced tool row plus its per-identity disclosure. Aggregate
+ *  controls (trust, enable) drive every identity at once; the disclosure
+ *  exposes each identity's own controls unchanged from the v2 row. */
+function ToolFamilyRow({
+  row,
+  agents,
+  expanded,
+  onToggleExpand,
+  updateOne,
+  updateAll,
+  onDelete,
+}: {
+  row: FamilyRow;
+  agents: AgentConnection[];
+  expanded: boolean;
+  onToggleExpand: () => void;
+  updateOne: (name: string, updates: AgentUpdate) => void;
+  updateAll: (identities: AgentConnection[], updates: AgentUpdate) => void;
+  onDelete: (name: string) => void;
+}) {
+  const { t } = useTranslation();
+  const { family, identities, isProbe, hasPendingNote, memoryCount, latestLastSeen, anyEnabled, uniformTrust } = row;
+  const displayName = isProbe ? t("connections.internalProbe") : familyDisplayName(family);
+
+  return (
+    <div
+      className="px-5 py-3 transition-opacity"
+      style={{ opacity: isProbe ? 0.55 : anyEnabled ? 1 : 0.5 }}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-md)", fontWeight: 500, color: "var(--mem-text)" }}>
+              {displayName}
+            </span>
+            {identities.length > 1 && (
+              <Tag tone="neutral">{t("connections.identities", { count: identities.length })}</Tag>
+            )}
+            {hasPendingNote && <Tag tone="neutral">{t("settings.agents.configured")}</Tag>}
+          </div>
+          <div className="flex items-center gap-3 mt-1 flex-wrap">
+            {isProbe && (
+              <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", color: "var(--mem-text-tertiary)" }}>
+                {t("connections.internalProbeHint")}
+              </span>
+            )}
+            <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", color: "var(--mem-text-tertiary)" }}>
+              {t("settings.agents.memories", { count: memoryCount })}
+            </span>
+            {latestLastSeen != null && (
+              <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", color: "var(--mem-text-tertiary)" }}>
+                {t("settings.agents.lastSeen", {
+                  date: new Date(latestLastSeen * 1000).toLocaleDateString(),
+                })}
+              </span>
+            )}
+            {hasPendingNote && (
+              <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", color: "var(--mem-text-tertiary)" }}>
+                {t("settings.agents.restartToActivate", { name: displayName })}
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Aggregate controls drive every identity; the probe row keeps its
+              controls inside the disclosure only. */}
+          {!isProbe && (
+            <>
+              <div
+                className="w-fit shrink-0"
+                title={
+                  uniformTrust
+                    ? t(`settings.agents.trustSummary.${describeTrustLevel(uniformTrust).level}`)
+                    : undefined
+                }
+              >
+                <Select
+                  size="sm"
+                  value={uniformTrust ?? ""}
+                  onChange={(e) => {
+                    if (e.target.value) updateAll(identities, { trustLevel: e.target.value });
+                  }}
+                >
+                  {uniformTrust === null && (
+                    <option value="" disabled>
+                      {t("connections.mixed")}
+                    </option>
+                  )}
+                  <option value="full">{t("settings.agents.trust.full")}</option>
+                  <option value="review">{t("settings.agents.trust.review")}</option>
+                  <option value="unknown">{t("settings.agents.trust.unknown")}</option>
+                </Select>
+              </div>
+              <Toggle
+                enabled={anyEnabled}
+                onToggle={() => updateAll(identities, { enabled: !anyEnabled })}
+                aria-label={displayName}
+              />
+            </>
+          )}
+          <button
+            onClick={onToggleExpand}
+            aria-expanded={expanded}
+            aria-label={t("connections.showIdentities")}
+            className="flex items-center justify-center rounded-[var(--mem-radius-sm)] p-1 transition-colors focus-visible:outline-2 focus-visible:outline-[var(--mem-focus-ring)] focus-visible:outline-offset-2"
+            style={{ color: "var(--mem-text-tertiary)" }}
+          >
+            <svg
+              className="w-3.5 h-3.5 transition-transform"
+              style={{ transform: expanded ? "rotate(90deg)" : "rotate(0deg)" }}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      {expanded && (
+        <div className="mt-2 -mx-5 border-t" style={{ borderColor: "var(--mem-border)" }}>
+          {identities.map((agent) => (
+            <IdentityRow
+              key={agent.id}
+              agent={agent}
+              agents={agents}
+              updateOne={updateOne}
+              onDelete={onDelete}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** One identity inside a tool family's disclosure — the v2 per-agent row
+ *  controls (trust Select, enable Toggle, delete), keyed to a single agent. */
+function IdentityRow({
+  agent,
+  agents,
+  updateOne,
+  onDelete,
+}: {
+  agent: AgentConnection;
+  agents: AgentConnection[];
+  updateOne: (name: string, updates: AgentUpdate) => void;
+  onDelete: (name: string) => void;
+}) {
+  const { t } = useTranslation();
+  const trustLevel = describeTrustLevel(agent.trust_level).level;
+  return (
+    <div
+      className="flex items-center justify-between gap-3 px-5 py-2.5 transition-opacity"
+      style={{ opacity: agent.enabled ? 1 : 0.5 }}
+    >
+      <div className="min-w-0 flex-1">
+        <span
+          title={t("settings.agents.canonicalIdTitle")}
+          style={{
+            fontFamily: "var(--mem-font-mono)",
+            fontSize: "var(--mem-text-2xs)",
+            color: "var(--mem-text-tertiary)",
+            opacity: 0.75,
+          }}
+        >
+          {agent.name} · {agent.agent_type}
+        </span>
+        <div className="flex items-center gap-3 mt-1 flex-wrap">
+          <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", color: "var(--mem-text-tertiary)" }}>
+            {t("settings.agents.memories", { count: agent.memory_count })}
+          </span>
+          {agent.last_seen_at && (
+            <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", color: "var(--mem-text-tertiary)" }}>
+              {t("settings.agents.lastSeen", {
+                date: new Date(agent.last_seen_at * 1000).toLocaleDateString(),
+              })}
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        <div className="w-fit shrink-0" title={t(`settings.agents.trustSummary.${trustLevel}`)}>
+          <Select
+            size="sm"
+            value={agent.trust_level}
+            onChange={(e) => updateOne(agent.name, { trustLevel: e.target.value })}
+          >
+            <option value="full">{t("settings.agents.trust.full")}</option>
+            <option value="review">{t("settings.agents.trust.review")}</option>
+            <option value="unknown">{t("settings.agents.trust.unknown")}</option>
+          </Select>
+        </div>
+        <Toggle
+          enabled={agent.enabled}
+          onToggle={() => updateOne(agent.name, { enabled: !agent.enabled })}
+          aria-label={agent.name}
+        />
+        <ConfirmActionButton
+          variant="ghost"
+          size="sm"
+          aria-label={t("settings.agents.deleteAgent", {
+            name: resolveAgentDisplayName(agent.name, agents),
+          })}
+          confirmLabel={t("settings.agents.confirm")}
+          cancelLabel={t("settings.agents.cancel")}
+          onConfirm={() => onDelete(agent.name)}
+        >
+          <svg aria-hidden="true" className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+        </ConfirmActionButton>
+      </div>
+    </div>
   );
 }

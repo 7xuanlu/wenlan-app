@@ -1,19 +1,23 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useEffect, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import {
   clipboardWrite,
   getPipelineStatus,
   getWireState,
+  removeLegacyMcpEntry,
+  removeRawMcpEntry,
+  setSetupCompleted,
+  startDaemonSidecar,
   type BinaryWire,
   type ClientWire,
   type DaemonWire,
   type PipelineStatusResponse,
   type WireState,
 } from "../../../../lib/tauri";
-import { Button, Card, SectionHeader, StatusChip } from "../primitives";
+import { Button, Card, ConfirmActionButton, SectionHeader, Skeleton, StatusChip } from "../primitives";
 
 function sortedEntries(values: Record<string, number>): [string, number][] {
   return Object.entries(values).sort(([leftKey, leftValue], [rightKey, rightValue]) => {
@@ -96,19 +100,60 @@ function buildWireReport(t: TFunction, wire: WireState): string {
     if (client.has_plugin && client.has_raw_entry) {
       lines.push(`    ! ${t("settings.diagnostics.wiring.doubleRegistrationBody", { name: client.name })}`);
     }
+    if (!client.has_plugin && client.has_raw_duplicate) {
+      lines.push(`    ! ${t("settings.diagnostics.wiring.rawDuplicateBody", { name: client.name })}`);
+    }
   }
 
   return lines.join("\n");
 }
 
-function DaemonStatus({ daemon }: { daemon: DaemonWire }) {
+// ── Wiring rows: daemon, MCP binary, clients — three independent checks ──
+
+/** Loading state: three skeleton rows matching the resolved row shape.
+ *  `sr-only` text carries the load to assistive tech, since the Skeleton
+ *  bars are decorative. */
+function WiringSkeleton() {
   const { t } = useTranslation();
   return (
-    <div className="px-5 py-4">
-      <div className="flex items-center justify-between gap-3 mb-2">
-        <div style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-base)", fontWeight: 600, color: "var(--mem-text)" }}>
-          {t("settings.diagnostics.wiring.daemonTitle")}
+    <div aria-busy="true">
+      <span className="sr-only">{t("settings.diagnostics.wiring.loading")}</span>
+      {[0, 1, 2].map((index) => (
+        <div key={index} className="px-5 py-4">
+          <div className="flex flex-col gap-2">
+            <Skeleton width="35%" height={14} />
+            <Skeleton width="72%" height={10} />
+          </div>
         </div>
+      ))}
+    </div>
+  );
+}
+
+function WiringRows({ wire, onRetry }: { wire: WireState; onRetry: () => void }) {
+  return (
+    <>
+      <div className="px-5 py-4">
+        <DaemonStatus daemon={wire.daemon} onRetry={onRetry} />
+      </div>
+      <div className="px-5 py-4">
+        <McpBinaryStatus mcpBinary={wire.mcp_binary} />
+      </div>
+      <div className="px-5 py-4">
+        <ClientsWiring clients={wire.clients} />
+      </div>
+    </>
+  );
+}
+
+function DaemonStatus({ daemon, onRetry }: { daemon: DaemonWire; onRetry: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <>
+      <div className="flex items-center gap-2 flex-wrap mb-1">
+        <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-md)", fontWeight: 500, color: "var(--mem-text)" }}>
+          {t("settings.diagnostics.wiring.daemonTitle")}
+        </span>
         <StatusChip
           state={daemon.reachable ? { kind: "up" } : { kind: "down" }}
           label={
@@ -118,7 +163,7 @@ function DaemonStatus({ daemon }: { daemon: DaemonWire }) {
           }
         />
       </div>
-      <p style={{ fontFamily: "var(--mem-font-mono)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text-secondary)" }}>
+      <p style={{ fontFamily: "var(--mem-font-mono)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text-secondary)", overflowWrap: "anywhere" }}>
         {daemon.base_url}
       </p>
       {daemon.version && (
@@ -126,30 +171,44 @@ function DaemonStatus({ daemon }: { daemon: DaemonWire }) {
           {t("settings.diagnostics.wiring.daemonVersion", { version: daemon.version })}
         </p>
       )}
-      {!daemon.reachable && daemon.error && (
-        <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-status-danger-text)", marginTop: 8, lineHeight: "1.5" }}>
-          {daemon.error}
-        </p>
+      {!daemon.reachable && (
+        <>
+          {daemon.error && (
+            <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-status-danger-text)", marginTop: 8, lineHeight: "1.5" }}>
+              {daemon.error}
+            </p>
+          )}
+          <div className="mt-3">
+            <Button variant="secondary" size="sm" onClick={onRetry}>
+              {t("settings.diagnostics.wiring.retry")}
+            </Button>
+          </div>
+        </>
       )}
-    </div>
+    </>
   );
 }
 
 function McpBinaryStatus({ mcpBinary }: { mcpBinary: BinaryWire }) {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  // The candidates list is a probe order — most paths are SUPPOSED to be
+  // missing as long as one is found. Only flag red (down) when the binary
+  // exists nowhere; otherwise a missing candidate is idle, not an alarm.
+  const anyFound = mcpBinary.candidates.some((candidate) => candidate.exists);
   return (
-    <div className="px-5 py-4">
-      <div className="mb-2" style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-base)", fontWeight: 600, color: "var(--mem-text)" }}>
+    <>
+      <div className="mb-1" style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-md)", fontWeight: 500, color: "var(--mem-text)" }}>
         {t("settings.diagnostics.wiring.mcpBinaryTitle")}
       </div>
-      <p style={{ fontFamily: "var(--mem-font-mono)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text)" }}>
+      <p style={{ fontFamily: "var(--mem-font-mono)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text)", overflowWrap: "anywhere" }}>
         {[mcpBinary.command, ...mcpBinary.args].join(" ")}
       </p>
       <div className="mt-3 flex flex-col gap-2">
         {mcpBinary.candidates.map((candidate) => (
           <div key={candidate.path} className="flex items-center gap-2 flex-wrap">
             <StatusChip
-              state={candidate.exists ? { kind: "up" } : { kind: "down" }}
+              state={candidate.exists ? { kind: "up" } : anyFound ? { kind: "idle" } : { kind: "down" }}
               label={
                 candidate.exists
                   ? t("settings.diagnostics.wiring.candidateFound")
@@ -168,6 +227,139 @@ function McpBinaryStatus({ mcpBinary }: { mcpBinary: BinaryWire }) {
           </div>
         ))}
       </div>
+      {/* No candidate exists anywhere — the one actionable fix is to re-run
+          setup, which reinstalls the binary. Mirrors General's re-run row:
+          setup completion is cleared and the wizard is re-armed; data is
+          preserved, so the confirm is a light guard, not a danger gate. */}
+      {!anyFound && (
+        <div className="mt-3">
+          <ConfirmActionButton
+            variant="secondary"
+            size="sm"
+            confirmLabel={t("settings.agents.confirm")}
+            cancelLabel={t("settings.agents.cancel")}
+            onConfirm={async () => {
+              await setSetupCompleted(false);
+              queryClient.invalidateQueries({ queryKey: ["shouldShowWizard"] });
+            }}
+          >
+            {t("settings.diagnostics.wiring.reinstallViaSetup")}
+          </ConfirmActionButton>
+        </div>
+      )}
+    </>
+  );
+}
+
+/** The double-registration warnbox, now with its one-action fix: remove the
+ *  raw MCP entry (`removeRawMcpEntry`). Its own component so the mutation's
+ *  hooks stay at a component top level rather than inside the clients `.map`.
+ *  On success the wire query is invalidated so the box re-renders against
+ *  fresh state (and disappears once the duplicate is gone). A failure is
+ *  surfaced verbatim — the same policy the daemon error uses. */
+function DoubleRegistrationWarning({ client }: { client: ClientWire }) {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const removeMutation = useMutation({
+    mutationFn: () => removeRawMcpEntry(client.client_type),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["wireState"] }),
+  });
+  const errorMessage =
+    removeMutation.error instanceof Error
+      ? removeMutation.error.message
+      : removeMutation.error != null
+        ? String(removeMutation.error)
+        : null;
+  return (
+    <div
+      className="flex items-start gap-2 mt-1"
+      style={{
+        background: "var(--mem-status-danger-bg)",
+        border: "1px solid var(--mem-status-danger-border)",
+        borderRadius: "var(--mem-radius-md)",
+        padding: "8px 10px",
+      }}
+    >
+      <svg aria-hidden="true" className="w-3.5 h-3.5 text-[var(--mem-status-danger-text)] shrink-0 mt-px" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.072 16.5c-.77.833.192 2.5 1.732 2.5z" />
+      </svg>
+      <div className="flex flex-col gap-2 min-w-0">
+        <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", color: "var(--mem-status-danger-text)", lineHeight: "1.5" }}>
+          {t("settings.diagnostics.wiring.doubleRegistrationBody", { name: client.name })}
+        </p>
+        <div>
+          <Button
+            variant="danger"
+            size="sm"
+            loading={removeMutation.isPending}
+            onClick={() => removeMutation.mutate()}
+          >
+            {t("settings.diagnostics.wiring.removeDuplicate")}
+          </Button>
+        </div>
+        {errorMessage && (
+          <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", color: "var(--mem-status-danger-text)", lineHeight: "1.5", overflowWrap: "anywhere" }}>
+            {errorMessage}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** The raw+raw duplicate warnbox with its one-action fix: remove only the
+ *  legacy `origin` entry, keeping the live `wenlan` one (`removeLegacyMcpEntry`).
+ *  Its own component for the same reason as DoubleRegistrationWarning — the
+ *  mutation's hooks stay at a component top level, not inside the clients
+ *  `.map`. Distinct from that box: this fires only for a no-plugin client
+ *  (Cursor, Gemini CLI), where both raw entries are the whole connection, so
+ *  the fix must keep `wenlan` rather than drop both. */
+function RawDuplicateWarning({ client }: { client: ClientWire }) {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const removeMutation = useMutation({
+    mutationFn: () => removeLegacyMcpEntry(client.client_type),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["wireState"] }),
+  });
+  const errorMessage =
+    removeMutation.error instanceof Error
+      ? removeMutation.error.message
+      : removeMutation.error != null
+        ? String(removeMutation.error)
+        : null;
+  return (
+    <div
+      className="flex items-start gap-2 mt-1"
+      style={{
+        background: "var(--mem-status-danger-bg)",
+        border: "1px solid var(--mem-status-danger-border)",
+        borderRadius: "var(--mem-radius-md)",
+        padding: "8px 10px",
+      }}
+    >
+      <svg aria-hidden="true" className="w-3.5 h-3.5 text-[var(--mem-status-danger-text)] shrink-0 mt-px" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.072 16.5c-.77.833.192 2.5 1.732 2.5z" />
+      </svg>
+      <div className="flex flex-col gap-2 min-w-0">
+        <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", color: "var(--mem-status-danger-text)", lineHeight: "1.5" }}>
+          {t("settings.diagnostics.wiring.rawDuplicateBody", { name: client.name })}
+        </p>
+        <div>
+          <Button
+            variant="danger"
+            size="sm"
+            loading={removeMutation.isPending}
+            onClick={() => removeMutation.mutate()}
+          >
+            {t("settings.diagnostics.wiring.removeLegacyEntry")}
+          </Button>
+        </div>
+        {errorMessage && (
+          <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", color: "var(--mem-status-danger-text)", lineHeight: "1.5", overflowWrap: "anywhere" }}>
+            {errorMessage}
+          </p>
+        )}
+      </div>
     </div>
   );
 }
@@ -175,8 +367,8 @@ function McpBinaryStatus({ mcpBinary }: { mcpBinary: BinaryWire }) {
 function ClientsWiring({ clients }: { clients: ClientWire[] }) {
   const { t } = useTranslation();
   return (
-    <div className="px-5 py-4">
-      <div className="mb-2" style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-base)", fontWeight: 600, color: "var(--mem-text)" }}>
+    <>
+      <div className="mb-1" style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-md)", fontWeight: 500, color: "var(--mem-text)" }}>
         {t("settings.diagnostics.wiring.clientsTitle")}
       </div>
       {clients.length === 0 ? (
@@ -188,8 +380,13 @@ function ClientsWiring({ clients }: { clients: ClientWire[] }) {
           {clients.map((client) => {
             // THE valuable finding this card exists to surface: Wenlan
             // registered twice for one client (plugin + a raw MCP entry).
-            // Surfaced only — never auto-fixed.
+            // Now carries its own one-action fix — see DoubleRegistrationWarning.
             const doubleRegistered = client.has_plugin && client.has_raw_entry;
+            // The raw+raw sibling: both `wenlan` and legacy `origin` raw
+            // entries in a no-plugin client's config. Gated on `!has_plugin`
+            // so it never double-fires with doubleRegistered (a plugin client
+            // is handled by the box above, whose fix removes both raw entries).
+            const rawDuplicate = !client.has_plugin && client.has_raw_duplicate;
             return (
               <div key={client.client_type} className="flex flex-col gap-1">
                 <div className="flex items-center gap-2 flex-wrap">
@@ -214,30 +411,14 @@ function ClientsWiring({ clients }: { clients: ClientWire[] }) {
                 >
                   {client.config_path}
                 </p>
-                {doubleRegistered && (
-                  <div
-                    className="flex items-start gap-2 mt-1"
-                    style={{
-                      background: "var(--mem-status-danger-bg)",
-                      border: "1px solid var(--mem-status-danger-border)",
-                      borderRadius: "var(--mem-radius-md)",
-                      padding: "8px 10px",
-                    }}
-                  >
-                    <svg aria-hidden="true" className="w-3.5 h-3.5 text-[var(--mem-status-danger-text)] shrink-0 mt-px" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.072 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                    </svg>
-                    <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", color: "var(--mem-status-danger-text)", lineHeight: "1.5" }}>
-                      {t("settings.diagnostics.wiring.doubleRegistrationBody", { name: client.name })}
-                    </p>
-                  </div>
-                )}
+                {doubleRegistered && <DoubleRegistrationWarning client={client} />}
+                {rawDuplicate && <RawDuplicateWarning client={client} />}
               </div>
             );
           })}
         </div>
       )}
-    </div>
+    </>
   );
 }
 
@@ -266,12 +447,53 @@ function CopyReportButton({ wire }: { wire: WireState }) {
   );
 }
 
-function WiringError() {
+function WiringError({ onRetry }: { onRetry: () => void }) {
   const { t } = useTranslation();
+  const [failure, setFailure] = useState<string | null>(null);
+  // Diagnostics is reached when the daemon is down, but Retry only re-probes —
+  // it can't bring a dead daemon back. Start actually respawns the sidecar
+  // (guarded app-side against double-spawn), then re-probes the wiring.
+  const start = useMutation({
+    mutationFn: startDaemonSidecar,
+    onSuccess: (result) => {
+      if (result.status === "failed") {
+        setFailure(result.message);
+        return;
+      }
+      // started / already_running / launchd_managed — re-probe the wiring.
+      setFailure(null);
+      onRetry();
+    },
+    onError: (err) => setFailure(err instanceof Error ? err.message : String(err)),
+  });
   return (
-    <p className="px-5 py-4" style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-status-danger-text)", lineHeight: "1.5" }}>
-      {t("settings.diagnostics.wiring.unavailable")}
-    </p>
+    <div className="px-5 py-4">
+      <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-status-danger-text)", lineHeight: "1.5" }}>
+        {t("settings.diagnostics.wiring.unavailable")}
+      </p>
+      <div className="mt-3 flex items-center gap-2">
+        <Button variant="secondary" size="sm" onClick={() => start.mutate()} disabled={start.isPending}>
+          {start.isPending
+            ? t("settings.diagnostics.wiring.starting")
+            : t("settings.diagnostics.wiring.start")}
+        </Button>
+        <Button variant="secondary" size="sm" onClick={onRetry}>
+          {t("settings.diagnostics.wiring.retry")}
+        </Button>
+      </div>
+      {failure && (
+        <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-status-danger-text)", lineHeight: "1.5", marginTop: "8px" }}>
+          {t("settings.diagnostics.wiring.startFailed", { message: failure })}
+        </p>
+      )}
+      {!failure && start.data?.status === "started" && (
+        // The daemon needs a moment to bind the port after spawn; the immediate
+        // re-probe can still see it down. Tell the user, don't leave them guessing.
+        <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text-secondary)", lineHeight: "1.5", marginTop: "8px" }}>
+          {t("settings.diagnostics.wiring.startedHint")}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -356,12 +578,32 @@ function RefineryQueue({ data }: { data: PipelineStatusResponse }) {
   );
 }
 
-function DiagnosticsError({ error }: { error: unknown }) {
+function DiagnosticsError({ error, onRetry }: { error: unknown; onRetry: () => void }) {
   const { t } = useTranslation();
+  // Version skew (an old daemon lacking the pipeline route) is not a failure —
+  // it reads as a warning (amber), and retrying can't fix it, so no Retry.
+  // A genuine unavailability keeps the danger tone and offers a Retry.
+  const versionSkew = isOldDaemonError(error);
   return (
-    <p className="px-5 py-4" style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-status-danger-text)", lineHeight: "1.5" }}>
-      {isOldDaemonError(error) ? t("settings.diagnostics.needsNewerDaemon") : t("settings.diagnostics.unavailable")}
-    </p>
+    <div className="px-5 py-4">
+      <p
+        style={{
+          fontFamily: "var(--mem-font-body)",
+          fontSize: "var(--mem-text-sm)",
+          color: versionSkew ? "var(--mem-status-warning-text)" : "var(--mem-status-danger-text)",
+          lineHeight: "1.5",
+        }}
+      >
+        {versionSkew ? t("settings.diagnostics.needsNewerDaemon") : t("settings.diagnostics.unavailable")}
+      </p>
+      {!versionSkew && (
+        <div className="mt-3">
+          <Button variant="secondary" size="sm" onClick={onRetry}>
+            {t("settings.diagnostics.wiring.retry")}
+          </Button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -392,19 +634,9 @@ export default function DiagnosticsSection() {
           action={wireQuery.data ? <CopyReportButton wire={wireQuery.data} /> : undefined}
         />
         <Card padding="rows">
-          {wireQuery.isLoading && (
-            <p className="px-5 py-4" style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text-secondary)" }}>
-              {t("settings.diagnostics.wiring.loading")}
-            </p>
-          )}
-          {wireQuery.isError && <WiringError />}
-          {wireQuery.data && (
-            <>
-              <DaemonStatus daemon={wireQuery.data.daemon} />
-              <McpBinaryStatus mcpBinary={wireQuery.data.mcp_binary} />
-              <ClientsWiring clients={wireQuery.data.clients} />
-            </>
-          )}
+          {wireQuery.isLoading && <WiringSkeleton />}
+          {wireQuery.isError && <WiringError onRetry={() => wireQuery.refetch()} />}
+          {wireQuery.data && <WiringRows wire={wireQuery.data} onRetry={() => wireQuery.refetch()} />}
         </Card>
       </section>
 
@@ -430,7 +662,7 @@ export default function DiagnosticsSection() {
               {t("settings.diagnostics.loading")}
             </p>
           )}
-          {pipelineQuery.isError && <DiagnosticsError error={pipelineQuery.error} />}
+          {pipelineQuery.isError && <DiagnosticsError error={pipelineQuery.error} onRetry={() => pipelineQuery.refetch()} />}
           {pipelineQuery.data && (
             <>
               <StatList title={t("settings.diagnostics.enrichment")} values={pipelineQuery.data.enrichment} empty={t("settings.diagnostics.enrichmentEmpty")} />

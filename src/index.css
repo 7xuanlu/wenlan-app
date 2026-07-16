@@ -2547,3 +2547,85 @@ p.entity-error {
     max-width: 34%;
   }
 }
+
+/* ── Info tip: inline ⓘ affordance with a hover/focus detail popover ──
+   Surfaces "what a configured model does for you" on the Intelligence job
+   rows without bloating the collapsed row. Pure-CSS reveal on hover and
+   keyboard focus (no JS positioning). ponytail: if it ever clips at a card
+   edge, upgrade to CitationPopover's flip/clamp. */
+.mem-infotip {
+  position: relative;
+  display: inline-flex;
+  vertical-align: middle;
+}
+.mem-infotip-btn {
+  width: 15px;
+  height: 15px;
+  border-radius: 999px;
+  border: 1px solid var(--mem-text-tertiary);
+  color: var(--mem-text-tertiary);
+  background: transparent;
+  cursor: help;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mem-font-heading);
+  font-size: 10px;
+  font-style: italic;
+  font-weight: 700;
+  line-height: 1;
+}
+.mem-infotip-btn:hover {
+  color: var(--mem-text-secondary);
+  border-color: var(--mem-text-secondary);
+}
+.mem-infotip-btn:focus-visible {
+  outline: 2px solid var(--mem-accent-indigo);
+  outline-offset: 2px;
+}
+.mem-infotip-pop {
+  /* Opens down-and-left: the ⓘ sits at the row's right edge, so anchoring the
+     popover's right edge to it keeps all 264px inside the card at any window
+     width (opening right would clip on a narrow window). */
+  position: absolute;
+  top: calc(100% + 8px);
+  right: -8px;
+  width: 264px;
+  z-index: 30;
+  background: var(--mem-surface);
+  border: 1px solid var(--mem-border);
+  border-radius: 10px;
+  box-shadow: var(--mem-shadow-overlay);
+  padding: 11px 13px;
+  opacity: 0;
+  transform: translateY(-3px);
+  pointer-events: none;
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+.mem-infotip:hover .mem-infotip-pop,
+.mem-infotip:focus-within .mem-infotip-pop {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+.mem-infotip-h {
+  display: block;
+  font-family: var(--mem-font-body);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--mem-text);
+  margin-bottom: 4px;
+}
+.mem-infotip-b {
+  display: block;
+  font-family: var(--mem-font-body);
+  font-size: 12px;
+  color: var(--mem-text-secondary);
+  line-height: 1.5;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mem-infotip-pop {
+    transition: none;
+  }
+}

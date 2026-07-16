@@ -58,13 +58,6 @@ describe("liveInvoke app-local defaults match the real command contracts", () =>
     expect(result).toHaveProperty("status");
   });
 
-  it("get_setup_status carries the real SetupStatus keys", async () => {
-    const result = (await liveInvoke("get_setup_status")) as Record<string, unknown>;
-    expect(result).not.toBeNull();
-    expect(result).toHaveProperty("setup_completed");
-    expect(result).toHaveProperty("anthropic_key_configured");
-  });
-
   it("get_on_device_model exposes a models array the card can map over", async () => {
     const result = (await liveInvoke("get_on_device_model")) as { models: unknown[] };
     expect(result).not.toBeNull();
@@ -244,6 +237,8 @@ const UNSTUBBED_DEBT = new Set([
   "regenerate_narrative",
   "reindex",
   "remove_avatar",
+  "remove_legacy_mcp_entry",
+  "remove_raw_mcp_entry",
   "remove_source",
   "remove_space",
   "remove_watch_path",

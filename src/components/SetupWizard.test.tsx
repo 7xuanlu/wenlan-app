@@ -56,6 +56,8 @@ vi.mock("../lib/tauri", () => ({
   testExternalLlm: vi.fn().mockResolvedValue({ response: "pong" }),
   listExternalModels: vi.fn().mockResolvedValue([]),
   getExternalLlmKeyConfigured: vi.fn().mockResolvedValue(false),
+  getResolvedRouting: vi.fn().mockResolvedValue(null),
+  setSourcePin: vi.fn().mockResolvedValue(undefined),
   detectObsidianVaults: vi.fn().mockResolvedValue([]),
   addSource: vi.fn().mockResolvedValue({
     id: "src-1",
@@ -121,6 +123,8 @@ import {
   getOnDeviceModel,
   downloadOnDeviceModel,
   onDeviceModelDownloadBytes,
+  getResolvedRouting,
+  setSourcePin,
   detectObsidianVaults,
   addSource,
   syncRegisteredSource,
@@ -129,6 +133,7 @@ import {
   getMemoryDetail,
   deleteMemory,
 } from "../lib/tauri";
+import { deriveOnboardingPins, DoneStep } from "./SetupWizard";
 
 /** An agent write that lands AFTER the wizard was entered — the only kind that
  *  proves the config we just wrote actually works. `wizardEnteredAt` is stamped
@@ -182,6 +187,10 @@ describe("SetupWizard", () => {
     });
     (detectObsidianVaults as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     (onDeviceModelDownloadBytes as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    // Default to LEGACY (no routing endpoint) so existing done-step tests wire
+    // nothing; the onboarding-pin tests override getResolvedRouting per case.
+    (getResolvedRouting as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    (setSourcePin as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
     (storeMemory as ReturnType<typeof vi.fn>).mockResolvedValue({ source_id: "mem_setup-check" });
     (listRecentMemories as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
@@ -263,9 +272,11 @@ describe("SetupWizard", () => {
     renderWizard();
     fireEvent.click(screen.getByText("Get started"));
 
-    expect(screen.getByText("On-device model")).toBeInTheDocument();
-    expect(screen.getByText("Cloud model")).toBeInTheDocument();
-    expect(screen.getByText("Your own local server")).toBeInTheDocument();
+    // The on-device tile is selected by default, so its pane's <h3> shares
+    // the tile's exact text — query at the role level to hit the tiles only.
+    expect(screen.getByRole("button", { name: /On-device model/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Cloud model/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Your own local server/ })).toBeInTheDocument();
   });
 
   it("recommends on-device — the same tile that's selected by default, not cloud", async () => {
@@ -1002,6 +1013,109 @@ describe("SetupWizard", () => {
     expect(screen.queryByText("Tool H")).not.toBeInTheDocument();
   });
 
+  // Fix-back: the same DoneStep renders for the in-app connect-agent re-run
+  // (Main.tsx mounts <SetupWizard initialStep="connect"> post-onboarding). Its
+  // pin-wiring effect must NOT re-derive and overwrite an existing user's pins
+  // — only the full first-onboarding run (no initialStep → wireRouting) wires.
+  // Even with a fully configured pool (which would otherwise write), the re-run
+  // leaves pins alone.
+  it("connect-agent re-run (initialStep=connect) never wires pins and shows no routing summary", async () => {
+    (getResolvedRouting as ReturnType<typeof vi.fn>).mockResolvedValue({
+      everyday: { source: "basic", model: null, mode: "auto", pin: null },
+      synthesis: { source: "none", model: null, mode: "auto", pin: null },
+      pool: {
+        anthropic: { configured: true, everyday_model: null, synthesis_model: null },
+        external: null,
+        on_device: { selected: "qwen3-4b-instruct-2507", loaded: true },
+      },
+    });
+    (detectMcpClients as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        name: "Cursor",
+        client_type: "cursor",
+        config_path: "/path/to/cursor",
+        detected: true,
+        already_configured: false,
+      },
+    ]);
+    // A fresh agent drives the done screen to the full "all set" branch.
+    (listAgents as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { name: "cursor", last_seen_at: FRESH(), memory_count: 1 },
+    ]);
+
+    renderWizard({ initialStep: "connect" });
+
+    await screen.findByRole("checkbox", { name: "Cursor" });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("task-status-daemon")).toHaveTextContent("Running");
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    await screen.findByText("You're all set.");
+    // Flush any effect continuation so a wrongful write/summary would surface.
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(setSourcePin).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Everyday tasks:/)).not.toBeInTheDocument();
+    // Re-run entry (wireRouting=false): neither the summary nor the no-model line.
+    expect(
+      screen.queryByText(/Your wiki updates whenever your AI tools use Wenlan/),
+    ).not.toBeInTheDocument();
+  });
+
+  // The full first-onboarding run is the ONLY path that wires, and the render
+  // site `wireRouting={!initialStep}` is the load-bearing link the DoneStep-
+  // direct tests can't cover (they pass the prop explicitly). Drive
+  // welcome→done end-to-end with a configured pool and prove the pins land +
+  // the summary renders. Mutation-proof: force `wireRouting={false}` at the
+  // render site (which kills the feature in production) → exactly this fails.
+  it("full onboarding run (welcome→done) writes the derived pins and shows the summary", async () => {
+    (getResolvedRouting as ReturnType<typeof vi.fn>).mockResolvedValue({
+      everyday: { source: "basic", model: null, mode: "auto", pin: null },
+      synthesis: { source: "none", model: null, mode: "auto", pin: null },
+      pool: {
+        anthropic: { configured: true, everyday_model: null, synthesis_model: null },
+        external: null,
+        on_device: { selected: "qwen3-4b-instruct-2507", loaded: true },
+      },
+    });
+
+    renderWizard(); // no initialStep → full run → wireRouting=true
+
+    // welcome → intelligence (default device model, committed on Continue)
+    fireEvent.click(screen.getByText("Get started"));
+    await waitFor(() =>
+      expect(screen.getByTestId("on-device-model-deferred-note")).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByText("Continue"));
+    // intelligence → import → connect → setting-up (skip the optional steps)
+    await waitFor(() => expect(screen.getByText("Bring what you already know")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("Skip"));
+    await waitFor(() => expect(screen.getByText("Connect your AI tools")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("Skip"));
+    // setting-up → done
+    await waitFor(() =>
+      expect(screen.getByTestId("task-status-daemon")).toHaveTextContent("Running"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    // DoneStep's effect runs on the full run: derived pins written, summary shown.
+    await waitFor(() => expect(setSourcePin).toHaveBeenCalledWith("on_device", "anthropic"));
+    expect(
+      await screen.findByText(
+        "Everyday tasks: On-device. Page synthesis: Anthropic. Change this anytime in Settings → Intelligence.",
+      ),
+    ).toBeInTheDocument();
+    // Exclusivity: a wired routing shows the summary, never the no-model line.
+    expect(
+      screen.queryByText(/Your wiki updates whenever your AI tools use Wenlan/),
+    ).not.toBeInTheDocument();
+  });
+
   // ── Round 2: steps 2-4 collect only; step 5 does + proves everything ────
 
   it("intelligence step 2 records the on-device model choice but does not download it — only step 5 does", async () => {
@@ -1673,5 +1787,161 @@ describe("displayedStatuses", () => {
       b: "running",
       c: "running",
     });
+  });
+});
+
+// ── Onboarding routing wiring ───────────────────────────────────────────
+// First-onboarding writes explicit per-job pins so the defaults are visible,
+// not silent. Pure derivation is unit-tested; the effect (feature-detect →
+// write → summary) is tested through the rendered Done step.
+
+describe("deriveOnboardingPins", () => {
+  const pool = (
+    over: Partial<Parameters<typeof deriveOnboardingPins>[0]> = {},
+  ): Parameters<typeof deriveOnboardingPins>[0] => ({
+    anthropic: { configured: false, everyday_model: null, synthesis_model: null },
+    external: null,
+    on_device: null,
+    ...over,
+  });
+
+  it("on-device only → both jobs pin on_device", () => {
+    expect(
+      deriveOnboardingPins(pool({ on_device: { selected: "qwen3-4b-instruct-2507", loaded: true } })),
+    ).toEqual({ everyday: "on_device", synthesis: "on_device" });
+  });
+
+  it("cloud key + on-device model → everyday on_device, synthesis anthropic", () => {
+    expect(
+      deriveOnboardingPins(
+        pool({
+          anthropic: { configured: true, everyday_model: null, synthesis_model: null },
+          on_device: { selected: "qwen3-4b-instruct-2507", loaded: true },
+        }),
+      ),
+    ).toEqual({ everyday: "on_device", synthesis: "anthropic" });
+  });
+
+  it("external only, no on-device model → both jobs pin external", () => {
+    expect(
+      deriveOnboardingPins(pool({ external: { endpoint: "http://localhost:11434/v1", model: "llama3.2" } })),
+    ).toEqual({ everyday: "external", synthesis: "external" });
+  });
+
+  it("both providers, no on-device → everyday anthropic, synthesis prefers anthropic", () => {
+    expect(
+      deriveOnboardingPins(
+        pool({
+          anthropic: { configured: true, everyday_model: null, synthesis_model: null },
+          external: { endpoint: "https://api.openai.com/v1", model: "gpt-5.2" },
+        }),
+      ),
+    ).toEqual({ everyday: "anthropic", synthesis: "anthropic" });
+  });
+
+  it("nothing configured → no pins (caller writes nothing)", () => {
+    expect(deriveOnboardingPins(pool())).toEqual({ everyday: null, synthesis: null });
+  });
+});
+
+// The wiring effect lives in DoneStep and only runs on the full first-onboarding
+// run (wireRouting), which the wizard reaches from `welcome` with no initialStep.
+// The test architecture jumps to steps via initialStep (→ wireRouting=false), so
+// the write/feature-detect cases render DoneStep directly with wireRouting=true;
+// a separate wizard-level test proves the re-run path passes wireRouting=false.
+describe("DoneStep onboarding routing wiring (wireRouting=true)", () => {
+  type Pool = Parameters<typeof deriveOnboardingPins>[0];
+  const routing = (pool: Pool) => ({
+    everyday: { source: "basic", model: null, mode: "auto", pin: null },
+    synthesis: { source: "none", model: null, mode: "auto", pin: null },
+    pool,
+  });
+
+  function renderDone(wireRouting: boolean) {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return render(
+      <QueryClientProvider client={queryClient}>
+        <DoneStep
+          wireRouting={wireRouting}
+          hideDots={false}
+          importResult={null}
+          connectedAgents={[]}
+          onComplete={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+  }
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    await i18n.changeLanguage("en");
+    (listAgents as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (setSourcePin as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+    // Legacy by default; the pinned cases override per test.
+    (getResolvedRouting as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+  });
+
+  it("pinned daemon: writes the derived pins and shows the wired-routing summary", async () => {
+    (getResolvedRouting as ReturnType<typeof vi.fn>).mockResolvedValue(
+      routing({
+        anthropic: { configured: true, everyday_model: null, synthesis_model: null },
+        external: null,
+        on_device: { selected: "qwen3-4b-instruct-2507", loaded: true },
+      }),
+    );
+    renderDone(true);
+
+    await waitFor(() => expect(setSourcePin).toHaveBeenCalledWith("on_device", "anthropic"));
+    expect(
+      await screen.findByText(
+        "Everyday tasks: On-device. Page synthesis: Anthropic. Change this anytime in Settings → Intelligence.",
+      ),
+    ).toBeInTheDocument();
+    // Exclusivity: a wired routing shows the summary, never the no-model line.
+    expect(
+      screen.queryByText(/Your wiki updates whenever your AI tools use Wenlan/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("legacy daemon: never writes a pin and shows no routing summary", async () => {
+    renderDone(true);
+
+    await screen.findByText("Open Wenlan");
+    await waitFor(() => expect(getResolvedRouting).toHaveBeenCalled());
+    // Flush the feature-detect continuation so a wrongful write/summary would show.
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(setSourcePin).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Everyday tasks:/)).not.toBeInTheDocument();
+    // Concluded without wiring (legacy daemon) → the no-model assurance shows.
+    expect(
+      await screen.findByText(/Your wiki updates whenever your AI tools use Wenlan/),
+    ).toBeInTheDocument();
+  });
+
+  it("pinned daemon but nothing configured: writes no pin and shows no summary", async () => {
+    (getResolvedRouting as ReturnType<typeof vi.fn>).mockResolvedValue(
+      routing({
+        anthropic: { configured: false, everyday_model: null, synthesis_model: null },
+        external: null,
+        on_device: null,
+      }),
+    );
+    renderDone(true);
+
+    await screen.findByText("Open Wenlan");
+    await waitFor(() => expect(getResolvedRouting).toHaveBeenCalled());
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(setSourcePin).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Everyday tasks:/)).not.toBeInTheDocument();
+    // Concluded without wiring (nothing configured) → the no-model assurance shows.
+    expect(
+      await screen.findByText(/Your wiki updates whenever your AI tools use Wenlan/),
+    ).toBeInTheDocument();
   });
 });

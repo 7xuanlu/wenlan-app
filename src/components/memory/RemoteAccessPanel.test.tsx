@@ -1,174 +1,142 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { i18n } from "../../i18n";
-import { RemoteAccessPanel } from "./RemoteAccessPanel";
 
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(() => Promise.resolve(() => {})),
 }));
 
-vi.mock("../../lib/tauri", () => ({
-  toggleRemoteAccess: vi.fn().mockResolvedValue({ status: "starting" }),
-  getRemoteAccessStatus: vi.fn().mockResolvedValue({ status: "off" }),
-  testRemoteMcpConnection: vi.fn().mockResolvedValue({ ok: true, latency_ms: 42, error: null }),
-  clipboardWrite: vi.fn().mockResolvedValue(undefined),
+const mocks = vi.hoisted(() => ({
+  toggleRemoteAccess: vi.fn(),
+  getRemoteAccessStatus: vi.fn(),
+  getWireState: vi.fn(),
+  installClientPlugin: vi.fn(),
+  testRemoteMcpConnection: vi.fn(),
+  clipboardWrite: vi.fn(),
 }));
+vi.mock("../../lib/tauri", () => mocks);
 
-import {
-  toggleRemoteAccess,
-  getRemoteAccessStatus,
-  testRemoteMcpConnection,
-  clipboardWrite,
-} from "../../lib/tauri";
+import { RemoteAccessPanel } from "./RemoteAccessPanel";
+
+/** A WireState whose claude_code client has (or lacks) the connector. Pass
+ *  `null` for an empty client list (also reads as not-installed). */
+function wireState(hasPlugin: boolean | null) {
+  return {
+    daemon: { base_url: "", reachable: true, version: null, error: null },
+    mcp_binary: { command: "", args: [], candidates: [] },
+    clients:
+      hasPlugin === null
+        ? []
+        : [
+            {
+              client_type: "claude_code",
+              name: "Claude Code",
+              detected: true,
+              config_path: "~/.claude.json",
+              has_raw_entry: false,
+              has_raw_duplicate: false,
+              has_plugin: hasPlugin,
+              route: "plugin",
+            },
+          ],
+  };
+}
 
 function renderPanel() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   function Wrapper({ children }: { children: ReactNode }) {
     return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
   }
   return render(<RemoteAccessPanel />, { wrapper: Wrapper });
 }
 
+const CONNECTED = {
+  status: "connected" as const,
+  tunnel_url: "https://example.trycloudflare.com",
+  token: "secret-token",
+  relay_url: null,
+};
+
 describe("RemoteAccessPanel", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
-    (getRemoteAccessStatus as ReturnType<typeof vi.fn>).mockResolvedValue({ status: "off" });
-    (toggleRemoteAccess as ReturnType<typeof vi.fn>).mockResolvedValue({ status: "starting" });
-    (testRemoteMcpConnection as ReturnType<typeof vi.fn>).mockResolvedValue({
-      ok: true,
-      latency_ms: 42,
-      error: null,
-    });
+    mocks.getRemoteAccessStatus.mockResolvedValue({ status: "off" });
+    mocks.toggleRemoteAccess.mockResolvedValue({ status: "starting" });
+    mocks.testRemoteMcpConnection.mockResolvedValue({ ok: true, latency_ms: 42, error: null });
+    mocks.clipboardWrite.mockResolvedValue(undefined);
+    mocks.installClientPlugin.mockResolvedValue(undefined);
+    mocks.getWireState.mockResolvedValue(wireState(null));
   });
 
   afterEach(async () => {
+    vi.clearAllMocks();
     vi.useRealTimers();
     await i18n.changeLanguage("en");
   });
 
-  // S7-visual: off is a setting the user chose, not something the app
-  // probed — the chip-never-lies invariant says a chip's color may only
-  // come from an observation, so "off" renders no chip at all (the Toggle
-  // already communicates it).
-  it("renders no status chip when disabled — the Toggle already says off", async () => {
+  // "off" is a setting the user chose, not something the app probed — no chip.
+  it("renders the Web access title and no status chip when off", async () => {
     renderPanel();
     await waitFor(() => {
-      expect(screen.getByText("Share with web-based AI tools")).toBeInTheDocument();
+      expect(screen.getByText("Web access")).toBeInTheDocument();
     });
     expect(screen.queryByText("Off")).not.toBeInTheDocument();
+    // No disclosure to expand any more — Test/Reconnect only exist when up.
+    expect(screen.queryByRole("button", { name: "View relay URL" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Reconnect" })).not.toBeInTheDocument();
   });
 
-  it("states the no-auth URL boundary before Remote Access is enabled", async () => {
+  it("states the no-auth URL boundary, exactly once", async () => {
     renderPanel();
     await waitFor(() => {
-      expect(screen.getByText("Share with web-based AI tools")).toBeInTheDocument();
+      expect(screen.getByText("Web access")).toBeInTheDocument();
     });
-
-    expect(screen.queryByText(/secure tunnel/i)).not.toBeInTheDocument();
     expect(screen.getByText(/no authentication/i)).toBeInTheDocument();
     expect(screen.getByText(/anyone with the URL can access Wenlan/i)).toBeInTheDocument();
     expect(screen.getByText(/turn Remote Access off when unused/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/no authentication for Claude\.ai and ChatGPT/)).toHaveLength(1);
+  });
+
+  it("clicking the toggle calls toggleRemoteAccess(true)", async () => {
+    renderPanel();
+    await waitFor(() => {
+      expect(screen.getByText("Web access")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { pressed: false }));
+    await waitFor(() => {
+      expect(mocks.toggleRemoteAccess).toHaveBeenCalledWith(true);
+    });
   });
 
   it("renders 'Connecting…' when starting", async () => {
-    (getRemoteAccessStatus as ReturnType<typeof vi.fn>).mockResolvedValue({ status: "starting" });
+    mocks.getRemoteAccessStatus.mockResolvedValue({ status: "starting" });
     renderPanel();
     await waitFor(() => {
       expect(screen.getByText(/Connecting/i)).toBeInTheDocument();
     });
   });
 
-  it("renders 'Connected' and URL when connected", async () => {
-    (getRemoteAccessStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
-      status: "connected",
-      tunnel_url: "https://example.trycloudflare.com",
-      token: "secret-token",
-      relay_url: "https://relay.origin.dev/abcdef/mcp",
-    });
+  // Test connection + Reconnect live inline in the status row now, not behind
+  // a disclosure — they appear as soon as the relay is connected.
+  it("Test connection reports latency inline when connected", async () => {
+    mocks.getRemoteAccessStatus.mockResolvedValue(CONNECTED);
     renderPanel();
     await waitFor(() => {
       expect(screen.getByText("Connected")).toBeInTheDocument();
     });
-    expect(screen.getByText("https://relay.origin.dev/abcdef/mcp")).toBeInTheDocument();
-  });
-
-  it("clicking toggle calls toggleRemoteAccess", async () => {
-    renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: /Test connection/i }));
     await waitFor(() => {
-      expect(screen.getByText("Share with web-based AI tools")).toBeInTheDocument();
-    });
-    // S7-visual: the hand-rolled role="switch" button became the Toggle
-    // primitive, which uses aria-pressed instead (button + aria-pressed,
-    // not the switch pattern).
-    fireEvent.click(screen.getByRole("button", { pressed: false }));
-    await waitFor(() => {
-      expect(toggleRemoteAccess).toHaveBeenCalledWith(true);
-    });
-  });
-
-  it("Copy URL button shows 'Copied!' briefly", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    (getRemoteAccessStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
-      status: "connected",
-      tunnel_url: "https://example.trycloudflare.com",
-      token: "secret-token",
-      relay_url: null,
-    });
-    renderPanel();
-    await waitFor(() => {
-      expect(screen.getByText("Connected")).toBeInTheDocument();
-    });
-    const copyBtn = screen.getByRole("button", { name: /^Copy URL$/i });
-    fireEvent.click(copyBtn);
-    await waitFor(() => {
-      expect(clipboardWrite).toHaveBeenCalledWith("https://example.trycloudflare.com/mcp");
-    });
-    expect(screen.getByText(/Copied!/i)).toBeInTheDocument();
-    act(() => {
-      vi.advanceTimersByTime(2100);
-    });
-    await waitFor(() => {
-      expect(screen.queryByText(/Copied!/i)).not.toBeInTheDocument();
-    });
-  });
-
-  it("Test connection button calls testRemoteMcpConnection and shows 'Connected (NNN ms)'", async () => {
-    (getRemoteAccessStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
-      status: "connected",
-      tunnel_url: "https://example.trycloudflare.com",
-      token: "secret-token",
-      relay_url: null,
-    });
-    renderPanel();
-    await waitFor(() => {
-      expect(screen.getByText("Connected")).toBeInTheDocument();
-    });
-    const testBtn = screen.getByRole("button", { name: /Test connection/i });
-    fireEvent.click(testBtn);
-    await waitFor(() => {
-      expect(testRemoteMcpConnection).toHaveBeenCalled();
+      expect(mocks.testRemoteMcpConnection).toHaveBeenCalled();
     });
     await waitFor(() => {
       expect(screen.getByText(/Connected \(42 ms\)/i)).toBeInTheDocument();
     });
   });
 
-  it("Test connection failure shows error message", async () => {
-    (testRemoteMcpConnection as ReturnType<typeof vi.fn>).mockResolvedValue({
-      ok: false,
-      latency_ms: null,
-      error: "timeout after 5s",
-    });
-    (getRemoteAccessStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
-      status: "connected",
-      tunnel_url: "https://example.trycloudflare.com",
-      token: "secret-token",
-      relay_url: null,
-    });
+  it("Test connection failure surfaces the error inline", async () => {
+    mocks.testRemoteMcpConnection.mockResolvedValue({ ok: false, latency_ms: null, error: "timeout after 5s" });
+    mocks.getRemoteAccessStatus.mockResolvedValue(CONNECTED);
     renderPanel();
     await waitFor(() => {
       expect(screen.getByText("Connected")).toBeInTheDocument();
@@ -179,159 +147,107 @@ describe("RemoteAccessPanel", () => {
     });
   });
 
-  it("does not imply that the no-auth URL is token protected", async () => {
-    (getRemoteAccessStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
-      status: "connected",
-      tunnel_url: "https://example.trycloudflare.com",
-      token: "secret-token",
-      relay_url: null,
-    });
-    renderPanel();
-    await waitFor(() => {
-      expect(screen.getByText("Connected")).toBeInTheDocument();
-    });
-    expect(screen.queryByText(/Token/i)).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /^Rotate$/i })).not.toBeInTheDocument();
-  });
-
-  // i18n (S7): every string in this file used to be hardcoded English, so a
-  // zh-Hans/zh-Hant user saw an English panel. These tests pin that the panel
-  // actually renders translated text — not a coincidence of English being the
-  // fallback locale — including the security-critical no-auth warning, which
-  // must survive translation intact (commit 3a272d0).
-  it("off state: renders translated title and warning, no status chip in any locale", async () => {
-    await i18n.changeLanguage("zh-Hans");
-    renderPanel();
-
-    await waitFor(() => {
-      expect(screen.getByText("与网页版 AI 工具共享")).toBeInTheDocument();
-    });
-    expect(
-      screen.getByText(
-        "将为 Claude.ai 与 ChatGPT 创建一个无需身份验证的公开 HTTPS 地址。任何拥有该地址的人都能访问 Wenlan；不使用时请关闭远程访问。",
-      ),
-    ).toBeInTheDocument();
-    expect(screen.queryByText("Share with web-based AI tools")).not.toBeInTheDocument();
-    // No chip in either the fallback English or the translated Chinese —
-    // proves "off" really renders nothing, not just an untranslated label.
-    expect(screen.queryByText("Off")).not.toBeInTheDocument();
-    expect(screen.queryByText("关闭")).not.toBeInTheDocument();
-  });
-
-  it("starting state: renders translated 'Connecting…' in zh-Hans", async () => {
-    (getRemoteAccessStatus as ReturnType<typeof vi.fn>).mockResolvedValue({ status: "starting" });
-    await i18n.changeLanguage("zh-Hans");
-    renderPanel();
-
-    await waitFor(() => {
-      expect(screen.getByText("正在连接…")).toBeInTheDocument();
-    });
-    expect(screen.queryByText(/Connecting/i)).not.toBeInTheDocument();
-  });
-
-  it("connected state: renders translated URL label, copy/test/reconnect controls, tunnel note, and instructions in zh-Hans", async () => {
-    (getRemoteAccessStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
-      status: "connected",
-      tunnel_url: "https://example.trycloudflare.com",
-      token: "secret-token",
-      relay_url: null,
-    });
-    await i18n.changeLanguage("zh-Hans");
-    renderPanel();
-
-    await waitFor(() => {
-      expect(screen.getByText("已连接")).toBeInTheDocument();
-    });
-    expect(screen.getByText("你的 MCP 地址")).toBeInTheDocument();
-
-    const copyBtn = screen.getByRole("button", { name: /^复制地址$/ });
-    fireEvent.click(copyBtn);
-    await waitFor(() => {
-      expect(clipboardWrite).toHaveBeenCalledWith("https://example.trycloudflare.com/mcp");
-    });
-    expect(screen.getByText("已复制!")).toBeInTheDocument();
-
-    const testBtn = screen.getByRole("button", { name: "测试连接" });
-    fireEvent.click(testBtn);
-    await waitFor(() => {
-      expect(testRemoteMcpConnection).toHaveBeenCalled();
-    });
-    await waitFor(() => {
-      expect(screen.getByText("已连接（42 毫秒）")).toBeInTheDocument();
-    });
-
-    expect(screen.getByText("重新连接")).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "此隧道地址会在 Mac 休眠或重启后变化。可在“设置 → Agents”中启用稳定中继,免去重新连接。",
-      ),
-    ).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "如何连接 Claude.ai 与 ChatGPT" }));
-    expect(screen.getByText("Claude.ai")).toBeInTheDocument();
-    expect(screen.getByText("ChatGPT")).toBeInTheDocument();
-    expect(
-      screen.getByText("Settings → Connectors → Add Custom Connector → Paste URL"),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "Settings → Apps → Advanced settings → Enable Developer mode → Back → Create app → Paste URL (No Auth)",
-      ),
-    ).toBeInTheDocument();
-  });
-
-  it("connected + stable relay: renders the stable URL label and stable note in zh-Hans", async () => {
-    (getRemoteAccessStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
-      status: "connected",
-      tunnel_url: "https://example.trycloudflare.com",
-      token: "secret-token",
-      relay_url: "https://relay.origin.dev/abcdef/mcp",
-    });
-    await i18n.changeLanguage("zh-Hans");
-    renderPanel();
-
-    await waitFor(() => {
-      expect(screen.getByText("已连接")).toBeInTheDocument();
-    });
-    expect(screen.getByText("你的 MCP 地址（稳定）")).toBeInTheDocument();
-    expect(
-      screen.getByText("此地址是稳定的——不会在 Mac 休眠或重启后变化。"),
-    ).toBeInTheDocument();
-  });
-
-  it("error state: renders translated Retry and Reconnect in zh-Hans", async () => {
-    (getRemoteAccessStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
-      status: "error",
-      error: "timeout after 5s",
-    });
-    await i18n.changeLanguage("zh-Hans");
-    renderPanel();
-
-    await waitFor(() => {
-      expect(screen.getByText("重试")).toBeInTheDocument();
-    });
-    expect(screen.getByText("重新连接")).toBeInTheDocument();
-    expect(screen.queryByText("Retry")).not.toBeInTheDocument();
-  });
-
-  // S7-visual mutation-proof (b): the down-state chip must surface the
-  // daemon's error text verbatim, not a generic "Error" label.
-  it("error state: surfaces the verbatim daemon error text", async () => {
-    (getRemoteAccessStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
+  it("error state surfaces the verbatim daemon error and offers Retry + Reconnect", async () => {
+    mocks.getRemoteAccessStatus.mockResolvedValue({
       status: "error",
       error: "connection refused: dial tcp 127.0.0.1:7878",
     });
     renderPanel();
     await waitFor(() => {
-      expect(
-        screen.getByText("connection refused: dial tcp 127.0.0.1:7878"),
-      ).toBeInTheDocument();
+      expect(screen.getByText("connection refused: dial tcp 127.0.0.1:7878")).toBeInTheDocument();
+    });
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reconnect" })).toBeInTheDocument();
+  });
+
+  // ── Claude.ai row ─────────────────────────────────────────────────────
+  // has_plugin true → Ready, nothing to do: no Set up button, no steps.
+  it("Claude.ai row: connector installed shows Ready and offers no setup", async () => {
+    mocks.getWireState.mockResolvedValue(wireState(true));
+    renderPanel();
+    expect(await screen.findByText("Ready")).toBeInTheDocument();
+    expect(
+      screen.getByText(/chats on claude\.ai reach your memory while web access is on/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Set up" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Set up manually")).not.toBeInTheDocument();
+  });
+
+  // has_plugin false → the one-click Set up installs the connector.
+  it("Claude.ai row: no connector shows a Set up button that installs the Claude plugin", async () => {
+    mocks.getWireState.mockResolvedValue(wireState(false));
+    renderPanel();
+    const setUp = await screen.findByRole("button", { name: "Set up" });
+    // Manual fallback is available alongside the one-click path.
+    expect(screen.getByText("Set up manually")).toBeInTheDocument();
+    fireEvent.click(setUp);
+    await waitFor(() => {
+      expect(mocks.installClientPlugin).toHaveBeenCalledWith("claude_code");
     });
   });
 
-  // S7-visual mutation-proof (c): raw hex/white are banned outright — the
-  // Toggle/Button/StatusChip conversion must remove them from the source,
-  // not just hide them behind CSS.
+  // Wire query failed → we can't tell if the connector exists, so only the
+  // manual steps show (a one-click install could double-register).
+  it("Claude.ai row: an unreadable wire state offers manual steps only, no install button", async () => {
+    mocks.getWireState.mockRejectedValue(new Error("daemon down"));
+    renderPanel();
+    expect(await screen.findByText("Set up manually")).toBeInTheDocument();
+    expect(screen.getByText("Step 1 — Add Wenlan to claude.ai")).toBeInTheDocument();
+    // The install button shows during the pending window, then the rejection
+    // resolves it away — wait for the settled (error) state before asserting.
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Set up" })).not.toBeInTheDocument();
+    });
+  });
+
+  // ── ChatGPT row ───────────────────────────────────────────────────────
+  it("ChatGPT row: prompts to turn on web access when off, with no steps or URL", async () => {
+    mocks.getRemoteAccessStatus.mockResolvedValue({ status: "off" });
+    renderPanel();
+    expect(await screen.findByText("Turn on web access to connect ChatGPT.")).toBeInTheDocument();
+    expect(screen.queryByText(/In ChatGPT, open Settings/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Copy URL" })).not.toBeInTheDocument();
+  });
+
+  // The relay URL's one and only home is the ChatGPT row (getAllByText length
+  // 1 catches both a missing URL and a duplicated one).
+  it("ChatGPT row: connected shows the steps + URL, and the URL appears exactly once", async () => {
+    mocks.getRemoteAccessStatus.mockResolvedValue({
+      status: "connected",
+      tunnel_url: "https://example.trycloudflare.com",
+      token: "t",
+      relay_url: "https://relay.example/abc",
+    });
+    renderPanel();
+    await waitFor(() => {
+      expect(screen.getAllByText("https://relay.example/abc")).toHaveLength(1);
+    });
+    expect(screen.getByText(/In ChatGPT, open Settings/)).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Copy URL" })).toHaveLength(1);
+  });
+
+  it("ChatGPT row: Copy URL writes the /mcp-suffixed tunnel URL when there is no relay", async () => {
+    mocks.getRemoteAccessStatus.mockResolvedValue(CONNECTED);
+    renderPanel();
+    const copyBtn = await screen.findByRole("button", { name: "Copy URL" });
+    fireEvent.click(copyBtn);
+    await waitFor(() => {
+      expect(mocks.clipboardWrite).toHaveBeenCalledWith("https://example.trycloudflare.com/mcp");
+    });
+    expect(screen.getByText("Copied")).toBeInTheDocument();
+  });
+
+  // ── i18n + hygiene ────────────────────────────────────────────────────
+  it("off state renders the translated title in zh-Hans, no English fallback, no chip", async () => {
+    await i18n.changeLanguage("zh-Hans");
+    renderPanel();
+    await waitFor(() => {
+      expect(screen.getByText("网页访问")).toBeInTheDocument();
+    });
+    expect(screen.queryByText("Web access")).not.toBeInTheDocument();
+    expect(screen.queryByText("关闭")).not.toBeInTheDocument();
+  });
+
   it("has no raw #ef4444 or color: white left in the source", async () => {
     const fs = await import("node:fs/promises");
     const path = await import("node:path");

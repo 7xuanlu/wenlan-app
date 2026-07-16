@@ -86,7 +86,7 @@ export function DropZone({ onFileSelected, onPathSelected }: DropZoneProps) {
           height: 36,
           borderRadius: 8,
           background: isDragging ? "var(--mem-accent-indigo)" : "var(--mem-hover-strong)",
-          color: isDragging ? "white" : "var(--mem-text-tertiary)",
+          color: isDragging ? "var(--mem-text-on-accent)" : "var(--mem-text-tertiary)",
           transition: "all 0.2s ease",
           marginBottom: 12,
         }}
@@ -99,7 +99,7 @@ export function DropZone({ onFileSelected, onPathSelected }: DropZoneProps) {
       <div
         style={{
           fontFamily: "var(--mem-font-body)",
-          fontSize: "13px",
+          fontSize: "var(--mem-text-base)",
           fontWeight: 500,
           color: "var(--mem-text)",
           marginBottom: 4,
@@ -111,7 +111,7 @@ export function DropZone({ onFileSelected, onPathSelected }: DropZoneProps) {
       <div
         style={{
           fontFamily: "var(--mem-font-body)",
-          fontSize: "11px",
+          fontSize: "var(--mem-text-xs)",
           color: "var(--mem-text-tertiary)",
           marginBottom: 14,
         }}
@@ -128,7 +128,7 @@ export function DropZone({ onFileSelected, onPathSelected }: DropZoneProps) {
           role="alert"
           style={{
             fontFamily: "var(--mem-font-body)",
-            fontSize: "11px",
+            fontSize: "var(--mem-text-xs)",
             color: "var(--mem-status-danger-text)",
             marginTop: 12,
             lineHeight: "1.5",

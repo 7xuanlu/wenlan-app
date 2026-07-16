@@ -7,6 +7,7 @@ extern crate objc;
 pub mod activity;
 pub mod api;
 pub mod config;
+mod daemon_start;
 pub mod error;
 pub mod events;
 mod identity_paths;
@@ -191,6 +192,9 @@ pub fn run() {
                     }
                 }
             };
+            // Carry the outcome to the on-demand "Start Wenlan" command, which
+            // must not re-run the mutating preflight from a user click.
+            crate::daemon_start::set_startup_preflight_ok(daemon_startup_preflight_ok);
 
             // First-run silent install — H6: run on a blocking task so we
             // don't block setup() (which delays Tauri start by hundreds of ms).
@@ -606,53 +610,8 @@ pub fn run() {
                     log::info!(
                         "[init] launchd-managed daemon detected, skipping sidecar spawn"
                     );
-                } else {
-                    use tauri_plugin_shell::ShellExt;
-                    let (data_dir_env, data_dir) = crate::identity_paths::sidecar_data_dir_env();
-                    match app.shell().sidecar("wenlan-server") {
-                        Ok(sidecar) => {
-                            match sidecar.env(data_dir_env, data_dir.as_os_str()).spawn() {
-                                Ok((mut rx, _child)) => {
-                                    log::info!(
-                                        "[init] Spawned wenlan-server daemon (pid {}, {}={})",
-                                        _child.pid(),
-                                        data_dir_env,
-                                        data_dir.display()
-                                    );
-                                    tauri::async_runtime::spawn(async move {
-                                        use tauri_plugin_shell::process::CommandEvent;
-                                        while let Some(event) = rx.recv().await {
-                                            match event {
-                                                CommandEvent::Stdout(line) => {
-                                                    log::info!(
-                                                        "[daemon] {}",
-                                                        String::from_utf8_lossy(&line)
-                                                    );
-                                                }
-                                                CommandEvent::Stderr(line) => {
-                                                    log::warn!(
-                                                        "[daemon] {}",
-                                                        String::from_utf8_lossy(&line)
-                                                    );
-                                                }
-                                                CommandEvent::Terminated(status) => {
-                                                    log::warn!("[daemon] exited: {:?}", status);
-                                                    break;
-                                                }
-                                                _ => {}
-                                            }
-                                        }
-                                    });
-                                }
-                                Err(e) => {
-                                    log::error!("[init] Failed to spawn wenlan-server sidecar: {}. Run: xattr -cr /Applications/Origin.app or /Applications/Wenlan.app", e);
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            log::error!("[init] Failed to create wenlan-server sidecar command: {}", e);
-                        }
-                    }
+                } else if let Err(e) = crate::daemon_start::spawn_daemon_sidecar(app.handle()) {
+                    log::error!("[init] {e}. Run: xattr -cr /Applications/Origin.app or /Applications/Wenlan.app");
                 }
             }
 
@@ -912,6 +871,8 @@ pub fn run() {
             search::should_show_wizard,
             search::detect_mcp_clients_cmd,
             search::write_mcp_config,
+            search::remove_raw_mcp_entry,
+            search::remove_legacy_mcp_entry,
             search::get_wenlan_mcp_entry,
             search::install_client_plugin,
             search::wire_state,
@@ -957,6 +918,8 @@ pub fn run() {
             // Model choice + system info commands
             search::get_model_choice,
             search::set_model_choice,
+            search::get_resolved_routing,
+            search::set_source_pin,
             search::get_system_info,
             // External LLM provider commands
             search::get_external_llm,
@@ -973,6 +936,7 @@ pub fn run() {
             search::set_run_at_login,
             search::quit_wenlan_full,
             search::quit_origin_full,
+            daemon_start::start_daemon_sidecar,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

@@ -68,7 +68,16 @@ function pickDefaultPresetId(list: ProviderPreset[]): string {
   return list[0]?.id ?? "custom";
 }
 
-export default function AnyProviderCard({ groups }: { groups?: PresetGroup[] }) {
+export default function AnyProviderCard({
+  groups,
+  bare = false,
+}: {
+  groups?: PresetGroup[];
+  /** Skip the <Card> wrapper and the title/description block — the host
+   *  (a disclosure row) already supplies both. Default false keeps every
+   *  existing call site (the wizard's cloud/local steps) unchanged. */
+  bare?: boolean;
+}) {
   const { t } = useTranslation();
   const { supportsHotSwap, supportsExternalKey } = useDaemonVersion();
   const anthropic = useApiKeyStatus();
@@ -289,10 +298,9 @@ export default function AnyProviderCard({ groups }: { groups?: PresetGroup[] }) 
     try {
       await setExternalLlm(trimmedEndpoint, model, keyToSend());
       setSaveState(supportsHotSwap ? "applied" : "restart");
-      // The daemon may hot-load this config immediately, so the strip's
-      // status queries must refresh alongside our own prefill query —
-      // otherwise ActiveIntelligenceStrip keeps showing stale state.
-      queryClient.invalidateQueries({ queryKey: ["setup-status"] });
+      // The daemon may hot-load this config immediately, so the routing
+      // queries the job summary rows read from must refresh alongside our
+      // own prefill query — otherwise the rows keep showing stale state.
       queryClient.invalidateQueries({ queryKey: ["external-llm"] });
       queryClient.invalidateQueries({ queryKey: ["external-llm-key-configured"] });
     } catch (err) {
@@ -381,27 +389,28 @@ export default function AnyProviderCard({ groups }: { groups?: PresetGroup[] }) 
             host: hostOf(preset.endpoint),
           });
 
-  return (
-    <Card padding="card">
-      <div className="flex flex-col" style={{ gap: "12px" }}>
-        <div>
-          <h3
-            style={{
-              fontFamily: "var(--mem-font-body)",
-              fontSize: "var(--mem-text-lg)",
-              fontWeight: 600,
-              color: "var(--mem-text)",
-            }}
-          >
-            {t(titleKey)}
-          </h3>
-          <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-secondary)", lineHeight: 1.5, marginTop: "4px" }}>
-            {t(descriptionKey)}
-          </p>
-        </div>
+  const body = (
+    <div className="flex flex-col" style={{ gap: "12px" }}>
+        {!bare && (
+          <div>
+            <h3
+              style={{
+                fontFamily: "var(--mem-font-body)",
+                fontSize: "var(--mem-text-lg)",
+                fontWeight: 600,
+                color: "var(--mem-text)",
+              }}
+            >
+              {t(titleKey)}
+            </h3>
+            <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text-secondary)", lineHeight: 1.5, marginTop: "4px" }}>
+              {t(descriptionKey)}
+            </p>
+          </div>
+        )}
 
         {anthropic.isConfigured && !preset.native && (
-          <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-accent-amber)", lineHeight: 1.5 }}>
+          <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-accent-amber)", lineHeight: 1.5 }}>
             {t("externalProvider.anthropicPrecedence")}
           </p>
         )}
@@ -410,7 +419,12 @@ export default function AnyProviderCard({ groups }: { groups?: PresetGroup[] }) 
           {presets.map((p) => {
             const probe = probeFor(p.id);
             const status = !probe ? null : probe.isLoading ? "probing" : probe.isSuccess ? "connected" : "notDetected";
-            const dot = status === "connected" ? "●" : status === "notDetected" ? "○" : "…";
+            const dotClass =
+              status === "connected"
+                ? "bg-[var(--mem-status-success-text)] rounded-full"
+                : status === "notDetected"
+                  ? "border border-[var(--mem-text-tertiary)] rounded-full"
+                  : "bg-[var(--mem-text-tertiary)] rounded-full animate-pulse";
             const selected = p.id === presetId;
             return (
               <button
@@ -427,15 +441,7 @@ export default function AnyProviderCard({ groups }: { groups?: PresetGroup[] }) 
                 }}
               >
                 {probe && (
-                  <span
-                    aria-hidden="true"
-                    style={{
-                      marginRight: "6px",
-                      color: status === "connected" && !selected ? "var(--mem-accent-sage)" : "inherit",
-                    }}
-                  >
-                    {dot}
-                  </span>
+                  <span aria-hidden="true" className={`inline-block w-1.5 h-1.5 mr-1.5 shrink-0 ${dotClass}`} />
                 )}
                 {localLabel(p.name)}
               </button>
@@ -554,7 +560,7 @@ export default function AnyProviderCard({ groups }: { groups?: PresetGroup[] }) 
                 have no key requirement at all, so there's no "expected
                 failure" case to suppress. */}
             {(((!knownCloudEndpoint || typedKey) && discovery.isError) || localQuery?.isError) && (
-              <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-text-tertiary)" }}>
+              <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", color: "var(--mem-text-tertiary)" }}>
                 {t("externalProvider.modelDiscoveryFailed")}
               </span>
             )}
@@ -581,33 +587,34 @@ export default function AnyProviderCard({ groups }: { groups?: PresetGroup[] }) 
             </div>
 
             {testState.kind === "ok" && (
-              <p style={{ fontFamily: "var(--mem-font-mono)", fontSize: "11px", color: "var(--mem-text-secondary)" }}>
+              <p style={{ fontFamily: "var(--mem-font-mono)", fontSize: "var(--mem-text-xs)", color: "var(--mem-text-secondary)" }}>
                 {t("externalProvider.testOk", { response: testState.response })}
               </p>
             )}
             {testState.kind === "error" && (
-              <p style={{ fontFamily: "var(--mem-font-mono)", fontSize: "11px", color: "var(--mem-status-danger-text)" }}>
+              <p style={{ fontFamily: "var(--mem-font-mono)", fontSize: "var(--mem-text-xs)", color: "var(--mem-status-danger-text)" }}>
                 {testState.message}
               </p>
             )}
             {saveState === "applied" && (
-              <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-accent-sage)" }}>
+              <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-accent-sage)" }}>
                 {t("externalProvider.savedApplied")}
               </p>
             )}
             {saveState === "restart" && (
-              <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "12px", color: "var(--mem-text-secondary)" }}>
+              <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text-secondary)" }}>
                 {t("externalProvider.savedRestart")}
               </p>
             )}
             {saveState.startsWith("error:") && (
-              <p style={{ fontFamily: "var(--mem-font-mono)", fontSize: "11px", color: "var(--mem-status-danger-text)" }}>
+              <p style={{ fontFamily: "var(--mem-font-mono)", fontSize: "var(--mem-text-xs)", color: "var(--mem-status-danger-text)" }}>
                 {saveState.slice("error:".length)}
               </p>
             )}
           </>
         )}
-      </div>
-    </Card>
+    </div>
   );
+
+  return bare ? body : <Card padding="card">{body}</Card>;
 }

@@ -56,6 +56,12 @@ pub struct ClientWire {
     pub detected: bool,
     pub config_path: String,
     pub has_raw_entry: bool,
+    /// Config holds BOTH a `wenlan` and a legacy `origin` raw entry — the
+    /// raw+raw duplicate. Load-bearing for no-plugin clients (cursor,
+    /// gemini_cli): they never trip the plugin+raw double-registration
+    /// (`has_plugin && has_raw_entry`), so this is the only way their
+    /// duplicate surfaces, and it routes to a fix that removes only `origin`.
+    pub has_raw_duplicate: bool,
     pub has_plugin: bool,
     pub route: String,
 }
@@ -149,6 +155,10 @@ fn client_wire(client: &mcp_config::McpClient) -> ClientWire {
         name: client.name.clone(),
         detected: client.detected,
         has_raw_entry: mcp_config::client_config_has_raw_entry(&client.client_type, config_path),
+        has_raw_duplicate: mcp_config::client_config_has_both_raw_entries(
+            &client.client_type,
+            config_path,
+        ),
         has_plugin,
         config_path: client.config_path.clone(),
     }
@@ -357,6 +367,32 @@ mod tests {
         assert_eq!(wire.route, "config");
         // A config file that doesn't exist has no raw entry.
         assert!(!wire.has_raw_entry);
+        assert!(!wire.has_raw_duplicate);
+        assert!(!wire.has_plugin);
+    }
+
+    /// A no-plugin client whose config carries both `wenlan` and `origin`
+    /// surfaces `has_raw_duplicate: true` — the raw+raw case that plugin+raw
+    /// detection can never reach for cursor/gemini_cli.
+    #[test]
+    fn client_wire_flags_raw_duplicate_for_a_no_plugin_client() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config_path = tmp.path().join("mcp.json");
+        std::fs::write(
+            &config_path,
+            r#"{"mcpServers": {"origin": {"command": "npx"}, "wenlan": {"command": "npx"}}}"#,
+        )
+        .unwrap();
+        let client = mcp_config::McpClient {
+            name: "Cursor".to_string(),
+            client_type: "cursor".to_string(),
+            config_path: config_path.to_string_lossy().to_string(),
+            detected: true,
+            already_configured: true,
+        };
+        let wire = client_wire(&client);
+        assert!(wire.has_raw_duplicate);
+        assert!(wire.has_raw_entry);
         assert!(!wire.has_plugin);
     }
 }

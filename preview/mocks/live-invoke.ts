@@ -296,6 +296,22 @@ export const HANDLERS: Record<string, (a: any) => Promise<unknown>> = {
     const elapsedSeconds = (Date.now() - downloadStartedAt) / 1000;
     return Math.min(elapsedSeconds * 100e6, MODEL_BLOB_BYTES);
   },
+  // Feature detection against the real daemon: the live 0.13.2 daemon has no
+  // routing endpoint and 404s, which maps to null (LEGACY mode) — exactly what
+  // WenlanClient::get_resolved_routing does. A newer daemon returns the object.
+  get_resolved_routing: async () => {
+    try {
+      return await get("/api/config/routing");
+    } catch (e) {
+      if (e instanceof HttpError && e.status === 404) return null;
+      throw e;
+    }
+  },
+  set_source_pin: (a) =>
+    put("/api/config", {
+      ...(a?.everydaySource != null ? { everyday_source: a.everydaySource } : {}),
+      ...(a?.synthesisSource != null ? { synthesis_source: a.synthesisSource } : {}),
+    }).then(() => undefined),
 };
 
 // App-local commands (no daemon route) → static defaults that route the UI
@@ -306,14 +322,6 @@ export const DEFAULTS: Record<string, unknown> = {
   // Shapes below mirror src/lib/tauri.ts exactly. A stub that returns null or the
   // wrong keys where the Rust command returns a struct doesn't just render empty —
   // it white-screens the step (RemoteAccessPanel reads status.status unguarded).
-  get_setup_status: {
-    setup_completed: true,
-    mode: "basic-memory",
-    anthropic_key_configured: false,
-    local_model_selected: null,
-    local_model_loaded: null,
-    local_model_cached: false,
-  },
   set_traffic_lights_visible: null,
   set_setup_completed: null,
   is_run_at_login_enabled: false,
@@ -373,11 +381,15 @@ export const DEFAULTS: Record<string, unknown> = {
       ],
     },
     clients: [
-      { client_type: "cursor", name: "Cursor", detected: true, config_path: "~/.cursor/mcp.json", has_raw_entry: false, has_plugin: false, route: "config" },
-      { client_type: "claude_desktop", name: "Claude Desktop", detected: true, config_path: "~/Library/Application Support/Claude/claude_desktop_config.json", has_raw_entry: false, has_plugin: false, route: "config" },
-      { client_type: "gemini_cli", name: "Gemini CLI", detected: true, config_path: "~/.gemini/settings.json", has_raw_entry: false, has_plugin: false, route: "config" },
-      { client_type: "codex_cli", name: "Codex CLI", detected: true, config_path: "~/.codex/config.toml", has_raw_entry: false, has_plugin: true, route: "plugin" },
-      { client_type: "claude_code", name: "Claude Code", detected: true, config_path: "~/.claude.json", has_raw_entry: false, has_plugin: false, route: "plugin" },
+      // Cursor carries the raw+raw duplicate (both wenlan and legacy origin,
+      // no plugin path) — verbatim the real ~/.cursor/mcp.json shape on this
+      // machine, so the Diagnostics "remove the old entry" warnbox is
+      // pixel-reviewable in preview.
+      { client_type: "cursor", name: "Cursor", detected: true, config_path: "~/.cursor/mcp.json", has_raw_entry: true, has_raw_duplicate: true, has_plugin: false, route: "config" },
+      { client_type: "claude_desktop", name: "Claude Desktop", detected: true, config_path: "~/Library/Application Support/Claude/claude_desktop_config.json", has_raw_entry: false, has_raw_duplicate: false, has_plugin: false, route: "config" },
+      { client_type: "gemini_cli", name: "Gemini CLI", detected: true, config_path: "~/.gemini/settings.json", has_raw_entry: false, has_raw_duplicate: false, has_plugin: false, route: "config" },
+      { client_type: "codex_cli", name: "Codex CLI", detected: true, config_path: "~/.codex/config.toml", has_raw_entry: false, has_raw_duplicate: false, has_plugin: true, route: "plugin" },
+      { client_type: "claude_code", name: "Claude Code", detected: true, config_path: "~/.claude.json", has_raw_entry: false, has_raw_duplicate: false, has_plugin: false, route: "plugin" },
     ],
   },
   get_wenlan_mcp_entry: null,
@@ -389,6 +401,8 @@ export const DEFAULTS: Record<string, unknown> = {
   suggest_tags: [],
   quit_wenlan_full: null,
   quit_origin_full: null,
+  // Preview's daemon is reachable (wire_state above), so a Start would find it up.
+  start_daemon_sidecar: { status: "already_running" },
 };
 
 export async function liveInvoke(cmd: string, args?: Args): Promise<unknown> {

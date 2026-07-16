@@ -354,6 +354,49 @@ export async function setModelChoice(
   return invoke("set_model_choice", { routineModel, synthesisModel });
 }
 
+// ── Resolved routing (daemon ≥ PR #357) ──────────────────────────────────
+// Feature detection: getResolvedRouting() resolves to null on a daemon that
+// predates the endpoint (the live 0.13.2 daemon) — callers render LEGACY mode.
+// Never contains key material.
+
+/** How one job resolves. `mode`: "pinned" | "pinned_degraded" | "auto".
+ *  `source` (everyday): "anthropic"|"external"|"on_device"|"basic";
+ *  (synthesis): "anthropic"|"external"|"on_device"|"none". `pin`: the raw
+ *  configured source pin, or `null` when unpinned — distinct from `source`
+ *  (the RESOLVED source): on a `pinned_degraded` result the two differ,
+ *  letting the app say "Pinned to X — using Y". */
+export interface JobRoute {
+  source: string;
+  model: string | null;
+  mode: string;
+  pin: string | null;
+}
+
+export interface ResolvedRouting {
+  everyday: JobRoute;
+  synthesis: JobRoute;
+  pool: {
+    anthropic: { configured: boolean; everyday_model: string | null; synthesis_model: string | null };
+    external: { endpoint: string; model: string } | null;
+    on_device: { selected: string | null; loaded: boolean } | null;
+  };
+}
+
+/** Resolved per-job routing, or null when the daemon lacks the endpoint (404).
+ *  A null return is the signal to render source pins read-only (LEGACY mode). */
+export async function getResolvedRouting(): Promise<ResolvedRouting | null> {
+  return invoke("get_resolved_routing");
+}
+
+// Patch-based like setModelChoice: null leaves a pin untouched, "" clears it, a
+// source name pins. Only call once getResolvedRouting() returned non-null.
+export async function setSourcePin(
+  everydaySource: string | null,
+  synthesisSource: string | null
+): Promise<void> {
+  return invoke("set_source_pin", { everydaySource, synthesisSource });
+}
+
 export interface SystemInfo {
   total_ram_gb: number;
   available_ram_gb: number;
@@ -1904,21 +1947,6 @@ export async function shouldShowWizard(): Promise<boolean> {
   return invoke("should_show_wizard");
 }
 
-export interface SetupStatus {
-  setup_completed: boolean;
-  mode: "basic-memory" | "local-model" | "anthropic-key" | string;
-  anthropic_key_configured: boolean;
-  local_model_selected: string | null;
-  local_model_loaded: string | null;
-  local_model_cached: boolean;
-  /** Daemon ≥ 0.13 only (additive, spec §7.6); absent on 0.12. */
-  external_llm?: { configured: boolean; loaded: boolean } | null;
-}
-
-export async function getSetupStatus(): Promise<SetupStatus> {
-  return invoke("get_setup_status");
-}
-
 export async function getSetupCompleted(): Promise<boolean> {
   return invoke("get_setup_completed");
 }
@@ -1933,6 +1961,23 @@ export async function detectMcpClients(): Promise<McpClient[]> {
 
 export async function writeMcpConfig(clientType: string): Promise<void> {
   return invoke("write_mcp_config", { clientType });
+}
+
+/** Removes the raw `wenlan`/legacy `origin` MCP entry from `clientType`'s
+ *  config file — the Diagnostics fix for a double registration (a plugin plus
+ *  a raw entry). Leaves sibling servers and unrelated config intact. Rejects
+ *  with a plain error if the file is missing or has no such entry. */
+export async function removeRawMcpEntry(clientType: string): Promise<void> {
+  return invoke("remove_raw_mcp_entry", { clientType });
+}
+
+/** Removes ONLY the legacy `origin` MCP entry from `clientType`'s config,
+ *  keeping the live `wenlan` entry — the Diagnostics fix for a raw+raw
+ *  duplicate (both `wenlan` and `origin` present, on a no-plugin client).
+ *  Unlike removeRawMcpEntry, it never drops `wenlan`. Rejects with a plain
+ *  error if the file is missing or has no `origin` entry. */
+export async function removeLegacyMcpEntry(clientType: string): Promise<void> {
+  return invoke("remove_legacy_mcp_entry", { clientType });
 }
 
 export interface WenlanMcpEntry {
@@ -1987,6 +2032,11 @@ export interface ClientWire {
   detected: boolean;
   config_path: string;
   has_raw_entry: boolean;
+  /** Config holds BOTH a `wenlan` and a legacy `origin` raw entry — the
+   *  raw+raw duplicate. For a no-plugin client (Cursor, Gemini CLI) this is
+   *  the only signal of a duplicate, and it routes to `removeLegacyMcpEntry`,
+   *  which removes only `origin`. */
+  has_raw_duplicate: boolean;
   has_plugin: boolean;
   route: "plugin" | "config" | "skip";
 }
@@ -2004,6 +2054,22 @@ export interface WireState {
  *  down daemon (`daemon.reachable: false` instead). */
 export async function getWireState(): Promise<WireState> {
   return invoke("wire_state");
+}
+
+/** Outcome of an on-demand daemon start. Discriminated by `status`: the daemon
+ *  was already up (`already_running`), launchd owns it (`launchd_managed`), we
+ *  spawned it (`started`), or we could not (`failed`, with a reason to show). */
+export type DaemonStartResult =
+  | { status: "started" }
+  | { status: "already_running" }
+  | { status: "launchd_managed" }
+  | { status: "failed"; message: string };
+
+/** Start the wenlan-server sidecar if nothing already serves it — the healing
+ *  action behind Diagnostics' daemon-down state. Guarded app-side: a live port
+ *  or a launchd-managed daemon is never double-spawned. */
+export async function startDaemonSidecar(): Promise<DaemonStartResult> {
+  return invoke("start_daemon_sidecar");
 }
 
 // ===== Onboarding Journey Milestones =====

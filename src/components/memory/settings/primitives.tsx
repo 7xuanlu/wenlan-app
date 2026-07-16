@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { cloneElement, useId } from "react";
+import { cloneElement, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 export function Toggle({
@@ -32,6 +32,19 @@ export function Toggle({
         }`}
       />
     </button>
+  );
+}
+
+export function WarningTriangleIcon({ className }: { className?: string }) {
+  return (
+    <svg aria-hidden="true" className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.072 16.5c-.77.833.192 2.5 1.732 2.5z"
+      />
+    </svg>
   );
 }
 
@@ -92,9 +105,7 @@ export function SettingRow(props: SettingRowProps) {
       )}
       {warning && (
         <div className="flex items-start gap-2 mt-2">
-          <svg aria-hidden="true" className="w-3.5 h-3.5 text-[var(--mem-status-warning-text)] shrink-0 mt-px" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.072 16.5c-.77.833.192 2.5 1.732 2.5z" />
-          </svg>
+          <WarningTriangleIcon className="w-3.5 h-3.5 text-[var(--mem-status-warning-text)] shrink-0 mt-px" />
           <p
             id={warningId}
             style={{ fontFamily: "var(--mem-font-body)", fontSize: "11px", color: "var(--mem-status-warning-text)", lineHeight: "1.5" }}
@@ -186,7 +197,8 @@ export function Button({
       disabled={disabled || loading}
       className={[
         "relative inline-flex items-center justify-center gap-1.5 font-medium",
-        "transition-[background-color,border-color,color] duration-[var(--mem-dur-fast)]",
+        "transition-[background-color,border-color,color,transform] duration-[var(--mem-dur-fast)]",
+        "active:scale-[0.98] motion-reduce:active:scale-100",
         "focus-visible:outline-2 focus-visible:outline-[var(--mem-focus-ring)] focus-visible:outline-offset-2",
         "disabled:opacity-45 disabled:cursor-default",
         BUTTON_VARIANT_CLASS[variant],
@@ -216,6 +228,154 @@ export function Button({
         </svg>
       )}
     </button>
+  );
+}
+
+// ── SegmentedControl ────────────────────────────────────────────────────
+// One choice among 2–4 peers. Neutral raised thumb: the active segment sits
+// on a surface fill + raised shadow instead of an accent slab — accent is
+// reserved for primary actions, and a theme picker is not one. No sliding
+// thumb element: each segment paints its own active state, so there is no
+// translateX math to break and nothing to suppress for reduced motion.
+
+export interface SegmentedOption<T extends string> {
+  value: T;
+  label: string;
+  icon?: React.ReactNode;
+}
+
+export function SegmentedControl<T extends string>({
+  options,
+  value,
+  onChange,
+  "aria-label": ariaLabel,
+}: {
+  options: SegmentedOption<T>[];
+  value: T;
+  onChange: (value: T) => void;
+  /** Group name for screen readers — the visible segments only name the choices. */
+  "aria-label": string;
+}) {
+  return (
+    <div
+      role="group"
+      aria-label={ariaLabel}
+      className="flex gap-0.5 p-0.5 rounded-[var(--mem-radius-md)] bg-[var(--mem-hover)] w-fit shrink-0"
+    >
+      {options.map((opt) => {
+        const active = opt.value === value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onChange(opt.value)}
+            className={[
+              "flex items-center gap-1.5 px-3 h-[26px] rounded-[var(--mem-radius-sm)] border",
+              "transition-[background-color,border-color,color,box-shadow] duration-[var(--mem-dur-fast)]",
+              "focus-visible:outline-2 focus-visible:outline-[var(--mem-focus-ring)] focus-visible:outline-offset-0",
+              active
+                ? "bg-[var(--mem-surface)] border-[var(--mem-border)] text-[var(--mem-text)] shadow-[var(--mem-shadow-raised)]"
+                : "bg-transparent border-transparent text-[var(--mem-text-secondary)] hover:text-[var(--mem-text)]",
+            ].join(" ")}
+            style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", fontWeight: 500 }}
+          >
+            {opt.icon}
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Skeleton ────────────────────────────────────────────────────────────
+// Loading placeholder bar. aria-hidden: the container that owns the load
+// carries the busy semantics; bars are decoration.
+
+export function Skeleton({
+  width = "100%",
+  height = 12,
+  className,
+}: {
+  width?: string | number;
+  height?: number;
+  className?: string;
+}) {
+  return (
+    <span
+      aria-hidden="true"
+      className={[
+        "block animate-pulse rounded-[var(--mem-radius-sm)] bg-[var(--mem-hover-strong)]",
+        className ?? "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      style={{ width, height }}
+    />
+  );
+}
+
+// ── ConfirmActionButton — inline two-step destructive confirm ──────────
+// First activation swaps the trigger, in place, for a danger Confirm plus a
+// ghost Cancel. Replaces window.confirm and hand-rolled confirm clusters:
+// the decision happens where the click happened, in the app's own idiom.
+
+export function ConfirmActionButton({
+  confirmLabel,
+  cancelLabel,
+  onConfirm,
+  variant = "ghost",
+  size = "sm",
+  "aria-label": ariaLabel,
+  className,
+  children,
+}: {
+  confirmLabel: string;
+  cancelLabel: string;
+  onConfirm: () => void;
+  variant?: ButtonVariant;
+  size?: ButtonSize;
+  "aria-label"?: string;
+  className?: string;
+  children: React.ReactNode; // trigger content
+}) {
+  const [armed, setArmed] = useState(false);
+  if (armed) {
+    return (
+      <span
+        className="inline-flex items-center gap-1"
+        onKeyDown={(event) => {
+          if (event.key === "Escape") setArmed(false);
+        }}
+      >
+        <Button
+          variant="danger"
+          size={size}
+          autoFocus
+          onClick={() => {
+            setArmed(false);
+            onConfirm();
+          }}
+        >
+          {confirmLabel}
+        </Button>
+        <Button variant="ghost" size={size} onClick={() => setArmed(false)}>
+          {cancelLabel}
+        </Button>
+      </span>
+    );
+  }
+  return (
+    <Button
+      variant={variant}
+      size={size}
+      aria-label={ariaLabel}
+      className={className}
+      onClick={() => setArmed(true)}
+    >
+      {children}
+    </Button>
   );
 }
 

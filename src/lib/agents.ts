@@ -93,6 +93,81 @@ export function resolveAgentDisplayName(
   return prettifySlug(canonicalId);
 }
 
+// ── Tool families ──────────────────────────────────────────────────────
+// One physical tool (Codex, Claude Code, …) can register several agent
+// identities — `codex`, `codex-mcp-client`, `codex-ulw-loop` are all Codex.
+// The roster coalesces identities into one row per *family*; these two
+// functions decide which family a client_type / agent belongs to.
+
+/**
+ * Map an MCP client's `client_type` (the wizard/ClientSetupList vocabulary)
+ * to its tool family. Returns `""` for a client_type outside the known set,
+ * so callers can treat "known family" as a truthy check.
+ */
+export function clientTypeFamily(clientType: string): string {
+  switch (clientType) {
+    case "claude_code":
+      return "claude-code";
+    case "codex_cli":
+      return "codex";
+    case "claude_desktop":
+      return "claude-desktop";
+    case "cursor":
+      return "cursor";
+    case "gemini_cli":
+      return "gemini-cli";
+    default:
+      return "";
+  }
+}
+
+/** `openai-mcp` is ChatGPT's registered canonical ID — fold it into the
+ *  `chatgpt` family so the two never render as separate rows. */
+function aliasFamily(key: string): string {
+  return key === "openai-mcp" ? "chatgpt" : key;
+}
+
+/**
+ * Resolve the tool family for a registered agent. Belt-and-suspenders,
+ * because `agent_type` only sometimes carries the client_type vocabulary
+ * (the live Codex identities did not), so name-based resolution has to
+ * back it up:
+ *   (a) `clientTypeFamily(agent.agent_type)` when it names a known client;
+ *   (b) an exact `KNOWN_CLIENT_DISPLAY_NAMES` key (aliasing openai-mcp → chatgpt);
+ *   (c) the longest known-key `prefix-` match on the name
+ *       (`codex-ulw-loop` → `codex`, `claude-code-x` → `claude-code`);
+ *   (d) `wenlan-setup` → `wenlan-setup`; else the raw name.
+ * Never returns `""` for a non-empty name.
+ */
+export function toolFamilyOf(agent: { name: string; agent_type: string }): string {
+  // (a) agent_type shares the client_type vocabulary — when it does, trust it.
+  const fromType = clientTypeFamily(agent.agent_type);
+  if (fromType) return fromType;
+
+  const name = agent.name;
+
+  // (b) exact canonical ID in the registry.
+  if (name in KNOWN_CLIENT_DISPLAY_NAMES) return aliasFamily(name);
+
+  // (c) longest known-key prefix (with a `-` boundary, so `codex` never
+  //     swallows `codexicon`).
+  let best = "";
+  for (const key of Object.keys(KNOWN_CLIENT_DISPLAY_NAMES)) {
+    if (name.startsWith(`${key}-`) && key.length > best.length) best = key;
+  }
+  if (best) return aliasFamily(best);
+
+  // (d) the wizard's own probe identity, then a bare passthrough.
+  if (name === "wenlan-setup") return "wenlan-setup";
+  return name;
+}
+
+/** Display label for a tool family: the registry name, else the same
+ *  prettifier `resolveAgentDisplayName` uses for an unrecognized slug. */
+export function familyDisplayName(family: string): string {
+  return resolveAgentDisplayName(family);
+}
+
 // ── Trust level presentation ───────────────────────────────────────────
 // Mirrors the tier gating in `crates/origin-core/src/router/classify.rs`
 // (`tier_allowed`) and `crates/origin-server/src/routes.rs` (chat-context).

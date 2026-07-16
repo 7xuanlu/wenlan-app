@@ -135,7 +135,7 @@ describe("AnyProviderCard — the Local-server card (spec §5.2)", () => {
     expect(await screen.findByText(/401 Unauthorized/)).toBeInTheDocument();
   });
 
-  it("invalidates setup-status, external-llm, and external-llm-key-configured after a successful save (strip staleness fix)", async () => {
+  it("invalidates external-llm and external-llm-key-configured after a successful save (job rows re-read the routing)", async () => {
     const qc = renderCard();
     const invalidateSpy = vi.spyOn(qc, "invalidateQueries");
     await screen.findByText(/Connected to Ollama/);
@@ -143,7 +143,6 @@ describe("AnyProviderCard — the Local-server card (spec §5.2)", () => {
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(mocks.setExternalLlm).toHaveBeenCalled());
 
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["setup-status"] });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["external-llm"] });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["external-llm-key-configured"] });
   });

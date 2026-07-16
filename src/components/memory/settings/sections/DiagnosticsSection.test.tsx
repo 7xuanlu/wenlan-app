@@ -4,13 +4,26 @@ import { render, screen, waitFor, fireEvent, act } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import DiagnosticsSection from "./DiagnosticsSection";
-import { getPipelineStatus, getWireState, clipboardWrite, type WireState } from "../../../../lib/tauri";
+import {
+  getPipelineStatus,
+  getWireState,
+  clipboardWrite,
+  removeLegacyMcpEntry,
+  removeRawMcpEntry,
+  setSetupCompleted,
+  startDaemonSidecar,
+  type WireState,
+} from "../../../../lib/tauri";
 import { i18n } from "../../../../i18n";
 
 vi.mock("../../../../lib/tauri", () => ({
   getPipelineStatus: vi.fn(),
   getWireState: vi.fn(),
   clipboardWrite: vi.fn().mockResolvedValue(undefined),
+  removeLegacyMcpEntry: vi.fn().mockResolvedValue(undefined),
+  removeRawMcpEntry: vi.fn().mockResolvedValue(undefined),
+  setSetupCompleted: vi.fn().mockResolvedValue(undefined),
+  startDaemonSidecar: vi.fn(),
 }));
 
 function renderDiagnostics() {
@@ -45,6 +58,7 @@ const wireFixture: WireState = {
       detected: true,
       config_path: "/Users/x/.claude.json",
       has_raw_entry: false,
+      has_raw_duplicate: false,
       has_plugin: true,
       route: "plugin",
     },
@@ -54,6 +68,7 @@ const wireFixture: WireState = {
       detected: true,
       config_path: "/Users/x/Library/Application Support/Claude/claude_desktop_config.json",
       has_raw_entry: true,
+      has_raw_duplicate: false,
       has_plugin: true,
       route: "plugin",
     },
@@ -138,6 +153,46 @@ describe("DiagnosticsSection", () => {
       // resolved pipeline data branch.
       expect(await screen.findByText("classified")).toBeInTheDocument();
       expect(await screen.findByText("Wiring information unavailable")).toBeInTheDocument();
+    });
+
+    it("Start Wenlan respawns the daemon, then re-probes the wiring", async () => {
+      // Daemon down ⇒ WiringError. Retry alone can't heal it; Start must invoke
+      // the respawn command AND re-probe (refetch) so a recovered daemon shows.
+      vi.mocked(getWireState).mockRejectedValue(new Error("connection refused"));
+      vi.mocked(startDaemonSidecar).mockResolvedValue({ status: "started" });
+
+      renderDiagnostics();
+      await screen.findByText("Wiring information unavailable");
+      const callsBefore = vi.mocked(getWireState).mock.calls.length;
+
+      fireEvent.click(screen.getByText("Start Wenlan"));
+
+      await waitFor(() => expect(startDaemonSidecar).toHaveBeenCalledTimes(1));
+      // A refetch of the wire query is the whole point — a bare invoke that
+      // never re-probes would leave the red frozen.
+      await waitFor(() =>
+        expect(vi.mocked(getWireState).mock.calls.length).toBeGreaterThan(callsBefore),
+      );
+    });
+
+    it("surfaces a start failure inline, without re-probing", async () => {
+      vi.mocked(getWireState).mockRejectedValue(new Error("connection refused"));
+      vi.mocked(startDaemonSidecar).mockResolvedValue({
+        status: "failed",
+        message: "sidecar quarantined",
+      });
+
+      renderDiagnostics();
+      await screen.findByText("Wiring information unavailable");
+      const callsBefore = vi.mocked(getWireState).mock.calls.length;
+
+      fireEvent.click(screen.getByText("Start Wenlan"));
+
+      expect(
+        await screen.findByText("Couldn't start Wenlan — sidecar quarantined"),
+      ).toBeInTheDocument();
+      // A failed start must not claim to have re-probed.
+      expect(vi.mocked(getWireState).mock.calls.length).toBe(callsBefore);
     });
   });
 
@@ -236,6 +291,33 @@ describe("DiagnosticsSection", () => {
     });
   });
 
+  describe("wiring loading state", () => {
+    it("shows the loading state while the wire state is pending, then the resolved rows", async () => {
+      let resolveWire!: (value: WireState) => void;
+      vi.mocked(getWireState).mockReturnValue(
+        new Promise((resolve) => {
+          resolveWire = resolve;
+        }),
+      );
+
+      renderDiagnostics();
+
+      // While in flight, only the loading state is on screen. An
+      // instant-resolve mock would skip straight past this, so the promise
+      // is held open on purpose.
+      await screen.findByText("Loading wiring…");
+      expect(screen.queryByText("Wenlan runtime")).not.toBeInTheDocument();
+
+      await act(async () => {
+        resolveWire(wireFixture);
+      });
+
+      // Resolved: the real rows render and the loading state is gone.
+      expect(await screen.findByText("Wenlan runtime")).toBeInTheDocument();
+      expect(screen.queryByText("Loading wiring…")).not.toBeInTheDocument();
+    });
+  });
+
   // ── Mutation-proof: the three properties this card exists to guarantee ──
 
   describe("mutation-proof properties", () => {
@@ -290,6 +372,7 @@ describe("DiagnosticsSection", () => {
             config_path: "/Users/x/.cursor/mcp.json",
             has_plugin: false,
             has_raw_entry: false,
+            has_raw_duplicate: false,
             route: "config",
           },
         ],
@@ -307,6 +390,160 @@ describe("DiagnosticsSection", () => {
       // the screen.
       const wiringCard = screen.getByText("Wiring").closest("section");
       expect(wiringCard?.textContent).not.toMatch(/plugin/i);
+    });
+
+    it("PROPERTY 5: a raw+raw duplicate is flagged on a no-plugin client, never on a plugin client", async () => {
+      vi.mocked(getWireState).mockResolvedValue({
+        ...wireFixture,
+        clients: [
+          // Cursor: no plugin, both `wenlan` and legacy `origin` raw entries.
+          {
+            client_type: "cursor",
+            name: "Cursor",
+            detected: true,
+            config_path: "/Users/x/.cursor/mcp.json",
+            has_raw_entry: true,
+            has_raw_duplicate: true,
+            has_plugin: false,
+            route: "config",
+          },
+          // Claude Code: the plugin AND a raw duplicate. The plugin+raw box
+          // owns this case (its fix removes both raw entries, plugin remains),
+          // so the raw+raw box — which keeps `wenlan` — must NOT also fire.
+          {
+            client_type: "claude_code",
+            name: "Claude Code",
+            detected: true,
+            config_path: "/Users/x/.claude.json",
+            has_raw_entry: true,
+            has_raw_duplicate: true,
+            has_plugin: true,
+            route: "plugin",
+          },
+        ],
+      });
+
+      renderDiagnostics();
+
+      await screen.findByText("Wenlan runtime");
+      expect(
+        screen.getByText(
+          "Cursor's config lists Wenlan twice — as wenlan and under its old name origin. Cursor starts two copies until the old entry is removed.",
+        ),
+      ).toBeInTheDocument();
+      // The `!has_plugin` gate: the plugin client never shows the raw+raw box.
+      expect(
+        screen.queryByText(/Claude Code's config lists Wenlan twice/),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  // ── Every red carries a fix or a Retry ─────────────────────────────────
+
+  describe("actionable wiring reds", () => {
+    it("the double-registration fix removes the raw entry for that client and refreshes wiring", async () => {
+      renderDiagnostics();
+
+      await screen.findByText("Wenlan runtime");
+      const callsBefore = vi.mocked(getWireState).mock.calls.length;
+
+      // Claude Desktop is the double-registered client in the fixture
+      // (has_plugin && has_raw_entry); Claude Code is not.
+      fireEvent.click(screen.getByText("Remove duplicate entry"));
+
+      await waitFor(() => expect(removeRawMcpEntry).toHaveBeenCalledWith("claude_desktop"));
+      // onSuccess invalidates ["wireState"], which refetches the wire query.
+      await waitFor(() =>
+        expect(vi.mocked(getWireState).mock.calls.length).toBeGreaterThan(callsBefore),
+      );
+    });
+
+    it("the raw+raw fix removes only the legacy origin entry (keeps wenlan) and refreshes wiring", async () => {
+      vi.mocked(getWireState).mockResolvedValue({
+        ...wireFixture,
+        clients: [
+          {
+            client_type: "cursor",
+            name: "Cursor",
+            detected: true,
+            config_path: "/Users/x/.cursor/mcp.json",
+            has_raw_entry: true,
+            has_raw_duplicate: true,
+            has_plugin: false,
+            route: "config",
+          },
+        ],
+      });
+
+      renderDiagnostics();
+
+      await screen.findByText("Wenlan runtime");
+      const callsBefore = vi.mocked(getWireState).mock.calls.length;
+
+      fireEvent.click(screen.getByText("Remove the old entry"));
+
+      await waitFor(() => expect(removeLegacyMcpEntry).toHaveBeenCalledWith("cursor"));
+      // Headline (b): the raw+raw fix must be removeLegacyMcpEntry — NOT
+      // removeRawMcpEntry, which would delete the live `wenlan` entry too and
+      // sever Cursor's only connection.
+      expect(removeRawMcpEntry).not.toHaveBeenCalled();
+      await waitFor(() =>
+        expect(vi.mocked(getWireState).mock.calls.length).toBeGreaterThan(callsBefore),
+      );
+    });
+
+    it("offers a Retry that refetches the wire state when the daemon is unreachable", async () => {
+      vi.mocked(getWireState).mockResolvedValue({
+        ...wireFixture,
+        daemon: {
+          base_url: "http://127.0.0.1:7878",
+          reachable: false,
+          version: null,
+          error: "connection refused",
+        },
+      });
+
+      renderDiagnostics();
+
+      await screen.findByText("Unreachable");
+      const callsBefore = vi.mocked(getWireState).mock.calls.length;
+      fireEvent.click(screen.getByText("Retry"));
+
+      await waitFor(() =>
+        expect(vi.mocked(getWireState).mock.calls.length).toBeGreaterThan(callsBefore),
+      );
+    });
+
+    it("does not offer the reinstall-via-setup action while an MCP binary candidate still exists", async () => {
+      // Default fixture: the installed candidate exists — nothing to reinstall.
+      renderDiagnostics();
+
+      // Resolve the wiring rows first, then assert absence (an absence assertion
+      // made before the rows render would pass vacuously).
+      await screen.findByText("Wenlan runtime");
+      await screen.findByText("MCP server binary");
+      expect(screen.queryByText("Run setup again")).not.toBeInTheDocument();
+    });
+
+    it("with every MCP binary candidate missing, reinstall clears setup and re-arms the wizard", async () => {
+      vi.mocked(getWireState).mockResolvedValue({
+        ...wireFixture,
+        mcp_binary: {
+          ...wireFixture.mcp_binary,
+          candidates: [
+            { path: "/Users/x/.wenlan/bin/wenlan-mcp", exists: false, source: "installed" },
+            { path: "/Users/x/.cargo/bin/wenlan-mcp", exists: false, source: "cargo" },
+          ],
+        },
+      });
+
+      renderDiagnostics();
+
+      fireEvent.click(await screen.findByText("Run setup again"));
+      // ConfirmActionButton arms an inline two-step confirm.
+      fireEvent.click(await screen.findByText("Confirm"));
+
+      await waitFor(() => expect(setSetupCompleted).toHaveBeenCalledWith(false));
     });
   });
 

@@ -5,21 +5,25 @@ import { listen } from "@tauri-apps/api/event";
 import {
   clipboardWrite,
   getRemoteAccessStatus,
+  getWireState,
+  installClientPlugin,
   testRemoteMcpConnection,
   toggleRemoteAccess,
   type RemoteAccessStatus,
   type RemoteConnectionTest,
 } from "../../lib/tauri";
-import { Button, StatusChip, Toggle } from "./settings/primitives";
+import { Button, Card, StatusChip, Tag, Toggle, WarningTriangleIcon } from "./settings/primitives";
 
 const REMOTE_QUERY_KEY = ["remote-access-status"] as const;
 
-/** Remote Access control surface, Settings-only (the wizard dropped its
- *  compact copy — see docs/superpowers/plans/2026-07-12-connect-step-redesign.md
- *  §4). Owns the toggle, status indicator, URL copy affordance,
- *  test-connection probe, setup instructions, and reconnect controls plus
- *  tunnel-behavior context. Reads `RemoteAccessStatus` via React Query and
- *  invalidates on `remote-access-status` events. */
+/** Web access — the one state-aware surface for reaching memory from
+ *  claude.ai and ChatGPT. Turning the toggle on IS the setup: the relay needs
+ *  nothing configured. Below the toggle, one row per web platform reflects
+ *  where each stands — Claude.ai is Ready once its connector is installed
+ *  (a one-click Set up otherwise); ChatGPT gets its paste-in URL once web
+ *  access is on. The always-visible no-auth warning is the one load-bearing
+ *  boundary. Reads `RemoteAccessStatus` via React Query and invalidates on
+ *  `remote-access-status` events. */
 export function RemoteAccessPanel() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -51,8 +55,6 @@ export function RemoteAccessPanel() {
     },
   });
 
-  const [urlCopied, setUrlCopied] = useState(false);
-  const [showInstructions, setShowInstructions] = useState(false);
   const [testResult, setTestResult] = useState<
     | { kind: "idle" }
     | { kind: "running" }
@@ -61,12 +63,10 @@ export function RemoteAccessPanel() {
   >({ kind: "idle" });
 
   const testOkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const urlCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     return () => {
       if (testOkTimerRef.current) clearTimeout(testOkTimerRef.current);
-      if (urlCopyTimerRef.current) clearTimeout(urlCopyTimerRef.current);
     };
   }, []);
 
@@ -79,10 +79,7 @@ export function RemoteAccessPanel() {
       if (result.ok) {
         setTestResult({ kind: "ok", latency_ms: result.latency_ms });
         if (testOkTimerRef.current) clearTimeout(testOkTimerRef.current);
-        testOkTimerRef.current = setTimeout(
-          () => setTestResult({ kind: "idle" }),
-          2000,
-        );
+        testOkTimerRef.current = setTimeout(() => setTestResult({ kind: "idle" }), 2000);
       } else {
         setTestResult({ kind: "err", error: result.error ?? "Unknown error" });
       }
@@ -93,17 +90,6 @@ export function RemoteAccessPanel() {
   });
 
   const isOn = status.status === "connected" || status.status === "starting";
-  const displayUrl =
-    status.status === "connected"
-      ? status.relay_url ?? `${status.tunnel_url}/mcp`
-      : "";
-
-  const handleCopyUrl = () => {
-    clipboardWrite(displayUrl);
-    setUrlCopied(true);
-    if (urlCopyTimerRef.current) clearTimeout(urlCopyTimerRef.current);
-    urlCopyTimerRef.current = setTimeout(() => setUrlCopied(false), 2000);
-  };
 
   const handleReconnect = () => {
     toggleMut.mutate(false);
@@ -111,14 +97,9 @@ export function RemoteAccessPanel() {
   };
 
   return (
-    <div
-      className="rounded-xl"
-      style={{
-        backgroundColor: "var(--mem-surface)",
-        border: "1px solid var(--mem-border)",
-      }}
-    >
-      {/* Toggle row */}
+    <Card padding="none">
+      {/* Toggle row — turning it on IS the setup; the relay needs nothing
+          configured. */}
       <div className="px-5 py-4">
         <div className="flex items-start justify-between gap-4">
           <div
@@ -141,31 +122,30 @@ export function RemoteAccessPanel() {
           </div>
         </div>
 
-        {/* No-auth warning — the single, louder surviving rendering (spec §6/§8:
-            was 3 renderings across this panel + WebPlatformCards ×2, now exactly
-            one). Always visible, never behind a disclosure, wired to the toggle
-            via aria-describedby so a screen reader hears the boundary at the
+        <p
+          style={{
+            fontFamily: "var(--mem-font-body)",
+            fontSize: "var(--mem-text-sm)",
+            color: "var(--mem-text-secondary)",
+            lineHeight: "1.5",
+            marginTop: "6px",
+          }}
+        >
+          {t("remoteAccess.description")}
+        </p>
+
+        {/* No-auth warning — the single, louder surviving rendering (was 3
+            across this panel + WebPlatformCards ×2, now exactly one). Always
+            visible, never behind a disclosure, wired to the toggle via
+            aria-describedby so a screen reader hears the boundary at the
             moment of toggling. */}
         <div className="flex items-start gap-2 mt-2">
-          <svg
-            aria-hidden="true"
-            className="w-3.5 h-3.5 text-[var(--mem-status-warning-text)] shrink-0 mt-px"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.072 16.5c-.77.833.192 2.5 1.732 2.5z"
-            />
-          </svg>
+          <WarningTriangleIcon className="w-3.5 h-3.5 text-[var(--mem-status-warning-text)] shrink-0 mt-px" />
           <p
             id={warningId}
             style={{
               fontFamily: "var(--mem-font-body)",
-              fontSize: "12px",
+              fontSize: "var(--mem-text-sm)",
               color: "var(--mem-status-warning-text)",
               lineHeight: "1.5",
             }}
@@ -175,150 +155,17 @@ export function RemoteAccessPanel() {
         </div>
       </div>
 
-      {/* Status row */}
+      {/* Status row — chip, plus Test connection + Reconnect once connected.
+          The relay URL is not here: its one home is the ChatGPT row below. */}
       <div className="px-5 pb-4">
-        <StatusRow status={status} />
+        <StatusRow
+          status={status}
+          testResult={testResult}
+          onTest={() => testMut.mutate()}
+          onReconnect={handleReconnect}
+          reconnecting={toggleMut.isPending}
+        />
       </div>
-
-      {/* Connected: URL + test connection */}
-      {status.status === "connected" && (
-        <div className="px-5 pb-4 space-y-3">
-          <div>
-            <label
-              style={{
-                fontFamily: "var(--mem-font-body)",
-                fontSize: "11px",
-                fontWeight: 500,
-                color: "var(--mem-text-tertiary)",
-                textTransform: "uppercase",
-                letterSpacing: "0.05em",
-              }}
-            >
-              {status.relay_url ? t("remoteAccess.urlLabelStable") : t("remoteAccess.urlLabel")}
-            </label>
-            <div className="flex items-center gap-2 mt-1">
-              <pre
-                style={{
-                  fontFamily: "var(--mem-font-mono)",
-                  fontSize: "var(--mem-text-sm)",
-                  color: "var(--mem-text)",
-                  backgroundColor: "var(--mem-hover)",
-                  padding: "6px 8px",
-                  borderRadius: "6px",
-                  flex: 1,
-                  margin: 0,
-                  whiteSpace: "pre-wrap",
-                  wordBreak: "break-all",
-                }}
-              >
-                {displayUrl}
-              </pre>
-              <Button
-                variant="secondary"
-                size="sm"
-                aria-label={t("remoteAccess.copyUrl")}
-                onClick={handleCopyUrl}
-              >
-                {urlCopied ? t("remoteAccess.copied") : t("remoteAccess.copyUrl")}
-              </Button>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              loading={testResult.kind === "running"}
-              onClick={() => testMut.mutate()}
-            >
-              {testResult.kind === "running"
-                ? t("remoteAccess.testing")
-                : t("remoteAccess.testConnection")}
-            </Button>
-            {testResult.kind === "ok" && (
-              <span
-                className="inline-flex items-center gap-1"
-                style={{
-                  fontFamily: "var(--mem-font-body)",
-                  fontSize: "12px",
-                  color: "var(--mem-accent-sage)",
-                }}
-              >
-                <svg
-                  className="w-3.5 h-3.5"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M5 13l4 4L19 7"
-                  />
-                </svg>
-                {t("remoteAccess.statusConnectedLatency", { ms: testResult.latency_ms ?? "?" })}
-              </span>
-            )}
-            {testResult.kind === "err" && (
-              <span
-                className="inline-flex items-center gap-1"
-                style={{
-                  fontFamily: "var(--mem-font-body)",
-                  fontSize: "12px",
-                  color: "var(--mem-status-danger-text)",
-                }}
-              >
-                <svg
-                  className="w-3.5 h-3.5"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-                {testResult.error}
-              </span>
-            )}
-          </div>
-
-          <InstructionsBlock
-            expanded={showInstructions}
-            onToggle={() => setShowInstructions((v) => !v)}
-          />
-
-          <div className="flex items-center gap-3 pt-1">
-            <Button
-              variant="secondary"
-              size="sm"
-              loading={toggleMut.isPending}
-              onClick={handleReconnect}
-            >
-              {t("remoteAccess.reconnect")}
-            </Button>
-            <p
-              style={{
-                fontFamily: "var(--mem-font-body)",
-                fontSize: "11px",
-                color: "var(--mem-text-tertiary)",
-                lineHeight: "1.6",
-                margin: 0,
-              }}
-            >
-              {status.relay_url
-                ? t("remoteAccess.stableNote")
-                : t("remoteAccess.tunnelChangesNote")}
-            </p>
-          </div>
-        </div>
-      )}
 
       {/* Error / disabled reconnect */}
       {status.status === "error" && (
@@ -334,18 +181,41 @@ export function RemoteAccessPanel() {
         </div>
       )}
 
-      {status.status === "off" && (
-        <div className="px-5 pb-4">
-          <Button variant="secondary" size="sm" onClick={handleReconnect}>
-            {t("remoteAccess.reconnect")}
-          </Button>
-        </div>
-      )}
-    </div>
+      {/* Claude.ai — Ready once the connector is installed, one-click Set up
+          otherwise. Independent of the toggle (it's the connector, not the
+          relay). */}
+      <div className="border-t px-5 py-4" style={{ borderColor: "var(--mem-border)" }}>
+        <ClaudeRow />
+      </div>
+
+      {/* ChatGPT — the one home for the paste-in relay URL, shown once web
+          access is on. */}
+      <div className="border-t px-5 py-4" style={{ borderColor: "var(--mem-border)" }}>
+        <ChatgptRow status={status} />
+      </div>
+    </Card>
   );
 }
 
-function StatusRow({ status }: { status: RemoteAccessStatus }) {
+type TestResult =
+  | { kind: "idle" }
+  | { kind: "running" }
+  | { kind: "ok"; latency_ms: number | null }
+  | { kind: "err"; error: string };
+
+function StatusRow({
+  status,
+  testResult,
+  onTest,
+  onReconnect,
+  reconnecting,
+}: {
+  status: RemoteAccessStatus;
+  testResult: TestResult;
+  onTest: () => void;
+  onReconnect: () => void;
+  reconnecting: boolean;
+}) {
   const { t } = useTranslation();
   // "off" is a setting the user chose, not something the app probed — the
   // chip-never-lies invariant means a chip's color may only come from an
@@ -354,79 +224,217 @@ function StatusRow({ status }: { status: RemoteAccessStatus }) {
   if (status.status === "starting") {
     return <StatusChip state={{ kind: "probing" }} label={t("remoteAccess.statusConnecting")} />;
   }
-  if (status.status === "connected") {
-    return <StatusChip state={{ kind: "up" }} label={t("remoteAccess.statusConnected")} />;
+  if (status.status === "error") {
+    // The verbatim daemon error carries the chip; there is no honest constant
+    // word to put beside it, so it stands alone as the label.
+    return <StatusChip state={{ kind: "down" }} label={status.error} />;
   }
-  // error — the verbatim daemon error carries the chip; there is no honest
-  // constant word to put beside it, so it stands alone as the label.
-  return <StatusChip state={{ kind: "down" }} label={status.error} />;
-}
-
-function InstructionsBlock({
-  expanded,
-  onToggle,
-}: {
-  expanded: boolean;
-  onToggle: () => void;
-}) {
-  const { t } = useTranslation();
+  // connected
   return (
-    <div>
-      <button
-        onClick={onToggle}
-        aria-expanded={expanded}
-        className="flex items-center gap-1 transition-colors"
-        style={{
-          fontFamily: "var(--mem-font-body)",
-          fontSize: "12px",
-          color: "var(--mem-text-tertiary)",
-        }}
+    <div className="flex items-center gap-3 flex-wrap">
+      <StatusChip state={{ kind: "up" }} label={t("remoteAccess.statusConnected")} />
+      <Button
+        variant="secondary"
+        size="sm"
+        loading={testResult.kind === "running"}
+        onClick={onTest}
       >
-        <svg
-          className="w-3 h-3 transition-transform"
-          style={{ transform: expanded ? "rotate(90deg)" : "rotate(0deg)" }}
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-          aria-hidden="true"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M9 5l7 7-7 7"
-          />
-        </svg>
-        {t("remoteAccess.howTo")}
-      </button>
-      {expanded && (
-        <div
-          className="mt-2 space-y-3 pl-4"
+        {testResult.kind === "running"
+          ? t("remoteAccess.testing")
+          : t("remoteAccess.testConnection")}
+      </Button>
+      <Button variant="secondary" size="sm" loading={reconnecting} onClick={onReconnect}>
+        {t("remoteAccess.reconnect")}
+      </Button>
+      {testResult.kind === "ok" && (
+        <span
+          className="inline-flex items-center gap-1"
           style={{
             fontFamily: "var(--mem-font-body)",
             fontSize: "var(--mem-text-sm)",
-            color: "var(--mem-text-secondary)",
-            lineHeight: "1.5",
+            color: "var(--mem-accent-sage)",
           }}
         >
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+          {t("remoteAccess.statusConnectedLatency", { ms: testResult.latency_ms ?? "?" })}
+        </span>
+      )}
+      {testResult.kind === "err" && (
+        <span
+          className="inline-flex items-center gap-1"
+          style={{
+            fontFamily: "var(--mem-font-body)",
+            fontSize: "var(--mem-text-sm)",
+            color: "var(--mem-status-danger-text)",
+          }}
+        >
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+          {testResult.error}
+        </span>
+      )}
+    </div>
+  );
+}
+
+const rowHeading = (text: string) => (
+  <h3 style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-lg)", fontWeight: 600, color: "var(--mem-text)", margin: 0 }}>
+    {text}
+  </h3>
+);
+
+/** Claude.ai row: reads the real, resolved wiring. `has_plugin` true means the
+ *  connector is installed and memory flows through the relay while web access
+ *  is on — nothing to do. Otherwise a one-click Set up (idempotent plugin
+ *  install) plus a manual fallback. When the wire query fails we can't tell
+ *  whether the plugin exists, so we offer only the manual steps — never a
+ *  one-click install against unknown state (it could double-register). */
+function ClaudeRow() {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const [installing, setInstalling] = useState(false);
+  const [error, setError] = useState("");
+
+  const { data: wire, isError } = useQuery({ queryKey: ["wireState"], queryFn: getWireState });
+  const hasPlugin = wire?.clients.find((c) => c.client_type === "claude_code")?.has_plugin ?? false;
+
+  const install = async () => {
+    setInstalling(true);
+    setError("");
+    try {
+      await installClientPlugin("claude_code");
+      queryClient.invalidateQueries({ queryKey: ["wireState"] });
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setInstalling(false);
+    }
+  };
+
+  if (hasPlugin) {
+    return (
+      <div className="flex flex-col" style={{ gap: "8px" }}>
+        <div className="flex items-center justify-between gap-2">
+          {rowHeading(t("connectMatrix.claudeTitle"))}
+          <StatusChip state={{ kind: "up" }} label={t("connectMatrix.claudeReady")} />
+        </div>
+        <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text-secondary)", lineHeight: 1.5, margin: 0 }}>
+          {t("connectMatrix.claudeReadyBody")}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col" style={{ gap: "10px" }}>
+      <div className="flex items-center justify-between gap-2">
+        {rowHeading(t("connectMatrix.claudeTitle"))}
+        <Tag tone="neutral">{t("intelligence.notConfigured")}</Tag>
+      </div>
+      {!isError && (
+        <div className="flex flex-col gap-1.5">
           <div>
-            <div style={{ color: "var(--mem-text)", fontWeight: 500 }}>
-              {t("remoteAccess.claudeAi")}
-            </div>
-            <div style={{ color: "var(--mem-text-secondary)" }}>
-              {t("remoteAccess.claudeSteps")}
-            </div>
+            <Button variant="secondary" size="sm" onClick={install} disabled={installing}>
+              {installing ? t("connectMatrix.settingUp") : t("connectMatrix.setUp")}
+            </Button>
           </div>
-          <div>
-            <div style={{ color: "var(--mem-text)", fontWeight: 500 }}>
-              {t("remoteAccess.chatGpt")}
-            </div>
-            <div style={{ color: "var(--mem-text-secondary)" }}>
-              {t("remoteAccess.chatgptSteps")}
-            </div>
-          </div>
+          {error && (
+            <p role="alert" style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", color: "var(--mem-status-danger-text)", margin: 0 }}>
+              {error}
+            </p>
+          )}
         </div>
       )}
+      <details className="group">
+        <summary
+          className="inline-flex cursor-pointer list-none items-center gap-1.5 rounded-[var(--mem-radius-sm)] py-0.5 [&::-webkit-details-marker]:hidden focus-visible:outline-2 focus-visible:outline-[var(--mem-focus-ring)] focus-visible:outline-offset-2"
+          style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text-tertiary)" }}
+        >
+          <svg
+            aria-hidden="true"
+            className="h-3 w-3 shrink-0 transition-transform duration-[var(--mem-dur-fast)] group-open:rotate-90"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+          {t("connectMatrix.setUpManually")}
+        </summary>
+        <div className="flex flex-col gap-2 pt-2">
+          <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", fontWeight: 600, color: "var(--mem-text)", margin: 0 }}>
+            {t("connectMatrix.claudePluginStepTitle")}
+          </p>
+          <ol style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text-secondary)", lineHeight: 1.7, paddingLeft: "18px", listStyle: "decimal", margin: 0 }}>
+            <li>{t("connectMatrix.claudePluginStep1")}</li>
+            <li>{t("connectMatrix.claudePluginStep2")}</li>
+            <li>{t("connectMatrix.claudePluginStep3")}</li>
+          </ol>
+          <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", color: "var(--mem-text-tertiary)", lineHeight: 1.5, margin: 0 }}>
+            {t("connectMatrix.claudePluginNote")}
+          </p>
+        </div>
+      </details>
+    </div>
+  );
+}
+
+/** ChatGPT row: the single home for the paste-in relay URL. Only meaningful
+ *  once web access is connected; otherwise a one-line prompt to turn it on. */
+function ChatgptRow({ status }: { status: RemoteAccessStatus }) {
+  const { t } = useTranslation();
+  const [copied, setCopied] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  if (status.status !== "connected") {
+    return (
+      <div className="flex flex-col" style={{ gap: "8px" }}>
+        {rowHeading(t("connectMatrix.chatgptTitle"))}
+        <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text-tertiary)", margin: 0 }}>
+          {t("connectMatrix.chatgptNeedsWebAccess")}
+        </p>
+      </div>
+    );
+  }
+
+  const url = status.relay_url ?? `${status.tunnel_url}/mcp`;
+  const copy = () => {
+    clipboardWrite(url);
+    setCopied(true);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="flex flex-col" style={{ gap: "10px" }}>
+      {rowHeading(t("connectMatrix.chatgptTitle"))}
+      <ol style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-sm)", color: "var(--mem-text-secondary)", lineHeight: 1.7, paddingLeft: "18px", listStyle: "decimal", margin: 0 }}>
+        <li>{t("connectMatrix.chatgptStep1")}</li>
+        <li>{t("connectMatrix.chatgptStep2")}</li>
+        <li>{t("connectMatrix.chatgptStep3")}</li>
+      </ol>
+      <div className="flex items-center gap-2">
+        <code
+          className="flex-1 truncate rounded-md px-2 py-1.5"
+          style={{ fontFamily: "var(--mem-font-mono)", fontSize: "var(--mem-text-xs)", backgroundColor: "var(--mem-bg)", border: "1px solid var(--mem-border)", color: "var(--mem-text)" }}
+        >
+          {url}
+        </code>
+        <Button type="button" variant="secondary" size="sm" onClick={copy} className="shrink-0">
+          {copied ? t("connectMatrix.copied") : t("connectMatrix.copyUrl")}
+        </Button>
+      </div>
+      <p style={{ fontFamily: "var(--mem-font-body)", fontSize: "var(--mem-text-xs)", color: "var(--mem-text-tertiary)", lineHeight: 1.6, margin: 0 }}>
+        {t("remoteAccess.tunnelChangesNote")}
+      </p>
     </div>
   );
 }

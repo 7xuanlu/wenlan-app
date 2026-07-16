@@ -106,7 +106,10 @@ describe("SettingsPage profile display block", () => {
     const user = userEvent.setup();
     renderSettingsPage();
 
-    const toggle = await screen.findByRole("button", { pressed: false });
+    const toggle = await screen.findByRole("button", {
+      name: /run wenlan in background at login/i,
+      pressed: false,
+    });
     await user.click(toggle);
 
     expect(setRunAtLoginMock).toHaveBeenCalledWith(true, expect.anything());
