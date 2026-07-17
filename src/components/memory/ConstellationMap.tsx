@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import ForceGraph2D from "react-force-graph-2d";
 import { listEntities, getEntityDetail, listMemoriesRich } from "../../lib/tauri";
-import type { Entity } from "../../lib/tauri";
+import type { Entity, EntityDetail } from "../../lib/tauri";
 import { buildGraphModel } from "../../lib/graph/model";
 import { useGraphPalette, colorForEntityType } from "../../lib/graph/palette";
 
@@ -103,7 +103,19 @@ export default function ConstellationMap({ onNodeClick }: ConstellationMapProps)
     refetch: refetchDetails,
   } = useQuery({
     queryKey: ["constellation-relations", top20Ids],
-    queryFn: () => Promise.all(top20Ids.map((id) => getEntityDetail(id))),
+    queryFn: async () => {
+      const settled = await Promise.allSettled(top20Ids.map((id) => getEntityDetail(id)));
+      const succeeded = settled
+        .filter((r): r is PromiseFulfilledResult<EntityDetail> => r.status === "fulfilled")
+        .map((r) => r.value);
+      // One flaky detail fetch shouldn't blank the whole graph — the coverage
+      // chip already communicates "fetched for fewer than exist". Only a
+      // total wipeout is a real outage worth the full error screen.
+      if (succeeded.length === 0) {
+        throw new Error("All entity detail fetches failed");
+      }
+      return succeeded;
+    },
     enabled: top20Ids.length > 0,
     refetchInterval: 300_000,
     staleTime: 120_000,
@@ -211,7 +223,19 @@ export default function ConstellationMap({ onNodeClick }: ConstellationMapProps)
         const glTgt = typeof gl?.target === "object" ? (gl.target as any).id : gl?.target;
         return lSrc === glSrc && lTgt === glTgt;
       });
-    if (sameNodes && sameLinks) return prev;
+    if (sameNodes && sameLinks) {
+      // Topology is unchanged, so keep the same node OBJECT REFERENCES — d3
+      // stashes simulation position (x/y/vx/vy) directly on them, and
+      // swapping in fresh objects would re-heat the sim. But a refetch can
+      // still carry updated display fields (name/entityType/stability/
+      // connectionCount) for the same ids, so merge those onto the retained
+      // references rather than silently keeping stale display data.
+      prev.nodes.forEach((n, i) => {
+        const { x: _x, y: _y, vx: _vx, vy: _vy, ...updated } = graphData.nodes[i] as any;
+        Object.assign(n, updated);
+      });
+      return prev;
+    }
     prevGraphRef.current = graphData;
     return graphData;
   }, [graphData]);

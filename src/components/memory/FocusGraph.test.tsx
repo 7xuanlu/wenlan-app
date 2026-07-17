@@ -77,15 +77,65 @@ describe("FocusGraph", () => {
     expect(incoming).toBeInTheDocument();
   });
 
-  it("draws an arrowhead marker on the directed edges", () => {
+  it("draws an arrowhead marker on the directed edges, landing on the correct semantic endpoint", () => {
     const detail = makeDetail(makeEntity({ id: "E" }), [
-      makeRel({ id: "r1", direction: "outgoing", entity_id: "B" }),
+      makeRel({ id: "r1", direction: "outgoing", entity_id: "B", entity_name: "Bob" }),
+      makeRel({ id: "r2", direction: "incoming", entity_id: "A", entity_name: "Alice" }),
     ]);
     const { container } = render(<FocusGraph detail={detail} onEntityClick={vi.fn()} />);
+
     expect(container.querySelector("marker")).toBeInTheDocument();
-    const line = container.querySelector("line");
-    expect(line).not.toBeNull();
-    expect(line!.getAttribute("marker-end")).toMatch(/^url\(#focus-arrow-/);
+    const lines = Array.from(container.querySelectorAll("line"));
+    expect(lines).toHaveLength(2);
+    for (const line of lines) {
+      expect(line.getAttribute("marker-end")).toMatch(/^url\(#focus-arrow-/);
+    }
+
+    // Cross-check against the SVG's own viewBox (the center) and each
+    // neighbor button's own rendered position — not a re-derivation of
+    // FocusGraph's internal placement math.
+    const svg = container.querySelector("svg")!;
+    const [, , widthStr, heightStr] = svg.getAttribute("viewBox")!.split(" ");
+    const width = Number(widthStr);
+    const height = Number(heightStr);
+    const cx = width / 2;
+    const cy = height / 2;
+    const close = (a: number, b: number) => Math.abs(a - b) < 1;
+    const nodePos = (name: RegExp) => {
+      const btn = screen.getByRole("button", { name });
+      return {
+        x: (parseFloat(btn.style.left) / 100) * width,
+        y: (parseFloat(btn.style.top) / 100) * height,
+      };
+    };
+    const bobPos = nodePos(/Bob/);
+    const alicePos = nodePos(/Alice/);
+
+    // Outgoing (Bob): the line starts at the center and the arrow (x2,y2)
+    // lands on the neighbor.
+    const bobLine = lines.find(
+      (l) => close(Number(l.getAttribute("x2")), bobPos.x) && close(Number(l.getAttribute("y2")), bobPos.y),
+    );
+    expect(bobLine).toBeDefined();
+    expect(close(Number(bobLine!.getAttribute("x1")), cx)).toBe(true);
+    expect(close(Number(bobLine!.getAttribute("y1")), cy)).toBe(true);
+
+    // Incoming (Alice): the line starts at the neighbor and the arrow
+    // (x2,y2) lands back on the center.
+    const aliceLine = lines.find(
+      (l) => close(Number(l.getAttribute("x1")), alicePos.x) && close(Number(l.getAttribute("y1")), alicePos.y),
+    );
+    expect(aliceLine).toBeDefined();
+    expect(close(Number(aliceLine!.getAttribute("x2")), cx)).toBe(true);
+    expect(close(Number(aliceLine!.getAttribute("y2")), cy)).toBe(true);
+  });
+
+  it("renders zero neighbor buttons for a detail whose only relation is self-referential", () => {
+    const detail = makeDetail(makeEntity({ id: "E", name: "Origin" }), [
+      makeRel({ id: "r1", direction: "outgoing", entity_id: "E", entity_name: "Origin" }),
+    ]);
+    render(<FocusGraph detail={detail} onEntityClick={vi.fn()} />);
+    expect(screen.queryAllByRole("button")).toHaveLength(0);
   });
 
   it("labels each edge with its relation verb", () => {

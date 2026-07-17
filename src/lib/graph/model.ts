@@ -19,7 +19,7 @@ export interface GraphNode {
   entityType: string;
   /** null = unknown (matches the communityId convention below). */
   confirmed: boolean | null;
-  /** Number of deduped edges touching this node in THIS model. */
+  /** Number of distinct edges touching this node in THIS model (a self-loop counts once, not twice). */
   degree: number;
   /** null until wenlan-types exposes community_id on Entity. */
   communityId: number | null;
@@ -124,6 +124,10 @@ export function buildGraphModel(entities: Entity[], details: EntityDetail[]): Gr
   for (const entity of entities) nodes.set(entity.id, nodeFromEntity(entity));
 
   const edges = new Map<string, GraphEdge>();
+  // Composites already registered — by an id-bearing edge or an idless one —
+  // so a later idless mirror of the SAME relation (its id stripped on the
+  // other endpoint) is recognized as a duplicate instead of double-counted.
+  const seenComposites = new Set<string>();
   for (const detail of details) {
     const homeId = detail.entity.id;
     // The home entity should be in `entities`, but seed from the detail if not
@@ -134,25 +138,44 @@ export function buildGraphModel(entities: Entity[], details: EntityDetail[]): Gr
       if (!nodes.has(rel.entity_id)) nodes.set(rel.entity_id, nodeFromRelation(rel));
 
       const edge = edgeFromRelation(homeId, rel);
-      // Dedupe by relation id first (the same relation surfaces on both
-      // endpoints' details); fall back to the endpoints+verb composite when id
-      // is empty — edge.id already carries that composite, so reuse it.
-      const key = rel.id ? `id:${rel.id}` : `k:${edge.id}`;
-      if (!edges.has(key)) edges.set(key, edge);
+      const composite = `${edge.source}:${edge.type}:${edge.target}`;
+      if (rel.id) {
+        // Dedupe by relation id (the same relation surfaces on both
+        // endpoints' details, each carrying its real id).
+        const key = `id:${rel.id}`;
+        if (!edges.has(key)) edges.set(key, edge);
+        seenComposites.add(composite);
+      } else if (!seenComposites.has(composite)) {
+        // No id (daemon gap): fall back to the endpoints+verb composite.
+        // Distinct explicit ids that happen to share a composite still stay
+        // distinct (parallel-edge policy, see module doc) — they never reach
+        // this branch.
+        seenComposites.add(composite);
+        edges.set(`k:${composite}`, edge);
+      }
     }
   }
 
   for (const edge of edges.values()) {
     const source = nodes.get(edge.source);
     if (source) source.degree += 1;
-    const target = nodes.get(edge.target);
-    if (target) target.degree += 1;
+    // A self-loop (source === target) is one relation touching the node
+    // once, not twice.
+    if (edge.target !== edge.source) {
+      const target = nodes.get(edge.target);
+      if (target) target.degree += 1;
+    }
   }
+
+  // Coverage counts unique entities we fetched relations FOR, not the raw
+  // array length — a duplicate detail for the same entity shouldn't inflate
+  // the "N of M" honesty chip.
+  const uniqueDetailEntityIds = new Set(details.map((d) => d.entity.id));
 
   return {
     nodes: Array.from(nodes.values()),
     edges: Array.from(edges.values()),
-    coverage: { relationsFetchedFor: details.length, totalEntities: entities.length },
+    coverage: { relationsFetchedFor: uniqueDetailEntityIds.size, totalEntities: entities.length },
   };
 }
 

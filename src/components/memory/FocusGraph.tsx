@@ -37,6 +37,7 @@ function deriveNeighbors(model: GraphModel, centerId: string): FocusNeighbor[] {
   for (const edge of model.edges) {
     const outgoing = edge.source === centerId;
     const neighborId = outgoing ? edge.target : edge.source;
+    if (neighborId === centerId) continue; // self-loop: center is not its own neighbor
     const node = nodeById.get(neighborId);
     if (!node) continue;
     const direction: "incoming" | "outgoing" = outgoing ? "outgoing" : "incoming";
@@ -81,8 +82,10 @@ export default function FocusGraph({ detail, onEntityClick }: FocusGraphProps) {
   const centerId = detail.entity.id;
   const allNeighbors = useMemo(() => deriveNeighbors(model, centerId), [model, centerId]);
 
-  // Cap per direction so one lopsided side can't crowd the other out of the map
-  // (ported verbatim from the old EntityGraph placement in EntityDetail).
+  // GRAPH_NODE_CAP is one shared budget across BOTH directions, not a
+  // per-direction cap — balanced below so one lopsided side can't crowd the
+  // other out of the map (ported verbatim from the old EntityGraph placement
+  // in EntityDetail).
   const incomingAll = allNeighbors.filter((n) => n.direction === "incoming");
   const outgoingAll = allNeighbors.filter((n) => n.direction === "outgoing");
   const outgoingShown = Math.min(

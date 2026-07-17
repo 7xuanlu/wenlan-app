@@ -87,6 +87,36 @@ describe("buildGraphModel / buildEgoModel", () => {
     expect(model.edges[0].id).toBe("E:uses:B");
   });
 
+  it("counts a self-loop once toward degree, not twice", () => {
+    const model = buildEgoModel(
+      makeDetail(makeEntity({ id: "E" }), [
+        makeRel({ id: "r1", direction: "outgoing", entity_id: "E", entity_name: "E" }),
+      ]),
+    );
+    expect(model.nodes.find((n) => n.id === "E")!.degree).toBe(1);
+  });
+
+  it("dedupes a mirrored relation whose id was stripped on the other endpoint", () => {
+    const a = makeEntity({ id: "A", name: "A" });
+    const b = makeEntity({ id: "B", name: "B" });
+    const detailA = makeDetail(a, [
+      makeRel({ id: "r1", direction: "outgoing", entity_id: "B", entity_name: "B", relation_type: "uses" }),
+    ]);
+    const detailB = makeDetail(b, [
+      makeRel({ id: "", direction: "incoming", entity_id: "A", entity_name: "A", relation_type: "uses" }),
+    ]);
+    const model = buildGraphModel([a, b], [detailA, detailB]);
+    expect(model.edges).toHaveLength(1);
+    expect(model.nodes.find((n) => n.id === "A")!.degree).toBe(1);
+    expect(model.nodes.find((n) => n.id === "B")!.degree).toBe(1);
+  });
+
+  it("counts unique detail entities for coverage, not raw detail-array length", () => {
+    const e = makeEntity({ id: "E" });
+    const model = buildGraphModel([e], [makeDetail(e, []), makeDetail(e, [])]);
+    expect(model.coverage.relationsFetchedFor).toBe(1);
+  });
+
   it("computes degree over the deduped edge set", () => {
     const model = buildEgoModel(
       makeDetail(makeEntity({ id: "E" }), [
