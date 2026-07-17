@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { EntityDetail as EntityDetailType } from "../../lib/tauri";
 
@@ -21,17 +21,6 @@ vi.mock("../../lib/tauri", () => ({
   deleteEntity: vi.fn(),
   search: vi.fn(() => Promise.resolve([])),
   FACET_COLORS: {},
-}));
-
-// ConstellationMap pulls in react-force-graph-2d (canvas), which jsdom can't
-// render — stub it, but capture props so the overlay's wiring (highlightEntityId,
-// onNodeClick) is still exercised.
-vi.mock("./ConstellationMap", () => ({
-  default: (props: { onNodeClick?: (id: string) => void; highlightEntityId?: string }) => (
-    <div data-testid="mock-constellation-map" data-highlight={props.highlightEntityId}>
-      <button type="button" onClick={() => props.onNodeClick?.("B")}>mock-node-click</button>
-    </div>
-  ),
 }));
 
 import { getEntityDetail } from "../../lib/tauri";
@@ -102,33 +91,43 @@ describe("EntityDetail full graph overlay", () => {
   it("renders an expand-graph button with the i18n label", async () => {
     renderDetail();
     await screen.findByRole("button", { name: /Bob \(person\) · outgoing · knows/ });
-    expect(screen.getByRole("button", { name: "View full graph" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Full screen" })).toBeInTheDocument();
   });
 
-  it("opens the full-graph dialog on click, passing the entity id as highlightEntityId", async () => {
+  // FocusGraph is real here (not mocked): unlike ConstellationMap it's plain
+  // SVG/DOM with no canvas dependency, and it's already exercised unmocked by
+  // the "connections card" tests above in this same file — mocking it here
+  // would also intercept that usage. The overlay renders the same FocusGraph
+  // fed by the same `detail`, so both the card's and the overlay's copies are
+  // in the DOM at once once the dialog is open; queries below are scoped with
+  // `within(dialog)` to disambiguate, which also proves `detail` really
+  // reached the overlay's FocusGraph (real neighbor buttons, not a stub).
+  it("opens the full-screen dialog on click, rendering the same entity's FocusGraph", async () => {
     renderDetail();
     await screen.findByRole("button", { name: /Bob \(person\) · outgoing · knows/ });
-    fireEvent.click(screen.getByRole("button", { name: "View full graph" }));
-    expect(screen.getByRole("dialog", { name: "View full graph" })).toBeInTheDocument();
-    expect(screen.getByTestId("mock-constellation-map")).toHaveAttribute("data-highlight", "E");
+    fireEvent.click(screen.getByRole("button", { name: "Full screen" }));
+    const dialog = screen.getByRole("dialog", { name: "Full screen" });
+    expect(within(dialog).getByRole("button", { name: /Bob \(person\) · outgoing · knows/ })).toBeInTheDocument();
+    expect(within(dialog).getByRole("group", { name: "Connection map for Origin" })).toBeInTheDocument();
   });
 
   it("closes the dialog on Escape", async () => {
     renderDetail();
     await screen.findByRole("button", { name: /Bob \(person\) · outgoing · knows/ });
-    fireEvent.click(screen.getByRole("button", { name: "View full graph" }));
-    expect(screen.getByRole("dialog", { name: "View full graph" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Full screen" }));
+    expect(screen.getByRole("dialog", { name: "Full screen" })).toBeInTheDocument();
     fireEvent.keyDown(window, { key: "Escape" });
-    expect(screen.queryByRole("dialog", { name: "View full graph" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Full screen" })).not.toBeInTheDocument();
   });
 
   it("closes the dialog and forwards the clicked node id to onEntityClick", async () => {
     const onEntityClick = vi.fn();
     renderDetail(onEntityClick);
     await screen.findByRole("button", { name: /Bob \(person\) · outgoing · knows/ });
-    fireEvent.click(screen.getByRole("button", { name: "View full graph" }));
-    fireEvent.click(screen.getByText("mock-node-click"));
+    fireEvent.click(screen.getByRole("button", { name: "Full screen" }));
+    const dialog = screen.getByRole("dialog", { name: "Full screen" });
+    fireEvent.click(within(dialog).getByRole("button", { name: /Bob \(person\) · outgoing · knows/ }));
     expect(onEntityClick).toHaveBeenCalledWith("B");
-    expect(screen.queryByRole("dialog", { name: "View full graph" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Full screen" })).not.toBeInTheDocument();
   });
 });

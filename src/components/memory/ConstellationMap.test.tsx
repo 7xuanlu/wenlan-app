@@ -133,23 +133,6 @@ describe("ConstellationMap", () => {
     expect(await screen.findByTestId("force-graph")).toBeInTheDocument();
   });
 
-  it("accepts a highlightEntityId prop without error", async () => {
-    const entities = [
-      makeEntity({ id: "e1", name: "Alice", entity_type: "person" }),
-      makeEntity({ id: "e2", name: "Origin", entity_type: "project" }),
-    ];
-    mockListEntities.mockResolvedValue(entities);
-    mockGetEntityDetail.mockResolvedValue({
-      entity: entities[0],
-      observations: [],
-      relations: [],
-    });
-
-    renderWithQuery(<ConstellationMap highlightEntityId="e1" />);
-
-    expect(await screen.findByTestId("force-graph")).toBeInTheDocument();
-  });
-
   it("renders a circle with class constellation-node for each entity", async () => {
     const entities = [
       makeEntity({ id: "e1", name: "Alice", entity_type: "person" }),

@@ -187,6 +187,25 @@ describe("FocusGraph", () => {
     expect(personDot.style.backgroundColor).toBe(normalizeColor("#654321"));
   });
 
+  it("sizes the container from the content cap by default (no fill prop)", () => {
+    const detail = makeDetail(makeEntity({ id: "E", name: "Origin" }), [
+      makeRel({ id: "r1", direction: "outgoing", entity_id: "B", entity_name: "Bob" }),
+      makeRel({ id: "r2", direction: "incoming", entity_id: "A", entity_name: "Alice" }),
+    ]);
+    const { container } = render(<FocusGraph detail={detail} onEntityClick={vi.fn()} />);
+    // 1 neighbor per side -> maxSide 1 -> min(280, 128 + 1*30) = 158.
+    expect(container.querySelector(".entity-graph")).toHaveStyle({ height: "158px" });
+  });
+
+  it("fills the container height instead of the content cap when fill is set", () => {
+    const detail = makeDetail(makeEntity({ id: "E", name: "Origin" }), [
+      makeRel({ id: "r1", direction: "outgoing", entity_id: "B", entity_name: "Bob" }),
+      makeRel({ id: "r2", direction: "incoming", entity_id: "A", entity_name: "Alice" }),
+    ]);
+    const { container } = render(<FocusGraph detail={detail} onEntityClick={vi.fn()} fill />);
+    expect(container.querySelector(".entity-graph")).toHaveStyle({ height: "100%" });
+  });
+
   it("maps confidence to edge opacity when present, full opacity when null", () => {
     const withConf = makeDetail(makeEntity({ id: "E" }), [
       makeRel({ id: "r1", direction: "outgoing", entity_id: "B", confidence: 0.4 }),

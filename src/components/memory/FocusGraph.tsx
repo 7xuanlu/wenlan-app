@@ -10,6 +10,9 @@ const GRAPH_NODE_CAP = 8;
 interface FocusGraphProps {
   detail: EntityDetail;
   onEntityClick: (entityId: string) => void;
+  // When set, height comes from the container (100%) instead of the
+  // content-driven cap — for a full-screen host, not more graph data.
+  fill?: boolean;
 }
 
 interface FocusNeighbor {
@@ -72,7 +75,7 @@ interface PlacedNeighbor extends FocusNeighbor {
  * canvas ConstellationMap can't). Consumes buildEgoModel + useGraphPalette so
  * no daemon shape is read for drawing and colors track the theme.
  */
-export default function FocusGraph({ detail, onEntityClick }: FocusGraphProps) {
+export default function FocusGraph({ detail, onEntityClick, fill }: FocusGraphProps) {
   const { t } = useTranslation();
   const palette = useGraphPalette();
   const rawId = useId();
@@ -101,21 +104,28 @@ export default function FocusGraph({ detail, onEntityClick }: FocusGraphProps) {
   const shownIncoming = shown.filter((n) => n.direction === "incoming");
   const shownOutgoing = shown.filter((n) => n.direction === "outgoing");
   const maxSide = Math.max(shownIncoming.length, shownOutgoing.length);
-  const height = Math.min(280, 128 + maxSide * 30);
+  const contentHeight = Math.min(280, 128 + maxSide * 30);
 
   // viewBox width tracks the rendered pixel width so arrowhead markers render
-  // undistorted (percent-positioned DOM nodes stay aligned regardless).
+  // undistorted (percent-positioned DOM nodes stay aligned regardless). In
+  // fill mode, height is container-driven (CSS 100%) rather than the content
+  // cap, so it's tracked the same way as width to keep the viewBox accurate.
   const containerRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(400);
+  const [measuredHeight, setMeasuredHeight] = useState(400);
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     const ro = new ResizeObserver((entries) => {
-      for (const entry of entries) setWidth(entry.contentRect.width || 400);
+      for (const entry of entries) {
+        setWidth(entry.contentRect.width || 400);
+        setMeasuredHeight(entry.contentRect.height || 400);
+      }
     });
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+  const height = fill ? measuredHeight : contentHeight;
 
   const place = (list: FocusNeighbor[], side: "left" | "right"): PlacedNeighbor[] =>
     list.map((n, i) => {
@@ -132,7 +142,7 @@ export default function FocusGraph({ detail, onEntityClick }: FocusGraphProps) {
     <div
       ref={containerRef}
       className="entity-graph"
-      style={{ height }}
+      style={{ height: fill ? "100%" : contentHeight }}
       role="group"
       aria-label={t("entityDetail.graphLabel", { name: detail.entity.name })}
     >

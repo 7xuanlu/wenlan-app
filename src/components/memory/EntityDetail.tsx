@@ -17,7 +17,6 @@ import {
 } from "../../lib/tauri";
 import { MetadataRow, RailPanelTitle } from "./MemoryDetailPrimitives";
 import FocusGraph from "./FocusGraph";
-import ConstellationMap from "./ConstellationMap";
 
 interface EntityDetailProps {
   entityId: string;
@@ -554,12 +553,13 @@ export default function EntityDetail({ entityId, onBack, onEntityClick, onMemory
         className="fixed inset-0 z-50"
         style={{ background: "var(--mem-bg)" }}
       >
-        <ConstellationMap
-          onNodeClick={(id) => {
+        <FocusGraph
+          detail={detail}
+          onEntityClick={(id) => {
             setGraphOpen(false);
             onEntityClick(id);
           }}
-          highlightEntityId={entity.id}
+          fill
         />
         <button
           type="button"
@@ -567,9 +567,9 @@ export default function EntityDetail({ entityId, onBack, onEntityClick, onMemory
           className="memory-detail-icon-button"
           aria-label={t("common.close")}
           title={t("common.close")}
-          // Top-left, not top-right: ConstellationMap's own legend/toggle
-          // box already anchors top-right at the same offset, so a
-          // top-right close button would sit on top of it.
+          // Top-left, not top-right: FocusGraph's own "outgoing →" caption
+          // anchors top-right, so a top-right close button would sit on
+          // top of it.
           style={{ position: "absolute", top: 10, left: 10 }}
         >
           <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
