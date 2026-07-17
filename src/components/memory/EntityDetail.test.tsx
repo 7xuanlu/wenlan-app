@@ -23,6 +23,20 @@ vi.mock("../../lib/tauri", () => ({
   FACET_COLORS: {},
 }));
 
+// ConstellationMap needs a canvas (react-force-graph-2d) that jsdom can't
+// provide — the dedicated ConstellationMap.test.tsx exercises its internals
+// against a canvas-free mock; here we only need to prove EntityDetail wires
+// focusEntityId/onNodeClick correctly and swaps components on mode toggle.
+vi.mock("./ConstellationMap", () => ({
+  default: vi.fn((props: any) => (
+    <div role="group" aria-label="constellation-map-stub" data-focus-entity-id={props.focusEntityId ?? ""}>
+      <button type="button" onClick={() => props.onNodeClick?.("B")}>
+        Bob node
+      </button>
+    </div>
+  )),
+}));
+
 import { getEntityDetail } from "../../lib/tauri";
 import EntityDetail from "./EntityDetail";
 
@@ -127,6 +141,81 @@ describe("EntityDetail full graph overlay", () => {
     fireEvent.click(screen.getByRole("button", { name: "Full screen" }));
     const dialog = screen.getByRole("dialog", { name: "Full screen" });
     fireEvent.click(within(dialog).getByRole("button", { name: /Bob \(person\) · outgoing · knows/ }));
+    expect(onEntityClick).toHaveBeenCalledWith("B");
+    expect(screen.queryByRole("dialog", { name: "Full screen" })).not.toBeInTheDocument();
+  });
+});
+
+describe("EntityDetail overlay mode toggle", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetEntityDetail.mockResolvedValue(detail);
+  });
+
+  function openDialog() {
+    fireEvent.click(screen.getByRole("button", { name: "Full screen" }));
+    return screen.getByRole("dialog", { name: "Full screen" });
+  }
+
+  it("opens in focus mode, with a toggle button offering the full graph", async () => {
+    renderDetail();
+    await screen.findByRole("button", { name: /Bob \(person\) · outgoing · knows/ });
+    const dialog = openDialog();
+    expect(within(dialog).getByRole("group", { name: "Connection map for Origin" })).toBeInTheDocument();
+    expect(within(dialog).queryByRole("group", { name: "constellation-map-stub" })).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Full graph" })).toBeInTheDocument();
+  });
+
+  it("toggling switches to the constellation map, focused on the current entity, and back to focus", async () => {
+    renderDetail();
+    await screen.findByRole("button", { name: /Bob \(person\) · outgoing · knows/ });
+    const dialog = openDialog();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Full graph" }));
+    const mapStub = within(dialog).getByRole("group", { name: "constellation-map-stub" });
+    expect(mapStub).toHaveAttribute("data-focus-entity-id", "E");
+    expect(within(dialog).queryByRole("group", { name: "Connection map for Origin" })).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Focus view" })).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Focus view" }));
+    expect(within(dialog).getByRole("group", { name: "Connection map for Origin" })).toBeInTheDocument();
+    expect(within(dialog).queryByRole("group", { name: "constellation-map-stub" })).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Full graph" })).toBeInTheDocument();
+  });
+
+  it("resets to focus mode the next time the overlay is opened", async () => {
+    renderDetail();
+    await screen.findByRole("button", { name: /Bob \(person\) · outgoing · knows/ });
+    let dialog = openDialog();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Full graph" }));
+    expect(within(dialog).getByRole("group", { name: "constellation-map-stub" })).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Full screen" })).not.toBeInTheDocument();
+
+    dialog = openDialog();
+    expect(within(dialog).getByRole("group", { name: "Connection map for Origin" })).toBeInTheDocument();
+  });
+
+  it("closes the dialog on Escape even while in map mode", async () => {
+    renderDetail();
+    await screen.findByRole("button", { name: /Bob \(person\) · outgoing · knows/ });
+    const dialog = openDialog();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Full graph" }));
+    expect(within(dialog).getByRole("group", { name: "constellation-map-stub" })).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Full screen" })).not.toBeInTheDocument();
+  });
+
+  it("closes the dialog and forwards the clicked node id when a map-mode node is clicked", async () => {
+    const onEntityClick = vi.fn();
+    renderDetail(onEntityClick);
+    await screen.findByRole("button", { name: /Bob \(person\) · outgoing · knows/ });
+    const dialog = openDialog();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Full graph" }));
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Bob node" }));
     expect(onEntityClick).toHaveBeenCalledWith("B");
     expect(screen.queryByRole("dialog", { name: "Full screen" })).not.toBeInTheDocument();
   });

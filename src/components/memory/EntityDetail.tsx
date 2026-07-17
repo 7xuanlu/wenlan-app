@@ -17,6 +17,7 @@ import {
 } from "../../lib/tauri";
 import { MetadataRow, RailPanelTitle } from "./MemoryDetailPrimitives";
 import FocusGraph from "./FocusGraph";
+import ConstellationMap from "./ConstellationMap";
 
 interface EntityDetailProps {
   entityId: string;
@@ -57,6 +58,8 @@ export default function EntityDetail({ entityId, onBack, onEntityClick, onMemory
   const [showAddForm, setShowAddForm] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [graphOpen, setGraphOpen] = useState(false);
+  // Resets to "focus" every time the overlay opens — no persistence across opens.
+  const [overlayMode, setOverlayMode] = useState<"focus" | "map">("focus");
   // Set when Escape cancels an edit, so the unmount blur doesn't save the draft
   const cancelEditRef = useRef(false);
 
@@ -432,7 +435,10 @@ export default function EntityDetail({ entityId, onBack, onEntityClick, onMemory
                 {relations.length > 0 && <span className="entity-count">{relations.length}</span>}
                 <button
                   type="button"
-                  onClick={() => setGraphOpen(true)}
+                  onClick={() => {
+                    setOverlayMode("focus");
+                    setGraphOpen(true);
+                  }}
                   className="memory-detail-icon-button"
                   aria-label={t("entityDetail.expandGraph")}
                   title={t("entityDetail.expandGraph")}
@@ -553,14 +559,24 @@ export default function EntityDetail({ entityId, onBack, onEntityClick, onMemory
         className="fixed inset-0 z-50"
         style={{ background: "var(--mem-bg)" }}
       >
-        <FocusGraph
-          detail={detail}
-          onEntityClick={(id) => {
-            setGraphOpen(false);
-            onEntityClick(id);
-          }}
-          fill
-        />
+        {overlayMode === "focus" ? (
+          <FocusGraph
+            detail={detail}
+            onEntityClick={(id) => {
+              setGraphOpen(false);
+              onEntityClick(id);
+            }}
+            fill
+          />
+        ) : (
+          <ConstellationMap
+            focusEntityId={entity.id}
+            onNodeClick={(id) => {
+              setGraphOpen(false);
+              onEntityClick(id);
+            }}
+          />
+        )}
         <button
           type="button"
           onClick={() => setGraphOpen(false)}
@@ -568,13 +584,22 @@ export default function EntityDetail({ entityId, onBack, onEntityClick, onMemory
           aria-label={t("common.close")}
           title={t("common.close")}
           // Top-left, not top-right: FocusGraph's own "outgoing →" caption
-          // anchors top-right, so a top-right close button would sit on
-          // top of it.
+          // (and ConstellationMap's corner label) anchor top-right, so a
+          // top-right close button would sit on top of them.
           style={{ position: "absolute", top: 10, left: 10 }}
         >
           <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M18 6 6 18M6 6l12 12" />
           </svg>
+        </button>
+        <button
+          type="button"
+          onClick={() => setOverlayMode((m) => (m === "focus" ? "map" : "focus"))}
+          className="memory-detail-text-button"
+          // Right after the close button, same top offset, small gap.
+          style={{ position: "absolute", top: 10, left: 50 }}
+        >
+          {overlayMode === "focus" ? t("entityDetail.viewFullGraph") : t("entityDetail.focusView")}
         </button>
       </div>
     )}

@@ -14,6 +14,11 @@ import { useGraphPalette, colorForEntityType } from "../../lib/graph/palette";
 
 interface ConstellationMapProps {
   onNodeClick?: (entityId: string) => void;
+  // When set: paints an emphasis ring around this node and, once the force
+  // engine settles, flies the camera to center on it. One prop for both —
+  // both behaviors exist for the same reason (this map was opened focused
+  // on a specific entity).
+  focusEntityId?: string;
 }
 
 interface GraphNode {
@@ -57,7 +62,7 @@ const PAGE_CORNER_RADIUS = 2.5;
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 
-export default function ConstellationMap({ onNodeClick }: ConstellationMapProps) {
+export default function ConstellationMap({ onNodeClick, focusEntityId }: ConstellationMapProps) {
   const { t } = useTranslation();
   const palette = useGraphPalette();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -74,15 +79,20 @@ export default function ConstellationMap({ onNodeClick }: ConstellationMapProps)
     const ro = new ResizeObserver((entries) => {
       for (const entry of entries) {
         setDimensions({ width: entry.contentRect.width, height: entry.contentRect.height });
-        // Re-zoom after dimension change settles (ForceGraph2D resets zoom on resize).
-        setTimeout(() => {
-          fgRef.current?.zoomToFit?.(0, -40);
-        }, 50);
+        // Focus mode owns the camera (see onEngineStop) — a resize here must
+        // not re-fit and fight the one-shot fly, whether it lands before or
+        // after it.
+        if (!focusEntityId) {
+          // Re-zoom after dimension change settles (ForceGraph2D resets zoom on resize).
+          setTimeout(() => {
+            fgRef.current?.zoomToFit?.(0, -40);
+          }, 50);
+        }
       }
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [focusEntityId]);
 
   // Fetch entities
   const {
@@ -353,6 +363,35 @@ export default function ConstellationMap({ onNodeClick }: ConstellationMapProps)
     fgRef.current.d3Force("charge")?.strength(-40);
   }, [stableGraphData]);
 
+  // Engine ticks and onEngineStop both ride requestAnimationFrame, which
+  // Chrome suspends entirely for occluded/background tabs — the event can
+  // simply never arrive. Focus-mode camera work therefore detects settle by
+  // polling the focus node's position, which works with or without rAF.
+  useEffect(() => {
+    if (!focusEntityId) return;
+    let last: { x: number; y: number } | null = null;
+    let stable = 0;
+    const poll = setInterval(() => {
+      const node = stableGraphData.nodes.find((n) => n.id === focusEntityId) as any;
+      if (!node || node.x == null || !Number.isFinite(node.x)) return;
+      stable = last && Math.abs(node.x - last.x) < 0.5 && Math.abs(node.y - last.y) < 0.5 ? stable + 1 : 0;
+      last = { x: node.x, y: node.y };
+      if (stable >= 2) {
+        clearInterval(poll);
+        // Duration 0 = synchronous d3 zoom transform: animated (>0) camera moves
+        // ride on requestAnimationFrame, which occluded/background tabs suspend
+        // entirely, so a timed fly can silently never land there.
+        fgRef.current?.centerAt?.(node.x, node.y, 0);
+        fgRef.current?.zoom?.(2.75, 0);
+      }
+    }, 250);
+    const giveUp = setTimeout(() => clearInterval(poll), 10_000);
+    return () => {
+      clearInterval(poll);
+      clearTimeout(giveUp);
+    };
+  }, [focusEntityId, stableGraphData]);
+
   // Text token, not a slot color (labels never wear series color) — hoisted
   // out of paintNode so canvas frames don't pay a style recalc per labeled
   // node; palette's identity changes on theme flip, so this re-reads then.
@@ -453,6 +492,26 @@ export default function ConstellationMap({ onNodeClick }: ConstellationMapProps)
     ctx.fill();
     ctx.globalAlpha = 1;
 
+    // Emphasis ring for the entity this map was opened to focus on.
+    if (focusEntityId && node.id === focusEntityId) {
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, r + 3, 0, 2 * Math.PI);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.75;
+      ctx.globalAlpha = 0.9;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+
+      // Second, fainter halo — cheap to add, makes the ring easier to spot.
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, r + 7, 0, 2 * Math.PI);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      ctx.globalAlpha = 0.25;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
     // Label — only for top-20 hub nodes (+ user node), when the label toggle is on.
     if (showLabels && labeledNodeIds.has(node.id)) {
       const screenFontPx = 12;
@@ -483,7 +542,7 @@ export default function ConstellationMap({ onNodeClick }: ConstellationMapProps)
       }
       ctx.globalAlpha = 1;
     }
-  }, [showLabels, labeledNodeIds, palette, labelColor]);
+  }, [showLabels, labeledNodeIds, palette, labelColor, focusEntityId]);
 
   // Custom link rendering — lines stop at node borders
   const paintLink = useCallback((link: any, ctx: CanvasRenderingContext2D) => {
@@ -619,11 +678,17 @@ export default function ConstellationMap({ onNodeClick }: ConstellationMapProps)
           onNodeClick?.(node.isMemory ? `memory:${node.id.replace("mem:", "")}` : node.id);
         }}
         onEngineStop={() => {
-          // Negative padding here bleeds the bbox past the viewport edges,
-          // producing a noticeable "zoom in to see meaningful connections"
-          // effect. Without it, the graph sat comfortably in the middle with
-          // a band of empty space top and bottom.
-          fgRef.current?.zoomToFit?.(400, -40);
+          // Fires only when rAF runs (never in occluded tabs — see the
+          // settle-poll effect above). In visible tabs it does fire, so the
+          // focusEntityId gate is load-bearing: focus mode must never let
+          // this re-fit and fight the poll's fly.
+          if (!focusEntityId) {
+            // Negative padding here bleeds the bbox past the viewport edges,
+            // producing a noticeable "zoom in to see meaningful connections"
+            // effect. Without it, the graph sat comfortably in the middle with
+            // a band of empty space top and bottom.
+            fgRef.current?.zoomToFit?.(400, -40);
+          }
         }}
       />
 

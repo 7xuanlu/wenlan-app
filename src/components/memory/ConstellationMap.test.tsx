@@ -3,8 +3,13 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-// jsdom does not provide ResizeObserver — stub it
+// jsdom does not provide ResizeObserver — stub it, capturing the callback so
+// tests can fire a synthetic resize.
+const capturedResizeCallbacks = vi.hoisted(() => [] as ((entries: any[]) => void)[]);
 class ResizeObserverStub {
+  constructor(callback: (entries: any[]) => void) {
+    capturedResizeCallbacks.push(callback);
+  }
   observe() {}
   unobserve() {}
   disconnect() {}
@@ -20,14 +25,27 @@ vi.mock("../../lib/tauri", () => ({
 
 // react-force-graph-2d requires canvas — mock it in jsdom. Captures both the
 // graphData (existing tests) and the full props object (needed to invoke
-// onNodeClick directly, since this mock renders no clickable DOM).
+// onNodeClick/onEngineStop/nodeCanvasObject directly, since this mock renders
+// no clickable DOM or canvas). Also exposes the ref's imperative methods
+// (centerAt/zoom/zoomToFit) as spies — React 19 passes `ref` as a plain prop
+// to function components, so the mock can populate it itself, no forwardRef
+// needed — to genuinely test the camera-fly behavior, not just smoke-test it.
 const capturedGraphData = vi.hoisted(() => [] as any[]);
 const capturedProps = vi.hoisted(() => [] as any[]);
+const fgMethodSpies = vi.hoisted(() => ({ centerAt: vi.fn(), zoom: vi.fn(), zoomToFit: vi.fn() }));
 vi.mock("react-force-graph-2d", () => ({
   __esModule: true,
   default: vi.fn((props: any) => {
     capturedGraphData.push(props.graphData);
     capturedProps.push(props);
+    if (props.ref) {
+      props.ref.current = {
+        centerAt: fgMethodSpies.centerAt,
+        zoom: fgMethodSpies.zoom,
+        zoomToFit: fgMethodSpies.zoomToFit,
+        d3Force: vi.fn(() => ({ strength: vi.fn() })),
+      };
+    }
     return (
       <div data-testid="force-graph" data-link-count={props.graphData?.links?.length ?? 0}>
         {props.graphData?.nodes?.map((n: any) => (
@@ -37,6 +55,27 @@ vi.mock("react-force-graph-2d", () => ({
     );
   }),
 }));
+
+function makeMockCtx() {
+  return {
+    beginPath: vi.fn(),
+    arc: vi.fn(),
+    roundRect: vi.fn(),
+    stroke: vi.fn(),
+    fill: vi.fn(),
+    fillText: vi.fn(),
+    setLineDash: vi.fn(),
+    moveTo: vi.fn(),
+    lineTo: vi.fn(),
+    fillStyle: "",
+    strokeStyle: "",
+    globalAlpha: 1,
+    lineWidth: 1,
+    font: "",
+    textAlign: "left" as CanvasTextAlign,
+    textBaseline: "middle" as CanvasTextBaseline,
+  } as unknown as CanvasRenderingContext2D;
+}
 
 import { listEntities, getEntityDetail, listMemoriesRich, listPages } from "../../lib/tauri";
 import ConstellationMap from "./ConstellationMap";
@@ -109,6 +148,7 @@ describe("ConstellationMap", () => {
     vi.clearAllMocks();
     capturedGraphData.length = 0;
     capturedProps.length = 0;
+    capturedResizeCallbacks.length = 0;
     // Toggle state persists in localStorage across renders — start every
     // test from the documented default (both off) regardless of test order.
     localStorage.clear();
@@ -522,5 +562,177 @@ describe("ConstellationMap", () => {
     latestProps.onNodeClick({ id: "page:p1", isPage: true });
 
     expect(onNodeClick).toHaveBeenCalledWith("page:p1");
+  });
+
+  // --- focusEntityId: emphasis ring paint + one-time camera fly ---
+
+  it("draws an emphasis ring only for the focusEntityId node", async () => {
+    const entities = [
+      makeEntity({ id: "e1", name: "Alice", entity_type: "person" }),
+      makeEntity({ id: "e2", name: "Bob", entity_type: "project" }),
+    ];
+    mockListEntities.mockResolvedValue(entities);
+    mockGetEntityDetail.mockResolvedValue({ entity: entities[0], observations: [], relations: [] });
+
+    renderWithQuery(<ConstellationMap focusEntityId="e1" />);
+    await screen.findByTestId("force-graph");
+
+    const paintNode = capturedProps[capturedProps.length - 1].nodeCanvasObject;
+
+    const focusedCtx = makeMockCtx();
+    paintNode({ id: "e1", x: 1, y: 1, entityType: "person", stability: "new", connectionCount: 0 }, focusedCtx, 1);
+    // Ring + halo — two stroked circles.
+    expect(focusedCtx.stroke).toHaveBeenCalledTimes(2);
+
+    const otherCtx = makeMockCtx();
+    paintNode({ id: "e2", x: 2, y: 2, entityType: "project", stability: "new", connectionCount: 0 }, otherCtx, 1);
+    expect(otherCtx.stroke).not.toHaveBeenCalled();
+  });
+
+  it("draws no ring at all when focusEntityId is not set", async () => {
+    const entities = [makeEntity({ id: "e1", name: "Alice", entity_type: "person" })];
+    mockListEntities.mockResolvedValue(entities);
+    mockGetEntityDetail.mockResolvedValue({ entity: entities[0], observations: [], relations: [] });
+
+    renderWithQuery(<ConstellationMap />);
+    await screen.findByTestId("force-graph");
+
+    const paintNode = capturedProps[capturedProps.length - 1].nodeCanvasObject;
+    const ctx = makeMockCtx();
+    paintNode({ id: "e1", x: 1, y: 1, entityType: "person", stability: "new", connectionCount: 0 }, ctx, 1);
+    expect(ctx.stroke).not.toHaveBeenCalled();
+  });
+
+  // onEngineStop never fires in the real environment (confirmed live), so the
+  // camera fly is driven by a settle-poll on the node's position instead. The
+  // event handler is kept only as a dead-event-safe guard.
+
+  it("never calls zoomToFit via onEngineStop when focusEntityId is set", async () => {
+    const entities = [makeEntity({ id: "e1", name: "Alice", entity_type: "person" })];
+    mockListEntities.mockResolvedValue(entities);
+    mockGetEntityDetail.mockResolvedValue({ entity: entities[0], observations: [], relations: [] });
+
+    renderWithQuery(<ConstellationMap focusEntityId="e1" />);
+    await screen.findByTestId("force-graph");
+
+    const latestProps = capturedProps[capturedProps.length - 1];
+    latestProps.onEngineStop();
+    latestProps.onEngineStop();
+
+    // If this event ever starts firing (version bump, different environment),
+    // focus mode must still never let it re-fit and fight the poll's fly.
+    expect(fgMethodSpies.zoomToFit).not.toHaveBeenCalled();
+  });
+
+  it("flies the camera to the focusEntityId node once its position stabilizes (settle-poll)", async () => {
+    const entities = [
+      makeEntity({ id: "e1", name: "Alice", entity_type: "person" }),
+      makeEntity({ id: "e2", name: "Bob", entity_type: "project" }),
+    ];
+    mockListEntities.mockResolvedValue(entities);
+    mockGetEntityDetail.mockResolvedValue({ entity: entities[0], observations: [], relations: [] });
+
+    renderWithQuery(<ConstellationMap focusEntityId="e1" />);
+    await screen.findByTestId("force-graph");
+
+    const latestProps = capturedProps[capturedProps.length - 1];
+    const node = latestProps.graphData.nodes.find((n: any) => n.id === "e1");
+    node.x = 123;
+    node.y = 45;
+
+    // The poll ticks every 250ms and flies once the position has held steady
+    // for 2 consecutive ticks (3 reads total) — wait past that.
+    await new Promise((r) => setTimeout(r, 900));
+
+    expect(fgMethodSpies.centerAt).toHaveBeenCalledWith(123, 45, expect.any(Number));
+    expect(fgMethodSpies.zoom).toHaveBeenCalledWith(2.75, expect.any(Number));
+  });
+
+  it("flies only once — the poll stops itself once the position stabilizes", async () => {
+    const entities = [makeEntity({ id: "e1", name: "Alice", entity_type: "person" })];
+    mockListEntities.mockResolvedValue(entities);
+    mockGetEntityDetail.mockResolvedValue({ entity: entities[0], observations: [], relations: [] });
+
+    renderWithQuery(<ConstellationMap focusEntityId="e1" />);
+    await screen.findByTestId("force-graph");
+
+    const latestProps = capturedProps[capturedProps.length - 1];
+    const node = latestProps.graphData.nodes.find((n: any) => n.id === "e1");
+    node.x = 10;
+    node.y = 10;
+    await new Promise((r) => setTimeout(r, 900));
+    expect(fgMethodSpies.centerAt).toHaveBeenCalledTimes(1);
+
+    // Move the node again after the fly — a stopped poll must not react.
+    node.x = 999;
+    node.y = 999;
+    await new Promise((r) => setTimeout(r, 900));
+    expect(fgMethodSpies.centerAt).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not fly after unmount (poll interval and give-up timer are cleared)", async () => {
+    const entities = [makeEntity({ id: "e1", name: "Alice", entity_type: "person" })];
+    mockListEntities.mockResolvedValue(entities);
+    mockGetEntityDetail.mockResolvedValue({ entity: entities[0], observations: [], relations: [] });
+
+    const { unmount } = renderWithQuery(<ConstellationMap focusEntityId="e1" />);
+    await screen.findByTestId("force-graph");
+
+    const latestProps = capturedProps[capturedProps.length - 1];
+    const node = latestProps.graphData.nodes.find((n: any) => n.id === "e1");
+    node.x = 5;
+    node.y = 5;
+
+    unmount();
+    // Long enough to cover the poll's stabilize window, had it kept running.
+    await new Promise((r) => setTimeout(r, 900));
+
+    expect(fgMethodSpies.centerAt).not.toHaveBeenCalled();
+  });
+
+  it("fits the graph on every engine stop when focusEntityId is unset (pre-existing behavior)", async () => {
+    const entities = [makeEntity({ id: "e1", name: "Alice", entity_type: "person" })];
+    mockListEntities.mockResolvedValue(entities);
+    mockGetEntityDetail.mockResolvedValue({ entity: entities[0], observations: [], relations: [] });
+
+    renderWithQuery(<ConstellationMap />);
+    await screen.findByTestId("force-graph");
+
+    const latestProps = capturedProps[capturedProps.length - 1];
+    latestProps.onEngineStop();
+    expect(fgMethodSpies.zoomToFit).toHaveBeenCalledTimes(1);
+    latestProps.onEngineStop();
+    expect(fgMethodSpies.zoomToFit).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not re-fit on resize when focusEntityId is set (focus mode owns the camera)", async () => {
+    const entities = [makeEntity({ id: "e1", name: "Alice", entity_type: "person" })];
+    mockListEntities.mockResolvedValue(entities);
+    mockGetEntityDetail.mockResolvedValue({ entity: entities[0], observations: [], relations: [] });
+
+    renderWithQuery(<ConstellationMap focusEntityId="e1" />);
+    await screen.findByTestId("force-graph");
+
+    const resize = capturedResizeCallbacks[capturedResizeCallbacks.length - 1];
+    resize([{ contentRect: { width: 800, height: 600 } }]);
+    // The component's re-zoom is behind a 50ms setTimeout — wait past it.
+    await new Promise((r) => setTimeout(r, 60));
+
+    expect(fgMethodSpies.zoomToFit).not.toHaveBeenCalled();
+  });
+
+  it("re-fits on resize when focusEntityId is not set (pre-existing behavior)", async () => {
+    const entities = [makeEntity({ id: "e1", name: "Alice", entity_type: "person" })];
+    mockListEntities.mockResolvedValue(entities);
+    mockGetEntityDetail.mockResolvedValue({ entity: entities[0], observations: [], relations: [] });
+
+    renderWithQuery(<ConstellationMap />);
+    await screen.findByTestId("force-graph");
+
+    const resize = capturedResizeCallbacks[capturedResizeCallbacks.length - 1];
+    resize([{ contentRect: { width: 800, height: 600 } }]);
+    await new Promise((r) => setTimeout(r, 60));
+
+    expect(fgMethodSpies.zoomToFit).toHaveBeenCalledWith(0, -40);
   });
 });
