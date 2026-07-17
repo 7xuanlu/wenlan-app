@@ -14,6 +14,7 @@ import { useGraphPalette, colorForEntityType } from "../../lib/graph/palette";
 
 interface ConstellationMapProps {
   onNodeClick?: (entityId: string) => void;
+  highlightEntityId?: string;
 }
 
 interface GraphNode {
@@ -57,7 +58,7 @@ const PAGE_CORNER_RADIUS = 2.5;
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 
-export default function ConstellationMap({ onNodeClick }: ConstellationMapProps) {
+export default function ConstellationMap({ onNodeClick, highlightEntityId }: ConstellationMapProps) {
   const { t } = useTranslation();
   const palette = useGraphPalette();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -453,6 +454,26 @@ export default function ConstellationMap({ onNodeClick }: ConstellationMapProps)
     ctx.fill();
     ctx.globalAlpha = 1;
 
+    // Emphasis ring for the entity this map was opened to focus on.
+    if (highlightEntityId && node.id === highlightEntityId) {
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, r + 3, 0, 2 * Math.PI);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.75;
+      ctx.globalAlpha = 0.9;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+
+      // Second, fainter halo — cheap to add, makes the ring easier to spot.
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, r + 7, 0, 2 * Math.PI);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      ctx.globalAlpha = 0.25;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
     // Label — only for top-20 hub nodes (+ user node), when the label toggle is on.
     if (showLabels && labeledNodeIds.has(node.id)) {
       const screenFontPx = 12;
@@ -483,7 +504,7 @@ export default function ConstellationMap({ onNodeClick }: ConstellationMapProps)
       }
       ctx.globalAlpha = 1;
     }
-  }, [showLabels, labeledNodeIds, palette, labelColor]);
+  }, [showLabels, labeledNodeIds, palette, labelColor, highlightEntityId]);
 
   // Custom link rendering — lines stop at node borders
   const paintLink = useCallback((link: any, ctx: CanvasRenderingContext2D) => {
@@ -742,7 +763,7 @@ export default function ConstellationMap({ onNodeClick }: ConstellationMapProps)
           background: "var(--mem-surface)",
           border: "1px solid var(--mem-border)",
           borderRadius: 6,
-          opacity: 0.85,
+          opacity: 1,
           pointerEvents: "auto",
         }}>
           {isPartialCoverage && (
@@ -775,9 +796,9 @@ export default function ConstellationMap({ onNodeClick }: ConstellationMapProps)
                 alignItems: "center",
                 gap: 4,
                 padding: "2px 4px",
-                fontSize: 10,
+                fontSize: 11,
                 fontFamily: "var(--mem-font-body)",
-                color: on ? "var(--mem-text-primary)" : "var(--mem-text-tertiary)",
+                color: on ? "var(--mem-text)" : "var(--mem-text-tertiary)",
                 background: "none",
                 border: "none",
                 cursor: "pointer",

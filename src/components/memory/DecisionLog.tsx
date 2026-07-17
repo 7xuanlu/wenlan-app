@@ -188,7 +188,7 @@ function DecisionEntryRow({
         <div
           className="rounded-lg p-3 transition-colors duration-150"
           style={{
-            backgroundColor: expanded ? "var(--mem-surface-raised)" : "transparent",
+            backgroundColor: expanded ? "var(--mem-detail-surface-raised)" : "transparent",
             border: expanded ? "1px solid var(--mem-border)" : "1px solid transparent",
           }}
         >

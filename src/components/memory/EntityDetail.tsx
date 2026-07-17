@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
@@ -17,6 +17,7 @@ import {
 } from "../../lib/tauri";
 import { MetadataRow, RailPanelTitle } from "./MemoryDetailPrimitives";
 import FocusGraph from "./FocusGraph";
+import ConstellationMap from "./ConstellationMap";
 
 interface EntityDetailProps {
   entityId: string;
@@ -56,8 +57,23 @@ export default function EntityDetail({ entityId, onBack, onEntityClick, onMemory
   const [newObs, setNewObs] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [graphOpen, setGraphOpen] = useState(false);
   // Set when Escape cancels an edit, so the unmount blur doesn't save the draft
   const cancelEditRef = useRef(false);
+
+  useEffect(() => {
+    if (!graphOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        // Capture phase: wins the race against Main's window listener,
+        // which treats Escape as "back" while view.kind === "entity".
+        e.stopPropagation();
+        setGraphOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [graphOpen]);
 
   const locale = i18n.resolvedLanguage ?? i18n.language;
 
@@ -216,6 +232,7 @@ export default function EntityDetail({ entityId, onBack, onEntityClick, onMemory
   );
 
   return (
+    <>
     <main className="memory-detail-dossier" aria-label={t("entityDetail.dossierLabel")}>
       <header className="entity-dossier-header">
         <button
@@ -412,7 +429,20 @@ export default function EntityDetail({ entityId, onBack, onEntityClick, onMemory
           <div className="memory-detail-card">
             <div className="memory-detail-card-header">
               <h3 className="memory-detail-section-title">{t("entityDetail.connectionsTitle")}</h3>
-              {relations.length > 0 && <span className="entity-count">{relations.length}</span>}
+              <div className="memory-detail-actions">
+                {relations.length > 0 && <span className="entity-count">{relations.length}</span>}
+                <button
+                  type="button"
+                  onClick={() => setGraphOpen(true)}
+                  className="memory-detail-icon-button"
+                  aria-label={t("entityDetail.expandGraph")}
+                  title={t("entityDetail.expandGraph")}
+                >
+                  <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3" />
+                  </svg>
+                </button>
+              </div>
             </div>
             <div className="memory-detail-card-body">
               {relations.length === 0 ? (
@@ -516,5 +546,38 @@ export default function EntityDetail({ entityId, onBack, onEntityClick, onMemory
         )}
       </div>
     </main>
+    {graphOpen && (
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={t("entityDetail.expandGraph")}
+        className="fixed inset-0 z-50"
+        style={{ background: "var(--mem-bg)" }}
+      >
+        <ConstellationMap
+          onNodeClick={(id) => {
+            setGraphOpen(false);
+            onEntityClick(id);
+          }}
+          highlightEntityId={entity.id}
+        />
+        <button
+          type="button"
+          onClick={() => setGraphOpen(false)}
+          className="memory-detail-icon-button"
+          aria-label={t("common.close")}
+          title={t("common.close")}
+          // Top-left, not top-right: ConstellationMap's own legend/toggle
+          // box already anchors top-right at the same offset, so a
+          // top-right close button would sit on top of it.
+          style={{ position: "absolute", top: 10, left: 10 }}
+        >
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M18 6 6 18M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+    )}
+    </>
   );
 }
