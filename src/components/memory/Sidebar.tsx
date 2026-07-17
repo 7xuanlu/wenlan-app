@@ -1,58 +1,161 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { forwardRef, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { getMemoryStats } from "../../lib/tauri";
+import { getMemoryStats, listSpaces, type Page, type Space } from "../../lib/tauri";
+import { rankRecentPages, readRecentPageHistory } from "../../lib/recentPages";
+import { rankRecentSpaces, readRecentSpaceHistory } from "../../lib/recentSpaces";
 import IdentityCard from "./IdentityCard";
-import SpaceList from "./SpaceList";
 import EntitySuggestions from "./EntitySuggestions";
+import { RecentPages } from "./RecentPages";
+import { RecentSpaces } from "./RecentSpaces";
+import { PrimaryNavigation } from "./navigation/PrimaryNavigation";
+import { ReviewEnvironmentBadge } from "./navigation/ReviewEnvironmentBadge";
+import type { GlobalNavigation } from "./navigation/viewState";
+import { listAllActivePages } from "./pages/listAllPages";
 
 interface SidebarProps {
-  collapsed: boolean;
-  onSelectSpace: (spaceName: string | null) => void;
-  onEntityClick: (entityId: string) => void;
-  onNavigateLog?: () => void;
+  readonly activeNavigation?: GlobalNavigation | null;
+  readonly collapsed: boolean;
+  readonly currentPageId?: string | null;
+  readonly currentSpaceId?: string | null;
+  readonly onEntityClick: (entityId: string) => void;
+  readonly onNavigateGraph?: () => void;
   onNavigateHome?: () => void;
-  onNavigateGraph?: () => void;
+  readonly onNavigateLog?: () => void;
+  readonly onNavigatePages?: () => void;
+  readonly onNavigateSettings?: () => void;
   onNavigateSources?: () => void;
-  onNavigateSettings?: () => void;
-  onOpenAbout?: () => void;
+  readonly onNavigateSpaces?: (create: boolean) => void;
+  readonly onOpenAbout?: () => void;
+  readonly onRequestClose?: () => void;
+  readonly onSelectPage?: (page: Page) => void;
+  readonly onSelectSpace: (space: Space) => void;
+  readonly open?: boolean;
+  readonly presentation?: "desktop" | "overlay";
+  readonly recentPagesRevision?: number;
+  readonly recentSpacesRevision?: number;
 }
 
+function closeAfterNavigation<Arguments extends readonly unknown[]>(
+  navigate: (...arguments_: Arguments) => void,
+  close: (() => void) | undefined,
+): (...arguments_: Arguments) => void;
+function closeAfterNavigation<Arguments extends readonly unknown[]>(
+  navigate: ((...arguments_: Arguments) => void) | undefined,
+  close: (() => void) | undefined,
+): ((...arguments_: Arguments) => void) | undefined;
+function closeAfterNavigation<Arguments extends readonly unknown[]>(
+  navigate: ((...arguments_: Arguments) => void) | undefined,
+  close: (() => void) | undefined,
+): ((...arguments_: Arguments) => void) | undefined {
+  if (navigate === undefined) return undefined;
+  return (...arguments_: Arguments) => {
+    navigate(...arguments_);
+    close?.();
+  };
+}
 
 export default function Sidebar({
+  activeNavigation = null,
   collapsed,
-  onSelectSpace,
+  currentPageId = null,
+  currentSpaceId = null,
   onEntityClick,
-  onNavigateLog,
-  onNavigateHome,
   onNavigateGraph,
-  onNavigateSources,
+  onNavigateHome,
+  onNavigateLog,
+  onNavigatePages,
   onNavigateSettings,
+  onNavigateSources,
+  onNavigateSpaces = () => {},
   onOpenAbout,
+  onRequestClose,
+  onSelectPage,
+  onSelectSpace,
+  open = !collapsed,
+  presentation = "desktop",
+  recentPagesRevision: _recentPagesRevision = 0,
+  recentSpacesRevision: _recentSpacesRevision = 0,
 }: SidebarProps) {
   const { t } = useTranslation();
+  const asideRef = useRef<HTMLElement>(null);
   const { data: _stats } = useQuery({
     queryKey: ["memoryStats"],
     queryFn: getMemoryStats,
     refetchInterval: 10000,
   });
+  const { data: pages = [] } = useQuery({
+    queryKey: ["pages", "active"],
+    queryFn: listAllActivePages,
+  });
+  const { data: spaces = [] } = useQuery({ queryKey: ["spaces"], queryFn: listSpaces });
+  const pageHistory = readRecentPageHistory({ pages });
+  const recentPages = rankRecentPages(pages, pageHistory, Date.now());
+  const history = readRecentSpaceHistory({ spaces });
+  const recentSpaces = rankRecentSpaces(spaces, history, Date.now());
+  const overlay = presentation === "overlay";
+  const closeOverlay = overlay ? onRequestClose : undefined;
+
+  useEffect(() => {
+    if (presentation !== "overlay" || !open) return;
+    const first = asideRef.current?.querySelector<HTMLElement>("button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])");
+    first?.focus();
+  }, [open, presentation]);
+
+  const trapFocus = (event: React.KeyboardEvent<HTMLElement>) => {
+    if (event.key !== "Tab" || presentation !== "overlay") return;
+    const focusable = asideRef.current?.querySelectorAll<HTMLElement>("button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex='-1'])");
+    if (!focusable || focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (!first || !last) return;
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
 
   return (
-    <aside
-      className="flex-shrink-0 flex flex-col transition-[width] duration-200 ease-out overflow-x-hidden"
-      style={{
-        width: collapsed ? 0 : 240,
-        backgroundColor: "var(--mem-sidebar)",
-        borderRight: collapsed ? "none" : "1px solid var(--mem-border)",
-        overflow: "hidden",
-      }}
-    >
+    <>
+      {overlay && open && (
+        <button
+          aria-label={t("sidebar.close")}
+          className="fixed inset-x-0 bottom-0 top-[52px] z-30 border-0 bg-black/40"
+          onClick={onRequestClose}
+          type="button"
+        />
+      )}
+      <aside
+        aria-hidden={!open}
+        aria-label={t("sidebar.navigation")}
+        className="memory-sidebar flex flex-shrink-0 flex-col overflow-x-hidden transition-[width,transform] duration-200 ease-out"
+        inert={!open}
+        onKeyDown={trapFocus}
+        ref={asideRef}
+        style={{
+          backgroundColor: "var(--mem-sidebar)",
+          borderRight: open ? "1px solid var(--mem-border)" : "none",
+          bottom: overlay ? 0 : undefined,
+          left: overlay ? 0 : undefined,
+          overflow: "hidden",
+          position: overlay ? "fixed" : "relative",
+          top: overlay ? 52 : undefined,
+          transform: overlay && !open ? "translateX(-100%)" : "translateX(0)",
+          visibility: overlay && !open ? "hidden" : "visible",
+          width: overlay ? 240 : collapsed ? 0 : 240,
+          zIndex: overlay ? 40 : undefined,
+        }}
+      >
       <div
-        className="flex flex-col h-full transition-opacity duration-150"
+        className="memory-sidebar-content flex flex-col h-full transition-opacity duration-150"
         style={{
           width: 240,
-          opacity: collapsed ? 0 : 1,
-          pointerEvents: collapsed ? "none" : "auto",
+          opacity: open ? 1 : 0,
+          pointerEvents: open ? "auto" : "none",
         }}
       >
         <div className="flex flex-col gap-6 px-4 pt-2 pb-2">
@@ -60,98 +163,73 @@ export default function Sidebar({
         </div>
 
         <div className="flex-1 overflow-y-auto min-h-0 px-4 pb-4" style={{ overflowX: "hidden" }}>
-          <div className="pb-4">
-            {onNavigateHome && (
-              <button
-                onClick={onNavigateHome}
-                className="flex items-center gap-2 px-1 py-1.5 rounded-md transition-colors duration-150 hover:bg-[var(--mem-hover)] w-full"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--mem-text-tertiary)" }}>
-                  <path d="M3 10.5L12 3l9 7.5" />
-                  <path d="M5 9.5V21h14V9.5" />
-                  <path d="M9.5 21v-6h5v6" />
-                </svg>
-                <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "13px", color: "var(--mem-text-secondary)" }}>
-                  {t("sidebar.home")}
-                </span>
-              </button>
-            )}
-
-            {onNavigateLog && (
-              <button
-                onClick={onNavigateLog}
-                className="flex items-center gap-2 px-1 py-1.5 rounded-md transition-colors duration-150 hover:bg-[var(--mem-hover)] w-full"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--mem-text-tertiary)" }}>
-                  <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
-                  <polyline points="14 2 14 8 20 8" />
-                  <line x1="16" y1="13" x2="8" y2="13" />
-                  <line x1="16" y1="17" x2="8" y2="17" />
-                  <polyline points="10 9 9 9 8 9" />
-                </svg>
-                <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "13px", color: "var(--mem-text-secondary)" }}>
-                  {t("sidebar.memories")}
-                </span>
-              </button>
-            )}
-
-            {onNavigateGraph && (
-              <button
-                onClick={onNavigateGraph}
-                className="flex items-center gap-2 px-1 py-1.5 rounded-md transition-colors duration-150 hover:bg-[var(--mem-hover)] w-full"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--mem-text-tertiary)" }}>
-                  <circle cx="5" cy="6" r="2" />
-                  <circle cx="19" cy="6" r="2" />
-                  <circle cx="12" cy="18" r="2" />
-                  <line x1="7" y1="6" x2="17" y2="6" />
-                  <line x1="6" y1="8" x2="11" y2="16" />
-                  <line x1="18" y1="8" x2="13" y2="16" />
-                </svg>
-                <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "13px", color: "var(--mem-text-secondary)" }}>
-                  {t("sidebar.graph")}
-                </span>
-              </button>
-            )}
-
-            {onNavigateSources && (
-              <button
-                onClick={onNavigateSources}
-                className="flex items-center gap-2 px-1 py-1.5 rounded-md transition-colors duration-150 hover:bg-[var(--mem-hover)] w-full"
-              >
-                {/* Stacked strata — the foundational layer the wiki is built on. */}
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--mem-text-tertiary)" }}>
-                  <path d="M12 3 21 8 12 13 3 8z" />
-                  <path d="M3 12 12 17 21 12" />
-                  <path d="M3 16 12 21 21 16" />
-                </svg>
-                <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "13px", color: "var(--mem-text-secondary)" }}>
-                  {t("sidebar.sources")}
-                </span>
-              </button>
-            )}
-          </div>
-
-          <SpaceList onSelectSpace={onSelectSpace} />
+          <PrimaryNavigation
+            active={activeNavigation}
+            labels={{
+              graph: t("sidebar.graph"),
+              home: t("sidebar.home"),
+              memories: t("sidebar.memories"),
+              navigation: t("sidebar.navigation"),
+              pages: t("sidebar.pages"),
+              sources: t("sidebar.sources"),
+              spaces: t("sidebar.spaces"),
+            }}
+            onNavigateGraph={closeAfterNavigation(onNavigateGraph, closeOverlay)}
+            onNavigateHome={closeAfterNavigation(onNavigateHome, closeOverlay)}
+            onNavigateLog={closeAfterNavigation(onNavigateLog, closeOverlay)}
+            onNavigatePages={closeAfterNavigation(onNavigatePages, closeOverlay)}
+            onNavigateSources={closeAfterNavigation(onNavigateSources, closeOverlay)}
+            onNavigateSpaces={closeAfterNavigation(onNavigateSpaces, closeOverlay)}
+            recentPagesSection={onSelectPage !== undefined && recentPages.length > 0 ? (
+              <section>
+                <p className="mb-2 px-1" style={{ color: "var(--mem-text-tertiary)", fontFamily: "var(--mem-font-mono)", fontSize: "10px", fontWeight: 600, letterSpacing: "0.055em", textTransform: "uppercase" }}>
+                  {t("sidebar.recentPages")}
+                </p>
+                <RecentPages
+                  ariaLabel={t("sidebar.recentPages")}
+                  currentPageId={currentPageId}
+                  onSelectPage={closeAfterNavigation(onSelectPage, closeOverlay)}
+                  pages={recentPages}
+                />
+              </section>
+            ) : undefined}
+            recentSpacesSection={recentSpaces.length > 0 ? (
+              <section>
+                <p className="mb-2 px-1" style={{ color: "var(--mem-text-tertiary)", fontFamily: "var(--mem-font-mono)", fontSize: "10px", fontWeight: 600, letterSpacing: "0.055em", textTransform: "uppercase" }}>
+                  {t("sidebar.recentSpaces")}
+                </p>
+                <RecentSpaces
+                  ariaLabel={t("sidebar.recentSpaces")}
+                  currentSpaceId={currentSpaceId}
+                  onSelectSpace={closeAfterNavigation(onSelectSpace, closeOverlay)}
+                  spaces={recentSpaces}
+                />
+              </section>
+            ) : undefined}
+          />
         </div>
 
         <div className="px-4 pt-2 pb-3 flex-shrink-0">
+          <ReviewEnvironmentBadge />
           <IdentityCard
-            onOpenDetail={onEntityClick}
-            onOpenSettings={onNavigateSettings}
-            onOpenAbout={onOpenAbout}
+            onOpenDetail={closeAfterNavigation(onEntityClick, closeOverlay)}
+            onOpenSettings={closeAfterNavigation(onNavigateSettings, closeOverlay)}
+            onOpenAbout={closeAfterNavigation(onOpenAbout, closeOverlay)}
           />
         </div>
       </div>
-    </aside>
+      </aside>
+    </>
   );
 }
 
 /** Sidebar toggle button for use in the header */
-export function SidebarToggleButton({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
+export const SidebarToggleButton = forwardRef<HTMLButtonElement, { readonly collapsed: boolean; readonly onToggle: () => void }>(function SidebarToggleButton({ collapsed, onToggle }, ref) {
   const { t } = useTranslation();
   return (
     <button
+      data-sidebar-toggle="true"
+      ref={ref}
       onClick={onToggle}
       className="flex items-center justify-center rounded-md transition-colors duration-150 hover:bg-[var(--mem-hover-strong)]"
       style={{
@@ -177,4 +255,4 @@ export function SidebarToggleButton({ collapsed, onToggle }: { collapsed: boolea
       </svg>
     </button>
   );
-}
+});

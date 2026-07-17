@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import PageDetail from "./PageDetail";
+import { i18n } from "../../i18n";
 
 vi.mock("../../lib/tauri", () => ({
   getPage: vi.fn().mockResolvedValue({
@@ -89,17 +92,67 @@ describe("PageDetail", () => {
     onPageClick: vi.fn(),
   };
 
-  beforeEach(() => { vi.clearAllMocks(); });
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    await i18n.changeLanguage("en");
+  });
 
   it("renders page title", async () => {
     renderWithQuery(<PageDetail {...defaultProps} />);
-    expect(await screen.findByText("libSQL Architecture")).toBeTruthy();
+    expect(await screen.findByRole("heading", { level: 1, name: "libSQL Architecture" })).toBeInTheDocument();
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+  });
+
+  it("names and dismisses the destination Page when authored content attaches to it", async () => {
+    const onDismissAttachedPageNotice = vi.fn();
+    const { user } = renderWithQuery(
+      <PageDetail
+        {...defaultProps}
+        onDismissAttachedPageNotice={onDismissAttachedPageNotice}
+        showAttachedPageNotice
+      />,
+    );
+
+    const notice = await screen.findByRole("status", { name: "Added to “libSQL Architecture”" });
+    expect(notice).toHaveTextContent("Added to “libSQL Architecture”");
+    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(onDismissAttachedPageNotice).toHaveBeenCalledOnce();
+  });
+
+  it("reports the loaded Page once so visit history records real opens", async () => {
+    const onPageLoaded = vi.fn();
+    renderWithQuery(<PageDetail {...defaultProps} onPageLoaded={onPageLoaded} />);
+
+    await screen.findByRole("heading", { level: 1, name: "libSQL Architecture" });
+    await waitFor(() => expect(onPageLoaded).toHaveBeenCalledWith({
+      id: "concept_abc",
+      status: "active",
+      title: "libSQL Architecture",
+    }));
+    expect(onPageLoaded).toHaveBeenCalledTimes(1);
   });
 
   it("renders meta line with distilled time", async () => {
-    renderWithQuery(<PageDetail {...defaultProps} />);
+    const { container } = renderWithQuery(<PageDetail {...defaultProps} />);
     expect(await screen.findByText(/Last distilled/)).toBeTruthy();
     expect(await screen.findByText(/from 2 memories/)).toBeTruthy();
+
+    const dateline = container.querySelector(".page-detail-dateline");
+    const items = dateline?.querySelectorAll(".page-detail-dateline-item");
+    expect(items).toHaveLength(2);
+    expect(Array.from(items ?? []).map((item) => item.textContent)).toEqual([
+      expect.stringMatching(/^Last distilled \S+(?: \S+)?$/),
+      "from 2 memories",
+    ]);
+    expect(dateline?.querySelector(".page-detail-dateline-separator")).toBeNull();
+
+    const css = readFileSync(resolve("src/index.css"), "utf8");
+    expect(css).toMatch(
+      /\.page-detail-dateline-item\s*\{[^}]*white-space:\s*nowrap;/s,
+    );
+    expect(css).toMatch(
+      /@media \(max-width:\s*599px\)\s*\{[\s\S]*?\.page-detail-dateline-item\s*\+\s*\.page-detail-dateline-item::before\s*\{[^}]*display:\s*none;/,
+    );
   });
 
   it("renders last distilled info", async () => {
@@ -118,6 +171,168 @@ describe("PageDetail", () => {
     expect(container.querySelector('button[title="Copy as context"]')).toBeTruthy();
     expect(container.querySelector('button[title="Export to Obsidian"]')).toBeTruthy();
   });
+
+  it("offers one mobile primary action and a keyboard-safe overflow instead of bare delete", async () => {
+    const { deletePage } = await import("../../lib/tauri");
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const { user, container } = renderWithQuery(<PageDetail {...defaultProps} />);
+    await screen.findByText("libSQL Architecture");
+
+    const mobilePrimary = container.querySelector(".page-detail-primary-action");
+    expect(mobilePrimary).toHaveAccessibleName("Edit page");
+    expect(container.querySelector('button[title="Delete page"]')).toBeNull();
+
+    const trigger = screen.getByRole("button", { name: "Page actions" });
+    await user.click(trigger);
+    const menu = screen.getByRole("menu", { name: "Page actions" });
+    expect(within(menu).getByRole("menuitem", { name: "Re-distill page" })).toBeInTheDocument();
+    expect(within(menu).getByRole("menuitem", { name: "Copy as context" })).toBeInTheDocument();
+    expect(within(menu).getByRole("menuitem", { name: "Delete page" })).toBeInTheDocument();
+
+    expect(within(menu).getByRole("menuitem", { name: "Re-distill page" })).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("menu", { name: "Page actions" })).toBeNull();
+    expect(trigger).toHaveFocus();
+
+    await user.click(trigger);
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByRole("menu", { name: "Page actions" })).toBeNull();
+
+    await user.click(trigger);
+    await user.click(screen.getByRole("menuitem", { name: "Delete page" }));
+    expect(confirmSpy).toHaveBeenCalledWith("Delete this page?");
+    expect(deletePage).not.toHaveBeenCalled();
+
+    confirmSpy.mockReturnValue(true);
+    await user.click(trigger);
+    await user.click(screen.getByRole("menuitem", { name: "Delete page" }));
+    await waitFor(() => expect(deletePage).toHaveBeenCalledWith("concept_abc"));
+
+    const css = readFileSync(resolve("src/index.css"), "utf8");
+    expect(css).toMatch(
+      /@media \(max-width:\s*599px\)\s*\{[\s\S]*?\.page-detail-icon-actions\s*\{[^}]*display:\s*none;[\s\S]*?\.page-detail-primary-action\s*\{[^}]*display:\s*inline-flex;/,
+    );
+    confirmSpy.mockRestore();
+  });
+
+  it("keeps Page action menu keyboard events out of Main history and manages item focus", async () => {
+    const windowEscapeObserver = vi.fn();
+    window.addEventListener("keydown", windowEscapeObserver);
+
+    try {
+      const { user } = renderWithQuery(<PageDetail {...defaultProps} />);
+      await screen.findByText("libSQL Architecture");
+
+      const trigger = screen.getByRole("button", { name: "Page actions" });
+      await user.click(trigger);
+      const menu = screen.getByRole("menu", { name: "Page actions" });
+      const items = within(menu).getAllByRole("menuitem").filter((item) => !item.hasAttribute("disabled"));
+
+      expect(items[0]).toHaveFocus();
+      await user.keyboard("{ArrowDown}");
+      expect(items[1]).toHaveFocus();
+      await user.keyboard("{End}");
+      expect(items[items.length - 1]).toHaveFocus();
+      await user.keyboard("{ArrowDown}");
+      expect(items[0]).toHaveFocus();
+      await user.keyboard("{ArrowUp}");
+      expect(items[items.length - 1]).toHaveFocus();
+      await user.keyboard("{Home}");
+      expect(items[0]).toHaveFocus();
+
+      await user.keyboard("{Escape}");
+      expect(screen.queryByRole("menu", { name: "Page actions" })).toBeNull();
+      expect(trigger).toHaveFocus();
+      expect(windowEscapeObserver).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener("keydown", windowEscapeObserver);
+    }
+  });
+
+  it("opens Page actions from its trigger with ArrowDown or ArrowUp at the matching boundary", async () => {
+    const { user } = renderWithQuery(<PageDetail {...defaultProps} />);
+    await screen.findByText("libSQL Architecture");
+
+    const trigger = screen.getByRole("button", { name: "Page actions" });
+    trigger.focus();
+    await user.keyboard("{ArrowDown}");
+    let menu = screen.getByRole("menu", { name: "Page actions" });
+    let items = within(menu).getAllByRole("menuitem").filter((item) => !item.hasAttribute("disabled"));
+    expect(items[0]).toHaveFocus();
+
+    await user.keyboard("{Escape}");
+    await user.keyboard("{ArrowUp}");
+    menu = screen.getByRole("menu", { name: "Page actions" });
+    items = within(menu).getAllByRole("menuitem").filter((item) => !item.hasAttribute("disabled"));
+    expect(items[items.length - 1]).toHaveFocus();
+  });
+
+  it("focuses the first rendered Page action instead of a CSS-hidden mobile item", async () => {
+    const rectsSpy = vi
+      .spyOn(HTMLElement.prototype, "getClientRects")
+      .mockImplementation(function (this: HTMLElement) {
+        return (
+          this.classList.contains("page-detail-mobile-menu-item")
+            ? []
+            : [{}]
+        ) as unknown as DOMRectList;
+      });
+
+    try {
+      const { user } = renderWithQuery(<PageDetail {...defaultProps} />);
+      await screen.findByText("libSQL Architecture");
+
+      await user.click(screen.getByRole("button", { name: "Page actions" }));
+      expect(screen.getByRole("menuitem", { name: "Delete page" })).toHaveFocus();
+    } finally {
+      rectsSpy.mockRestore();
+    }
+  });
+
+  it.each([
+    ["en", "Last distilled 5m ago", "from 2 memories", "needs review"],
+    ["zh-Hans", "上次精炼：5 分钟前", "来自 2 条记忆", "需要审核"],
+    ["zh-Hant", "上次精煉：5 分鐘前", "來自 2 則記憶", "需要審核"],
+  ] as const)(
+    "localizes the full Page dateline in %s",
+    async (locale, distilled, sources, stale) => {
+      const { getPage } = await import("../../lib/tauri");
+      (getPage as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        id: "concept_abc",
+        title: "Localized Page",
+        summary: null,
+        content: "Localized page content.",
+        entity_id: null,
+        domain: null,
+        source_memory_ids: ["mem_1", "mem_2"],
+        version: 1,
+        status: "active",
+        created_at: "2026-07-17T11:00:00+00:00",
+        last_compiled: "2026-07-17T11:55:00+00:00",
+        last_modified: "2026-07-17T11:55:00+00:00",
+        stale_reason: "source_conflict",
+      });
+      const nowSpy = vi.spyOn(Date, "now").mockReturnValue(
+        new Date("2026-07-17T12:00:00+00:00").getTime(),
+      );
+      await i18n.changeLanguage(locale);
+
+      try {
+        renderWithQuery(<PageDetail {...defaultProps} />);
+
+        expect(await screen.findByText(distilled)).toBeInTheDocument();
+        expect(screen.getByText(sources)).toBeInTheDocument();
+        expect(screen.getByText(stale)).toBeInTheDocument();
+        if (locale !== "en") {
+          expect(screen.queryByText("Last distilled 5m ago")).toBeNull();
+          expect(screen.queryByText("from 2 memories")).toBeNull();
+          expect(screen.queryByText("needs review")).toBeNull();
+        }
+      } finally {
+        nowSpy.mockRestore();
+      }
+    },
+  );
 
   it("re-distills the current page and keeps skipped daemon hints visible", async () => {
     const { redistillPage } = await import("../../lib/tauri");
@@ -210,11 +425,14 @@ describe("PageDetail", () => {
     await waitFor(() => expect(screen.queryByText(hint)).toBeNull());
   });
 
-  it("renders back button as SVG arrow", async () => {
-    const { container } = renderWithQuery(<PageDetail {...defaultProps} />);
+  it("gives the icon-only back button a localized accessible name", async () => {
+    const { user } = renderWithQuery(<PageDetail {...defaultProps} />);
     await screen.findByText("libSQL Architecture");
-    const backBtn = container.querySelector("button svg");
-    expect(backBtn).toBeTruthy();
+    const backButton = screen.getByRole("button", { name: "Back" });
+    expect(backButton.querySelector("svg")).toBeTruthy();
+
+    await user.click(backButton);
+    expect(defaultProps.onBack).toHaveBeenCalledOnce();
   });
 
   it("renders source memories section with count", async () => {

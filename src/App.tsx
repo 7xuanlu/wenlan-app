@@ -11,8 +11,7 @@ import RecapDetail from "./components/RecapDetail";
 import EntityDetail from "./components/memory/EntityDetail";
 import Main from "./components/memory/Main";
 import SetupWizard from "./components/SetupWizard";
-import { MilestoneToaster } from "./components/onboarding/MilestoneToaster";
-import UpdaterDialog from "./components/UpdaterDialog";
+import { RuntimeOverlays } from "./components/RuntimeOverlays";
 
 const MEMORY_WIDTH = 1280;
 const MEMORY_HEIGHT = 720;
@@ -216,8 +215,7 @@ export default function App() {
           />
         </div>
       )}
-      <MilestoneToaster />
-      <UpdaterDialog />
+      <RuntimeOverlays />
     </div>
   );
 }

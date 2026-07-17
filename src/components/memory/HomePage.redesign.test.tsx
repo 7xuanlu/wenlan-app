@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { i18n } from "../../i18n";
 import HomePage from "./HomePage";
 
 class ResizeObserverStub {
@@ -88,7 +89,8 @@ function page(overrides: Partial<tauri.Page> & Pick<tauri.Page, "id" | "title">)
   };
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  await i18n.changeLanguage("en");
   localStorage.clear();
   vi.clearAllMocks();
   vi.mocked(tauri.listRecentRetrievals).mockResolvedValue([]);
@@ -176,6 +178,30 @@ beforeEach(() => {
 });
 
 describe("HomePage redesign", () => {
+  it.each([
+    ["en", "Home overview", "Index"],
+    ["zh-Hans", "首页概览", "索引"],
+    ["zh-Hant", "首頁概覽", "索引"],
+  ] as const)(
+    "labels the Home overview without exposing Index in %s",
+    async (locale, overviewLabel, indexLabel) => {
+      // Given a populated Home page in the selected locale
+      await i18n.changeLanguage(locale);
+      vi.mocked(tauri.listPages).mockResolvedValue([
+        page({ id: `page-${locale}`, title: "Localized page" }),
+      ]);
+
+      // When Home renders its overview metrics
+      renderHome();
+      const overview = await screen.findByTestId("wiki-index-summary");
+
+      // Then the accessible name describes Home and never exposes Index
+      expect(overview).toHaveAttribute("aria-label", overviewLabel);
+      expect(overview).not.toHaveAttribute("aria-label", indexLabel);
+      expect(screen.queryByText(indexLabel)).not.toBeInTheDocument();
+    },
+  );
+
   it("uses wiki pages as the primary home surface when pages exist without activity", async () => {
     vi.mocked(tauri.listPages).mockResolvedValue([
       page({
@@ -197,11 +223,19 @@ describe("HomePage redesign", () => {
 
     renderHome();
 
-    expect(await screen.findByRole("heading", { name: "Today in Wenlan" })).toBeInTheDocument();
-    expect(tauri.listPages).toHaveBeenCalledWith("active", undefined, 1000);
+    const todayHeading = await screen.findByRole("heading", { name: "Today in Wenlan", level: 1 });
+    expect(todayHeading).toHaveStyle({
+      fontFamily: "var(--mem-font-heading)",
+      fontSize: "var(--mem-destination-title-size)",
+      fontWeight: "500",
+      letterSpacing: "-0.03em",
+      lineHeight: "1.12",
+    });
+    expect(todayHeading.parentElement).toHaveStyle({ marginBottom: "16px" });
+    expect(tauri.listPages).toHaveBeenCalledWith("active", undefined, 500, 0);
     expect(screen.getByTestId("wiki-home")).toHaveStyle({ display: "grid" });
-    expect(screen.getByTestId("wiki-index-summary")).toHaveAttribute("aria-label", "Index");
-    expect(within(screen.getByTestId("wiki-context-rail")).queryByRole("heading", { name: "Index" })).toBeNull();
+    expect(screen.getByTestId("wiki-index-summary")).toHaveAttribute("aria-label", "Home overview");
+    expect(within(screen.getByTestId("wiki-context-rail")).queryByText("Index")).toBeNull();
     expect(screen.getByTestId("wiki-context-rail")).not.toHaveTextContent("Recently active");
     expect(screen.getByTestId("wiki-context-pages")).toHaveTextContent("2");
     expect(screen.getByTestId("wiki-context-updated-today")).toHaveTextContent(/^2 updated today$/);
@@ -214,6 +248,10 @@ describe("HomePage redesign", () => {
     expect(screen.queryByRole("heading", { name: "Recent Space" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "Recently refined" })).toBeNull();
     expect(screen.getByText("Wenlan app architecture")).toBeInTheDocument();
+    expect(screen.getByTestId("wiki-page-list").querySelector("svg path")).toHaveAttribute(
+      "d",
+      "M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5",
+    );
     expect(screen.getByText("4 sources")).toBeInTheDocument();
     expect(screen.getAllByText("updated today").length).toBeGreaterThan(0);
     expect(screen.queryByText("Key facts")).toBeNull();
@@ -256,11 +294,11 @@ describe("HomePage redesign", () => {
       expect(todayHeading).not.toHaveTextContent("2 pages");
       expect(screen.getByTestId("wiki-context-pages")).toHaveTextContent("2");
 
-      expect(screen.getByTestId("wiki-index-summary")).toHaveAttribute("aria-label", "Index");
+      expect(screen.getByTestId("wiki-index-summary")).toHaveAttribute("aria-label", "Home overview");
       // Review items stay in the page-updates section, not the rail (the
       // needs-review metric label is allowed here).
       expect(within(contextRail).queryByText("Wenlan app architecture")).toBeNull();
-      expect(within(contextRail).queryByRole("heading", { name: "Index" })).toBeNull();
+      expect(within(contextRail).queryByText("Index")).toBeNull();
 
       expect(screen.getByTestId("wiki-page-list")).toHaveStyle({ borderTopStyle: "none" });
     } finally {
@@ -321,6 +359,8 @@ describe("HomePage redesign", () => {
 
     expect(screen.queryByTestId("wiki-space-filter-row")).toBeNull();
     expect(screen.queryByRole("button", { name: /open Projects space/i })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Spaces" })).toBeNull();
+    expect(screen.queryByLabelText("Recent spaces")).toBeNull();
   });
 
   it("does not expose recent spaces from the home context rail", async () => {
@@ -464,8 +504,8 @@ describe("HomePage redesign", () => {
     renderHome({ onOpenDistillReview });
 
     const contextRail = await screen.findByTestId("wiki-context-rail");
-    expect(screen.getByTestId("wiki-index-summary")).toHaveAttribute("aria-label", "Index");
-    expect(within(contextRail).queryByRole("heading", { name: "Index" })).toBeNull();
+    expect(screen.getByTestId("wiki-index-summary")).toHaveAttribute("aria-label", "Home overview");
+    expect(within(contextRail).queryByText("Index")).toBeNull();
     expect(contextRail).not.toHaveTextContent("Recently active");
     expect(within(contextRail).queryByText(/durable updated wording/)).toBeNull();
 
@@ -1022,7 +1062,7 @@ describe("HomePage redesign", () => {
         {
           id: "ref-archive",
           action: "page_keep_or_archive",
-          source_ids: ["page-thin"],
+          source_ids: ["memory-evidence"],
           payload: {
             action: "page_keep_or_archive",
             page_id: "page-thin",
@@ -1036,13 +1076,15 @@ describe("HomePage redesign", () => {
     vi.mocked(tauri.listPages).mockResolvedValue([
       page({ id: "page-current", title: "Current page" }),
     ]);
-    vi.mocked(tauri.getPage).mockResolvedValue(
-      page({
-        id: "page-thin",
-        title: "Thin scratch page",
-        summary: "One lonely source.",
-      }) as any,
-    );
+    vi.mocked(tauri.getPage).mockImplementation(async (id: string) => (
+      id === "page-thin"
+        ? page({
+          id: "page-thin",
+          title: "Thin scratch page",
+          summary: "One lonely source.",
+        }) as any
+        : null
+    ));
 
     renderHome();
 
@@ -1050,9 +1092,12 @@ describe("HomePage redesign", () => {
       await screen.findByRole("button", { name: /Review Thin scratch page/ }),
     );
 
+    expect(tauri.getPage).toHaveBeenCalledWith("page-thin");
+    expect(tauri.getPage).not.toHaveBeenCalledWith("memory-evidence");
+
     const dialog = await screen.findByRole("dialog");
     // The page title appears as both the dialog heading and the body pane.
-    await within(dialog).findAllByText("Thin scratch page");
+    expect(await within(dialog).findAllByText("Thin scratch page")).toHaveLength(2);
     expect(
       within(dialog).getByRole("button", { name: "Archive" }),
     ).toBeInTheDocument();

@@ -4,6 +4,9 @@ import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  define: {
+    __WENLAN_REVIEW__: "false",
+  },
   test: {
     environment: 'jsdom',
     globals: true,

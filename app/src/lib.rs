@@ -3,6 +3,11 @@
 #[macro_use]
 extern crate objc;
 
+#[cfg(feature = "review-fixtures")]
+mod review;
+#[cfg(feature = "review-fixtures")]
+pub use review::run_review;
+
 // ── App-specific modules (Tauri, sensors, UI) ──
 pub mod activity;
 pub mod api;
@@ -63,6 +68,7 @@ fn startup_reveal_fallback_delay() -> std::time::Duration {
     std::time::Duration::from_millis(1200)
 }
 
+#[cfg(not(feature = "review-fixtures"))]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Log sinks: stderr (for terminal launches, `pnpm tauri dev`) AND a
@@ -892,6 +898,11 @@ pub fn run() {
             search::get_rejection_log,
             // Page commands
             search::get_page,
+            search::create_page,
+            search::create_page_draft,
+            search::update_page_draft,
+            search::publish_page_draft,
+            search::discard_page_draft,
             search::get_page_sources,
             search::get_page_links,
             search::get_page_revisions,

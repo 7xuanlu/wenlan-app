@@ -23,6 +23,8 @@ interface GraphNode {
   connectionCount: number;
   isMemory?: boolean;
   isDistilled?: boolean;
+  x?: number;
+  y?: number;
 }
 
 interface GraphLink {
@@ -70,6 +72,56 @@ function nodeRadius(stability: string, connectionCount: number): number {
   return Math.min(8, Math.max(3, base + connectionCount * 0.5));
 }
 
+type CameraNode = {
+  readonly x?: number;
+  readonly y?: number;
+};
+
+type FullScreenGraphCamera = {
+  readonly centerAt?: (x?: number, y?: number, durationMs?: number) => void;
+  readonly zoom?: (scale?: number, durationMs?: number) => void;
+  readonly zoomToFit?: (durationMs?: number, padding?: number) => void;
+};
+
+function visualNodeRadius(node: {
+  readonly connectionCount?: number;
+  readonly isDistilled?: boolean;
+  readonly isMemory?: boolean;
+  readonly stability?: string;
+}): number {
+  if (node.isMemory) {
+    return node.stability === "confirmed" || node.isDistilled ? 4.5 : 3;
+  }
+  return nodeRadius(node.stability ?? "new", node.connectionCount ?? 0);
+}
+
+export function graphNodeValue(node: Parameters<typeof visualNodeRadius>[0]): number {
+  const radius = visualNodeRadius(node);
+  return radius * radius;
+}
+
+export function applyFullScreenCamera(
+  graph: FullScreenGraphCamera | null | undefined,
+  nodes: readonly CameraNode[],
+  durationMs: number,
+): void {
+  if (!graph) return;
+  if (nodes.length === 0) {
+    graph.centerAt?.(0, 0, durationMs);
+    graph.zoom?.(1, durationMs);
+    return;
+  }
+  if (nodes.length === 1) {
+    const [node] = nodes;
+    const x = Number.isFinite(node.x) ? node.x : 0;
+    const y = Number.isFinite(node.y) ? node.y : 0;
+    graph.centerAt?.(x, y, durationMs);
+    graph.zoom?.(3.5, durationMs);
+    return;
+  }
+  graph.zoomToFit?.(durationMs, 64);
+}
+
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
@@ -77,6 +129,7 @@ function nodeRadius(stability: string, connectionCount: number): number {
 export default function ConstellationMap({ onClick, fullScreen, onNodeClick }: ConstellationMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const fgRef = useRef<any>(null);
+  const fullScreenNodesRef = useRef<readonly CameraNode[]>([]);
   const defaultHeight = fullScreen ? 600 : 280;
   const [dimensions, setDimensions] = useState({ width: 400, height: defaultHeight });
   const [showMemories, setShowMemories] = useState(() => localStorage.getItem("constellation-show-memories") === "true");
@@ -95,7 +148,7 @@ export default function ConstellationMap({ onClick, fullScreen, onNodeClick }: C
         // Matches the fit logic in `onEngineStop` for each mode.
         setTimeout(() => {
           if (fullScreen) {
-            fgRef.current?.zoomToFit?.(0, -40);
+            applyFullScreenCamera(fgRef.current, fullScreenNodesRef.current, 0);
           } else if (focusNodeIds.size > 0) {
             fgRef.current?.zoomToFit?.(
               0,
@@ -260,6 +313,7 @@ export default function ConstellationMap({ onClick, fullScreen, onNodeClick }: C
     prevGraphRef.current = displayGraph;
     return displayGraph;
   }, [displayGraph]);
+  fullScreenNodesRef.current = stableGraphData.nodes;
 
   // Stats
   const entityCount = entities.length;
@@ -277,8 +331,7 @@ export default function ConstellationMap({ onClick, fullScreen, onNodeClick }: C
 
   // Helper: get node radius
   const getNodeRadius = useCallback((node: any) => {
-    if (node.isMemory) return node.stability === "confirmed" || node.isDistilled ? 4.5 : 3;
-    return nodeRadius(node.stability ?? "new", node.connectionCount);
+    return visualNodeRadius(node);
   }, []);
 
   // Identify the user's entity — the person node with the most connections.
@@ -553,10 +606,7 @@ export default function ConstellationMap({ onClick, fullScreen, onNodeClick }: C
         linkCanvasObjectMode={() => "replace"}
         nodeLabel={(node: any) => node.name}
         nodeRelSize={1}
-        nodeVal={(node: any) => {
-          if (node.isMemory) return node.stability === "confirmed" || node.isDistilled ? 4.5 : 3;
-          return nodeRadius(node.stability ?? "new", node.connectionCount);
-        }}
+        nodeVal={graphNodeValue}
         backgroundColor="rgba(0,0,0,0)"
         enableNodeDrag={fullScreen}
         enableZoomInteraction={fullScreen}
@@ -580,11 +630,7 @@ export default function ConstellationMap({ onClick, fullScreen, onNodeClick }: C
         }}
         onEngineStop={() => {
           if (fullScreen) {
-            // Negative padding here bleeds the bbox past the viewport edges,
-            // producing a noticeable "zoom in to see meaningful connections"
-            // effect. Without it, the graph sat comfortably in the middle with
-            // a band of empty space top and bottom.
-            fgRef.current?.zoomToFit?.(400, -40);
+            applyFullScreenCamera(fgRef.current, stableGraphData.nodes, 400);
           } else {
             // Minimap: fit ONLY user + top hubs. Other nodes still render but
             // the camera frames the meaningful core. This is the "user + hub

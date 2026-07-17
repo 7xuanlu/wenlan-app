@@ -19,8 +19,13 @@ async function http(method: string, path: string, body?: unknown): Promise<any> 
     headers: body !== undefined ? { "content-type": "application/json" } : undefined,
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) throw new HttpError(res.status, `${method} ${path} → ${res.status}`);
   const text = await res.text();
+  if (!res.ok) {
+    throw new HttpError(
+      res.status,
+      text || `${method} ${path} → ${res.status}`,
+    );
+  }
   return text ? JSON.parse(text) : null;
 }
 const get = (p: string) => http("GET", p);
@@ -61,6 +66,111 @@ let downloadingModelId: string | null = null;
 // (real) memory id the rest of the app might ask about.
 const PREVIEW_PROBES = new Map<string, unknown>();
 let previewProbeSeq = 0;
+const PREVIEW_AUTHORED_PAGES = new Map<string, Record<string, unknown>>();
+const PREVIEW_DELETED_PAGE_IDS = new Set<string>();
+let previewAuthoredPageSeq = 0;
+const PAGE_BATCH_SIZE = 500;
+
+function normalizedSpace(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : null;
+}
+
+function previewPage(
+  id: string,
+  title: string,
+  content: string,
+  space: string | null,
+  status: "active" | "draft",
+): Record<string, unknown> {
+  const timestamp = new Date().toISOString();
+  return {
+    id,
+    title,
+    summary: null,
+    content,
+    entity_id: null,
+    domain: space,
+    space,
+    source_memory_ids: [],
+    version: 1,
+    status,
+    created_at: timestamp,
+    last_compiled: timestamp,
+    last_modified: timestamp,
+    creation_kind: "authored",
+    review_status: "unconfirmed",
+    user_edited: true,
+  };
+}
+
+function previewDraft(id: unknown): Record<string, unknown> {
+  const draft = PREVIEW_AUTHORED_PAGES.get(String(id));
+  if (!draft || draft.status !== "draft") {
+    throw new Error(JSON.stringify({
+      code: "page_draft_not_found",
+      error: "Page draft not found",
+    }));
+  }
+  return draft;
+}
+
+function assertPreviewDraftVersion(
+  draft: Record<string, unknown>,
+  expectedVersion: unknown,
+): void {
+  if (draft.version !== expectedVersion) {
+    throw new Error(JSON.stringify({
+      code: "draft_version_conflict",
+      error: "Page draft changed since it was loaded",
+      current_version: draft.version,
+    }));
+  }
+}
+
+function samePreviewPageScope(
+  page: Record<string, unknown>,
+  title: string,
+  space: string | null,
+): boolean {
+  const pageTitle = String(page.title ?? "").trim().toLowerCase();
+  return page.status === "active"
+    && pageTitle === title.trim().toLowerCase()
+    && normalizedSpace(page.space) === space;
+}
+
+async function listAllRemotePages(
+  status: string,
+  domain: string | null,
+): Promise<Record<string, unknown>[]> {
+  const pages: Record<string, unknown>[] = [];
+  const seenIds = new Set<string>();
+  let offset = 0;
+
+  while (true) {
+    const wire = await get(`/api/pages${qs({
+      status,
+      domain,
+      limit: PAGE_BATCH_SIZE,
+      offset,
+    })}`);
+    const batch = (Array.isArray(wire?.pages) ? wire.pages : wire) as unknown;
+    if (!Array.isArray(batch)) return pages;
+
+    let added = 0;
+    for (const page of batch) {
+      if (!page || typeof page !== "object") continue;
+      const id = String(Reflect.get(page, "id") ?? "");
+      if (!id || seenIds.has(id)) continue;
+      seenIds.add(id);
+      pages.push(page as Record<string, unknown>);
+      added += 1;
+    }
+    if (batch.length < PAGE_BATCH_SIZE || added === 0) return pages;
+    offset += batch.length;
+  }
+}
 
 function downloadComplete(): boolean {
   return downloadStartedAt !== null && Date.now() - downloadStartedAt >= MODEL_DOWNLOAD_DURATION_MS;
@@ -71,6 +181,10 @@ function downloadComplete(): boolean {
 export const HANDLERS: Record<string, (a: any) => Promise<unknown>> = {
   // --- pages (mirrors search.rs exactly) ---
   get_page: async (a) => {
+    const id = String(a.id);
+    const previewPage = PREVIEW_AUTHORED_PAGES.get(id);
+    if (previewPage) return previewPage;
+    if (PREVIEW_DELETED_PAGE_IDS.has(id)) return null;
     try {
       const wire = await get(`/api/pages/${enc(a.id)}`);
       return wire?.page ?? null;
@@ -79,10 +193,132 @@ export const HANDLERS: Record<string, (a: any) => Promise<unknown>> = {
       throw e;
     }
   },
-  list_pages: (a) =>
-    get(
-      `/api/pages${qs({ status: a?.status, domain: a?.domain, limit: a?.limit, offset: a?.offset })}`,
-    ).then((r) => r.pages ?? r),
+  create_page: (a) => {
+    const title = String(a?.title ?? "").trim();
+    const content = String(a?.content ?? "").trim();
+    const space = normalizedSpace(a?.space);
+    if (!title || !content) return Promise.reject(new Error("Title and content are required"));
+    const id = `preview-authored-page-${previewAuthoredPageSeq++}`;
+    PREVIEW_AUTHORED_PAGES.set(id, previewPage(id, title, content, space, "active"));
+    return Promise.resolve({ id, attached_to: null, warnings: [] });
+  },
+  create_page_draft: (a) => {
+    const id = String(a?.clientDraftId ?? "").trim();
+    if (!id) {
+      return Promise.reject(new Error(JSON.stringify({
+        code: "invalid_page_draft_id",
+        error: "A client-generated Page draft id is required",
+      })));
+    }
+    const title = String(a?.title ?? "");
+    const content = String(a?.content ?? "");
+    if (!title.trim() && !content.trim()) {
+      return Promise.reject(new Error(JSON.stringify({
+        code: "invalid_page_draft",
+        error: "A Page draft needs a title or content",
+      })));
+    }
+    const existing = PREVIEW_AUTHORED_PAGES.get(id);
+    if (existing?.status === "draft") return Promise.resolve({ ...existing });
+    if (existing) {
+      return Promise.reject(new Error(JSON.stringify({
+        code: "page_draft_id_conflict",
+        error: "Page draft id already belongs to a published Page",
+      })));
+    }
+    const draft = previewPage(
+      id,
+      title,
+      content,
+      normalizedSpace(a?.space),
+      "draft",
+    );
+    PREVIEW_AUTHORED_PAGES.set(id, draft);
+    return Promise.resolve({ ...draft });
+  },
+  update_page_draft: (a) => {
+    const draft = previewDraft(a?.id);
+    assertPreviewDraftVersion(draft, a?.expectedVersion);
+    const title = String(a?.title ?? "");
+    const content = String(a?.content ?? "");
+    if (!title.trim() && !content.trim()) {
+      return Promise.reject(new Error(JSON.stringify({
+        code: "invalid_page_draft",
+        error: "A Page draft needs a title or content",
+      })));
+    }
+    const space = normalizedSpace(a?.space);
+    const updated = {
+      ...draft,
+      title,
+      content,
+      domain: space,
+      space,
+      version: Number(draft.version) + 1,
+      last_modified: new Date().toISOString(),
+    };
+    PREVIEW_AUTHORED_PAGES.set(String(a.id), updated);
+    return Promise.resolve({ ...updated });
+  },
+  publish_page_draft: async (a) => {
+    const draft = previewDraft(a?.id);
+    assertPreviewDraftVersion(draft, a?.expectedVersion);
+    const title = String(draft.title ?? "");
+    const content = String(draft.content ?? "");
+    if (!title.trim() || !content.trim()) {
+      return Promise.reject(new Error(JSON.stringify({
+        code: "invalid_page_draft",
+        error: "Title and content are required",
+      })));
+    }
+    const space = normalizedSpace(draft.space);
+    const remotePages = await listAllRemotePages("active", space);
+    const conflict = [...PREVIEW_AUTHORED_PAGES.values(), ...remotePages].find(
+      (page) => page.id !== draft.id && samePreviewPageScope(page, title, space),
+    );
+    if (conflict) {
+      return Promise.reject(new Error(JSON.stringify({
+        code: "page_title_conflict",
+        error: "A Page with this title already exists",
+        existing_page_id: conflict.id,
+        existing_page_title: conflict.title,
+      })));
+    }
+    const published = {
+      ...draft,
+      title: title.trim(),
+      status: "active",
+      review_status: "unconfirmed",
+      version: Number(draft.version) + 1,
+      last_compiled: new Date().toISOString(),
+      last_modified: new Date().toISOString(),
+    };
+    PREVIEW_AUTHORED_PAGES.set(String(a.id), published);
+    return Promise.resolve({ ...published });
+  },
+  discard_page_draft: (a) => {
+    const draft = previewDraft(a?.id);
+    assertPreviewDraftVersion(draft, a?.expectedVersion);
+    const id = String(a.id);
+    PREVIEW_AUTHORED_PAGES.delete(id);
+    PREVIEW_DELETED_PAGE_IDS.add(id);
+    return Promise.resolve(null);
+  },
+  list_pages: async (a) => {
+    const status = typeof a?.status === "string" ? a.status : "active";
+    const domain = normalizedSpace(a?.domain);
+    const remote = await listAllRemotePages(status, domain);
+    const local = [...PREVIEW_AUTHORED_PAGES.values()].filter((page) => {
+      const statusMatches = page.status === status;
+      const domainMatches = !domain || page.domain === domain || page.space === domain;
+      return statusMatches && domainMatches;
+    });
+    const localIds = new Set(local.map((page) => page.id));
+    const combined = [...local, ...remote.filter((page) => !localIds.has(page.id))];
+    const offset = typeof a?.offset === "number" ? a.offset : 0;
+    const limit = typeof a?.limit === "number" ? a.limit : undefined;
+    return combined.slice(offset, limit === undefined ? undefined : offset + limit);
+  },
   search_pages: (a) =>
     post("/api/pages/search", { query: a.query, limit: a.limit ?? null, page_type: null }).then(
       (r) => r.pages ?? r,

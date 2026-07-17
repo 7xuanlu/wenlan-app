@@ -990,7 +990,7 @@ export default function MemoryView({ onBack, onSelectFile, onSelectRecap, onSele
       <div className="flex flex-1 overflow-hidden">
       <Sidebar
         collapsed={sidebarCollapsed}
-        onSelectSpace={(name) => { setSelectedDomain(name); }}
+        onSelectSpace={(space) => { setSelectedDomain(space.name); }}
         onEntityClick={(id) => { if (id === "__create_profile__") setShowSettings(true); }}
         onNavigateSettings={() => setShowSettings(true)}
         onOpenAbout={() => setAboutOpen(true)}

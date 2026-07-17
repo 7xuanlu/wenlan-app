@@ -7,6 +7,7 @@ import ToastOverlay from "./components/ToastOverlay";
 import QuickCaptureWindow from "./components/QuickCaptureWindow";
 import { initializeI18n } from "./i18n";
 import { applyTheme } from "./lib/theme";
+import "./devTools";
 import "./index.css";
 
 // Apply theme before first render to prevent flash

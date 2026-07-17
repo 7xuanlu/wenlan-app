@@ -1,0 +1,448 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+import type {
+  DistillReviewResponse,
+  EntityDetail,
+  MemoryItem,
+  Page as KnowledgePage,
+  RefinementProposalSummary,
+  Space,
+} from "../../src/lib/tauri";
+import type { SpacesNavigationFixture } from "../fixtures/spacesNavigation";
+import { baseResponse } from "./baseResponses";
+import { ConfiguredTauriFailureError, TauriMockArgumentError } from "./errors";
+import type { MockCommandCall, MockFailure } from "./types";
+
+function optionalValue(args: unknown, key: string): unknown {
+  return typeof args === "object" && args !== null ? Reflect.get(args, key) : undefined;
+}
+
+function requiredString(command: string, args: unknown, key: string): string {
+  const value = optionalValue(args, key);
+  if (typeof value !== "string" || value.trim() === "") throw new TauriMockArgumentError(command, key);
+  return value;
+}
+
+function stringValue(command: string, args: unknown, key: string): string {
+  const value = optionalValue(args, key);
+  if (typeof value !== "string") throw new TauriMockArgumentError(command, key);
+  return value;
+}
+
+function optionalString(args: unknown, key: string): string | null {
+  const value = optionalValue(args, key);
+  return typeof value === "string" ? value : null;
+}
+
+function requiredNumber(command: string, args: unknown, key: string): number {
+  const value = optionalValue(args, key);
+  if (typeof value !== "number" || !Number.isFinite(value)) throw new TauriMockArgumentError(command, key);
+  return value;
+}
+
+function requiredBoolean(command: string, args: unknown, key: string): boolean {
+  const value = optionalValue(args, key);
+  if (typeof value !== "boolean") throw new TauriMockArgumentError(command, key);
+  return value;
+}
+
+function stringArray(args: unknown, key: string): readonly string[] {
+  const value = optionalValue(args, key);
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+export class TauriMockRuntime {
+  private spaces: Space[];
+  private pages: KnowledgePage[];
+  private entityDetails: EntityDetail[];
+  private memories: MemoryItem[];
+  private readonly distillReview: DistillReviewResponse;
+  private readonly refinements: readonly RefinementProposalSummary[];
+  private readonly callsLog: MockCommandCall[] = [];
+  private readonly failures = new Map<string, string[]>();
+  private readonly activityRows: readonly Record<string, unknown>[];
+  private pageSequence: number;
+
+  constructor(
+    fixture: SpacesNavigationFixture,
+    failures: readonly MockFailure[] = [],
+    rawActions: readonly string[] = [],
+  ) {
+    this.spaces = fixture.spaces.map((space) => ({ ...space }));
+    this.pages = fixture.pages.map((page) => ({ ...page }));
+    this.pageSequence = this.pages.length;
+    this.entityDetails = fixture.entityDetails.map((detail) => ({
+      entity: { ...detail.entity },
+      observations: detail.observations.map((observation) => ({ ...observation })),
+      relations: detail.relations.map((relation) => ({ ...relation })),
+    }));
+    this.memories = fixture.memories.map((memory) => ({ ...memory }));
+    this.distillReview = structuredClone(fixture.distillReview);
+    this.refinements = structuredClone(fixture.refinements);
+    this.activityRows = rawActions.map((action, index) => ({
+      id: index + 1,
+      timestamp: 1_783_728_000 - index * 60,
+      agent_name: "claude-code",
+      action,
+      memory_ids: null,
+      query: null,
+      detail: null,
+      memory_titles: [],
+    }));
+    for (const failure of failures) this.failNext(failure.command, failure.message, failure.times ?? 1);
+  }
+
+  calls(): readonly MockCommandCall[] {
+    return this.callsLog.map((call) => ({ ...call }));
+  }
+
+  failNext(command: string, message: string, times = 1): void {
+    const queued = this.failures.get(command) ?? [];
+    this.failures.set(command, [...queued, ...Array.from({ length: times }, () => message)]);
+  }
+
+  async invoke(command: string, args?: unknown): Promise<unknown> {
+    this.callsLog.push({ command, args });
+    const configured = this.failures.get(command)?.shift();
+    if (configured) throw new ConfiguredTauriFailureError(command, configured);
+    if (command.startsWith("plugin:")) return null;
+
+    switch (command) {
+      case "list_spaces": return this.spaces.map((space) => ({ ...space }));
+      case "get_space": return this.spaces.find((space) => space.name === requiredString(command, args, "name")) ?? null;
+      case "create_space": return this.createSpace(args);
+      case "update_space": return this.updateSpace(args);
+      case "delete_space": return this.deleteSpace(args);
+      case "confirm_space": return this.confirmSpace(args);
+      case "toggle_space_starred": return this.toggleSpace(args);
+      case "reorder_space": return this.reorderSpace(args);
+      case "list_pages": return this.listPages(args);
+      case "get_page": return this.pages.find((page) => page.id === requiredString(command, args, "id")) ?? null;
+      case "create_page": return this.createPage(args);
+      case "create_page_draft": return this.createPageDraft(args);
+      case "update_page_draft": return this.updatePageDraft(args);
+      case "publish_page_draft": return this.publishPageDraft(args);
+      case "discard_page_draft": return this.discardPageDraft(args);
+      case "distill_review": return structuredClone(this.distillReview);
+      case "list_refinements": return { proposals: structuredClone(this.refinements) };
+      case "list_entities_cmd": return this.listEntities(args);
+      case "get_entity_detail_cmd": return this.getEntityDetail(args);
+      case "add_observation_cmd": return this.addObservation(args);
+      case "update_observation_cmd": return this.updateObservation(args);
+      case "delete_observation_cmd": return this.deleteObservation(args);
+      case "confirm_observation_cmd": return this.confirmObservation(args);
+      case "confirm_entity_cmd": return this.confirmEntity(args);
+      case "delete_entity_cmd": return this.deleteEntity(args);
+      case "list_memories_cmd": return this.listMemories(args);
+      case "get_memory_detail": return this.memories.find((memory) => memory.source_id === requiredString(command, args, "sourceId")) ?? null;
+      case "list_memories_by_ids": {
+        const ids = new Set(stringArray(args, "ids"));
+        return this.memories.filter((memory) => ids.has(memory.source_id));
+      }
+      case "search": return this.search(args);
+      default: return baseResponse(command, args, { activityRows: this.activityRows, memoryCount: this.memories.length });
+    }
+  }
+
+  private createSpace(args: unknown): Space {
+    const name = requiredString("create_space", args, "name");
+    const space: Space = {
+      id: `space-${name.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-")}`,
+      name, description: optionalString(args, "description"), suggested: false, starred: false,
+      sort_order: this.spaces.length, memory_count: 0, entity_count: 0,
+      created_at: 1_783_728_000, updated_at: 1_783_728_000,
+    };
+    this.spaces.push(space);
+    return { ...space };
+  }
+
+  private updateSpace(args: unknown): Space {
+    const name = requiredString("update_space", args, "name");
+    const newName = requiredString("update_space", args, "newName");
+    const index = this.spaces.findIndex((space) => space.name === name);
+    if (index < 0) throw new TauriMockArgumentError("update_space", "name");
+    const current = this.spaces[index];
+    if (!current) throw new TauriMockArgumentError("update_space", "name");
+    const updated = { ...current, name: newName, description: optionalString(args, "description") };
+    this.spaces[index] = updated;
+    return { ...updated };
+  }
+
+  private deleteSpace(args: unknown): null {
+    const name = requiredString("delete_space", args, "name");
+    this.spaces = this.spaces.filter((space) => space.name !== name);
+    return null;
+  }
+
+  private confirmSpace(args: unknown): null {
+    const name = requiredString("confirm_space", args, "name");
+    this.spaces = this.spaces.map((space) => space.name === name ? { ...space, suggested: false } : space);
+    return null;
+  }
+
+  private toggleSpace(args: unknown): boolean {
+    const name = requiredString("toggle_space_starred", args, "name");
+    let starred = false;
+    this.spaces = this.spaces.map((space) => {
+      if (space.name !== name) return space;
+      starred = !space.starred;
+      return { ...space, starred };
+    });
+    return starred;
+  }
+
+  private reorderSpace(args: unknown): null {
+    const name = requiredString("reorder_space", args, "name");
+    const newOrder = requiredNumber("reorder_space", args, "newOrder");
+    this.spaces = this.spaces.map((space) => space.name === name ? { ...space, sort_order: newOrder } : space);
+    return null;
+  }
+
+  private listPages(args: unknown): readonly KnowledgePage[] {
+    const status = optionalString(args, "status");
+    const domain = optionalString(args, "domain");
+    const limit = optionalValue(args, "limit");
+    const offset = optionalValue(args, "offset");
+    const filtered = this.pages.filter((page) => (!status || page.status === status) && (!domain || page.domain === domain || page.space === domain));
+    return filtered.slice(typeof offset === "number" ? offset : 0, typeof limit === "number" ? (typeof offset === "number" ? offset : 0) + limit : undefined);
+  }
+
+  private createPage(args: unknown): { id: string; attached_to: string | null; warnings: string[] } {
+    const title = requiredString("create_page", args, "title").trim();
+    const content = requiredString("create_page", args, "content").trim();
+    const space = optionalString(args, "space")?.trim() || null;
+    if (space && !this.spaces.some((candidate) => candidate.name === space)) {
+      throw new TauriMockArgumentError("create_page", "space");
+    }
+    const id = `page-authored-${++this.pageSequence}`;
+    const now = "2026-07-10T12:30:00Z";
+    this.pages = [{
+      id,
+      title,
+      summary: null,
+      content,
+      entity_id: null,
+      domain: space,
+      space,
+      source_memory_ids: [],
+      version: 1,
+      status: "active",
+      creation_kind: "authored",
+      review_status: "unconfirmed",
+      created_at: now,
+      last_compiled: now,
+      last_modified: now,
+    }, ...this.pages];
+    return { id, attached_to: null, warnings: [] };
+  }
+
+  private createPageDraft(args: unknown): KnowledgePage {
+    const id = requiredString("create_page_draft", args, "clientDraftId");
+    const title = stringValue("create_page_draft", args, "title");
+    const content = stringValue("create_page_draft", args, "content");
+    if (!title.trim() && !content.trim()) {
+      throw new Error(JSON.stringify({
+        code: "invalid_page_draft",
+        error: "A Page draft needs a title or content",
+      }));
+    }
+    const existing = this.pages.find((page) => page.id === id);
+    if (existing?.status === "draft") return { ...existing };
+    if (existing) {
+      throw new Error(JSON.stringify({
+        code: "page_draft_id_conflict",
+        error: "Page draft id already belongs to a published Page",
+      }));
+    }
+    const space = optionalString(args, "space")?.trim() || null;
+    const now = "2026-07-10T12:30:00Z";
+    const page: KnowledgePage = {
+      id,
+      title,
+      summary: null,
+      content,
+      entity_id: null,
+      domain: space,
+      space,
+      source_memory_ids: [],
+      version: 1,
+      status: "draft",
+      creation_kind: "authored",
+      review_status: "unconfirmed",
+      created_at: now,
+      last_compiled: now,
+      last_modified: now,
+    };
+    this.pages = [page, ...this.pages];
+    return { ...page };
+  }
+
+  private draftFor(command: string, args: unknown): { page: KnowledgePage; index: number } {
+    const id = requiredString(command, args, "id");
+    const index = this.pages.findIndex((page) => page.id === id && page.status === "draft");
+    const page = this.pages[index];
+    if (index < 0 || !page) {
+      throw new Error(JSON.stringify({
+        code: "page_draft_not_found",
+        error: "Page draft not found",
+      }));
+    }
+    return { page, index };
+  }
+
+  private assertDraftVersion(
+    command: string,
+    args: unknown,
+    page: KnowledgePage,
+  ): void {
+    const expectedVersion = requiredNumber(command, args, "expectedVersion");
+    if (page.version !== expectedVersion) {
+      throw new Error(JSON.stringify({
+        code: "draft_version_conflict",
+        error: "Page draft changed since it was loaded",
+        current_version: page.version,
+      }));
+    }
+  }
+
+  private updatePageDraft(args: unknown): KnowledgePage {
+    const command = "update_page_draft";
+    const { page, index } = this.draftFor(command, args);
+    this.assertDraftVersion(command, args, page);
+    const title = stringValue(command, args, "title");
+    const content = stringValue(command, args, "content");
+    if (!title.trim() && !content.trim()) {
+      throw new Error(JSON.stringify({
+        code: "invalid_page_draft",
+        error: "A Page draft needs a title or content",
+      }));
+    }
+    const space = optionalString(args, "space")?.trim() || null;
+    const updated: KnowledgePage = {
+      ...page,
+      title,
+      content,
+      domain: space,
+      space,
+      version: page.version + 1,
+      last_modified: "2026-07-10T12:31:00Z",
+    };
+    this.pages[index] = updated;
+    return { ...updated };
+  }
+
+  private publishPageDraft(args: unknown): KnowledgePage {
+    const command = "publish_page_draft";
+    const { page, index } = this.draftFor(command, args);
+    this.assertDraftVersion(command, args, page);
+    const title = page.title.trim();
+    if (!title || !page.content.trim()) {
+      throw new Error(JSON.stringify({
+        code: "invalid_page_draft",
+        error: "Title and content are required",
+      }));
+    }
+    const space = page.space?.trim() || null;
+    const conflict = this.pages.find((candidate) =>
+      candidate.id !== page.id
+      && candidate.status === "active"
+      && candidate.title.trim().toLowerCase() === title.toLowerCase()
+      && (candidate.space?.trim() || null) === space
+    );
+    if (conflict) {
+      throw new Error(JSON.stringify({
+        code: "page_title_conflict",
+        error: "A Page with this title already exists",
+        existing_page_id: conflict.id,
+        existing_page_title: conflict.title,
+      }));
+    }
+    const published: KnowledgePage = {
+      ...page,
+      title,
+      status: "active",
+      review_status: "unconfirmed",
+      version: page.version + 1,
+      last_compiled: "2026-07-10T12:31:00Z",
+      last_modified: "2026-07-10T12:31:00Z",
+    };
+    this.pages[index] = published;
+    return { ...published };
+  }
+
+  private discardPageDraft(args: unknown): null {
+    const command = "discard_page_draft";
+    const { page, index } = this.draftFor(command, args);
+    this.assertDraftVersion(command, args, page);
+    this.pages.splice(index, 1);
+    return null;
+  }
+
+  private listEntities(args: unknown) {
+    const domain = optionalString(args, "domain");
+    return this.entityDetails.map((detail) => detail.entity).filter((entity) => !domain || entity.domain === domain || entity.space === domain);
+  }
+
+  private getEntityDetail(args: unknown): EntityDetail {
+    const entityId = requiredString("get_entity_detail_cmd", args, "entityId");
+    const detail = this.entityDetails.find((candidate) => candidate.entity.id === entityId);
+    if (!detail) throw new TauriMockArgumentError("get_entity_detail_cmd", "entityId");
+    return detail;
+  }
+
+  private addObservation(args: unknown): string {
+    const entityId = requiredString("add_observation_cmd", args, "entityId");
+    const detail = this.entityDetails.find((candidate) => candidate.entity.id === entityId);
+    if (!detail) throw new TauriMockArgumentError("add_observation_cmd", "entityId");
+    const id = `obs-${detail.observations.length + 1}`;
+    detail.observations.push({ id, entity_id: entityId, content: requiredString("add_observation_cmd", args, "content"), source_agent: optionalString(args, "sourceAgent"), confidence: null, confirmed: false, created_at: 1_783_728_000 });
+    return id;
+  }
+
+  private updateObservation(args: unknown): null {
+    const observationId = requiredString("update_observation_cmd", args, "observationId");
+    const content = requiredString("update_observation_cmd", args, "content");
+    for (const detail of this.entityDetails) detail.observations = detail.observations.map((item) => item.id === observationId ? { ...item, content } : item);
+    return null;
+  }
+
+  private deleteObservation(args: unknown): null {
+    const observationId = requiredString("delete_observation_cmd", args, "observationId");
+    for (const detail of this.entityDetails) detail.observations = detail.observations.filter((item) => item.id !== observationId);
+    return null;
+  }
+
+  private confirmObservation(args: unknown): null {
+    const observationId = requiredString("confirm_observation_cmd", args, "observationId");
+    const confirmed = requiredBoolean("confirm_observation_cmd", args, "confirmed");
+    for (const detail of this.entityDetails) detail.observations = detail.observations.map((item) => item.id === observationId ? { ...item, confirmed } : item);
+    return null;
+  }
+
+  private confirmEntity(args: unknown): null {
+    const entityId = requiredString("confirm_entity_cmd", args, "entityId");
+    const confirmed = requiredBoolean("confirm_entity_cmd", args, "confirmed");
+    this.entityDetails = this.entityDetails.map((detail) => detail.entity.id === entityId ? { ...detail, entity: { ...detail.entity, confirmed } } : detail);
+    return null;
+  }
+
+  private deleteEntity(args: unknown): null {
+    const entityId = requiredString("delete_entity_cmd", args, "entityId");
+    this.entityDetails = this.entityDetails.filter((detail) => detail.entity.id !== entityId);
+    return null;
+  }
+
+  private listMemories(args: unknown): readonly MemoryItem[] {
+    const domain = optionalString(args, "domain");
+    const limit = optionalValue(args, "limit");
+    const filtered = this.memories.filter((memory) => !domain || memory.domain === domain || memory.space === domain);
+    return typeof limit === "number" ? filtered.slice(0, limit) : filtered;
+  }
+
+  private search(args: unknown) {
+    const query = requiredString("search", args, "query").toLowerCase();
+    const limit = optionalValue(args, "limit");
+    const results = this.memories.filter((memory) => `${memory.title} ${memory.content}`.toLowerCase().includes(query) || query.includes("ada"));
+    return results.slice(0, typeof limit === "number" ? limit : 10).map((memory, index) => ({ id: `chunk-${index}`, content: memory.content, source: "fixture.md", source_id: memory.source_id, title: memory.title, url: null, chunk_index: 0, last_modified: memory.last_modified, score: 0.94, memory_type: memory.memory_type, entity_id: query.includes("ada") ? "entity-ada" : null, is_archived: false }));
+  }
+
+}

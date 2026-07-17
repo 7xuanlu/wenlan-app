@@ -2,6 +2,7 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { useQuery, useQueries, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import {
   getPage,
   getPageLinks,
@@ -15,6 +16,7 @@ import {
   listRegisteredSources,
   getPageSources,
   type Entity,
+  type Page,
 } from "../../lib/tauri";
 import ContentRenderer from "./ContentRenderer";
 import RelatedPages from "./page/RelatedPages";
@@ -29,14 +31,27 @@ interface PageDetailProps {
   onMemoryClick: (sourceId: string) => void;
   onPageClick?: (pageId: string) => void;
   onEntityClick?: (entityId: string) => void;
+  onDismissAttachedPageNotice?: () => void;
+  onPageLoaded?: (page: Pick<Page, "id" | "status" | "title">) => void;
+  showAttachedPageNotice?: boolean;
 }
 
-function relativeTimeFromISO(iso: string): string {
+function relativeTimeFromISO(iso: string, t: TFunction): string {
   const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (diff < 60) return "just now";
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  return `${Math.floor(diff / 86400)}d ago`;
+  if (diff < 60) return t("pageDetail.dateline.relativeJustNow");
+  if (diff < 3600) {
+    return t("pageDetail.dateline.relativeMinutesAgo", {
+      count: Math.floor(diff / 60),
+    });
+  }
+  if (diff < 86400) {
+    return t("pageDetail.dateline.relativeHoursAgo", {
+      count: Math.floor(diff / 3600),
+    });
+  }
+  return t("pageDetail.dateline.relativeDaysAgo", {
+    count: Math.floor(diff / 86400),
+  });
 }
 
 function normalizeLinkLabel(label: string): string {
@@ -61,8 +76,71 @@ function folderName(path: string): string {
 }
 
 const PAGE_LINK_ANCHOR_PREFIX = "#concept:";
+type MenuInitialFocus = "first" | "last";
 
-export default function PageDetail({ pageId, onBack, onMemoryClick, onPageClick, onEntityClick }: PageDetailProps) {
+function enabledMenuItems(menu: HTMLDivElement | null): HTMLElement[] {
+  if (!menu) return [];
+  const items = Array.from(
+    menu.querySelectorAll<HTMLElement>('[role="menuitem"]:not(:disabled)'),
+  );
+  const renderedItems = items.filter((item) => item.getClientRects().length > 0);
+  return renderedItems.length > 0 ? renderedItems : items;
+}
+
+function focusMenuBoundary(
+  menu: HTMLDivElement | null,
+  boundary: MenuInitialFocus,
+): void {
+  const items = enabledMenuItems(menu);
+  items[boundary === "first" ? 0 : items.length - 1]?.focus();
+}
+
+function handleMenuKeyDown(
+  event: React.KeyboardEvent<HTMLDivElement>,
+  menu: HTMLDivElement | null,
+  closeMenu: () => void,
+  trigger: HTMLButtonElement | null,
+): void {
+  if (!["ArrowDown", "ArrowUp", "Home", "End", "Escape"].includes(event.key)) {
+    return;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+
+  if (event.key === "Escape") {
+    closeMenu();
+    trigger?.focus();
+    return;
+  }
+
+  const items = enabledMenuItems(menu);
+  if (items.length === 0) return;
+
+  const currentIndex = items.indexOf(document.activeElement as HTMLElement);
+  let nextIndex = 0;
+  if (event.key === "End") {
+    nextIndex = items.length - 1;
+  } else if (event.key === "ArrowDown") {
+    nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % items.length;
+  } else if (event.key === "ArrowUp") {
+    nextIndex = currentIndex < 0
+      ? items.length - 1
+      : (currentIndex - 1 + items.length) % items.length;
+  }
+  items[nextIndex]?.focus();
+}
+
+export default function PageDetail({
+  pageId,
+  onBack,
+  onMemoryClick,
+  onPageClick,
+  onEntityClick,
+  onDismissAttachedPageNotice,
+  onPageLoaded,
+  showAttachedPageNotice = false,
+}: PageDetailProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [copied, setCopied] = useState(false);
@@ -70,16 +148,29 @@ export default function PageDetail({ pageId, onBack, onMemoryClick, onPageClick,
   const [editing, setEditing] = useState(false);
   const [editContent, setEditContent] = useState("");
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [actionMenuOpen, setActionMenuOpen] = useState(false);
   const [redistillNotice, setRedistillNotice] = useState<{
     kind: "success" | "warning" | "error";
     message: string;
   } | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const exportMenuTriggerRef = useRef<HTMLButtonElement>(null);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
+  const exportMenuInitialFocusRef = useRef<MenuInitialFocus>("first");
+  const actionMenuTriggerRef = useRef<HTMLButtonElement>(null);
+  const actionMenuRef = useRef<HTMLDivElement>(null);
+  const actionMenuListRef = useRef<HTMLDivElement>(null);
+  const actionMenuInitialFocusRef = useRef<MenuInitialFocus>("first");
 
   const { data: page, isLoading } = useQuery({
     queryKey: ["page", pageId],
     queryFn: () => getPage(pageId),
   });
+
+  useEffect(() => {
+    if (page == null) return;
+    onPageLoaded?.({ id: page.id, status: page.status, title: page.title });
+  }, [onPageLoaded, page?.id, page?.status, page?.title]);
 
   const { data: pageLinks } = useQuery({
     queryKey: ["page-links", pageId],
@@ -244,6 +335,39 @@ export default function PageDetail({ pageId, onBack, onMemoryClick, onPageClick,
     }
   };
 
+  const beginEditing = () => {
+    setEditContent(page?.content ?? "");
+    setEditing(true);
+    setActionMenuOpen(false);
+  };
+
+  const requestDelete = () => {
+    setActionMenuOpen(false);
+    if (confirm(t("pageDetail.deleteConfirm"))) deleteMutation.mutate();
+  };
+
+  const openExportMenu = (initialFocus: MenuInitialFocus) => {
+    exportMenuInitialFocusRef.current = initialFocus;
+    setActionMenuOpen(false);
+    setExportMenuOpen(true);
+  };
+
+  const openActionMenu = (initialFocus: MenuInitialFocus) => {
+    actionMenuInitialFocusRef.current = initialFocus;
+    setExportMenuOpen(false);
+    setActionMenuOpen(true);
+  };
+
+  const handleMenuTriggerKeyDown = (
+    event: React.KeyboardEvent<HTMLButtonElement>,
+    openMenu: (initialFocus: MenuInitialFocus) => void,
+  ) => {
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    event.preventDefault();
+    event.stopPropagation();
+    openMenu(event.key === "ArrowDown" ? "first" : "last");
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && e.metaKey) {
       e.preventDefault();
@@ -261,6 +385,29 @@ export default function PageDetail({ pageId, onBack, onMemoryClick, onPageClick,
       textareaRef.current.selectionStart = textareaRef.current.value.length;
     }
   }, [editing]);
+
+  useEffect(() => {
+    if (!exportMenuOpen) return;
+    focusMenuBoundary(exportMenuRef.current, exportMenuInitialFocusRef.current);
+  }, [exportMenuOpen]);
+
+  useEffect(() => {
+    if (!actionMenuOpen) return;
+    focusMenuBoundary(actionMenuListRef.current, actionMenuInitialFocusRef.current);
+  }, [actionMenuOpen]);
+
+  useEffect(() => {
+    if (!actionMenuOpen) return;
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      if (!actionMenuRef.current?.contains(event.target as Node)) {
+        setActionMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", closeOnOutsideClick);
+    return () => {
+      document.removeEventListener("mousedown", closeOnOutsideClick);
+    };
+  }, [actionMenuOpen]);
 
   if (isLoading) return null;
 
@@ -309,7 +456,7 @@ export default function PageDetail({ pageId, onBack, onMemoryClick, onPageClick,
   const sourceMemoryByLocator = new Map(
     (pageSources ?? [])
       .filter((cs) => cs.memory !== null)
-      .map((cs) => [cs.source.memory_source_id, cs.memory!]),
+      .map((cs) => [cs.source.memory_source_id, cs.memory]),
   );
 
   // Extract TLDR (first sentence) for native rendering under title.
@@ -353,45 +500,67 @@ export default function PageDetail({ pageId, onBack, onMemoryClick, onPageClick,
       {/* Back + Header */}
       <div>
         <button
+          aria-label={t("main.back")}
           onClick={onBack}
-          className="p-1.5 -ml-1.5 rounded-md transition-colors duration-150 hover:bg-[var(--mem-hover)]"
+          className="mem-icon-action -ml-1.5"
           style={{ color: "var(--mem-text-tertiary)", background: "none", border: "none", cursor: "pointer", lineHeight: 0, marginBottom: "12px" }}
+          type="button"
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
         </button>
 
-        <div className="flex items-start justify-between gap-4">
+        <div className="page-detail-heading-row flex items-start justify-between gap-4">
           <div className="flex-1 min-w-0">
-            <h2 className="page-detail-title">
+            <h1 className="page-detail-title">
               {page.title}
-            </h2>
-            <div
-              className="page-detail-dateline flex items-center gap-2 flex-wrap"
-            >
-              <span>Last distilled {relativeTimeFromISO(page.last_compiled)}</span>
-              <span style={{ opacity: 0.4 }}>&middot;</span>
-              <span>from {sourceCount} {sourceCount === 1 ? "memory" : "memories"}</span>
+            </h1>
+            <div className="page-detail-dateline">
+              <span className="page-detail-dateline-item">
+                {t("pageDetail.dateline.lastDistilled", {
+                  time: relativeTimeFromISO(page.last_compiled, t),
+                })}
+              </span>
+              <span className="page-detail-dateline-item">
+                {t("pageDetail.dateline.sourceMemories", { count: sourceCount })}
+              </span>
               {page.stale_reason && (
-                <>
-                  <span style={{ opacity: 0.4 }}>&middot;</span>
-                  <span style={{ color: page.stale_reason === "source_conflict" ? "var(--mem-accent-amber)" : "var(--mem-text-tertiary)" }}>
-                    {page.stale_reason === "source_conflict" ? "needs review" : "updating..."}
-                  </span>
-                </>
+                <span
+                  className="page-detail-dateline-item"
+                  style={{
+                    color:
+                      page.stale_reason === "source_conflict"
+                        ? "var(--mem-accent-amber)"
+                        : "var(--mem-text-tertiary)",
+                  }}
+                >
+                  {page.stale_reason === "source_conflict"
+                    ? t("pageDetail.dateline.needsReview")
+                    : t("pageDetail.dateline.updating")}
+                </span>
               )}
             </div>
           </div>
 
-          {/* Actions — icon-only for clean top bar */}
-          <div className="flex items-center gap-0.5 shrink-0">
+          <div className="page-detail-header-actions">
+            {!editing ? (
+              <button
+                type="button"
+                className="page-detail-primary-action"
+                onClick={beginEditing}
+              >
+                {t("pageDetail.editPage")}
+              </button>
+            ) : null}
+            <div className="page-detail-icon-actions">
             {!editing && (
               <button
-                onClick={() => { setEditContent(page.content); setEditing(true); }}
-                className="p-1.5 rounded-md transition-colors duration-150 hover:bg-[var(--mem-hover-strong)]"
-                style={{ color: "var(--mem-text-tertiary)" }}
-                title="Edit page"
+                aria-label={t("pageDetail.editPage")}
+                onClick={beginEditing}
+                className="mem-icon-action"
+                title={t("pageDetail.editPage")}
+                type="button"
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
                   <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
                 </svg>
@@ -401,10 +570,18 @@ export default function PageDetail({ pageId, onBack, onMemoryClick, onPageClick,
               <button
                 onClick={handleRedistillClick}
                 disabled={redistillMutation.isPending}
-                className="p-1.5 rounded-md transition-colors duration-150 hover:bg-[var(--mem-hover-strong)] disabled:opacity-50"
-                style={{ color: "var(--mem-text-tertiary)" }}
-                aria-label={redistillMutation.isPending ? "Re-distilling page" : "Re-distill page"}
-                title={redistillMutation.isPending ? "Re-distilling..." : "Re-distill page"}
+                className="mem-icon-action"
+                aria-label={
+                  redistillMutation.isPending
+                    ? t("pageDetail.redistillingPage")
+                    : t("pageDetail.redistillPage")
+                }
+                title={
+                  redistillMutation.isPending
+                    ? t("pageDetail.redistillingPage")
+                    : t("pageDetail.redistillPage")
+                }
+                type="button"
               >
                 <svg
                   aria-hidden="true"
@@ -422,11 +599,10 @@ export default function PageDetail({ pageId, onBack, onMemoryClick, onPageClick,
             )}
             <button
               onClick={copyAsContext}
-              className={`p-1.5 rounded-md transition-colors duration-150 ${
-                copied ? "text-emerald-400" : "hover:bg-[var(--mem-hover-strong)]"
-              }`}
-              style={copied ? undefined : { color: "var(--mem-text-tertiary)" }}
-              title={copied ? "Copied!" : "Copy as context"}
+              className={`mem-icon-action ${copied ? "text-emerald-400" : ""}`}
+              title={copied ? t("pageDetail.copied") : t("pageDetail.copyAsContext")}
+              aria-label={copied ? t("pageDetail.copied") : t("pageDetail.copyAsContext")}
+              type="button"
             >
               {copied ? (
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -444,9 +620,10 @@ export default function PageDetail({ pageId, onBack, onMemoryClick, onPageClick,
               {obsidianSources.length === 0 ? (
                 <button
                   disabled
-                  className="p-1.5 rounded-md opacity-40 cursor-not-allowed"
-                  style={{ color: "var(--mem-text-tertiary)" }}
-                  title="Add an Obsidian source in Settings to export"
+                  className="mem-icon-action"
+                  title={t("pageDetail.exportUnavailable")}
+                  aria-label={t("pageDetail.exportUnavailable")}
+                  type="button"
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
@@ -456,18 +633,27 @@ export default function PageDetail({ pageId, onBack, onMemoryClick, onPageClick,
                 </button>
               ) : (
                 <button
+                  ref={exportMenuTriggerRef}
+                  aria-expanded={obsidianSources.length >= 2 ? exportMenuOpen : undefined}
+                  aria-haspopup={obsidianSources.length >= 2 ? "menu" : undefined}
+                  onKeyDown={(event) => {
+                    if (obsidianSources.length >= 2) {
+                      handleMenuTriggerKeyDown(event, openExportMenu);
+                    }
+                  }}
                   onClick={() => {
                     if (obsidianSources.length === 1) {
                       handleExportToVault(obsidianSources[0].path);
+                    } else if (exportMenuOpen) {
+                      setExportMenuOpen(false);
                     } else {
-                      setExportMenuOpen((v) => !v);
+                      openExportMenu("first");
                     }
                   }}
-                  className={`p-1.5 rounded-md transition-colors duration-150 ${
-                    exported ? "text-emerald-400" : "hover:bg-[var(--mem-hover-strong)]"
-                  }`}
-                  style={exported ? undefined : { color: "var(--mem-text-tertiary)" }}
-                  title={exported ? "Exported!" : "Export to Obsidian"}
+                  className={`mem-icon-action ${exported ? "text-emerald-400" : ""}`}
+                  title={exported ? t("pageDetail.exported") : t("pageDetail.exportToObsidian")}
+                  aria-label={exported ? t("pageDetail.exported") : t("pageDetail.exportToObsidian")}
+                  type="button"
                 >
                   {exported ? (
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -484,19 +670,24 @@ export default function PageDetail({ pageId, onBack, onMemoryClick, onPageClick,
               )}
               {exportMenuOpen && obsidianSources.length >= 2 && (
                 <div
-                  className="absolute right-0 top-full mt-1 z-50 rounded-lg py-1 min-w-[180px]"
-                  style={{
-                    backgroundColor: "var(--mem-surface)",
-                    border: "1px solid var(--mem-border)",
-                    boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+                  className="mem-popover-surface page-detail-export-menu absolute right-0 top-full mt-1 z-50"
+                  onKeyDown={(event) => {
+                    handleMenuKeyDown(
+                      event,
+                      exportMenuRef.current,
+                      () => setExportMenuOpen(false),
+                      exportMenuTriggerRef.current,
+                    );
                   }}
+                  ref={exportMenuRef}
+                  role="menu"
                 >
                   {obsidianSources.map((s) => (
                     <button
                       key={s.id}
                       onClick={() => handleExportToVault(s.path)}
-                      className="w-full text-left px-3 py-2 text-[13px] transition-colors hover:bg-[var(--mem-hover)]"
-                      style={{ color: "var(--mem-text)", fontFamily: "var(--mem-font-body)" }}
+                      role="menuitem"
+                      type="button"
                     >
                       {folderName(s.path)}
                     </button>
@@ -504,19 +695,129 @@ export default function PageDetail({ pageId, onBack, onMemoryClick, onPageClick,
                 </div>
               )}
             </div>
-            <button
-              onClick={() => { if (confirm("Delete this page?")) deleteMutation.mutate(); }}
-              className="p-1.5 rounded-md transition-colors duration-150 hover:bg-red-500/10"
-              style={{ color: "var(--mem-text-tertiary)" }}
-              title="Delete page"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14" />
-              </svg>
-            </button>
+            </div>
+            <div className="page-detail-actions-anchor" ref={actionMenuRef}>
+              <button
+                ref={actionMenuTriggerRef}
+                type="button"
+                className="mem-icon-action page-detail-actions-menu-trigger"
+                aria-expanded={actionMenuOpen}
+                aria-haspopup="menu"
+                aria-label={t("pageDetail.actions")}
+                title={t("pageDetail.actions")}
+                onKeyDown={(event) => handleMenuTriggerKeyDown(event, openActionMenu)}
+                onClick={() => {
+                  if (actionMenuOpen) {
+                    setActionMenuOpen(false);
+                  } else {
+                    openActionMenu("first");
+                  }
+                }}
+              >
+                <svg aria-hidden="true" width="16" height="4" viewBox="0 0 16 4" fill="currentColor">
+                  <circle cx="2" cy="2" r="1.5" />
+                  <circle cx="8" cy="2" r="1.5" />
+                  <circle cx="14" cy="2" r="1.5" />
+                </svg>
+              </button>
+              {actionMenuOpen ? (
+                <div
+                  aria-label={t("pageDetail.actions")}
+                  className="mem-popover-surface page-detail-actions-menu"
+                  onKeyDown={(event) => {
+                    handleMenuKeyDown(
+                      event,
+                      actionMenuListRef.current,
+                      () => setActionMenuOpen(false),
+                      actionMenuTriggerRef.current,
+                    );
+                  }}
+                  ref={actionMenuListRef}
+                  role="menu"
+                >
+                  {!editing ? (
+                    <button
+                      className="page-detail-mobile-menu-item"
+                      disabled={redistillMutation.isPending}
+                      onClick={() => {
+                        setActionMenuOpen(false);
+                        handleRedistillClick();
+                      }}
+                      role="menuitem"
+                      type="button"
+                    >
+                      {redistillMutation.isPending
+                        ? t("pageDetail.redistillingPage")
+                        : t("pageDetail.redistillPage")}
+                    </button>
+                  ) : null}
+                  <button
+                    className="page-detail-mobile-menu-item"
+                    onClick={() => {
+                      setActionMenuOpen(false);
+                      void copyAsContext();
+                    }}
+                    role="menuitem"
+                    type="button"
+                  >
+                    {copied ? t("pageDetail.copied") : t("pageDetail.copyAsContext")}
+                  </button>
+                  {obsidianSources.length === 0 ? (
+                    <button
+                      className="page-detail-mobile-menu-item"
+                      disabled
+                      role="menuitem"
+                      type="button"
+                    >
+                      {t("pageDetail.exportToObsidian")}
+                    </button>
+                  ) : (
+                    obsidianSources.map((source) => (
+                      <button
+                        className="page-detail-mobile-menu-item"
+                        key={source.id}
+                        onClick={() => {
+                          setActionMenuOpen(false);
+                          void handleExportToVault(source.path);
+                        }}
+                        role="menuitem"
+                        type="button"
+                      >
+                        {obsidianSources.length === 1
+                          ? t("pageDetail.exportToObsidian")
+                          : t("pageDetail.exportToVault", { vault: folderName(source.path) })}
+                      </button>
+                    ))
+                  )}
+                  <button
+                    className="page-detail-menu-danger"
+                    disabled={deleteMutation.isPending}
+                    onClick={requestDelete}
+                    role="menuitem"
+                    type="button"
+                  >
+                    {t("pageDetail.deletePage")}
+                  </button>
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
       </div>
+
+      {showAttachedPageNotice && (
+        <div
+          aria-label={t("pages.composer.attachedNotice", { title: page.title })}
+          aria-live="polite"
+          className="page-detail-attached-notice"
+          role="status"
+        >
+          <span>{t("pages.composer.attachedNotice", { title: page.title })}</span>
+          <button onClick={onDismissAttachedPageNotice} type="button">
+            {t("pages.composer.dismissNotice")}
+          </button>
+        </div>
+      )}
 
       {redistillNotice && (
         <div

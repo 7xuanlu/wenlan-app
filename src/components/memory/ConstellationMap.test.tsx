@@ -29,7 +29,10 @@ vi.mock("react-force-graph-2d", () => ({
 }));
 
 import { listEntities, getEntityDetail } from "../../lib/tauri";
-import ConstellationMap from "./ConstellationMap";
+import ConstellationMap, {
+  applyFullScreenCamera,
+  graphNodeValue,
+} from "./ConstellationMap";
 
 const mockListEntities = vi.mocked(listEntities);
 const mockGetEntityDetail = vi.mocked(getEntityDetail);
@@ -124,5 +127,53 @@ describe("ConstellationMap", () => {
     expect(
       await screen.findByText("Your constellation will appear as knowledge grows"),
     ).toBeInTheDocument();
+  });
+
+  it("resets an empty fullscreen graph instead of inheriting a stale transform", () => {
+    const graph = {
+      centerAt: vi.fn(),
+      zoom: vi.fn(),
+      zoomToFit: vi.fn(),
+    };
+
+    applyFullScreenCamera(graph, [], 400);
+
+    expect(graph.centerAt).toHaveBeenCalledWith(0, 0, 400);
+    expect(graph.zoom).toHaveBeenCalledWith(1, 400);
+    expect(graph.zoomToFit).not.toHaveBeenCalled();
+  });
+
+  it("centers one fullscreen node at a bounded zoom", () => {
+    const graph = {
+      centerAt: vi.fn(),
+      zoom: vi.fn(),
+      zoomToFit: vi.fn(),
+    };
+
+    applyFullScreenCamera(graph, [{ x: 12, y: -8 }], 400);
+
+    expect(graph.centerAt).toHaveBeenCalledWith(12, -8, 400);
+    expect(graph.zoom).toHaveBeenCalledWith(3.5, 400);
+    expect(graph.zoomToFit).not.toHaveBeenCalled();
+  });
+
+  it("fits two or more fullscreen nodes with positive padding", () => {
+    const graph = {
+      centerAt: vi.fn(),
+      zoom: vi.fn(),
+      zoomToFit: vi.fn(),
+    };
+
+    applyFullScreenCamera(graph, [{ x: 0, y: 0 }, { x: 10, y: 10 }], 400);
+
+    expect(graph.zoomToFit).toHaveBeenCalledWith(400, 64);
+    expect(graph.centerAt).not.toHaveBeenCalled();
+    expect(graph.zoom).not.toHaveBeenCalled();
+  });
+
+  it("reports node area because nodeRelSize is pinned to one", () => {
+    expect(graphNodeValue({ isMemory: true, stability: "confirmed" })).toBe(20.25);
+    expect(graphNodeValue({ isMemory: true, stability: "new" })).toBe(9);
+    expect(graphNodeValue({ stability: "confirmed", connectionCount: 2 })).toBe(25);
   });
 });
