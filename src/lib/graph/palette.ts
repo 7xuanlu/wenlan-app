@@ -39,6 +39,8 @@ export interface GraphPalette {
   neutral: string;
   edge: string;
   edgeStrong: string;
+  /** Label ink — reads the shared --mem-text token, not a --kg-* slot. */
+  label: string;
 }
 
 // Read the resolved --kg-* custom properties off <html>. getComputedStyle
@@ -56,6 +58,7 @@ function readPalette(): GraphPalette {
     neutral: read("--kg-neutral"),
     edge: read("--kg-edge"),
     edgeStrong: read("--kg-edge-strong"),
+    label: read("--mem-text"),
   };
 }
 

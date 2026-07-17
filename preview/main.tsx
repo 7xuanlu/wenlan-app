@@ -8,7 +8,7 @@
 // through a real first run, which is why a whole redesign round once shipped
 // green tests and zero reviewed pixels. Every step and section is directly
 // addressable here.
-import { StrictMode, useState } from "react";
+import { StrictMode, Suspense, lazy, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import PageDetail from "../src/components/memory/PageDetail";
@@ -26,6 +26,11 @@ import { resetReviewFixtures, REVIEW_FAIL } from "./fixtures";
 import BakeoffHarness from "./bakeoff/BakeoffHarness";
 import type { BakeoffRenderer } from "./bakeoff/bakeoffResult";
 import "../src/index.css";
+
+// Lazy so sigma lands in its own vite chunk, same as the bake-off adapters
+// (see BakeoffHarness) — that chunk stays once the bake-off scaffolding is
+// deleted in a later round.
+const AtlasView = lazy(() => import("../src/components/memory/AtlasView"));
 
 const VARIANTS = [
   { id: "page-cited", label: "Cited (all kinds)" },
@@ -72,7 +77,7 @@ const client = new QueryClient({
   defaultOptions: { queries: { retry: false, staleTime: 0, gcTime: 0 } },
 });
 
-type Mode = "page" | "review" | "wizard" | "settings" | "graph" | "entity" | "bakeoff";
+type Mode = "page" | "review" | "wizard" | "settings" | "graph" | "atlas" | "entity" | "bakeoff";
 
 // Quick-select entities for the "entity" tab: gk-wenlan is the highest-degree
 // hub, gk-lucian shows a person node with mixed in/out edges, gk-remote-office
@@ -84,7 +89,7 @@ const ENTITY_VARIANTS = [
 ];
 
 // Deep links: ?mode=wizard&step=connect, ?mode=settings&section=intelligence,
-// ?mode=graph, ?mode=entity&entity=gk-lucian, ?theme=light. Without these
+// ?mode=graph, ?mode=atlas, ?mode=entity&entity=gk-lucian, ?theme=light. Without these
 // every surface would only be reachable by clicking, so a screenshot pass
 // couldn't address one — which is the whole point of these modes existing.
 const params = new URLSearchParams(window.location.search);
@@ -107,7 +112,7 @@ const BAR_H = SHOW_BAR ? 41 : 0;
 
 function Harness() {
   const [mode, setMode] = useState<Mode>(
-    param("mode", ["page", "review", "wizard", "settings", "graph", "entity", "bakeoff"] as const, "review"),
+    param("mode", ["page", "review", "wizard", "settings", "graph", "atlas", "entity", "bakeoff"] as const, "review"),
   );
   const [pageId, setPageId] = useState(params.get("page") ?? "page-cited");
   const [entityId, setEntityId] = useState(params.get("entity") ?? "gk-wenlan");
@@ -174,6 +179,9 @@ function Harness() {
         <button onClick={() => setMode("graph")} style={tab(mode === "graph")}>
           Graph
         </button>
+        <button onClick={() => setMode("atlas")} style={tab(mode === "atlas")}>
+          Atlas
+        </button>
         <button onClick={() => setMode("entity")} style={tab(mode === "entity")}>
           Entity
         </button>
@@ -211,7 +219,7 @@ function Harness() {
               {r}
             </button>
           ))
-        ) : mode === "graph" ? null : (
+        ) : mode === "graph" || mode === "atlas" ? null : (
           <>
             <button
               onClick={() => {
@@ -317,6 +325,19 @@ function Harness() {
               setMode("entity");
             }}
           />
+        </div>
+      ) : mode === "atlas" ? (
+        // Full-bleed like graph/wizard. sigma lands in its own lazy chunk
+        // (see the AtlasView import above) so Suspense covers the load.
+        <div style={{ height: `calc(100vh - ${BAR_H}px)` }}>
+          <Suspense fallback={<div style={{ padding: 16 }}>Loading atlas…</div>}>
+            <AtlasView
+              onNodeClick={(id: string) => {
+                setEntityId(id);
+                setMode("entity");
+              }}
+            />
+          </Suspense>
         </div>
       ) : mode === "bakeoff" ? (
         // Full-bleed like graph/wizard. renderer/n are URL-driven

@@ -75,6 +75,7 @@ describe("colorForEntityType", () => {
       neutral: "#neutral",
       edge: "#edge",
       edgeStrong: "#edgeStrong",
+      label: "#label",
     };
     expect(colorForEntityType("technology", palette)).toBe("#tool");
     expect(colorForEntityType("place", palette)).toBe("#neutral");

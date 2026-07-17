@@ -6,8 +6,11 @@ import type { Entity, EntityDetail, RelationWithEntity } from "../tauri";
 // drawing. Keeps renderers (SVG Focus now, Reagraph Atlas later) as leaves.
 //
 // Parallel edges: distinct relation ids with identical (source, type, target)
-// intentionally stay distinct edges here — collapsing them is a view decision,
-// deferred to the Atlas phase.
+// intentionally stay distinct edges here — collapsing them is a view decision.
+// ponytail: Atlas (src/lib/graph/atlas.ts) keeps them distinct and lets sigma
+// draw them overlapped; ConstellationMap collapses same-pair edges to one
+// line instead (see its own comment) — the two renderers make different
+// calls on purpose, this file doesn't referee it.
 
 export type GraphNodeKind = "entity" | "memory" | "page";
 

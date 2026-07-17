@@ -35,6 +35,12 @@ importers:
       d3-force:
         specifier: ^3.0.0
         version: 3.0.0
+      graphology:
+        specifier: 0.26.0
+        version: 0.26.0(graphology-types@0.24.8)
+      graphology-layout-forceatlas2:
+        specifier: 0.10.1
+        version: 0.10.1(graphology-types@0.24.8)
       i18next:
         specifier: ^26.3.4
         version: 26.3.4(typescript@5.9.3)
@@ -59,6 +65,9 @@ importers:
       remark-gfm:
         specifier: ^4.0.1
         version: 4.0.1
+      sigma:
+        specifier: 3.0.3
+        version: 3.0.3(graphology-types@0.24.8)
       sonner:
         specifier: ^2.0.7
         version: 2.0.7(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -105,18 +114,9 @@ importers:
       cytoscape:
         specifier: 3.34.0
         version: 3.34.0
-      graphology:
-        specifier: 0.26.0
-        version: 0.26.0(graphology-types@0.24.8)
-      graphology-layout-forceatlas2:
-        specifier: 0.10.1
-        version: 0.10.1(graphology-types@0.24.8)
       jsdom:
         specifier: ^28.1.0
         version: 28.1.0
-      sigma:
-        specifier: 3.0.3
-        version: 3.0.3(graphology-types@0.24.8)
       tailwindcss:
         specifier: ^4.0.0
         version: 4.2.4
