@@ -15,17 +15,22 @@ vi.mock("../../lib/tauri", () => ({
   listEntities: vi.fn(),
   getEntityDetail: vi.fn(),
   listMemoriesRich: vi.fn(),
+  listPages: vi.fn(),
 }));
 
-// react-force-graph-2d requires canvas — mock it in jsdom
+// react-force-graph-2d requires canvas — mock it in jsdom. Captures both the
+// graphData (existing tests) and the full props object (needed to invoke
+// onNodeClick directly, since this mock renders no clickable DOM).
 const capturedGraphData = vi.hoisted(() => [] as any[]);
+const capturedProps = vi.hoisted(() => [] as any[]);
 vi.mock("react-force-graph-2d", () => ({
   __esModule: true,
-  default: vi.fn(({ graphData }: any) => {
-    capturedGraphData.push(graphData);
+  default: vi.fn((props: any) => {
+    capturedGraphData.push(props.graphData);
+    capturedProps.push(props);
     return (
-      <div data-testid="force-graph" data-link-count={graphData?.links?.length ?? 0}>
-        {graphData?.nodes?.map((n: any) => (
+      <div data-testid="force-graph" data-link-count={props.graphData?.links?.length ?? 0}>
+        {props.graphData?.nodes?.map((n: any) => (
           <span key={n.id} className="constellation-node" data-entity-type={n.entityType}>{n.name}</span>
         ))}
       </div>
@@ -33,11 +38,13 @@ vi.mock("react-force-graph-2d", () => ({
   }),
 }));
 
-import { listEntities, getEntityDetail } from "../../lib/tauri";
+import { listEntities, getEntityDetail, listMemoriesRich, listPages } from "../../lib/tauri";
 import ConstellationMap from "./ConstellationMap";
 
 const mockListEntities = vi.mocked(listEntities);
 const mockGetEntityDetail = vi.mocked(getEntityDetail);
+const mockListMemoriesRich = vi.mocked(listMemoriesRich);
+const mockListPages = vi.mocked(listPages);
 
 function renderWithQuery(ui: React.ReactElement) {
   const qc = new QueryClient({
@@ -60,10 +67,53 @@ function makeEntity(overrides: Partial<import("../../lib/tauri").Entity> = {}): 
   };
 }
 
+function makeMemory(overrides: Partial<import("../../lib/tauri").MemoryItem> = {}): import("../../lib/tauri").MemoryItem {
+  return {
+    source_id: overrides.source_id ?? "m1",
+    title: overrides.title ?? "Memory",
+    content: overrides.content ?? "content",
+    summary: overrides.summary ?? null,
+    memory_type: overrides.memory_type ?? "fact",
+    domain: overrides.domain ?? null,
+    source_agent: overrides.source_agent ?? null,
+    confidence: overrides.confidence ?? null,
+    confirmed: overrides.confirmed ?? false,
+    pinned: overrides.pinned ?? false,
+    supersedes: overrides.supersedes ?? null,
+    last_modified: overrides.last_modified ?? Date.now(),
+    chunk_count: overrides.chunk_count ?? 1,
+    ...overrides,
+  };
+}
+
+function makePage(overrides: Partial<import("../../lib/tauri").Page> = {}): import("../../lib/tauri").Page {
+  return {
+    id: overrides.id ?? "p1",
+    title: overrides.title ?? "Page",
+    summary: overrides.summary ?? null,
+    content: overrides.content ?? "content",
+    entity_id: overrides.entity_id ?? null,
+    domain: overrides.domain ?? null,
+    source_memory_ids: overrides.source_memory_ids ?? [],
+    version: overrides.version ?? 1,
+    status: overrides.status ?? "active",
+    created_at: overrides.created_at ?? "2026-01-01T00:00:00+00:00",
+    last_compiled: overrides.last_compiled ?? "2026-01-01T00:00:00+00:00",
+    last_modified: overrides.last_modified ?? "2026-01-01T00:00:00+00:00",
+    ...overrides,
+  };
+}
+
 describe("ConstellationMap", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     capturedGraphData.length = 0;
+    capturedProps.length = 0;
+    // Toggle state persists in localStorage across renders — start every
+    // test from the documented default (both off) regardless of test order.
+    localStorage.clear();
+    mockListMemoriesRich.mockResolvedValue([]);
+    mockListPages.mockResolvedValue([]);
   });
 
   it("renders the force graph when entities exist", async () => {
@@ -352,5 +402,125 @@ describe("ConstellationMap", () => {
     });
     const after = capturedGraphData[capturedGraphData.length - 1].nodes.find((n: any) => n.id === "e1");
     expect(after).toBe(before);
+  });
+
+  // --- Pages layer: view-level overlay mirroring the memory-layer pattern ---
+
+  it("does not render page nodes when the Pages toggle is off by default", async () => {
+    const entities = [makeEntity({ id: "e1", name: "Anchor", entity_type: "project" })];
+    mockListEntities.mockResolvedValue(entities);
+    mockGetEntityDetail.mockResolvedValue({ entity: entities[0], observations: [], relations: [] });
+    mockListPages.mockResolvedValue([makePage({ id: "p1", entity_id: "e1" })]);
+
+    renderWithQuery(<ConstellationMap />);
+    await screen.findByTestId("force-graph");
+
+    const latestNodes = capturedGraphData[capturedGraphData.length - 1].nodes;
+    expect(latestNodes.some((n: any) => n.id === "page:p1")).toBe(false);
+    expect(mockListPages).not.toHaveBeenCalled();
+  });
+
+  it("adds a page node linked to its anchor entity when the Pages toggle is turned on", async () => {
+    const entities = [makeEntity({ id: "e1", name: "Anchor", entity_type: "project" })];
+    mockListEntities.mockResolvedValue(entities);
+    mockGetEntityDetail.mockResolvedValue({ entity: entities[0], observations: [], relations: [] });
+    mockListPages.mockResolvedValue([makePage({ id: "p1", entity_id: "e1" })]);
+
+    renderWithQuery(<ConstellationMap />);
+    await screen.findByTestId("force-graph");
+
+    screen.getByTestId("page-toggle").click();
+
+    await waitFor(() => {
+      const latest = capturedGraphData[capturedGraphData.length - 1];
+      expect(latest.nodes.some((n: any) => n.id === "page:p1")).toBe(true);
+    });
+
+    const latest = capturedGraphData[capturedGraphData.length - 1];
+    expect(latest.links).toContainEqual({ source: "page:p1", target: "e1" });
+  });
+
+  it("links a page to its cited memories only when both Pages and Memories are on", async () => {
+    const entities = [makeEntity({ id: "e1", name: "Anchor", entity_type: "project" })];
+    mockListEntities.mockResolvedValue(entities);
+    mockGetEntityDetail.mockResolvedValue({ entity: entities[0], observations: [], relations: [] });
+    mockListMemoriesRich.mockResolvedValue([makeMemory({ source_id: "m1", title: "Cited memory", entity_id: "e1" })]);
+    mockListPages.mockResolvedValue([makePage({ id: "p1", entity_id: "e1", source_memory_ids: ["m1"] })]);
+
+    renderWithQuery(<ConstellationMap />);
+    await screen.findByTestId("force-graph");
+
+    // Pages on, Memories off: the page keeps its entity link, but no
+    // page→mem link yet — the cited memory node doesn't exist on canvas.
+    screen.getByTestId("page-toggle").click();
+    await waitFor(() => {
+      expect(capturedGraphData[capturedGraphData.length - 1].nodes.some((n: any) => n.id === "page:p1")).toBe(true);
+    });
+    let latest = capturedGraphData[capturedGraphData.length - 1];
+    expect(latest.links).toContainEqual({ source: "page:p1", target: "e1" });
+    expect(latest.links.some((l: any) => l.source === "page:p1" && l.target === "mem:m1")).toBe(false);
+
+    // Turn Memories on too: the cited memory node now exists, so the
+    // citation link appears.
+    screen.getByTestId("memory-toggle").click();
+    await waitFor(() => {
+      latest = capturedGraphData[capturedGraphData.length - 1];
+      expect(latest.links.some((l: any) => l.source === "page:p1" && l.target === "mem:m1")).toBe(true);
+    });
+  });
+
+  it("shows a no-anchor page only once its cited memory is on the canvas (both toggles needed)", async () => {
+    const entities = [makeEntity({ id: "e1", name: "Anchor", entity_type: "project" })];
+    mockListEntities.mockResolvedValue(entities);
+    mockGetEntityDetail.mockResolvedValue({ entity: entities[0], observations: [], relations: [] });
+    mockListMemoriesRich.mockResolvedValue([makeMemory({ source_id: "m1", title: "Cited memory", entity_id: "e1" })]);
+    mockListPages.mockResolvedValue([
+      makePage({ id: "p-orphan", entity_id: null, title: "Orphan Page", domain: null, source_memory_ids: ["m1"] }),
+    ]);
+
+    const { qc } = renderWithQuery(<ConstellationMap />);
+    await screen.findByTestId("force-graph");
+
+    screen.getByTestId("page-toggle").click();
+
+    // Prove the pages fetch actually settled before trusting the absence
+    // check below — an unsettled query would trivially show no page node
+    // for the wrong reason (see: absence assertions going false-green).
+    await waitFor(() => {
+      expect(qc.getQueryState(["constellation-pages"])?.status).toBe("success");
+    });
+    expect(
+      capturedGraphData[capturedGraphData.length - 1].nodes.some((n: any) => n.id === "page:p-orphan"),
+    ).toBe(false);
+
+    // Turn Memories on too: the cited memory node now exists, so the
+    // no-anchor page gains a citation link and appears.
+    screen.getByTestId("memory-toggle").click();
+    await waitFor(() => {
+      expect(
+        capturedGraphData[capturedGraphData.length - 1].nodes.some((n: any) => n.id === "page:p-orphan"),
+      ).toBe(true);
+    });
+  });
+
+  it("passes page:<id> to onNodeClick when a page node is clicked", async () => {
+    const entities = [makeEntity({ id: "e1", name: "Anchor", entity_type: "project" })];
+    mockListEntities.mockResolvedValue(entities);
+    mockGetEntityDetail.mockResolvedValue({ entity: entities[0], observations: [], relations: [] });
+    mockListPages.mockResolvedValue([makePage({ id: "p1", entity_id: "e1" })]);
+
+    const onNodeClick = vi.fn();
+    renderWithQuery(<ConstellationMap onNodeClick={onNodeClick} />);
+    await screen.findByTestId("force-graph");
+
+    screen.getByTestId("page-toggle").click();
+    await waitFor(() => {
+      expect(capturedGraphData[capturedGraphData.length - 1].nodes.some((n: any) => n.id === "page:p1")).toBe(true);
+    });
+
+    const latestProps = capturedProps[capturedProps.length - 1];
+    latestProps.onNodeClick({ id: "page:p1", isPage: true });
+
+    expect(onNodeClick).toHaveBeenCalledWith("page:p1");
   });
 });

@@ -19,6 +19,8 @@ import {
   REGISTERED_SOURCES,
   GRAPH_ENTITIES,
   GRAPH_DETAILS,
+  GRAPH_MEMORIES,
+  GRAPH_PAGES,
 } from "../fixtures";
 import { liveInvoke } from "./live-invoke";
 
@@ -136,6 +138,10 @@ export async function invoke(
     }
     case "list_entities_cmd":
       return GRAPH_ENTITIES;
+    case "list_memories_cmd":
+      return GRAPH_MEMORIES;
+    case "list_pages":
+      return GRAPH_PAGES;
     case "get_entity_detail_cmd": {
       const entityId = args?.entityId as string;
       return GRAPH_DETAILS[entityId] ?? REVIEW_ENTITIES[entityId] ?? null;

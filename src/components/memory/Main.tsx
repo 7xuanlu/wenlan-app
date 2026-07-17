@@ -217,6 +217,8 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
       navigateTo({ kind: "settings", section: "general" });
     } else if (entityId.startsWith("memory:")) {
       navigateTo({ kind: "memory", sourceId: entityId.replace("memory:", "") });
+    } else if (entityId.startsWith("page:")) {
+      navigateTo({ kind: "page", pageId: entityId.replace("page:", "") });
     } else {
       navigateTo({ kind: "entity", entityId });
     }

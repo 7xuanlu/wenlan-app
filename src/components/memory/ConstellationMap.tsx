@@ -3,7 +3,7 @@ import { useRef, useMemo, useCallback, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import ForceGraph2D from "react-force-graph-2d";
-import { listEntities, getEntityDetail, listMemoriesRich } from "../../lib/tauri";
+import { listEntities, getEntityDetail, listMemoriesRich, listPages } from "../../lib/tauri";
 import type { Entity, EntityDetail } from "../../lib/tauri";
 import { buildGraphModel } from "../../lib/graph/model";
 import { useGraphPalette, colorForEntityType } from "../../lib/graph/palette";
@@ -24,6 +24,7 @@ interface GraphNode {
   connectionCount: number;
   isMemory?: boolean;
   isDistilled?: boolean;
+  isPage?: boolean;
 }
 
 interface GraphLink {
@@ -48,6 +49,10 @@ function nodeRadius(stability: string, connectionCount: number): number {
   return Math.min(8, Math.max(3, base + connectionCount * 0.5));
 }
 
+// Page nodes render as a fixed-size square (not degree-scaled like entities).
+const PAGE_HALF_SIDE = 5.5; // ~11px side at base scale
+const PAGE_CORNER_RADIUS = 2.5;
+
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
@@ -59,6 +64,7 @@ export default function ConstellationMap({ onNodeClick }: ConstellationMapProps)
   const fgRef = useRef<any>(null);
   const [dimensions, setDimensions] = useState({ width: 400, height: 600 });
   const [showMemories, setShowMemories] = useState(() => localStorage.getItem("constellation-show-memories") === "true");
+  const [showPages, setShowPages] = useState(() => localStorage.getItem("constellation-show-pages") === "true");
   const [showLabels, setShowLabels] = useState(() => localStorage.getItem("constellation-show-labels") !== "false");
 
   // Responsive sizing
@@ -129,6 +135,14 @@ export default function ConstellationMap({ onNodeClick }: ConstellationMapProps)
     refetchInterval: 120_000,
   });
 
+  // Fetch pages when toggle is on
+  const { data: pages = [] } = useQuery({
+    queryKey: ["constellation-pages"],
+    queryFn: () => listPages(undefined, undefined, 200),
+    enabled: showPages,
+    refetchInterval: 120_000,
+  });
+
   // GraphModel folds entities + fetched details into deduped, direction-
   // normalized nodes/edges once; the memo below only adapts that shape into
   // what react-force-graph expects and appends memory nodes.
@@ -162,7 +176,10 @@ export default function ConstellationMap({ onNodeClick }: ConstellationMapProps)
       links.push({ source: e.source, target: e.target });
     }
 
-    // Add memory nodes when toggle is on
+    // Add memory nodes when toggle is on. addedMemIds is tracked outside the
+    // toggle check because the page loop below needs to know which memory
+    // nodes actually made it onto the canvas (regardless of showMemories).
+    const addedMemIds = new Set<string>();
     if (showMemories && memories.length > 0) {
       const entityIds = new Set(entities.map((e: Entity) => e.id));
       // Build name→id map for client-side matching (entity_id is rarely set)
@@ -171,7 +188,6 @@ export default function ConstellationMap({ onNodeClick }: ConstellationMapProps)
         entityByName.set(e.name.toLowerCase(), e.id);
       }
 
-      const addedMemIds = new Set<string>();
       for (const mem of memories) {
         // Try entity_id first (most precise)
         let linkedEntityId = mem.entity_id && entityIds.has(mem.entity_id) ? mem.entity_id : null;
@@ -205,8 +221,53 @@ export default function ConstellationMap({ onNodeClick }: ConstellationMapProps)
       }
     }
 
+    // Add page nodes when toggle is on — appended AFTER memories so
+    // page→memory citation links can check which memory nodes are present.
+    if (showPages && pages.length > 0) {
+      const entityIds = new Set(entities.map((e: Entity) => e.id));
+      const entityByName = new Map<string, string>();
+      for (const e of entities) {
+        entityByName.set(e.name.toLowerCase(), e.id);
+      }
+
+      for (const page of pages) {
+        if (page.status === "archived") continue;
+
+        let linkedEntityId = page.entity_id && entityIds.has(page.entity_id) ? page.entity_id : null;
+
+        // Fallback: match entity name in page title or domain
+        if (!linkedEntityId) {
+          const titleLower = (page.title || "").toLowerCase();
+          const domainLower = (page.domain || "").toLowerCase();
+          for (const [eName, eId] of entityByName) {
+            if (eName.length >= 3 && (titleLower.includes(eName) || domainLower === eName)) {
+              linkedEntityId = eId;
+              break;
+            }
+          }
+        }
+
+        const citedMemIds = (page.source_memory_ids ?? []).filter((id) => addedMemIds.has(id));
+
+        // No floating orphans — same rule as memories.
+        if (!linkedEntityId && citedMemIds.length === 0) continue;
+
+        const pageNodeId = `page:${page.id}`;
+        nodes.push({
+          id: pageNodeId,
+          name: page.title,
+          entityType: "page",
+          stability: "new",
+          connectionCount: 0,
+          isPage: true,
+        });
+        if (linkedEntityId) links.push({ source: pageNodeId, target: linkedEntityId });
+        for (const id of citedMemIds) links.push({ source: pageNodeId, target: `mem:${id}` });
+      }
+    }
+
     return { nodes, links };
-  }, [model, entities, showMemories, memories]);
+  }, [model, entities, showMemories, memories, showPages, pages]);
 
   // Stabilize graphData reference — only update when node/link IDs actually change
   const prevGraphRef = useRef(graphData);
@@ -255,6 +316,7 @@ export default function ConstellationMap({ onNodeClick }: ConstellationMapProps)
   // Helper: get node radius
   const getNodeRadius = useCallback((node: any) => {
     if (node.isMemory) return node.stability === "confirmed" || node.isDistilled ? 4.5 : 3;
+    if (node.isPage) return PAGE_HALF_SIDE;
     return nodeRadius(node.stability ?? "new", node.connectionCount);
   }, []);
 
@@ -328,6 +390,45 @@ export default function ConstellationMap({ onNodeClick }: ConstellationMapProps)
       ctx.globalAlpha = isStrong ? 0.8 : isLearned ? 0.55 : 0.3;
       ctx.fill();
       ctx.globalAlpha = 1;
+      return;
+    }
+
+    // Page nodes: fixed-size rounded square, neutral-slot color
+    if (node.isPage) {
+      const side = PAGE_HALF_SIDE * 2;
+      ctx.beginPath();
+      ctx.roundRect(node.x - PAGE_HALF_SIDE, node.y - PAGE_HALF_SIDE, side, side, PAGE_CORNER_RADIUS);
+      ctx.fillStyle = palette.neutral;
+      ctx.globalAlpha = 0.7;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+
+      if (showLabels && labeledNodeIds.has(node.id)) {
+        const screenFontPx = 12;
+        const screenPadPx = 8;
+        const fontSize = screenFontPx / globalScale;
+        const pad = PAGE_HALF_SIDE + screenPadPx / globalScale;
+
+        const angle = Math.atan2(node.y, node.x);
+        const sector = Math.round((angle + Math.PI) / (Math.PI / 2)) % 4;
+
+        ctx.font = `${fontSize}px -apple-system, sans-serif`;
+        ctx.fillStyle = labelColor;
+        ctx.globalAlpha = 0.85;
+
+        if (sector === 0 || sector === 2) {
+          const isRight = sector === 0;
+          ctx.textAlign = isRight ? "left" : "right";
+          ctx.textBaseline = "middle";
+          ctx.fillText(node.name, node.x + (isRight ? pad : -pad), node.y);
+        } else {
+          const isBelow = sector === 1;
+          ctx.textAlign = "center";
+          ctx.textBaseline = isBelow ? "top" : "bottom";
+          ctx.fillText(node.name, node.x, node.y + (isBelow ? pad : -pad));
+        }
+        ctx.globalAlpha = 1;
+      }
       return;
     }
 
@@ -406,7 +507,7 @@ export default function ConstellationMap({ onNodeClick }: ConstellationMapProps)
     const x2 = tgt.x - ux * tgtR;
     const y2 = tgt.y - uy * tgtR;
 
-    const isMemLink = src.isMemory || tgt.isMemory;
+    const isMemLink = src.isMemory || tgt.isMemory || src.isPage || tgt.isPage;
 
     ctx.beginPath();
     ctx.moveTo(x1, y1);
@@ -489,7 +590,7 @@ export default function ConstellationMap({ onNodeClick }: ConstellationMapProps)
         height={dimensions.height}
         nodeCanvasObject={paintNode}
         nodePointerAreaPaint={(node: any, color: string, ctx: CanvasRenderingContext2D) => {
-          const r = node.isMemory ? 3 : nodeRadius(node.stability ?? "new", node.connectionCount);
+          const r = node.isMemory ? 3 : node.isPage ? PAGE_HALF_SIDE : nodeRadius(node.stability ?? "new", node.connectionCount);
           ctx.beginPath();
           ctx.arc(node.x, node.y, r + 2, 0, 2 * Math.PI);
           ctx.fillStyle = color;
@@ -501,6 +602,7 @@ export default function ConstellationMap({ onNodeClick }: ConstellationMapProps)
         nodeRelSize={1}
         nodeVal={(node: any) => {
           if (node.isMemory) return node.stability === "confirmed" || node.isDistilled ? 4.5 : 3;
+          if (node.isPage) return PAGE_HALF_SIDE;
           return nodeRadius(node.stability ?? "new", node.connectionCount);
         }}
         backgroundColor="rgba(0,0,0,0)"
@@ -512,7 +614,8 @@ export default function ConstellationMap({ onNodeClick }: ConstellationMapProps)
         d3AlphaDecay={0.03}
         d3VelocityDecay={0.25}
         onNodeClick={(node: any) => {
-          // Memory nodes pass source_id (without mem: prefix), entity nodes pass entity id
+          // Memory nodes pass source_id (without mem: prefix); page nodes pass
+          // their id as-is (already `page:<id>`); entity nodes pass entity id.
           onNodeClick?.(node.isMemory ? `memory:${node.id.replace("mem:", "")}` : node.id);
         }}
         onEngineStop={() => {
@@ -600,6 +703,23 @@ export default function ConstellationMap({ onNodeClick }: ConstellationMapProps)
               <span style={{ opacity: 0.7 }}>Memory</span>
             </div>
           )}
+          {showPages && (
+            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+              <span
+                style={{
+                  display: "inline-block",
+                  width: 6,
+                  height: 6,
+                  borderRadius: 1.5,
+                  backgroundColor: palette.neutral,
+                  opacity: 0.7,
+                  flexShrink: 0,
+                  marginLeft: 1,
+                }}
+              />
+              <span style={{ opacity: 0.7 }}>Page</span>
+            </div>
+          )}
           <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
             <span style={{
               display: "inline-block",
@@ -643,6 +763,7 @@ export default function ConstellationMap({ onNodeClick }: ConstellationMapProps)
           )}
           {[
             { label: "Memories", on: showMemories, toggle: () => setShowMemories((v) => { const next = !v; localStorage.setItem("constellation-show-memories", String(next)); return next; }), testId: "memory-toggle" },
+            { label: "Pages", on: showPages, toggle: () => setShowPages((v) => { const next = !v; localStorage.setItem("constellation-show-pages", String(next)); return next; }), testId: "page-toggle" },
             { label: "Labels", on: showLabels, toggle: () => setShowLabels((v) => { const next = !v; localStorage.setItem("constellation-show-labels", String(next)); return next; }) },
           ].map(({ label, on, toggle, testId }) => (
             <button
