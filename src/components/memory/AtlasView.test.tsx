@@ -242,4 +242,155 @@ describe("AtlasView", () => {
 
     expect(onNodeClick).toHaveBeenCalledWith("e1");
   });
+
+  // A hub connected to one neighbor — enough to prove drag-follow moves the
+  // neighbor, without pulling in the whole buildGraphModel relation-shape test
+  // surface (that's model.test.ts's job).
+  function mockConnectedPair() {
+    const entities = [makeEntity({ id: "e1", name: "Alice" }), makeEntity({ id: "e2", name: "Bob" })];
+    mockListEntities.mockResolvedValue(entities);
+    mockGetEntityDetail.mockImplementation(async (id: string) => {
+      if (id === "e1") {
+        return {
+          entity: entities[0],
+          observations: [],
+          relations: [
+            {
+              id: "rel-1",
+              relation_type: "knows",
+              direction: "outgoing" as const,
+              entity_id: "e2",
+              entity_name: "Bob",
+              entity_type: "person",
+              source_agent: null,
+              created_at: Date.now(),
+            },
+          ],
+        };
+      }
+      return { entity: entities[1], observations: [], relations: [] };
+    });
+    return entities;
+  }
+
+  const dragEvent = (x: number, y: number) => ({
+    x,
+    y,
+    preventSigmaDefault: () => {},
+    original: { preventDefault: () => {}, stopPropagation: () => {} },
+  });
+
+  // Deterministic requestAnimationFrame/cancelAnimationFrame stand-in — jsdom
+  // has neither. Models real single-in-flight-handle cancel semantics (the
+  // settle loop only ever has one frame scheduled at a time) rather than a
+  // bare FIFO, so the "new downNode cancels it" assertion is meaningful.
+  function stubRaf() {
+    let nextHandle = 0;
+    const scheduled = new Map<number, FrameRequestCallback>();
+    const order: number[] = [];
+    vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
+      const handle = ++nextHandle;
+      scheduled.set(handle, cb);
+      order.push(handle);
+      return handle;
+    });
+    vi.stubGlobal("cancelAnimationFrame", (handle: number) => {
+      scheduled.delete(handle);
+    });
+    return {
+      runFrame(): boolean {
+        while (order.length > 0) {
+          const handle = order.shift()!;
+          const cb = scheduled.get(handle);
+          if (cb) {
+            scheduled.delete(handle);
+            cb(0);
+            return true;
+          }
+        }
+        return false;
+      },
+      pendingCount: () => order.filter((h) => scheduled.has(h)).length,
+    };
+  }
+
+  it("moves a connected non-dragged node when the dragged node is moved", async () => {
+    mockConnectedPair();
+
+    renderWithQuery(<AtlasView />);
+    await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
+    const instance = capturedSigmaInstances[0];
+    const graph = instance.graph;
+    const mouseCaptor = instance.getMouseCaptor();
+
+    const before = { x: graph.getNodeAttribute("e2", "x"), y: graph.getNodeAttribute("e2", "y") };
+
+    instance.handlers.get("downNode")?.({ node: "e1" });
+    mouseCaptor.handlers.get("mousemovebody")?.(dragEvent(40, 40));
+
+    const after = { x: graph.getNodeAttribute("e2", "x"), y: graph.getNodeAttribute("e2", "y") };
+    expect(after).not.toEqual(before);
+  });
+
+  it("keeps stepping neighbor positions across settle frames after a moved drag, and a new downNode cancels it", async () => {
+    const raf = stubRaf();
+    try {
+      mockConnectedPair();
+
+      renderWithQuery(<AtlasView />);
+      await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
+      const instance = capturedSigmaInstances[0];
+      const graph = instance.graph;
+      const mouseCaptor = instance.getMouseCaptor();
+
+      instance.handlers.get("downNode")?.({ node: "e1" });
+      mouseCaptor.handlers.get("mousemovebody")?.(dragEvent(40, 40));
+      mouseCaptor.handlers.get("mouseup")?.({});
+
+      expect(raf.pendingCount()).toBe(1);
+      const postMouseup = { x: graph.getNodeAttribute("e2", "x"), y: graph.getNodeAttribute("e2", "y") };
+
+      for (let i = 0; i < 5; i += 1) raf.runFrame();
+      const afterFrames = { x: graph.getNodeAttribute("e2", "x"), y: graph.getNodeAttribute("e2", "y") };
+      expect(afterFrames).not.toEqual(postMouseup);
+      expect(raf.pendingCount()).toBe(1); // still settling, next frame queued
+
+      instance.handlers.get("downNode")?.({ node: "e2" });
+      expect(raf.pendingCount()).toBe(0);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("skips the settle loop under prefers-reduced-motion, without gating drag-follow itself", async () => {
+    const raf = stubRaf();
+    const matchMediaMock = vi.fn().mockReturnValue({ matches: true } as MediaQueryList);
+    vi.stubGlobal("matchMedia", matchMediaMock);
+    try {
+      mockConnectedPair();
+
+      renderWithQuery(<AtlasView />);
+      await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
+      const instance = capturedSigmaInstances[0];
+      const graph = instance.graph;
+      const mouseCaptor = instance.getMouseCaptor();
+
+      const before = { x: graph.getNodeAttribute("e2", "x"), y: graph.getNodeAttribute("e2", "y") };
+
+      instance.handlers.get("downNode")?.({ node: "e1" });
+      mouseCaptor.handlers.get("mousemovebody")?.(dragEvent(40, 40));
+
+      // Drag-follow is direct manipulation, not an animation — it must run
+      // regardless of the reduced-motion preference.
+      const afterDrag = { x: graph.getNodeAttribute("e2", "x"), y: graph.getNodeAttribute("e2", "y") };
+      expect(afterDrag).not.toEqual(before);
+
+      mouseCaptor.handlers.get("mouseup")?.({});
+
+      expect(matchMediaMock).toHaveBeenCalledWith("(prefers-reduced-motion: reduce)");
+      expect(raf.pendingCount()).toBe(0);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });

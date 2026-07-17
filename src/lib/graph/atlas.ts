@@ -62,16 +62,14 @@ export function runAtlasLayout(graph: Graph): void {
   // and the camera then fits the stale circle's bbox, shoving the real graph
   // off-center. Park isolates on a deterministic ring just outside the
   // cluster instead: quiet periphery, honest bbox.
-  const isolates: string[] = [];
+  const isolates = isolateIds(graph);
+  const isolateSet = new Set(isolates);
   let minX = Infinity;
   let maxX = -Infinity;
   let minY = Infinity;
   let maxY = -Infinity;
   graph.forEachNode((id, attrs) => {
-    if (graph.degree(id) === 0) {
-      isolates.push(id);
-      return;
-    }
+    if (isolateSet.has(id)) return;
     minX = Math.min(minX, attrs.x as number);
     maxX = Math.max(maxX, attrs.x as number);
     minY = Math.min(minY, attrs.y as number);
@@ -87,6 +85,31 @@ export function runAtlasLayout(graph: Graph): void {
     graph.setNodeAttribute(id, "x", cx + radius * Math.cos(angle));
     graph.setNodeAttribute(id, "y", cy + radius * Math.sin(angle));
   });
+}
+
+/** One (or a few) FA2 refinement steps over the live graph. `pinned` positions
+ *  are restored after the step — the dragged node under the pointer, and the
+ *  round-1 isolate ring (gravity would otherwise pull parked isolates inward). */
+export function stepAtlasLayout(
+  graph: Graph,
+  opts: { iterations?: number; pinned?: ReadonlyMap<string, { x: number; y: number }> } = {},
+): void {
+  const { iterations = 1, pinned } = opts;
+  forceAtlas2.assign(graph, { iterations, settings: forceAtlas2.inferSettings(graph) });
+  pinned?.forEach((pos, id) => {
+    graph.setNodeAttribute(id, "x", pos.x);
+    graph.setNodeAttribute(id, "y", pos.y);
+  });
+}
+
+/** Degree-0 node ids — the round-1 isolate ring that gravity would otherwise
+ *  pull inward during a live layout step. */
+export function isolateIds(graph: Graph): string[] {
+  const isolates: string[] = [];
+  graph.forEachNode((id) => {
+    if (graph.degree(id) === 0) isolates.push(id);
+  });
+  return isolates;
 }
 
 export interface HoverState {
