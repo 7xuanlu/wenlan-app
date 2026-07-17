@@ -82,6 +82,7 @@ describe("fixture-only native Review flavor", () => {
   it("exposes dedicated build and open commands without preparing sidecars", () => {
     const pkg = JSON.parse(read("package.json"));
     const scripts = pkg.scripts as Record<string, string>;
+    const launcher = read("scripts/open-review-app.mjs");
     const verifier = read("scripts/verify-review-bundle.mjs");
 
     expect(scripts["build:review:web"]).toContain("vite.review.config.ts");
@@ -92,9 +93,13 @@ describe("fixture-only native Review flavor", () => {
     expect(scripts["review:build"]).not.toContain("prepare:sidecars");
     expect(scripts["review:build"]).not.toContain("clean:dev");
     expect(scripts["review:build"]).not.toContain("7878");
-    expect(scripts["review:open"]).toContain("Wenlan Review.app");
+    expect(scripts["review:open"]).toBe("node scripts/open-review-app.mjs");
     expect(scripts["review:open"]).not.toContain("clean:dev");
     expect(scripts["review:open"]).not.toContain("7878");
+    expect(launcher).toContain("Wenlan Review.app");
+    expect(launcher).toContain("wenlan-review");
+    expect(launcher).not.toContain("clean:dev");
+    expect(launcher).not.toContain("7878");
     expect(scripts["review:verify"]).toContain("verify-review-bundle.mjs");
     expect(scripts.review).toBe(
       "pnpm review:build && pnpm review:verify && pnpm review:open",

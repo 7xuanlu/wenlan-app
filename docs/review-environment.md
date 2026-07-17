@@ -17,7 +17,7 @@ pnpm dev:review:web   # fixture-only browser surface on port 1422
 pnpm build:review:web # build only the fixture frontend
 pnpm review:build     # build the native fixture-only app
 pnpm review:verify    # verify Review identity and absence of sidecars
-pnpm review:open      # open the already-built native app
+pnpm review:open      # clean-restart the already-built native app
 ```
 
 Do not reuse `.omo` audit bundles for native testing. They predate the compile-time Review runner and may execute the production startup path.
