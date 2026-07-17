@@ -16,6 +16,7 @@ import {
   type RelationWithEntity,
 } from "../../lib/tauri";
 import { MetadataRow, RailPanelTitle } from "./MemoryDetailPrimitives";
+import FocusGraph from "./FocusGraph";
 
 interface EntityDetailProps {
   entityId: string;
@@ -23,16 +24,6 @@ interface EntityDetailProps {
   onEntityClick: (entityId: string) => void;
   onMemoryClick?: (sourceId: string) => void;
 }
-
-interface GraphNeighbor {
-  entityId: string;
-  name: string;
-  entityType: string;
-  verbs: string[];
-  direction: "incoming" | "outgoing";
-}
-
-const GRAPH_NODE_CAP = 8;
 
 function timeAgo(ts: number, locale: string): string {
   const diff = Math.floor(Date.now() / 1000 - ts);
@@ -55,111 +46,6 @@ function monogram(name: string): string {
     .join("")
     .slice(0, 2)
     .toUpperCase();
-}
-
-interface EntityGraphProps {
-  name: string;
-  neighbors: GraphNeighbor[];
-  hiddenCount: number;
-  onEntityClick: (entityId: string) => void;
-}
-
-/** One-hop connection map: this entity centered, incoming relations on the
- *  left, outgoing on the right. DOM buttons over an SVG edge layer so every
- *  neighbor stays keyboard-reachable (unlike the canvas ConstellationMap). */
-function EntityGraph({ name, neighbors, hiddenCount, onEntityClick }: EntityGraphProps) {
-  const { t } = useTranslation();
-  const incoming = neighbors.filter((n) => n.direction === "incoming");
-  const outgoing = neighbors.filter((n) => n.direction === "outgoing");
-  const maxSide = Math.max(incoming.length, outgoing.length);
-  const height = Math.min(280, 128 + maxSide * 30);
-
-  const place = (list: GraphNeighbor[], side: "left" | "right") =>
-    list.map((n, i) => {
-      const y = ((i + 1) / (list.length + 1)) * 100;
-      const spread = (i % 2) * 6;
-      const x = side === "right" ? 76 - spread : 24 + spread;
-      return { ...n, x, y };
-    });
-  const placed = [...place(incoming, "left"), ...place(outgoing, "right")];
-
-  return (
-    <div
-      className="entity-graph"
-      style={{ height }}
-      role="group"
-      aria-label={t("entityDetail.graphLabel", { name })}
-    >
-      <svg
-        className="entity-graph-edges"
-        viewBox="0 0 100 100"
-        preserveAspectRatio="none"
-        aria-hidden="true"
-      >
-        {placed.map((n) => (
-          <line
-            key={`edge-${n.entityId}-${n.direction}`}
-            x1="50"
-            y1="50"
-            x2={n.x}
-            y2={n.y}
-            vectorEffect="non-scaling-stroke"
-          />
-        ))}
-      </svg>
-      {incoming.length > 0 && (
-        <span className="entity-graph-caption is-left" aria-hidden="true">
-          ← {t("entityDetail.incoming")}
-        </span>
-      )}
-      {outgoing.length > 0 && (
-        <span className="entity-graph-caption is-right" aria-hidden="true">
-          {t("entityDetail.outgoing")} →
-        </span>
-      )}
-      {placed.map((n) => (
-        <span
-          key={`verb-${n.entityId}-${n.direction}`}
-          className="entity-graph-verb"
-          style={{ left: `${50 + (n.x - 50) * 0.55}%`, top: `${50 + (n.y - 50) * 0.55}%` }}
-          aria-hidden="true"
-        >
-          {n.verbs[0]}
-          {n.verbs.length > 1 ? ` +${n.verbs.length - 1}` : ""}
-        </span>
-      ))}
-      <div className="entity-graph-center" aria-hidden="true">
-        <span className="entity-graph-center-dot" />
-        <span className="entity-graph-center-name">{name}</span>
-      </div>
-      {placed.map((n) => {
-        const isIncoming = n.direction === "incoming";
-        const dirLabel = t(isIncoming ? "entityDetail.incoming" : "entityDetail.outgoing");
-        return (
-        <button
-          key={`node-${n.entityId}-${n.direction}`}
-          type="button"
-          className={`entity-graph-node ${isIncoming ? "is-left" : "is-right"}`}
-          style={{ left: `${n.x}%`, top: `${n.y}%` }}
-          onClick={() => onEntityClick(n.entityId)}
-          title={`${n.verbs.join(", ")} — ${n.name}`}
-          aria-label={`${n.name} (${n.entityType}) · ${dirLabel} · ${n.verbs.join(", ")}`}
-        >
-          <span className="entity-graph-node-dot" aria-hidden="true" />
-          <span className="entity-graph-node-text">
-            <span className="entity-graph-node-name">{n.name}</span>
-            <span className="entity-graph-node-type">{n.entityType}</span>
-          </span>
-        </button>
-        );
-      })}
-      {hiddenCount > 0 && (
-        <span className="entity-graph-more">
-          {t("entityDetail.moreConnections", { count: hiddenCount })}
-        </span>
-      )}
-    </div>
-  );
 }
 
 export default function EntityDetail({ entityId, onBack, onEntityClick, onMemoryClick }: EntityDetailProps) {
@@ -249,8 +135,8 @@ export default function EntityDetail({ entityId, onBack, onEntityClick, onMemory
     [detail?.observations],
   );
 
-  // Ledger shows raw relation records (curation needs to see duplicates);
-  // only the graph aggregates — its neighbor Map dedupes per (entity, direction).
+  // Ledger shows raw relation records (curation needs to see duplicates); the
+  // graph (FocusGraph) does its own aggregation from the GraphModel.
   const relations = useMemo(() => detail?.relations ?? [], [detail?.relations]);
 
   const sortedRelations = useMemo(
@@ -264,28 +150,6 @@ export default function EntityDetail({ entityId, onBack, onEntityClick, onMemory
       ),
     [relations],
   );
-
-  // One graph node per (neighbor, direction); verbs collapse onto the edge.
-  const neighbors = useMemo(() => {
-    const map = new Map<string, GraphNeighbor>();
-    for (const rel of relations) {
-      const direction = rel.direction === "incoming" ? ("incoming" as const) : ("outgoing" as const);
-      const key = `${rel.entity_id}:${direction}`;
-      const existing = map.get(key);
-      if (existing) {
-        if (!existing.verbs.includes(rel.relation_type)) existing.verbs.push(rel.relation_type);
-      } else {
-        map.set(key, {
-          entityId: rel.entity_id,
-          name: rel.entity_name,
-          entityType: rel.entity_type,
-          verbs: [rel.relation_type],
-          direction,
-        });
-      }
-    }
-    return Array.from(map.values());
-  }, [relations]);
 
   if (!detail) {
     return (
@@ -319,15 +183,6 @@ export default function EntityDetail({ entityId, onBack, onEntityClick, onMemory
 
   const { entity } = detail;
   const space = entity.space ?? entity.domain;
-  // Cap per direction so one lopsided side can't crowd the other out of the map
-  const incomingAll = neighbors.filter((n) => n.direction === "incoming");
-  const outgoingAll = neighbors.filter((n) => n.direction === "outgoing");
-  const outgoingShown = Math.min(outgoingAll.length, GRAPH_NODE_CAP - Math.min(incomingAll.length, Math.ceil(GRAPH_NODE_CAP / 2)));
-  const shownNeighbors = [
-    ...incomingAll.slice(0, GRAPH_NODE_CAP - outgoingShown),
-    ...outgoingAll.slice(0, outgoingShown),
-  ];
-  const hiddenCount = neighbors.length - shownNeighbors.length;
 
   const startEdit = (obs: Observation) => {
     setEditingObs(obs.id);
@@ -564,12 +419,7 @@ export default function EntityDetail({ entityId, onBack, onEntityClick, onMemory
                 <p className="entity-empty">{t("entityDetail.emptyConnections")}</p>
               ) : (
                 <>
-                  <EntityGraph
-                    name={entity.name}
-                    neighbors={shownNeighbors}
-                    hiddenCount={hiddenCount}
-                    onEntityClick={onEntityClick}
-                  />
+                  <FocusGraph detail={detail} onEntityClick={onEntityClick} />
                   <div className="entity-relation-list">{sortedRelations.map(relationRow)}</div>
                 </>
               )}

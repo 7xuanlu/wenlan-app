@@ -12,7 +12,9 @@ import type {
   RecentActivityItem,
   RefinementProposalSummary,
   MemoryItem,
+  Entity,
   EntityDetail,
+  RelationWithEntity,
   DistillReviewResponse,
   PageChange,
   ListMemoryRevisionsResponse,
@@ -689,6 +691,87 @@ export const REVIEW_ENTITIES: Record<string, EntityDetail> = {
     relations: [],
   },
 };
+
+// --- ConstellationMap / FocusGraph preview fixture ---
+// 12 entities spanning the 5 validated palette slots (project/technology/
+// organization/person/concept) plus place (folds to neutral), so every slot
+// swatch has a rendered proof. gk-remote-office takes no relation below,
+// exercising the empty-focus case.
+const GRAPH_ENTITY_SEED: { id: string; name: string; entity_type: string }[] = [
+  { id: "gk-wenlan", name: "Wenlan", entity_type: "project" },
+  { id: "gk-desktop", name: "Wenlan Desktop", entity_type: "project" },
+  { id: "gk-rust", name: "Rust", entity_type: "technology" },
+  { id: "gk-typescript", name: "TypeScript", entity_type: "technology" },
+  { id: "gk-tauri", name: "Tauri", entity_type: "technology" },
+  { id: "gk-sqlite", name: "SQLite", entity_type: "technology" },
+  { id: "gk-anthropic", name: "Anthropic", entity_type: "organization" },
+  { id: "gk-github", name: "GitHub", entity_type: "organization" },
+  { id: "gk-lucian", name: "Lucian", entity_type: "person" },
+  { id: "gk-ada", name: "Ada", entity_type: "person" },
+  { id: "gk-knowledge-graph", name: "Knowledge Graph", entity_type: "concept" },
+  { id: "gk-remote-office", name: "Remote Office", entity_type: "place" },
+];
+
+// [relationId, fromId, verb, toId] — mirrored below onto both endpoints'
+// detail.relations (outgoing on the source's list, incoming on the
+// target's), the same way the real daemon returns one relation from either
+// entity's perspective. 15 tuples, 9 distinct verbs, both directions.
+const GRAPH_RELATION_SEED: [string, string, string, string][] = [
+  ["gkr-1", "gk-wenlan", "uses", "gk-rust"],
+  ["gkr-2", "gk-wenlan", "uses", "gk-typescript"],
+  ["gkr-3", "gk-desktop", "uses", "gk-tauri"],
+  ["gkr-4", "gk-desktop", "uses", "gk-sqlite"],
+  ["gkr-5", "gk-desktop", "depends_on", "gk-wenlan"],
+  ["gkr-6", "gk-lucian", "maintains", "gk-wenlan"],
+  ["gkr-7", "gk-lucian", "maintains", "gk-desktop"],
+  ["gkr-8", "gk-ada", "contributes_to", "gk-desktop"],
+  ["gkr-9", "gk-wenlan", "hosted_on", "gk-github"],
+  ["gkr-10", "gk-desktop", "hosted_on", "gk-github"],
+  ["gkr-11", "gk-lucian", "works_with", "gk-anthropic"],
+  ["gkr-12", "gk-wenlan", "implements", "gk-knowledge-graph"],
+  ["gkr-13", "gk-desktop", "visualizes", "gk-knowledge-graph"],
+  ["gkr-14", "gk-ada", "works_with", "gk-lucian"],
+  ["gkr-15", "gk-knowledge-graph", "relates_to", "gk-rust"],
+];
+
+const graphEntitySeedById = new Map(GRAPH_ENTITY_SEED.map((e) => [e.id, e]));
+
+export const GRAPH_ENTITIES: Entity[] = GRAPH_ENTITY_SEED.map((seed, i) => ({
+  id: seed.id,
+  name: seed.name,
+  entity_type: seed.entity_type,
+  domain: null,
+  source_agent: "claude-code",
+  confidence: 0.9,
+  confirmed: true,
+  created_at: 1_752_000_000 + i * 1000,
+  updated_at: 1_752_000_000 + i * 1000,
+}));
+
+const graphEntityById = new Map(GRAPH_ENTITIES.map((e) => [e.id, e]));
+
+export const GRAPH_DETAILS: Record<string, EntityDetail> = Object.fromEntries(
+  GRAPH_ENTITY_SEED.map((seed) => {
+    const relations: RelationWithEntity[] = [];
+    for (const [id, fromId, verb, toId] of GRAPH_RELATION_SEED) {
+      const isSource = fromId === seed.id;
+      const isTarget = toId === seed.id;
+      if (!isSource && !isTarget) continue;
+      const other = graphEntitySeedById.get(isSource ? toId : fromId)!;
+      relations.push({
+        id,
+        relation_type: verb,
+        direction: isSource ? "outgoing" : "incoming",
+        entity_id: other.id,
+        entity_name: other.name,
+        entity_type: other.entity_type,
+        source_agent: "claude-code",
+        created_at: 1_752_000_000,
+      });
+    }
+    return [seed.id, { entity: graphEntityById.get(seed.id)!, observations: [], relations }];
+  }),
+);
 
 export const REVIEW_DISTILL: DistillReviewResponse = {
   pages_created: 0,

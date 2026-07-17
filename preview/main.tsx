@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Browser preview harness: page-detail citations, the review queue
-// (DistillReviewPanel + ReviewDialog), the first-run wizard, and settings.
+// (DistillReviewPanel + ReviewDialog), the first-run wizard, settings, and
+// the knowledge graph (ConstellationMap + EntityDetail/FocusGraph).
 //
 // The wizard and settings modes exist so pixel review of those surfaces is
 // cheap. Reviewing them used to mean building the Tauri app and clicking
@@ -11,6 +12,8 @@ import { StrictMode, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import PageDetail from "../src/components/memory/PageDetail";
+import ConstellationMap from "../src/components/memory/ConstellationMap";
+import EntityDetail from "../src/components/memory/EntityDetail";
 import DistillReviewPanel from "../src/components/memory/DistillReviewPanel";
 import { SetupWizard, STEP_ORDER, type WizardStep } from "../src/components/SetupWizard";
 import SettingsPage from "../src/components/memory/SettingsPage";
@@ -67,12 +70,21 @@ const client = new QueryClient({
   defaultOptions: { queries: { retry: false, staleTime: 0, gcTime: 0 } },
 });
 
-type Mode = "page" | "review" | "wizard" | "settings";
+type Mode = "page" | "review" | "wizard" | "settings" | "graph" | "entity";
+
+// Quick-select entities for the "entity" tab: gk-wenlan is the highest-degree
+// hub, gk-lucian shows a person node with mixed in/out edges, gk-remote-office
+// is the fixture's zero-relation entity (empty-focus case).
+const ENTITY_VARIANTS = [
+  { id: "gk-wenlan", label: "Wenlan (hub)" },
+  { id: "gk-lucian", label: "Lucian (person)" },
+  { id: "gk-remote-office", label: "Remote Office (empty)" },
+];
 
 // Deep links: ?mode=wizard&step=connect, ?mode=settings&section=intelligence,
-// ?theme=light. Without these every surface would only be reachable by
-// clicking, so a screenshot pass couldn't address one — which is the whole
-// point of these modes existing.
+// ?mode=graph, ?mode=entity&entity=gk-lucian, ?theme=light. Without these
+// every surface would only be reachable by clicking, so a screenshot pass
+// couldn't address one — which is the whole point of these modes existing.
 const params = new URLSearchParams(window.location.search);
 const param = <T extends string>(key: string, allowed: readonly T[], fallback: T): T => {
   const value = params.get(key) as T | null;
@@ -93,9 +105,10 @@ const BAR_H = SHOW_BAR ? 41 : 0;
 
 function Harness() {
   const [mode, setMode] = useState<Mode>(
-    param("mode", ["page", "review", "wizard", "settings"] as const, "review"),
+    param("mode", ["page", "review", "wizard", "settings", "graph", "entity"] as const, "review"),
   );
   const [pageId, setPageId] = useState(params.get("page") ?? "page-cited");
+  const [entityId, setEntityId] = useState(params.get("entity") ?? "gk-wenlan");
   const [theme, setTheme] = useState(INITIAL_THEME);
   const [reviewRun, setReviewRun] = useState(0);
   const [failing, setFailing] = useState(false);
@@ -152,6 +165,12 @@ function Harness() {
         <button onClick={() => setMode("settings")} style={tab(mode === "settings")}>
           Settings
         </button>
+        <button onClick={() => setMode("graph")} style={tab(mode === "graph")}>
+          Graph
+        </button>
+        <button onClick={() => setMode("entity")} style={tab(mode === "entity")}>
+          Entity
+        </button>
         <span style={{ opacity: 0.4 }}>|</span>
         {mode === "wizard" ? (
           WIZARD_STEPS.map((s) => (
@@ -171,7 +190,13 @@ function Harness() {
               {v.label}
             </button>
           ))
-        ) : (
+        ) : mode === "entity" ? (
+          ENTITY_VARIANTS.map((v) => (
+            <button key={v.id} onClick={() => setEntityId(v.id)} style={tab(entityId === v.id)}>
+              {v.label}
+            </button>
+          ))
+        ) : mode === "graph" ? null : (
           <>
             <button
               onClick={() => {
@@ -261,6 +286,23 @@ function Harness() {
             />
           </div>
         </div>
+      ) : mode === "graph" ? (
+        // Full-bleed like the wizard: ConstellationMap owns the whole Graph
+        // view in Main.tsx (src/components/memory/Main.tsx:566).
+        <div style={{ height: `calc(100vh - ${BAR_H}px)` }}>
+          <ConstellationMap
+            onNodeClick={(id: string) => {
+              // Mirrors Main.tsx's handleEntityClick: memory nodes are
+              // re-prefixed "memory:" by ConstellationMap itself.
+              if (id.startsWith("memory:")) {
+                console.log("[preview] onNodeClick (memory):", id);
+                return;
+              }
+              setEntityId(id);
+              setMode("entity");
+            }}
+          />
+        </div>
       ) : (
         <div style={{ maxWidth: 860, margin: "0 auto", padding: "24px 16px" }}>
           {mode === "page" ? (
@@ -273,6 +315,14 @@ function Harness() {
                 console.log("[preview] onPageClick:", id);
                 setPageId(id);
               }}
+            />
+          ) : mode === "entity" ? (
+            <EntityDetail
+              key={entityId}
+              entityId={entityId}
+              onBack={() => setMode("graph")}
+              onEntityClick={(id: string) => setEntityId(id)}
+              onMemoryClick={(id: string) => console.log("[preview] onMemoryClick:", id)}
             />
           ) : (
             <DistillReviewPanel

@@ -558,6 +558,13 @@ const en = {
     delete: "Delete",
     cancel: "Cancel",
   },
+  constellationMap: {
+    loading: "Loading your knowledge graph…",
+    loadError: "Couldn't load your knowledge graph.",
+    retry: "Retry",
+    empty: "Your constellation will appear as knowledge grows",
+    coverageChip: "Connections shown for {{fetched}} of {{total}}",
+  },
   identityCard: {
     setupProfile: "Set up your profile",
     account: "Account",
@@ -1690,6 +1697,13 @@ const zhHans = {
     delete: "删除",
     cancel: "取消",
   },
+  constellationMap: {
+    loading: "正在加载知识图谱…",
+    loadError: "无法加载知识图谱。",
+    retry: "重试",
+    empty: "随着知识增长，你的星图将在这里出现",
+    coverageChip: "已显示 {{total}} 个实体中 {{fetched}} 个的连接",
+  },
   identityCard: {
     setupProfile: "设置你的个人资料",
     account: "账户",
@@ -2802,6 +2816,13 @@ const zhHant = {
     deleteQuestion: "刪除該實體？",
     delete: "刪除",
     cancel: "取消",
+  },
+  constellationMap: {
+    loading: "正在載入知識圖譜…",
+    loadError: "無法載入知識圖譜。",
+    retry: "重試",
+    empty: "隨著知識增長，你的星圖將在這裡出現",
+    coverageChip: "已顯示 {{total}} 個實體中 {{fetched}} 個的連接",
   },
   identityCard: {
     setupProfile: "設定你的個人資料",

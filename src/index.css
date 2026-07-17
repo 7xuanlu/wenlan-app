@@ -328,6 +328,18 @@ html[data-theme="dark"] {
     0 2px 6px rgba(3, 4, 8, 0.38);
   /* Depth on dark: ink-black shadow so surfaces lift without a grey cast. */
   --mem-shadow-toast: var(--mem-shadow-overlay);
+  /* Knowledge-graph slots — validated 5-slot categorical palette + neutral.
+     Order and hex are load-bearing (passes the dataviz ΔE validator: 11.6
+     normal / 1.6 deutan). Slots map project/technology/organization/person/
+     concept; place/event/unknown wear --kg-neutral. Edges never wear a slot. */
+  --kg-project: #c98500;
+  --kg-tool: #3987e5;
+  --kg-org: #d95926;
+  --kg-person: #9085e9;
+  --kg-concept: #008300;
+  --kg-neutral: #969BAD;
+  --kg-edge: rgba(150, 155, 173, 0.30);
+  --kg-edge-strong: rgba(150, 155, 173, 0.55);
 }
 
 /* Light (cool paper workspace with restrained brand warmth) */
@@ -388,6 +400,16 @@ html[data-theme="light"] {
   /* Depth on light: a warm ink-toned shadow (anchored in the body text hue
      rather than flat grey) so the toast feels letterpressed on cream. */
   --mem-shadow-toast: var(--mem-shadow-overlay);
+  /* Knowledge-graph slots — light-theme variant of the validated palette.
+     Order and hex are load-bearing; see the dark block for slot semantics. */
+  --kg-project: #eda100;
+  --kg-tool: #2a78d6;
+  --kg-org: #eb6834;
+  --kg-person: #4a3aa7;
+  --kg-concept: #008300;
+  --kg-neutral: #8B93A3;
+  --kg-edge: rgba(88, 97, 116, 0.26);
+  --kg-edge-strong: rgba(88, 97, 116, 0.5);
 }
 
 .wiki-home {
@@ -2417,12 +2439,19 @@ html[data-theme="light"] {
 
 .entity-graph-node-name {
   overflow: hidden;
-  color: var(--mem-accent-sage);
+  /* Text wears a text token; the colored dot carries entity identity. */
+  color: var(--mem-text);
   font-family: var(--mem-font-body);
   font-size: 12px;
   line-height: 1.3;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Center node reads as "you are here": its dot wears the entity's slot color
+   (set inline) ringed by the dossier focus color. */
+.focus-graph-center-dot {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--mem-focus-ring) 45%, transparent);
 }
 
 .entity-graph-node-type {

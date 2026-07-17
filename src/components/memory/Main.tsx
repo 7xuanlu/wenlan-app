@@ -563,7 +563,7 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
             />
           ) : view.kind === "graph" ? (
             <div style={{ position: "relative", width: "100%", height: "100%" }}>
-              <ConstellationMap fullScreen onNodeClick={handleEntityClick} />
+              <ConstellationMap onNodeClick={handleEntityClick} />
               <button
                 onClick={navigateBack}
                 className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-colors duration-150 hover:bg-[var(--mem-hover-strong)]"
