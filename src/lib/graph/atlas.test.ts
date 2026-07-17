@@ -2,7 +2,8 @@
 import { describe, it, expect } from "vitest";
 import type { GraphModel, GraphNode, GraphEdge } from "./model";
 import type { GraphPalette } from "./palette";
-import { buildAtlasGraph, runAtlasLayout } from "./atlas";
+import { buildAtlasGraph, runAtlasLayout, hoverStateFor, nodeDisplay, edgeDisplay } from "./atlas";
+import type { HoverState } from "./atlas";
 
 const PALETTE: GraphPalette = {
   project: "#111111",
@@ -181,5 +182,109 @@ describe("runAtlasLayout", () => {
       expect(g1.getNodeAttribute(id, "x")).toBeCloseTo(g2.getNodeAttribute(id, "x") as number, 10);
       expect(g1.getNodeAttribute(id, "y")).toBeCloseTo(g2.getNodeAttribute(id, "y") as number, 10);
     }
+  });
+});
+
+describe("hoverStateFor", () => {
+  it("returns the empty state when nothing is hovered", () => {
+    const model = makeModel(
+      [node({ id: "a" }), node({ id: "b" })],
+      [edge({ id: "e1", source: "a", target: "b" })],
+    );
+    const graph = buildAtlasGraph(model, PALETTE);
+    const state = hoverStateFor(graph, null);
+    expect(state.hovered).toBeNull();
+    expect(state.neighbors.size).toBe(0);
+  });
+
+  it("collects the exact neighbor set for a hovered node with edges", () => {
+    const model = makeModel(
+      [node({ id: "a" }), node({ id: "b" }), node({ id: "c" }), node({ id: "d" })],
+      [edge({ id: "e1", source: "a", target: "b" }), edge({ id: "e2", source: "a", target: "c" })],
+    );
+    const graph = buildAtlasGraph(model, PALETTE);
+    const state = hoverStateFor(graph, "a");
+    expect(state.hovered).toBe("a");
+    expect(state.neighbors).toEqual(new Set(["b", "c"]));
+  });
+
+  it("returns an empty neighbor set for an isolated node", () => {
+    const model = makeModel([node({ id: "a" }), node({ id: "iso" })]);
+    const graph = buildAtlasGraph(model, PALETTE);
+    const state = hoverStateFor(graph, "iso");
+    expect(state.neighbors.size).toBe(0);
+  });
+});
+
+describe("nodeDisplay", () => {
+  const attrs = { label: "Alice", color: "#123456", size: 8 };
+
+  it("passes attrs through unchanged when nothing is hovered", () => {
+    const state: HoverState = { hovered: null, neighbors: new Set() };
+    expect(nodeDisplay(state, "a", attrs, PALETTE)).toEqual(attrs);
+  });
+
+  it("keeps the hovered node's own color, forces its label, and puts it on top", () => {
+    const state: HoverState = { hovered: "a", neighbors: new Set(["b"]) };
+    const result = nodeDisplay(state, "a", attrs, PALETTE);
+    expect(result.color).toBe(attrs.color);
+    expect(result.label).toBe(attrs.label);
+    expect(result.forceLabel).toBe(true);
+    expect(result.zIndex).toBe(2);
+  });
+
+  it("keeps a neighbor's own color and label, at zIndex 1", () => {
+    const state: HoverState = { hovered: "a", neighbors: new Set(["b"]) };
+    const result = nodeDisplay(state, "b", attrs, PALETTE);
+    expect(result.color).toBe(attrs.color);
+    expect(result.label).toBe(attrs.label);
+    expect(result.forceLabel).toBeUndefined();
+    expect(result.zIndex).toBe(1);
+  });
+
+  it("mutes and blanks everyone else, at zIndex 0", () => {
+    const state: HoverState = { hovered: "a", neighbors: new Set(["b"]) };
+    const result = nodeDisplay(state, "c", attrs, PALETTE);
+    expect(result.color).toBe(PALETTE.edge);
+    expect(result.label).toBe("");
+    expect(result.zIndex).toBe(0);
+  });
+});
+
+describe("edgeDisplay", () => {
+  const attrs = { color: "#abcdef", size: 1 };
+
+  it("passes attrs through unchanged when nothing is hovered", () => {
+    const state: HoverState = { hovered: null, neighbors: new Set() };
+    expect(edgeDisplay(state, "e1", "a", "b", attrs, PALETTE)).toEqual(attrs);
+  });
+
+  it("emphasizes an edge incident to the hovered node as source", () => {
+    const state: HoverState = { hovered: "a", neighbors: new Set(["b"]) };
+    const result = edgeDisplay(state, "e1", "a", "b", attrs, PALETTE);
+    expect(result.color).toBe(PALETTE.edgeStrong);
+    expect(result.zIndex).toBe(1);
+    expect(result.hidden).toBeUndefined();
+  });
+
+  it("emphasizes an edge incident to the hovered node as target", () => {
+    const state: HoverState = { hovered: "b", neighbors: new Set(["a"]) };
+    const result = edgeDisplay(state, "e1", "a", "b", attrs, PALETTE);
+    expect(result.color).toBe(PALETTE.edgeStrong);
+    expect(result.zIndex).toBe(1);
+  });
+
+  it("hides a non-incident edge while hovering", () => {
+    const state: HoverState = { hovered: "a", neighbors: new Set(["b"]) };
+    const result = edgeDisplay(state, "e2", "b", "c", attrs, PALETTE);
+    expect(result.hidden).toBe(true);
+  });
+
+  it("emphasizes both parallel edges between the hovered node and a neighbor", () => {
+    const state: HoverState = { hovered: "a", neighbors: new Set(["b"]) };
+    const r1 = edgeDisplay(state, "e1", "a", "b", attrs, PALETTE);
+    const r2 = edgeDisplay(state, "e2", "a", "b", attrs, PALETTE);
+    expect(r1.color).toBe(PALETTE.edgeStrong);
+    expect(r2.color).toBe(PALETTE.edgeStrong);
   });
 });

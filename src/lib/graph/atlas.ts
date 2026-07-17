@@ -88,3 +88,57 @@ export function runAtlasLayout(graph: Graph): void {
     graph.setNodeAttribute(id, "y", cy + radius * Math.sin(angle));
   });
 }
+
+export interface HoverState {
+  hovered: string | null;
+  neighbors: Set<string>;
+}
+
+/** Hovered node id plus its neighbor set, or the empty state when nothing is hovered. */
+export function hoverStateFor(graph: Graph, hovered: string | null): HoverState {
+  if (hovered === null) return { hovered: null, neighbors: new Set() };
+  return { hovered, neighbors: new Set(graph.neighbors(hovered)) };
+}
+
+// sigma's own nodeReducer/edgeReducer types resolve `data` to graphology's
+// permissive `Attributes` (`{[name: string]: any}`) for a default-generic
+// Graph, and expect a return assignable to `Partial<NodeDisplayData>` /
+// `Partial<EdgeDisplayData>` — neither of which this package exposes without
+// pulling in graphology-types as a new direct dependency. `any` matches what
+// sigma already passes through, so it typechecks both ways without one.
+
+/**
+ * Node display override for the hover reducer — pure so it's unit-testable
+ * without a sigma renderer. Four cases, pinned by the round-2 spec: no-hover
+ * passthrough, the hovered node itself, its neighbors, everyone else.
+ */
+export function nodeDisplay(
+  state: HoverState,
+  nodeId: string,
+  attrs: Record<string, any>,
+  palette: GraphPalette,
+): Record<string, any> {
+  if (state.hovered === null) return attrs;
+  if (nodeId === state.hovered) return { ...attrs, forceLabel: true, zIndex: 2 };
+  if (state.neighbors.has(nodeId)) return { ...attrs, zIndex: 1 };
+  return { ...attrs, color: palette.edge, label: "", zIndex: 0 };
+}
+
+/**
+ * Edge display override for the hover reducer — edges incident to the
+ * hovered node get emphasized, everything else hides.
+ */
+export function edgeDisplay(
+  state: HoverState,
+  _edgeId: string,
+  source: string,
+  target: string,
+  attrs: Record<string, any>,
+  palette: GraphPalette,
+): Record<string, any> {
+  if (state.hovered === null) return attrs;
+  if (source === state.hovered || target === state.hovered) {
+    return { ...attrs, color: palette.edgeStrong, zIndex: 1 };
+  }
+  return { ...attrs, hidden: true };
+}

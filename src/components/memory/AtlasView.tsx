@@ -7,8 +7,10 @@ import Sigma from "sigma";
 import { listEntities, getEntityDetail } from "../../lib/tauri";
 import type { Entity, EntityDetail } from "../../lib/tauri";
 import { buildGraphModel } from "../../lib/graph/model";
-import { buildAtlasGraph, runAtlasLayout } from "../../lib/graph/atlas";
+import { buildAtlasGraph, runAtlasLayout, hoverStateFor, nodeDisplay, edgeDisplay } from "../../lib/graph/atlas";
+import type { HoverState } from "../../lib/graph/atlas";
 import { useGraphPalette, colorForEntityType } from "../../lib/graph/palette";
+import type { GraphPalette } from "../../lib/graph/palette";
 
 interface AtlasViewProps {
   onNodeClick?: (entityId: string) => void;
@@ -27,6 +29,15 @@ export default function AtlasView({ onNodeClick }: AtlasViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const sigmaRef = useRef<Sigma | null>(null);
   const graphRef = useRef<Graph | null>(null);
+  // Reducer inputs, read from refs so hover/theme changes repaint without a
+  // React re-render or a renderer rebuild (see the mount effect below).
+  const hoverStateRef = useRef<HoverState>({ hovered: null, neighbors: new Set() });
+  const paletteRef = useRef<GraphPalette>(palette);
+  // Node-drag state: which node (if any) is being dragged, and whether the
+  // pointer actually moved during the current press — the latter gates
+  // clickNode so a drag-release doesn't also fire entity navigation.
+  const draggedNodeRef = useRef<string | null>(null);
+  const movedDuringPressRef = useRef(false);
 
   const {
     data: entities = [],
@@ -90,18 +101,78 @@ export default function AtlasView({ onNodeClick }: AtlasViewProps) {
       // Sigma's default label ink is black regardless of theme; pass the
       // resolved text token instead (updated on theme flip below).
       labelColor: { color: palette.label },
+      // Off by default in sigma — without it, the zIndex values nodeDisplay/
+      // edgeDisplay return are computed but never affect paint order.
+      zIndex: true,
+      // Sigma's default hover renderer (drawDiscNodeHover) paints a hardcoded
+      // #FFF label box — unreadable under the dark theme's light label ink.
+      // The hovered label already renders theme-correct on the labels layer
+      // (nodeDisplay forces it; renderLabels doesn't skip the hovered node),
+      // so the box is pure loss. No-op it.
+      defaultDrawNodeHover: () => {},
+      nodeReducer: (node, attrs) => nodeDisplay(hoverStateRef.current, node, attrs, paletteRef.current),
+      edgeReducer: (edge, attrs) => {
+        const [source, target] = graph.extremities(edge);
+        return edgeDisplay(hoverStateRef.current, edge, source, target, attrs, paletteRef.current);
+      },
     });
     sigmaRef.current = renderer;
     if (import.meta.env.DEV) {
       // Preview/debug handle only — stripped from prod builds.
       (window as unknown as Record<string, unknown>).__ATLAS_SIGMA = renderer;
     }
-    renderer.on("clickNode", ({ node }) => onNodeClick?.(node));
-    renderer.on("enterNode", () => {
+    renderer.on("clickNode", ({ node }) => {
+      // A moved drag must not also navigate on release.
+      if (movedDuringPressRef.current) return;
+      onNodeClick?.(node);
+    });
+    renderer.on("enterNode", ({ node }) => {
+      hoverStateRef.current = hoverStateFor(graph, node);
       container.style.cursor = "pointer";
+      renderer.refresh();
     });
     renderer.on("leaveNode", () => {
+      hoverStateRef.current = hoverStateFor(graph, null);
       container.style.cursor = "default";
+      renderer.refresh();
+    });
+
+    // Node drag — sigma v3's mouse-manipulation pattern (see mouse.d.ts /
+    // sigma.esm.js MouseCaptor): downNode starts it, the captor's own
+    // mousemovebody/mouseup/mousedown carry the rest.
+    renderer.on("downNode", ({ node }) => {
+      draggedNodeRef.current = node;
+      movedDuringPressRef.current = false;
+      graph.setNodeAttribute(node, "highlighted", true);
+      container.style.cursor = "grabbing";
+    });
+    const mouseCaptor = renderer.getMouseCaptor();
+    mouseCaptor.on("mousedown", () => {
+      // Freeze the camera frame so dragging a boundary node doesn't re-fit it.
+      if (!renderer.getCustomBBox()) renderer.setCustomBBox(renderer.getBBox());
+    });
+    mouseCaptor.on("mousemovebody", (e) => {
+      const draggedNode = draggedNodeRef.current;
+      if (!draggedNode) return;
+      movedDuringPressRef.current = true;
+      const pos = renderer.viewportToGraph(e);
+      graph.setNodeAttribute(draggedNode, "x", pos.x);
+      graph.setNodeAttribute(draggedNode, "y", pos.y);
+      // Sigma's own click suppression (draggedEvents vs. draggedEventsTolerance)
+      // never sees this drag — preventSigmaDefault short-circuits handleMove
+      // before that counter increments — so movedDuringPressRef above is what
+      // actually guards clickNode.
+      e.preventSigmaDefault();
+      e.original.preventDefault();
+      e.original.stopPropagation();
+    });
+    mouseCaptor.on("mouseup", () => {
+      const draggedNode = draggedNodeRef.current;
+      if (draggedNode) {
+        graph.setNodeAttribute(draggedNode, "highlighted", false);
+        draggedNodeRef.current = null;
+      }
+      container.style.cursor = hoverStateRef.current.hovered ? "pointer" : "default";
     });
 
     return () => {
@@ -112,8 +183,11 @@ export default function AtlasView({ onNodeClick }: AtlasViewProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [model]);
 
-  // Theme flip: recolor the live graph and repaint — no remount.
+  // Theme flip: recolor the live graph and repaint — no remount. Also keeps
+  // paletteRef current so nodeReducer/edgeReducer (read at paint time) see
+  // the new theme without the renderer being rebuilt.
   useEffect(() => {
+    paletteRef.current = palette;
     const graph = graphRef.current;
     const renderer = sigmaRef.current;
     if (!graph || !renderer) return;

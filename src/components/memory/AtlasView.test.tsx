@@ -15,8 +15,17 @@ vi.mock("../../lib/tauri", () => ({
 // states, retry, mount/teardown, and the click handoff.
 const capturedSigmaInstances = vi.hoisted(() => [] as any[]);
 vi.mock("sigma", () => {
+  class MouseCaptorMock {
+    handlers = new Map<string, (payload: any) => void>();
+    on(event: string, handler: (payload: any) => void) {
+      this.handlers.set(event, handler);
+      return this;
+    }
+  }
   class SigmaMock {
     handlers = new Map<string, (payload: any) => void>();
+    mouseCaptor = new MouseCaptorMock();
+    customBBox: unknown = null;
     constructor(
       public graph: any,
       public container: any,
@@ -27,6 +36,21 @@ vi.mock("sigma", () => {
     on(event: string, handler: (payload: any) => void) {
       this.handlers.set(event, handler);
       return this;
+    }
+    getMouseCaptor() {
+      return this.mouseCaptor;
+    }
+    getBBox() {
+      return { x: [0, 0], y: [0, 0] };
+    }
+    getCustomBBox() {
+      return this.customBBox;
+    }
+    setCustomBBox(bbox: unknown) {
+      this.customBBox = bbox;
+    }
+    viewportToGraph(coords: { x: number; y: number }) {
+      return coords;
     }
     refresh() {}
     setSetting(_key: string, _value: unknown) {}
@@ -134,6 +158,78 @@ describe("AtlasView", () => {
   });
 
   it("fires onNodeClick with the sigma node id on clickNode", async () => {
+    const entities = [makeEntity({ id: "e1", name: "Alice" })];
+    mockListEntities.mockResolvedValue(entities);
+    mockGetEntityDetail.mockResolvedValue({ entity: entities[0], observations: [], relations: [] });
+    const onNodeClick = vi.fn();
+
+    renderWithQuery(<AtlasView onNodeClick={onNodeClick} />);
+    await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
+
+    capturedSigmaInstances[0].handlers.get("clickNode")?.({ node: "e1" });
+
+    expect(onNodeClick).toHaveBeenCalledWith("e1");
+  });
+
+  it("wires nodeReducer and edgeReducer functions into the sigma constructor settings", async () => {
+    const entities = [makeEntity({ id: "e1", name: "Alice" })];
+    mockListEntities.mockResolvedValue(entities);
+    mockGetEntityDetail.mockResolvedValue({ entity: entities[0], observations: [], relations: [] });
+
+    renderWithQuery(<AtlasView />);
+    await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
+
+    const { settings } = capturedSigmaInstances[0];
+    expect(typeof settings.nodeReducer).toBe("function");
+    expect(typeof settings.edgeReducer).toBe("function");
+    // Must stay a no-op override: sigma's built-in hover renderer hardcodes a
+    // #FFF label box that's unreadable under the dark theme's label ink.
+    expect(typeof settings.defaultDrawNodeHover).toBe("function");
+    expect(settings.defaultDrawNodeHover()).toBeUndefined();
+  });
+
+  it("refreshes on enterNode and again on leaveNode", async () => {
+    const entities = [makeEntity({ id: "e1", name: "Alice" })];
+    mockListEntities.mockResolvedValue(entities);
+    mockGetEntityDetail.mockResolvedValue({ entity: entities[0], observations: [], relations: [] });
+
+    renderWithQuery(<AtlasView />);
+    await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
+    const instance = capturedSigmaInstances[0];
+    const refreshSpy = vi.spyOn(instance, "refresh");
+
+    instance.handlers.get("enterNode")?.({ node: "e1" });
+    expect(refreshSpy).toHaveBeenCalledTimes(1);
+
+    instance.handlers.get("leaveNode")?.({});
+    expect(refreshSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("suppresses onNodeClick when clickNode follows a moved drag", async () => {
+    const entities = [makeEntity({ id: "e1", name: "Alice" })];
+    mockListEntities.mockResolvedValue(entities);
+    mockGetEntityDetail.mockResolvedValue({ entity: entities[0], observations: [], relations: [] });
+    const onNodeClick = vi.fn();
+
+    renderWithQuery(<AtlasView onNodeClick={onNodeClick} />);
+    await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
+    const instance = capturedSigmaInstances[0];
+    const mouseCaptor = instance.getMouseCaptor();
+
+    instance.handlers.get("downNode")?.({ node: "e1" });
+    mouseCaptor.handlers.get("mousemovebody")?.({
+      x: 10,
+      y: 10,
+      preventSigmaDefault: () => {},
+      original: { preventDefault: () => {}, stopPropagation: () => {} },
+    });
+    mouseCaptor.handlers.get("mouseup")?.({});
+    instance.handlers.get("clickNode")?.({ node: "e1" });
+
+    expect(onNodeClick).not.toHaveBeenCalled();
+  });
+
+  it("still fires onNodeClick for a plain click with no prior drag", async () => {
     const entities = [makeEntity({ id: "e1", name: "Alice" })];
     mockListEntities.mockResolvedValue(entities);
     mockGetEntityDetail.mockResolvedValue({ entity: entities[0], observations: [], relations: [] });
