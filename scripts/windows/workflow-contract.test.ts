@@ -14,6 +14,7 @@ const CI_WORKFLOW_PATH = resolve(
   "workflows",
   "ci.yml",
 );
+const APP_CARGO_PATH = resolve(process.cwd(), "app", "Cargo.toml");
 
 function workflow(): string {
   return readFileSync(WORKFLOW_PATH, "utf8");
@@ -21,6 +22,10 @@ function workflow(): string {
 
 function ciWorkflow(): string {
   return readFileSync(CI_WORKFLOW_PATH, "utf8");
+}
+
+function appCargo(): string {
+  return readFileSync(APP_CARGO_PATH, "utf8");
 }
 
 describe("Windows native smoke workflow contract", () => {
@@ -108,6 +113,32 @@ describe("Windows native smoke workflow contract", () => {
       expect(text, `forbidden workflow content: ${forbidden}`).not.toContain(
         forbidden,
       );
+    }
+  });
+});
+
+describe("Windows Rust dependency contract", () => {
+  it("keeps crates used by cross-platform modules in common dependencies", () => {
+    const text = appCargo();
+    const macTarget = '[target.\'cfg(target_os = "macos")\'.dependencies]';
+    const commonStart = text.indexOf("[dependencies]");
+    const macTargetStart = text.indexOf(macTarget);
+    const devStart = text.indexOf("[dev-dependencies]");
+    expect(commonStart).toBeGreaterThanOrEqual(0);
+    expect(macTargetStart).toBeGreaterThan(commonStart);
+    expect(devStart).toBeGreaterThan(macTargetStart);
+
+    const common = text.slice(commonStart, macTargetStart);
+    const macOnly = text.slice(macTargetStart, devStart);
+
+    for (const dependency of [
+      "wenlan-types",
+      "sysinfo",
+      "pdf-extract",
+      "zip",
+    ]) {
+      expect(common).toMatch(new RegExp(`^${dependency} = `, "m"));
+      expect(macOnly).not.toMatch(new RegExp(`^${dependency} = `, "m"));
     }
   });
 });
