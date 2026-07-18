@@ -220,15 +220,18 @@ export function cartographyScene(graph: Graph, communities: Map<string, number>)
 }
 
 /**
- * Trace the hull expanded outward by `pad` px with rounded joins: each edge
- * shifted along its outward normal, consecutive edges connected by an arc of
- * radius `pad` around the shared vertex. One closed path -> ONE translucent
- * fill stays uniform (the earlier fat-stroke trick stacked stroke ink over
- * fill ink across the whole pad band, reading as a heavy donut instead of
- * the artifact's faint wash). Degenerate hulls (1 distinct point) become a
- * circle; 2 points fall out of the generic loop as a capsule.
+ * Trace the hull as a smooth organic blob, the artifact's hull silhouette:
+ * a closed Catmull-Rom spline through the hull vertices pushed outward by
+ * `pad` along their corner bisectors, emitted as cubic Béziers. The spline
+ * INTERPOLATES its points (unlike a midpoint-quadratic, which sags halfway
+ * back toward the polygon at sparse corners), so every node keeps >= pad
+ * clearance at the vertices while the segments between them bow gently
+ * outward — continuously curving everywhere, no straight runs. One closed
+ * path -> ONE translucent fill stays uniform (a two-pass fat stroke stacks
+ * inks into a donut band). Degenerate hulls: 1 distinct point becomes a
+ * circle, 2 a capsule.
  */
-function traceExpandedHull(
+function traceSmoothHull(
   ctx: CanvasRenderingContext2D,
   hull: { x: number; y: number }[],
   pad: number,
@@ -249,52 +252,75 @@ function traceExpandedHull(
     ctx.arc(pts[0].x, pts[0].y, pad, 0, 2 * Math.PI);
     return;
   }
+  if (pts.length === 2) {
+    // Capsule: two half-circle caps joined by the (auto-drawn) side lines.
+    const [a, b] = pts;
+    const angle = Math.atan2(b.y - a.y, b.x - a.x);
+    ctx.moveTo(a.x + pad * Math.cos(angle + Math.PI / 2), a.y + pad * Math.sin(angle + Math.PI / 2));
+    ctx.arc(a.x, a.y, pad, angle + Math.PI / 2, angle - Math.PI / 2);
+    ctx.arc(b.x, b.y, pad, angle - Math.PI / 2, angle + Math.PI / 2);
+    return;
+  }
 
-  const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length;
-  const cy = pts.reduce((s, p) => s + p.y, 0) / pts.length;
-  // Outward normal per edge — "away from the centroid", which sidesteps
-  // winding entirely (projection flips graph-space CCW to screen CW).
-  const normals = pts.map((a, i) => {
-    const b = pts[(i + 1) % pts.length];
-    const len = Math.hypot(b.x - a.x, b.y - a.y);
-    let nx = (b.y - a.y) / len;
-    let ny = -(b.x - a.x) / len;
-    if (nx * ((a.x + b.x) / 2 - cx) + ny * ((a.y + b.y) / 2 - cy) < 0) {
-      nx = -nx;
-      ny = -ny;
+  const n = pts.length;
+  const cx = pts.reduce((s, p) => s + p.x, 0) / n;
+  const cy = pts.reduce((s, p) => s + p.y, 0) / n;
+  // Push each vertex out along its corner bisector (the two adjacent edge
+  // normals averaged), signed away from the centroid — winding-proof
+  // (projection flips graph-space CCW to screen CW).
+  const expanded = pts.map((p, i) => {
+    const prev = pts[(i + n - 1) % n];
+    const next = pts[(i + 1) % n];
+    const edgeNormal = (a: { x: number; y: number }, b: { x: number; y: number }) => {
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      return { x: (b.y - a.y) / len, y: -(b.x - a.x) / len };
+    };
+    const n1 = edgeNormal(prev, p);
+    const n2 = edgeNormal(p, next);
+    let bx = n1.x + n2.x;
+    let by = n1.y + n2.y;
+    const blen = Math.hypot(bx, by);
+    if (blen < 1e-6) {
+      bx = p.x - cx;
+      by = p.y - cy;
     }
-    return { nx, ny };
+    const len = Math.hypot(bx, by) || 1;
+    bx /= len;
+    by /= len;
+    if (bx * (p.x - cx) + by * (p.y - cy) < 0) {
+      bx = -bx;
+      by = -by;
+    }
+    return { x: p.x + bx * pad, y: p.y + by * pad };
   });
 
-  pts.forEach((a, i) => {
-    const b = pts[(i + 1) % pts.length];
-    const n = normals[i];
-    const from = { x: a.x + n.nx * pad, y: a.y + n.ny * pad };
-    if (i === 0) ctx.moveTo(from.x, from.y);
-    else ctx.lineTo(from.x, from.y);
-    ctx.lineTo(b.x + n.nx * pad, b.y + n.ny * pad);
-    // Round the corner at b: sweep from this edge's normal to the next's.
-    const next = normals[(i + 1) % pts.length];
-    ctx.arc(
-      b.x,
-      b.y,
-      pad,
-      Math.atan2(n.ny, n.nx),
-      Math.atan2(next.ny, next.nx),
-      // Convex corner: the shorter way round. Cross product sign of the two
-      // normals says which direction that is.
-      n.nx * next.ny - n.ny * next.nx < 0,
+  // Closed uniform Catmull-Rom through the expanded ring, as cubic Béziers
+  // (the standard CR->Bézier handles: p1 + (p2-p0)/6 and p2 - (p3-p1)/6).
+  ctx.moveTo(expanded[0].x, expanded[0].y);
+  for (let i = 0; i < n; i++) {
+    const p0 = expanded[(i + n - 1) % n];
+    const p1 = expanded[i];
+    const p2 = expanded[(i + 1) % n];
+    const p3 = expanded[(i + 2) % n];
+    ctx.bezierCurveTo(
+      p1.x + (p2.x - p0.x) / 6,
+      p1.y + (p2.y - p0.y) / 6,
+      p2.x - (p3.x - p1.x) / 6,
+      p2.y - (p3.y - p1.y) / 6,
+      p2.x,
+      p2.y,
     );
-  });
+  }
 }
 
 /**
  * Paint the cartography underlay in VIEWPORT space. `project` maps graph
  * coords to viewport CSS px (AtlasView passes sigma's graphToViewport).
  * Draw order: graticule (deepest) -> hull blobs -> region names. Each hull
- * is the pad-expanded outline filled once with the translucent wash and
- * stroked once with a 1px border — the artifact's exact hull anatomy
- * (fill --kg-hull, stroke --kg-hull-border, stroke-width 1).
+ * is a smooth Catmull-Rom blob around the pad-expanded vertices, filled
+ * once with the translucent wash and stroked once with a 1px border — the
+ * artifact's exact hull anatomy (fill --kg-hull, stroke --kg-hull-border,
+ * stroke-width 1, continuously curving Q-spline silhouette).
  */
 export function drawCartography(
   ctx: CanvasRenderingContext2D,
@@ -324,7 +350,7 @@ export function drawCartography(
     const screenHull = region.hull.map(project);
     if (screenHull.length === 0) continue;
     ctx.beginPath();
-    traceExpandedHull(ctx, screenHull, HULL_PAD);
+    traceSmoothHull(ctx, screenHull, HULL_PAD);
     ctx.closePath();
     ctx.fillStyle = palette.hull;
     ctx.fill();
@@ -349,7 +375,9 @@ export function drawCartography(
     ctx.fillStyle = palette.labelMuted;
     ctx.textAlign = "center";
     ctx.textBaseline = "bottom";
-    ctx.fillText(region.name, cx, top - HULL_PAD - 8);
+    // The smooth blob can bow a touch past the raw hull top between two
+    // expanded vertices, so the name gets pad + 14 of lift, not pad + 8.
+    ctx.fillText(region.name, cx, top - HULL_PAD - 14);
     ctx.letterSpacing = "0px";
   });
   ctx.restore();

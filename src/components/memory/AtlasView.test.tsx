@@ -606,6 +606,7 @@ describe("AtlasView", () => {
       closePath: vi.fn(),
       moveTo: vi.fn(),
       lineTo: vi.fn(),
+      bezierCurveTo: vi.fn(),
       arc: vi.fn(),
       setLineDash: vi.fn(),
       stroke: vi.fn(),

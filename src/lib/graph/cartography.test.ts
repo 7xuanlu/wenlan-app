@@ -320,6 +320,7 @@ function mockCtx() {
     closePath: vi.fn(),
     moveTo: vi.fn(),
     lineTo: vi.fn(),
+    bezierCurveTo: vi.fn(),
     arc: vi.fn(),
     setLineDash: vi.fn((d: number[]) => {
       dash = d;
@@ -375,19 +376,33 @@ describe("drawCartography", () => {
     expect(rings2[2][2]).toBeCloseTo(Math.hypot(150, 200) * 1.05, 5);
   });
 
-  it("paints each region as ONE pad-expanded outline: a uniform wash fill plus a 1px border stroke", () => {
+  it("paints each region as ONE smooth pad-expanded blob: a uniform wash fill plus a 1px border stroke", () => {
     const { ctx, strokes, fills } = mockCtx();
     drawCartography(ctx, sceneWithRegions(), identity, PALETTE);
     const hullStrokes = strokes.filter((s) => s.dash.length === 0);
     // Exactly one stroke — a second pass over the same translucent path is
-    // the stacked-band bug the expanded outline exists to avoid.
+    // the stacked-band bug the single expanded blob exists to avoid.
     expect(hullStrokes).toHaveLength(1);
     expect(hullStrokes[0]).toMatchObject({ strokeStyle: PALETTE.hullBorder, lineWidth: 1 });
     expect(fills).toEqual([PALETTE.hull]);
-    // Rounded joins: one arc of radius HULL_PAD around each hull vertex.
-    const arc = ctx.arc as ReturnType<typeof vi.fn>;
-    const corners = arc.mock.calls.filter((c) => c[2] === 26);
-    expect(corners).toHaveLength(3);
+    // Continuously curving silhouette: one cubic Bézier per hull vertex, no
+    // straight edge runs (lineTo) and no corner arcs.
+    const bezier = ctx.bezierCurveTo as ReturnType<typeof vi.fn>;
+    expect(bezier).toHaveBeenCalledTimes(3);
+    expect(ctx.lineTo).not.toHaveBeenCalled();
+    // The spline INTERPOLATES the expanded ring, so every curve endpoint
+    // sits exactly HULL_PAD out from its raw hull vertex — the no-sag
+    // clearance guarantee.
+    const raw = [
+      { x: 100, y: 100 },
+      { x: 200, y: 100 },
+      { x: 150, y: 200 },
+    ];
+    for (const call of bezier.mock.calls) {
+      const end = { x: call[4], y: call[5] };
+      const nearest = Math.min(...raw.map((v) => Math.hypot(end.x - v.x, end.y - v.y)));
+      expect(nearest).toBeCloseTo(26, 6);
+    }
   });
 
   it("names the dominant region in 16px italic serif muted ink above the hull", () => {
@@ -398,8 +413,9 @@ describe("drawCartography", () => {
     expect(texts[0].text).toBe("Wenlan");
     expect(texts[0].font).toBe("italic 500 16px Fraunces, Georgia, serif");
     expect(texts[0].fillStyle).toBe(PALETTE.labelMuted);
-    // Above the hull's top edge (y=100) by pad 26 + 8.
-    expect(texts[0].y).toBe(100 - 26 - 8);
+    // Above the raw hull's top edge (y=100) by pad 26 + 14 — the extra 6px
+    // clears the smooth blob's outward bow between expanded vertices.
+    expect(texts[0].y).toBe(100 - 26 - 14);
     // Centered on the hull's x centroid.
     expect(texts[0].x).toBe(150);
   });
