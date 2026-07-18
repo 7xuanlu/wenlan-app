@@ -1,0 +1,543 @@
+import {
+  appendFileSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
+import { connect } from "node:net";
+import { dirname, resolve } from "node:path";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { remote } from "webdriverio";
+import { readSidecarLock } from "../sidecar-lock.mjs";
+import { validateNativeSmokeEvidence } from "./native-smoke-evidence.mjs";
+
+const CLAIM = "Windows Server 2022 native compatibility smoke";
+const TARGET_TRIPLE = "x86_64-pc-windows-msvc";
+const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = resolve(SCRIPT_DIR, "..", "..");
+const PROCESS_SCRIPT = resolve(SCRIPT_DIR, "process-evidence.ps1");
+
+function parseArgs(argv) {
+  const parsed = { app: "", evidenceDir: "" };
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index];
+    if (argument === "--app" && argv[index + 1]) {
+      parsed.app = resolve(argv[index + 1]);
+      index += 1;
+    } else if (argument === "--evidence-dir" && argv[index + 1]) {
+      parsed.evidenceDir = resolve(argv[index + 1]);
+      index += 1;
+    } else {
+      throw new Error(
+        "usage: node scripts/windows/native-smoke.mjs --app <release-exe> --evidence-dir <directory>",
+      );
+    }
+  }
+  if (!parsed.app || !parsed.evidenceDir) {
+    throw new Error("--app and --evidence-dir are required");
+  }
+  return parsed;
+}
+
+function writeJson(path, value) {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function writeJsonIfMissing(path, value) {
+  if (!existsSync(path)) {
+    writeJson(path, value);
+  }
+}
+
+function readJson(path) {
+  return JSON.parse(readFileSync(path, "utf8").replace(/^\uFEFF/, ""));
+}
+
+function sleep(milliseconds) {
+  return new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds));
+}
+
+async function poll(label, callback, timeoutMs, intervalMs = 500) {
+  const deadline = Date.now() + timeoutMs;
+  let lastError;
+  while (Date.now() < deadline) {
+    try {
+      const value = await callback();
+      if (value) return value;
+    } catch (error) {
+      lastError = error;
+    }
+    await sleep(intervalMs);
+  }
+  const suffix = lastError instanceof Error ? `: ${lastError.message}` : "";
+  throw new Error(`timed out waiting for ${label}${suffix}`);
+}
+
+function isPortOpen(port) {
+  return new Promise((resolvePromise) => {
+    const socket = connect({ host: "127.0.0.1", port });
+    const finish = (open) => {
+      socket.destroy();
+      resolvePromise(open);
+    };
+    socket.setTimeout(500);
+    socket.once("connect", () => finish(true));
+    socket.once("timeout", () => finish(false));
+    socket.once("error", () => finish(false));
+  });
+}
+
+function stageRuntimeSidecars(appExecutable) {
+  const runtimeDir = dirname(appExecutable);
+  const mappings = [
+    [`wenlan-${TARGET_TRIPLE}.exe`, "wenlan.exe"],
+    [`wenlan-server-${TARGET_TRIPLE}.exe`, "wenlan-server.exe"],
+    [`wenlan-mcp-${TARGET_TRIPLE}.exe`, "wenlan-mcp.exe"],
+    [`cloudflared-${TARGET_TRIPLE}.exe`, "cloudflared.exe"],
+    ["onnxruntime.dll", "onnxruntime.dll"],
+  ];
+  for (const [sourceName, destinationName] of mappings) {
+    const source = resolve(REPO_ROOT, "app", "binaries", sourceName);
+    if (!existsSync(source)) {
+      throw new Error(`missing staged sidecar ${source}`);
+    }
+    copyFileSync(source, resolve(runtimeDir, destinationName));
+  }
+  return {
+    backendExecutable: resolve(runtimeDir, "wenlan-server.exe"),
+    onnxruntimeDll: resolve(runtimeDir, "onnxruntime.dll"),
+  };
+}
+
+function collectProcessEvidence(
+  appExecutable,
+  backendExecutable,
+  outputPath,
+) {
+  const result = spawnSync(
+    "pwsh",
+    [
+      "-NoLogo",
+      "-NoProfile",
+      "-NonInteractive",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      PROCESS_SCRIPT,
+      "-AppExecutable",
+      appExecutable,
+      "-BackendExecutable",
+      backendExecutable,
+      "-OutputPath",
+      outputPath,
+    ],
+    { encoding: "utf8" },
+  );
+  if (result.status !== 0) {
+    throw new Error(
+      `process evidence collection failed: ${String(result.stderr || result.stdout).trim()}`,
+    );
+  }
+  return readJson(outputPath);
+}
+
+async function fetchJson(url, options = {}) {
+  const response = await fetch(url, {
+    ...options,
+    signal: AbortSignal.timeout(5_000),
+  });
+  const text = await response.text();
+  let body;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    throw new Error(`${url} returned non-JSON HTTP ${response.status}: ${text}`);
+  }
+  if (!response.ok) {
+    throw new Error(`${url} returned HTTP ${response.status}: ${text}`);
+  }
+  return body;
+}
+
+async function waitForButton(browser, text, timeout = 30_000) {
+  const button = await browser.$(
+    `//button[normalize-space(.)=${JSON.stringify(text)}]`,
+  );
+  await button.waitForDisplayed({ timeout });
+  return button;
+}
+
+async function driveZeroConfigurationOnboarding(browser, log) {
+  await (await waitForButton(browser, "Get started")).click();
+  for (let index = 0; index < 3; index += 1) {
+    const skip = await waitForButton(browser, "Skip");
+    await skip.click();
+  }
+
+  const daemonStatus = await browser.$('[data-testid="task-status-daemon"]');
+  await daemonStatus.waitForDisplayed({ timeout: 30_000 });
+  await browser.waitUntil(
+    async () => (await daemonStatus.getText()).trim() === "Running",
+    {
+      timeout: 180_000,
+      interval: 1_000,
+      timeoutMsg: "onboarding daemon task never reached visible Running state",
+    },
+  );
+  log("visible onboarding daemon task reached Running");
+
+  await (await waitForButton(browser, "Continue")).click();
+  await (await waitForButton(browser, "Open Wenlan")).click();
+  const search = await browser.$("[data-wenlan-search-input]");
+  await search.waitForDisplayed({ timeout: 30_000 });
+}
+
+async function invokeFullQuit(browser) {
+  return browser.execute(() => {
+    const internals = globalThis.__TAURI_INTERNALS__;
+    if (!internals || typeof internals.invoke !== "function") {
+      throw new Error("Tauri invoke internals are unavailable");
+    }
+    void internals.invoke("quit_wenlan_full");
+    return true;
+  });
+}
+
+function copyAppLog(evidenceDir) {
+  const home = process.env.HOME || process.env.USERPROFILE || "";
+  const candidates = [
+    home
+      ? resolve(home, "Library", "Logs", "com.wenlan.desktop", "wenlan.log")
+      : "",
+    process.env.WENLAN_APP_LOG || "",
+  ].filter(Boolean);
+  const destination = resolve(evidenceDir, "app.log");
+  const source = candidates.find((candidate) => existsSync(candidate));
+  if (source) {
+    copyFileSync(source, destination);
+  } else if (!existsSync(destination)) {
+    writeFileSync(
+      destination,
+      `app log not found; checked: ${candidates.join(", ")}\n`,
+    );
+  }
+}
+
+function bestEffortCleanup(appExecutable, backendExecutable) {
+  const command = [
+    `$paths=@(${JSON.stringify(appExecutable)},${JSON.stringify(backendExecutable)});`,
+    "Get-CimInstance Win32_Process |",
+    "Where-Object { $paths -contains $_.ExecutablePath } |",
+    "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }",
+  ].join(" ");
+  spawnSync("pwsh", ["-NoProfile", "-NonInteractive", "-Command", command], {
+    encoding: "utf8",
+  });
+}
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  mkdirSync(args.evidenceDir, { recursive: true });
+  const webdriverLog = resolve(args.evidenceDir, "webdriver.log");
+  const log = (message) => {
+    const line = `[${new Date().toISOString()}] ${message}`;
+    console.log(line);
+    appendFileSync(webdriverLog, `${line}\n`);
+  };
+
+  const lock = readSidecarLock();
+  const resultPath = resolve(args.evidenceDir, "result.json");
+  const healthPath = resolve(args.evidenceDir, "health.json");
+  const beforePath = resolve(args.evidenceDir, "processes-before.json");
+  const launchPath = resolve(
+    args.evidenceDir,
+    "processes-after-launch.json",
+  );
+  const closePath = resolve(args.evidenceDir, "processes-after-close.json");
+  const welcomePath = resolve(args.evidenceDir, "01-welcome.png");
+  const appReadyPath = resolve(args.evidenceDir, "02-app-ready.png");
+  const memoryVisiblePath = resolve(
+    args.evidenceDir,
+    "03-memory-visible.png",
+  );
+  const runtime = stageRuntimeSidecars(args.app);
+  const marker = `WINDOWS_SMOKE_${process.env.GITHUB_RUN_ID || Date.now()}_${process.env.GITHUB_RUN_ATTEMPT || 1}`;
+
+  const evidence = {
+    claim: CLAIM,
+    status: "running",
+    metadata: {
+      app_commit: process.env.GITHUB_SHA || "",
+      backend_commit: process.env.WENLAN_BACKEND_COMMIT || "",
+      backend_tag: lock.backend_tag,
+      backend_windows_sha256: lock.backend_windows_x64_sha256,
+      cloudflared_version: lock.cloudflared_version,
+      cloudflared_windows_sha256: lock.cloudflared_windows_x64_sha256,
+      cargo_profile: "release",
+      cargo_features: "default",
+      runner_image: process.env.ImageVersion || "",
+      windows_build: process.env.WINDOWS_BUILD || "",
+      webview2_version: process.env.WEBVIEW2_VERSION || "",
+      msedgedriver_version: process.env.MSEDGEDRIVER_VERSION || "",
+      tauri_driver_version: process.env.TAURI_DRIVER_VERSION || "",
+    },
+    health: { ok: false, response: {} },
+    lifecycle: {
+      fake_launch_agents_exists: false,
+      full_quit_invoked: false,
+    },
+    marker: {
+      expected: marker,
+      stored_source_id: "",
+      backend_content: "",
+      ui_text: "",
+    },
+    processes: {
+      before: { port_7878_in_use: true },
+      after_launch: {
+        app: { pid: 0, executable_path: "" },
+        backend: {
+          pid: 0,
+          parent_pid: 0,
+          executable_path: "",
+          loaded_modules: [],
+        },
+      },
+      after_close: { app_alive: true, backend_alive: true },
+    },
+    screenshots: {
+      welcome: { exists: false, path: welcomePath },
+      app_ready: { exists: false, path: appReadyPath },
+      memory_visible: { exists: false, path: memoryVisiblePath },
+    },
+    assertions: [],
+    error: null,
+  };
+
+  let browser;
+  try {
+    const portOccupied = await isPortOpen(7878);
+    evidence.processes.before.port_7878_in_use = portOccupied;
+    const before = collectProcessEvidence(
+      args.app,
+      runtime.backendExecutable,
+      beforePath,
+    );
+    if (portOccupied || before.app.length > 0 || before.backend.length > 0) {
+      throw new Error(
+        "clean-run precondition failed: port 7878 or Wenlan processes already present",
+      );
+    }
+    log("clean-run process and port precondition passed");
+
+    browser = await remote({
+      hostname: "127.0.0.1",
+      port: 4444,
+      logLevel: "info",
+      capabilities: {
+        "tauri:options": {
+          application: args.app,
+        },
+      },
+    });
+
+    const welcome = await waitForButton(browser, "Get started", 180_000);
+    await welcome.waitForDisplayed();
+    await browser.saveScreenshot(welcomePath);
+    evidence.screenshots.welcome.exists = existsSync(welcomePath);
+    log("captured visible first-run welcome");
+
+    const health = await poll(
+      "backend health",
+      async () => fetchJson("http://127.0.0.1:7878/api/health"),
+      180_000,
+      1_000,
+    );
+    evidence.health = { ok: true, response: health };
+    writeJson(healthPath, health);
+
+    const launched = await poll(
+      "exactly one app and app-owned backend process",
+      async () => {
+        const snapshot = collectProcessEvidence(
+          args.app,
+          runtime.backendExecutable,
+          launchPath,
+        );
+        return snapshot.app.length === 1 && snapshot.backend.length === 1
+          ? snapshot
+          : null;
+      },
+      30_000,
+    );
+    evidence.processes.after_launch = {
+      app: launched.app[0],
+      backend: launched.backend[0],
+    };
+
+    await driveZeroConfigurationOnboarding(browser, log);
+    await browser.saveScreenshot(appReadyPath);
+    evidence.screenshots.app_ready.exists = existsSync(appReadyPath);
+    log("captured native app-ready shell after visible onboarding");
+
+    const content = `Windows native sidecar and WebView2 smoke proof. Unique marker: ${marker}`;
+    const stored = await fetchJson("http://127.0.0.1:7878/api/memory/store", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        content,
+        memory_type: "fact",
+        source_agent: "windows-native-smoke",
+        title: marker,
+      }),
+    });
+    if (!stored?.source_id) {
+      throw new Error(`store response omitted source_id: ${JSON.stringify(stored)}`);
+    }
+    evidence.marker.stored_source_id = stored.source_id;
+
+    const detail = await poll(
+      "stored marker detail",
+      async () => {
+        const response = await fetchJson(
+          `http://127.0.0.1:7878/api/memory/${encodeURIComponent(stored.source_id)}/detail`,
+        );
+        return response?.memory?.content?.includes(marker) ? response : null;
+      },
+      30_000,
+    );
+    evidence.marker.backend_content = detail.memory.content;
+
+    const search = await browser.$("[data-wenlan-search-input]");
+    await search.setValue(marker);
+    const markerText = await browser.$(
+      `//p[contains(normalize-space(.), ${JSON.stringify(marker)})]`,
+    );
+    await markerText.waitForDisplayed({ timeout: 60_000 });
+    const resultCard = await markerText.$("..");
+    await resultCard.click();
+    await browser.waitUntil(async () => (await search.getValue()) === "", {
+      timeout: 30_000,
+      interval: 250,
+      timeoutMsg: "clicking the memory search result did not clear search",
+    });
+    const dossier = await browser.$('main[aria-label="Memory dossier"]');
+    await dossier.waitForDisplayed({ timeout: 30_000 });
+    await browser.waitUntil(
+      async () => (await dossier.getText()).includes(marker),
+      {
+        timeout: 30_000,
+        interval: 500,
+        timeoutMsg: "memory dossier never rendered the unique marker",
+      },
+    );
+    evidence.marker.ui_text = await dossier.getText();
+    await browser.saveScreenshot(memoryVisiblePath);
+    evidence.screenshots.memory_visible.exists = existsSync(memoryVisiblePath);
+    log("captured native memory dossier with the backend marker");
+
+    evidence.lifecycle.fake_launch_agents_exists = existsSync(
+      resolve(process.env.USERPROFILE || process.env.HOME || "", "Library", "LaunchAgents"),
+    );
+    evidence.lifecycle.full_quit_invoked = (await invokeFullQuit(browser)) === true;
+    log("invoked registered quit_wenlan_full command");
+
+    const afterClose = await poll(
+      "app and backend full quit",
+      async () => {
+        const snapshot = collectProcessEvidence(
+          args.app,
+          runtime.backendExecutable,
+          closePath,
+        );
+        return snapshot.app.length === 0 && snapshot.backend.length === 0
+          ? snapshot
+          : null;
+      },
+      10_000,
+      250,
+    ).catch(() =>
+      collectProcessEvidence(
+        args.app,
+        runtime.backendExecutable,
+        closePath,
+      ),
+    );
+    evidence.processes.after_close = {
+      app_alive: afterClose.app.length > 0,
+      backend_alive: afterClose.backend.length > 0,
+    };
+
+    const validation = validateNativeSmokeEvidence(evidence, {
+      appExecutable: args.app,
+      backendExecutable: runtime.backendExecutable,
+      onnxruntimeDll: runtime.onnxruntimeDll,
+      marker,
+    });
+    evidence.assertions = validation.assertions;
+    evidence.status = "passed";
+    log("all native evidence assertions passed");
+  } catch (error) {
+    evidence.status = "failed";
+    evidence.error = error instanceof Error ? error.message : String(error);
+    if (error && typeof error === "object" && "assertions" in error) {
+      evidence.assertions = error.assertions;
+    } else {
+      try {
+        validateNativeSmokeEvidence(evidence, {
+          appExecutable: args.app,
+          backendExecutable: runtime.backendExecutable,
+          onnxruntimeDll: runtime.onnxruntimeDll,
+          marker,
+        });
+      } catch (validationError) {
+        if (
+          validationError &&
+          typeof validationError === "object" &&
+          "assertions" in validationError
+        ) {
+          evidence.assertions = validationError.assertions;
+        }
+      }
+    }
+    log(`FAILED: ${evidence.error}`);
+  } finally {
+    copyAppLog(args.evidenceDir);
+    writeJsonIfMissing(healthPath, evidence.health);
+    writeJsonIfMissing(beforePath, {
+      app: [],
+      backend: [],
+      error: "process evidence was not captured before failure",
+    });
+    writeJsonIfMissing(launchPath, {
+      app: [],
+      backend: [],
+      error: "process evidence was not captured before failure",
+    });
+    writeJsonIfMissing(closePath, {
+      app: [],
+      backend: [],
+      error: "process evidence was not captured before failure",
+    });
+    writeJson(resultPath, evidence);
+    if (browser) {
+      await browser.deleteSession().catch(() => {});
+    }
+    if (evidence.status !== "passed") {
+      bestEffortCleanup(args.app, runtime.backendExecutable);
+    }
+  }
+
+  if (evidence.status !== "passed") {
+    process.exitCode = 1;
+  }
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

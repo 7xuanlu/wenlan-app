@@ -1,0 +1,201 @@
+import { describe, expect, it } from "vitest";
+
+type Evidence = {
+  claim: string;
+  health: { ok: boolean; response: Record<string, unknown> };
+  lifecycle: {
+    fake_launch_agents_exists: boolean;
+    full_quit_invoked: boolean;
+  };
+  marker: {
+    backend_content: string;
+    expected: string;
+    stored_source_id: string;
+    ui_text: string;
+  };
+  processes: {
+    after_close: { app_alive: boolean; backend_alive: boolean };
+    after_launch: {
+      app: { executable_path: string; pid: number };
+      backend: {
+        executable_path: string;
+        loaded_modules: string[];
+        parent_pid: number;
+        pid: number;
+      };
+    };
+    before: { port_7878_in_use: boolean };
+  };
+  screenshots: Record<
+    "welcome" | "app_ready" | "memory_visible",
+    { exists: boolean; path: string }
+  >;
+};
+
+type ExpectedEvidence = {
+  appExecutable: string;
+  backendExecutable: string;
+  marker: string;
+  onnxruntimeDll: string;
+};
+
+type ValidationResult = {
+  assertions: Array<{ name: string; ok: boolean }>;
+  ok: true;
+};
+
+type EvidenceModule = {
+  validateNativeSmokeEvidence(
+    evidence: Evidence,
+    expected: ExpectedEvidence,
+  ): ValidationResult;
+};
+
+const MARKER = "WINDOWS_SMOKE_123_1";
+const APP_EXE = "C:\\actions\\wenlan\\target\\release\\wenlan-app.exe";
+const BACKEND_EXE =
+  "C:\\actions\\wenlan\\target\\release\\wenlan-server.exe";
+const ONNX_DLL = "C:\\actions\\wenlan\\target\\release\\onnxruntime.dll";
+
+function completeEvidence(): Evidence {
+  return {
+    claim: "Windows Server 2022 native compatibility smoke",
+    health: { ok: true, response: { status: "ok" } },
+    lifecycle: {
+      fake_launch_agents_exists: false,
+      full_quit_invoked: true,
+    },
+    marker: {
+      backend_content: `A native proof containing ${MARKER}`,
+      expected: MARKER,
+      stored_source_id: "windows-smoke-source",
+      ui_text: `Memory detail: A native proof containing ${MARKER}`,
+    },
+    processes: {
+      before: { port_7878_in_use: false },
+      after_launch: {
+        app: { pid: 4100, executable_path: APP_EXE },
+        backend: {
+          pid: 4200,
+          parent_pid: 4100,
+          executable_path: BACKEND_EXE,
+          loaded_modules: [
+            "C:\\Windows\\System32\\kernel32.dll",
+            ONNX_DLL,
+          ],
+        },
+      },
+      after_close: { app_alive: false, backend_alive: false },
+    },
+    screenshots: {
+      welcome: { exists: true, path: "01-welcome.png" },
+      app_ready: { exists: true, path: "02-app-ready.png" },
+      memory_visible: { exists: true, path: "03-memory-visible.png" },
+    },
+  };
+}
+
+const expected: ExpectedEvidence = {
+  appExecutable: APP_EXE,
+  backendExecutable: BACKEND_EXE,
+  marker: MARKER,
+  onnxruntimeDll: ONNX_DLL,
+};
+
+async function loadEvidenceModule(): Promise<EvidenceModule> {
+  const loaded = await import("./native-smoke-evidence.mjs").catch(() => null);
+  expect(
+    loaded,
+    "scripts/windows/native-smoke-evidence.mjs must exist",
+  ).not.toBeNull();
+  return loaded as EvidenceModule;
+}
+
+describe("Windows native smoke evidence validator", () => {
+  it("accepts one coherent native app/backend/UI proof", async () => {
+    const { validateNativeSmokeEvidence } = await loadEvidenceModule();
+
+    const result = validateNativeSmokeEvidence(completeEvidence(), expected);
+
+    expect(result.ok).toBe(true);
+    expect(result.assertions.length).toBeGreaterThanOrEqual(14);
+    expect(result.assertions.every((assertion) => assertion.ok)).toBe(true);
+  });
+
+  it.each([
+    {
+      name: "occupied port before launch",
+      assertion: "port-7878-unused",
+      mutate: (evidence: Evidence) => {
+        evidence.processes.before.port_7878_in_use = true;
+      },
+    },
+    {
+      name: "wrong backend parent",
+      assertion: "backend-parent-pid",
+      mutate: (evidence: Evidence) => {
+        evidence.processes.after_launch.backend.parent_pid = 9999;
+      },
+    },
+    {
+      name: "wrong backend executable",
+      assertion: "backend-executable",
+      mutate: (evidence: Evidence) => {
+        evidence.processes.after_launch.backend.executable_path =
+          "C:\\other\\wenlan-server.exe";
+      },
+    },
+    {
+      name: "wrong ONNX runtime",
+      assertion: "onnxruntime-module",
+      mutate: (evidence: Evidence) => {
+        evidence.processes.after_launch.backend.loaded_modules = [
+          "C:\\Windows\\System32\\onnxruntime.dll",
+        ];
+      },
+    },
+    {
+      name: "wrong backend marker",
+      assertion: "backend-marker",
+      mutate: (evidence: Evidence) => {
+        evidence.marker.backend_content = "some other memory";
+      },
+    },
+    {
+      name: "wrong UI marker",
+      assertion: "ui-marker",
+      mutate: (evidence: Evidence) => {
+        evidence.marker.ui_text = "some other memory";
+      },
+    },
+    {
+      name: "missing visible-memory screenshot",
+      assertion: "screenshot-memory-visible",
+      mutate: (evidence: Evidence) => {
+        evidence.screenshots.memory_visible.exists = false;
+      },
+    },
+    {
+      name: "orphaned backend",
+      assertion: "backend-exited",
+      mutate: (evidence: Evidence) => {
+        evidence.processes.after_close.backend_alive = true;
+      },
+    },
+    {
+      name: "fake LaunchAgents directory",
+      assertion: "no-fake-launchagents",
+      mutate: (evidence: Evidence) => {
+        evidence.lifecycle.fake_launch_agents_exists = true;
+      },
+    },
+  ])("rejects $name with the owning assertion", async ({ assertion, mutate }) => {
+    const { validateNativeSmokeEvidence } = await loadEvidenceModule();
+    const evidence = completeEvidence();
+    mutate(evidence);
+
+    expect(() => validateNativeSmokeEvidence(evidence, expected)).toThrow(
+      `[${assertion}]`,
+    );
+  });
+});
