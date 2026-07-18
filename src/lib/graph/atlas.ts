@@ -11,6 +11,7 @@ import {
 } from "d3-force";
 import type { GraphModel } from "./model";
 import { nodeFillFor, type GraphPalette } from "./palette";
+import { bridgeEdgeTest } from "./cartography";
 
 const MIN_NODE_SIZE = 3;
 const MAX_NODE_SIZE = 8;
@@ -31,7 +32,11 @@ function nodeSizeFor(confirmed: boolean | null, degree: number): number {
  * distinct relations between the same pair as distinct edges (see model.ts)
  * — a simple graph would throw adding the second one.
  */
-export function buildAtlasGraph(model: GraphModel, palette: GraphPalette): Graph {
+export function buildAtlasGraph(
+  model: GraphModel,
+  palette: GraphPalette,
+  communities?: Map<string, number>,
+): Graph {
   const graph = new Graph({ multi: true });
   // ponytail: the old graph's confirmed-glow halo (r+3 disc at 0.1 alpha) is
   // skipped — it needs a custom WebGL node program in sigma; the tiered fills
@@ -54,14 +59,22 @@ export function buildAtlasGraph(model: GraphModel, palette: GraphPalette): Graph
 
   // ponytail: parallel edges between the same pair draw fully overlapped —
   // a view decision (see model.ts's parallel-edge note), fine at round-1 scale.
+  const isBridge = communities ? bridgeEdgeTest(communities) : () => false;
   for (const edge of model.edges) {
+    // Cross-region edges are the map's bridges: amber, a hair thinner
+    // (the artifact's 1.4 stroke), flagged so the theme-flip recolor keeps
+    // them amber. ponytail: the artifact dashes them too — sigma's stock
+    // edge programs can't dash; custom WebGL program if the solid amber
+    // isn't distinct enough.
+    const bridge = isBridge(edge.source, edge.target);
     graph.addEdgeWithKey(edge.id, edge.source, edge.target, {
       // Rendered 1:1 in CSS px (AtlasView pins zoomToSizeRatioFunction to 1),
       // calibrated to the old canvas graph's exact stroke: lineWidth 1 at its
       // fixed k=1.499 zoom ≈ 1.5 CSS px. Needs minEdgeThickness lowered in
       // AtlasView — sigma's default floor (1.7) silently bumps this back up.
-      size: 1.5,
-      color: palette.edge,
+      size: bridge ? 1.4 : 1.5,
+      color: bridge ? palette.bridge : palette.edge,
+      bridge,
     });
   }
   return graph;

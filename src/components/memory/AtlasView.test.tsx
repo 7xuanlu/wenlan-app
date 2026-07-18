@@ -554,6 +554,79 @@ describe("AtlasView", () => {
     expect(Math.hypot(dx, dy)).toBeCloseTo(expectedRadius, 6);
   });
 
+  it("mounts the cartography underlay canvas beneath sigma and removes it on unmount", async () => {
+    mockConnectedPair();
+
+    const { unmount } = renderWithQuery(<AtlasView />);
+    await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
+
+    const container = capturedSigmaInstances[0].container as HTMLElement;
+    const underlay = document.querySelector('canvas[data-testid="atlas-cartography"]');
+    expect(underlay).toBeInTheDocument();
+    // Appended BEFORE the sigma mock ran, so it stacks under sigma's canvases.
+    expect(underlay!.parentElement).toBe(container);
+
+    unmount();
+    // Query the DETACHED container, not the document: React unmount removes
+    // the whole subtree from the document either way, so a document-level
+    // query passes even if the cleanup leaks the canvas (mutation-proven).
+    expect(container.querySelector('canvas[data-testid="atlas-cartography"]')).toBeNull();
+  });
+
+  it("repaints the underlay on every sigma afterRender: dashed graticule rings from the live graph", async () => {
+    mockConnectedPair();
+
+    renderWithQuery(<AtlasView />);
+    await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
+    const instance = capturedSigmaInstances[0];
+
+    const handler = instance.handlers.get("afterRender");
+    expect(typeof handler).toBe("function");
+
+    // jsdom's getContext("2d") is null (the mount-time paint no-ops on that);
+    // hand the handler a recording ctx and re-fire it like a render would.
+    const underlay = document.querySelector(
+      'canvas[data-testid="atlas-cartography"]',
+    ) as HTMLCanvasElement;
+    const ctx = {
+      strokeStyle: "",
+      fillStyle: "",
+      lineWidth: 0,
+      lineJoin: "",
+      lineCap: "",
+      font: "",
+      letterSpacing: "",
+      textAlign: "",
+      textBaseline: "",
+      setTransform: vi.fn(),
+      clearRect: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
+      beginPath: vi.fn(),
+      closePath: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      arc: vi.fn(),
+      setLineDash: vi.fn(),
+      stroke: vi.fn(),
+      fill: vi.fn(),
+      fillText: vi.fn(),
+    };
+    underlay.getContext = vi.fn().mockReturnValue(ctx) as any;
+
+    handler!({});
+
+    // Sized to sigma's viewport and cleared before painting.
+    expect(underlay.width).toBe(400);
+    expect(underlay.height).toBe(600);
+    expect(ctx.clearRect).toHaveBeenCalledWith(0, 0, 400, 600);
+    // The settled pair sits off-origin, so the graticule paints: 3 dashed
+    // rings. (Two singleton communities → no hulls, no bridges — MIN_REGION_SIZE.)
+    expect(ctx.setLineDash).toHaveBeenCalledWith([1, 7]);
+    expect(ctx.arc).toHaveBeenCalledTimes(3);
+    expect(ctx.fillText).not.toHaveBeenCalled();
+  });
+
   it("drags an isolate by direct manipulation, without restarting the sim", async () => {
     mockConnectedPairWithIsolate();
 

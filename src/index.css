@@ -346,6 +346,14 @@ html[data-theme="dark"] {
      same pixels, so ConstellationMap is unchanged. */
   --kg-edge: #3D414C;
   --kg-edge-strong: #5D616F;
+  /* Cartography layer (design-mockup artifact, screen 01). Hull/graticule are
+     painted by AtlasView's 2D underlay canvas — real alpha is fine there (the
+     opaque-only rule above is sigma-WebGL-specific). Bridge IS a sigma edge
+     color, hence opaque (the shared amber accent). */
+  --kg-hull: rgba(169, 174, 242, 0.05);
+  --kg-hull-border: rgba(169, 174, 242, 0.16);
+  --kg-graticule: rgba(150, 155, 173, 0.13);
+  --kg-bridge: #C7AA5C;
 }
 
 /* Light (cool paper workspace with restrained brand warmth) */
@@ -418,6 +426,11 @@ html[data-theme="light"] {
      rgba(88,97,116,.42/.72) pre-composited over #FFFFFF. */
   --kg-edge: #B9BDC5;
   --kg-edge-strong: #878D9B;
+  /* Cartography layer — light variants (see the dark block's note). */
+  --kg-hull: rgba(94, 88, 200, 0.045);
+  --kg-hull-border: rgba(94, 88, 200, 0.15);
+  --kg-graticule: rgba(139, 147, 163, 0.18);
+  --kg-bridge: #B5842E;
 }
 
 .wiki-home {

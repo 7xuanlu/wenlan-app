@@ -693,10 +693,13 @@ export const REVIEW_ENTITIES: Record<string, EntityDetail> = {
 };
 
 // --- ConstellationMap / FocusGraph preview fixture ---
-// 12 entities spanning the 5 validated palette slots (project/technology/
+// 16 entities spanning the 5 validated palette slots (project/technology/
 // organization/person/concept) plus place (folds to neutral), so every slot
 // swatch has a rendered proof. gk-remote-office takes no relation below,
-// exercising the empty-focus case.
+// exercising the empty-focus case. The four gk-z* entities form a second
+// community (Zettelkasten is its own degree peak — Knowledge Graph ties it
+// at 4 but never exceeds it), so the Atlas cartography layer renders two
+// hulls, a minor region label, and the amber bridge edge.
 const GRAPH_ENTITY_SEED: { id: string; name: string; entity_type: string }[] = [
   { id: "gk-wenlan", name: "Wenlan", entity_type: "project" },
   { id: "gk-desktop", name: "Wenlan Desktop", entity_type: "project" },
@@ -710,12 +713,16 @@ const GRAPH_ENTITY_SEED: { id: string; name: string; entity_type: string }[] = [
   { id: "gk-ada", name: "Ada", entity_type: "person" },
   { id: "gk-knowledge-graph", name: "Knowledge Graph", entity_type: "concept" },
   { id: "gk-remote-office", name: "Remote Office", entity_type: "place" },
+  { id: "gk-zettel", name: "Zettelkasten", entity_type: "concept" },
+  { id: "gk-znotes", name: "Field Notes", entity_type: "concept" },
+  { id: "gk-zobsidian", name: "Obsidian", entity_type: "technology" },
+  { id: "gk-zmochi", name: "Mochi", entity_type: "technology" },
 ];
 
 // [relationId, fromId, verb, toId] — mirrored below onto both endpoints'
 // detail.relations (outgoing on the source's list, incoming on the
 // target's), the same way the real daemon returns one relation from either
-// entity's perspective. 15 tuples, 9 distinct verbs, both directions.
+// entity's perspective. 20 tuples, 11 distinct verbs, both directions.
 const GRAPH_RELATION_SEED: [string, string, string, string][] = [
   ["gkr-1", "gk-wenlan", "uses", "gk-rust"],
   ["gkr-2", "gk-wenlan", "uses", "gk-typescript"],
@@ -732,6 +739,12 @@ const GRAPH_RELATION_SEED: [string, string, string, string][] = [
   ["gkr-13", "gk-desktop", "visualizes", "gk-knowledge-graph"],
   ["gkr-14", "gk-ada", "works_with", "gk-lucian"],
   ["gkr-15", "gk-knowledge-graph", "relates_to", "gk-rust"],
+  ["gkr-16", "gk-zettel", "organizes", "gk-znotes"],
+  ["gkr-17", "gk-zobsidian", "implements", "gk-zettel"],
+  ["gkr-18", "gk-zmochi", "relates_to", "gk-zettel"],
+  ["gkr-19", "gk-znotes", "hosted_on", "gk-zobsidian"],
+  // The single inter-community edge — the cartography layer's bridge.
+  ["gkr-20", "gk-knowledge-graph", "inspired_by", "gk-zettel"],
 ];
 
 const graphEntitySeedById = new Map(GRAPH_ENTITY_SEED.map((e) => [e.id, e]));

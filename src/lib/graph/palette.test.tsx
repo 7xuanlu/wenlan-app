@@ -78,7 +78,12 @@ describe("colorForEntityType", () => {
       edge: "#edge",
       edgeStrong: "#edgeStrong",
       label: "#label",
+      labelMuted: "#labelMuted",
       surface: "#surface",
+      hull: "#hull",
+      hullBorder: "#hullBorder",
+      graticule: "#graticule",
+      bridge: "#bridge",
     };
     expect(colorForEntityType("technology", palette)).toBe("#tool");
     expect(colorForEntityType("place", palette)).toBe("#neutral");
@@ -111,7 +116,12 @@ describe("nodeFillFor", () => {
     edge: "#777777",
     edgeStrong: "#888888",
     label: "#999999",
+    labelMuted: "#aaaaaa",
     surface: "#000000",
+    hull: "rgba(1,2,3,0.05)",
+    hullBorder: "rgba(1,2,3,0.16)",
+    graticule: "rgba(4,5,6,0.13)",
+    bridge: "#bbbbbb",
   };
 
   it("fills confirmed entities at 0.9 alpha and everything else at 0.5", () => {

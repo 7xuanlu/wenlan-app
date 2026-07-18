@@ -41,8 +41,18 @@ export interface GraphPalette {
   edgeStrong: string;
   /** Label ink — reads the shared --mem-text token, not a --kg-* slot. */
   label: string;
+  /** Muted ink for region names (--mem-text-tertiary). */
+  labelMuted: string;
   /** Graph ground (--mem-surface) — what translucent node fills composite against. */
   surface: string;
+  /** Community hull fill — rgba; drawn on the 2D underlay, not sigma. */
+  hull: string;
+  /** Community hull border — rgba; 2D underlay. */
+  hullBorder: string;
+  /** Dashed orientation rings — rgba; 2D underlay. */
+  graticule: string;
+  /** Cross-community edge ink — opaque (sigma-consumed). */
+  bridge: string;
 }
 
 // Read the resolved --kg-* custom properties off <html>. getComputedStyle
@@ -61,7 +71,12 @@ function readPalette(): GraphPalette {
     edge: read("--kg-edge"),
     edgeStrong: read("--kg-edge-strong"),
     label: read("--mem-text"),
+    labelMuted: read("--mem-text-tertiary"),
     surface: read("--mem-surface"),
+    hull: read("--kg-hull"),
+    hullBorder: read("--kg-hull-border"),
+    graticule: read("--kg-graticule"),
+    bridge: read("--kg-bridge"),
   };
 }
 

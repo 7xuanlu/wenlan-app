@@ -27,9 +27,14 @@ const PALETTE: GraphPalette = {
   edge: "#777777",
   edgeStrong: "#888888",
   label: "#999999",
+  labelMuted: "#aaaaaa",
   // Black surface keeps the composite math legible: composited channel is
   // just slotChannel * alpha.
   surface: "#000000",
+  hull: "rgba(1,2,3,0.05)",
+  hullBorder: "rgba(1,2,3,0.16)",
+  graticule: "rgba(4,5,6,0.13)",
+  bridge: "#bbbbbb",
 };
 
 function node(overrides: Partial<GraphNode> = {}): GraphNode {
@@ -141,6 +146,48 @@ describe("buildAtlasGraph", () => {
     const graph = buildAtlasGraph(model, PALETTE);
     expect(graph.getEdgeAttribute("e1", "color")).toBe(PALETTE.edge);
     expect(graph.getEdgeAttribute("e1", "size")).toBe(1.5);
+  });
+
+  it("paints an edge between two real regions in the amber bridge ink, slightly thinner", () => {
+    // Two triangles joined by a1–b1 — the canonical bridge fixture.
+    const model = makeModel(
+      ["a1", "a2", "a3", "b1", "b2", "b3"].map((id) => node({ id })),
+      [
+        edge({ id: "ea1", source: "a1", target: "a2" }),
+        edge({ id: "ea2", source: "a2", target: "a3" }),
+        edge({ id: "ea3", source: "a3", target: "a1" }),
+        edge({ id: "eb1", source: "b1", target: "b2" }),
+        edge({ id: "eb2", source: "b2", target: "b3" }),
+        edge({ id: "eb3", source: "b3", target: "b1" }),
+        edge({ id: "bridge", source: "a1", target: "b1" }),
+      ],
+    );
+    const communities = new Map<string, number>([
+      ["a1", 0],
+      ["a2", 0],
+      ["a3", 0],
+      ["b1", 1],
+      ["b2", 1],
+      ["b3", 1],
+    ]);
+    const graph = buildAtlasGraph(model, PALETTE, communities);
+    expect(graph.getEdgeAttribute("bridge", "color")).toBe(PALETTE.bridge);
+    expect(graph.getEdgeAttribute("bridge", "size")).toBe(1.4);
+    expect(graph.getEdgeAttribute("bridge", "bridge")).toBe(true);
+    // Intra-region edges keep the quiet tone.
+    expect(graph.getEdgeAttribute("ea1", "color")).toBe(PALETTE.edge);
+    expect(graph.getEdgeAttribute("ea1", "size")).toBe(1.5);
+    expect(graph.getEdgeAttribute("ea1", "bridge")).toBe(false);
+  });
+
+  it("treats every edge as normal when no community map is passed", () => {
+    const model = makeModel(
+      [node({ id: "a" }), node({ id: "b" })],
+      [edge({ id: "e1", source: "a", target: "b" })],
+    );
+    const graph = buildAtlasGraph(model, PALETTE);
+    expect(graph.getEdgeAttribute("e1", "color")).toBe(PALETTE.edge);
+    expect(graph.getEdgeAttribute("e1", "bridge")).toBe(false);
   });
 
   it("keeps distinct parallel relations between the same pair as distinct edges", () => {

@@ -19,6 +19,7 @@ import {
   drawRadialNodeLabel,
 } from "../../lib/graph/atlas";
 import type { HoverState, AtlasSimNode } from "../../lib/graph/atlas";
+import { communitiesFor, cartographyScene, drawCartography } from "../../lib/graph/cartography";
 import { useGraphPalette, colorForEntityType, nodeFillFor } from "../../lib/graph/palette";
 import type { GraphPalette } from "../../lib/graph/palette";
 
@@ -110,6 +111,7 @@ export default function AtlasView({ onNodeClick }: AtlasViewProps) {
   });
 
   const model = useMemo(() => buildGraphModel(entities, details), [entities, details]);
+  const communities = useMemo(() => communitiesFor(model), [model]);
 
   // Mount/rebuild sigma whenever the model changes. `palette` is read here
   // (fresh at build time) but deliberately not a dependency — a theme flip
@@ -119,7 +121,7 @@ export default function AtlasView({ onNodeClick }: AtlasViewProps) {
     const container = containerRef.current;
     if (!container || model.nodes.length === 0) return;
 
-    const graph = buildAtlasGraph(model, palette);
+    const graph = buildAtlasGraph(model, palette, communities);
     runAtlasLayout(graph);
     graphRef.current = graph;
 
@@ -133,6 +135,18 @@ export default function AtlasView({ onNodeClick }: AtlasViewProps) {
       (window as unknown as Record<string, unknown>).__ATLAS_SIM = sim;
     }
     placeIsolateRing(graph);
+
+    // Cartography underlay (hulls, region names, graticule) — a plain 2D
+    // canvas appended BEFORE sigma mounts so sigma's own canvases stack above
+    // it. Redrawn on every afterRender, so hulls flex live with drags and
+    // track camera moves for free.
+    const underlay = document.createElement("canvas");
+    underlay.dataset.testid = "atlas-cartography";
+    underlay.style.position = "absolute";
+    underlay.style.inset = "0";
+    underlay.style.width = "100%";
+    underlay.style.height = "100%";
+    container.appendChild(underlay);
 
     const renderer = new Sigma(graph, container, {
       labelRenderedSizeThreshold: 6,
@@ -176,6 +190,27 @@ export default function AtlasView({ onNodeClick }: AtlasViewProps) {
       // Preview/debug handle only — stripped from prod builds.
       (window as unknown as Record<string, unknown>).__ATLAS_SIGMA = renderer;
     }
+
+    const drawUnderlay = () => {
+      const ctx = underlay.getContext("2d");
+      if (!ctx) return; // jsdom
+      const { width, height } = renderer.getDimensions();
+      const dpr = window.devicePixelRatio || 1;
+      if (underlay.width !== width * dpr || underlay.height !== height * dpr) {
+        underlay.width = width * dpr;
+        underlay.height = height * dpr;
+      }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, width, height);
+      drawCartography(
+        ctx,
+        cartographyScene(graph, communities),
+        (pos) => renderer.graphToViewport(pos),
+        paletteRef.current,
+      );
+    };
+    renderer.on("afterRender", drawUnderlay);
+    drawUnderlay();
     // Default zoom: sigma's fit stretches a small cluster edge-to-edge no
     // matter how big the container (7.3 px/graph-unit in preview) — links
     // render ~5x longer than the old graph's ("too wide"). A fixed density
@@ -322,6 +357,8 @@ export default function AtlasView({ onNodeClick }: AtlasViewProps) {
       sigmaRef.current = null;
       graphRef.current = null;
       renderer.kill();
+      // Sigma removes its own canvases; the underlay is ours to remove.
+      underlay.remove();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [model]);
@@ -338,8 +375,13 @@ export default function AtlasView({ onNodeClick }: AtlasViewProps) {
       ...attrs,
       color: nodeFillFor(attrs.entityType, attrs.confirmed, palette),
     }));
-    graph.updateEachEdgeAttributes((_id, attrs) => ({ ...attrs, color: palette.edge }));
+    graph.updateEachEdgeAttributes((_id, attrs) => ({
+      ...attrs,
+      color: attrs.bridge ? palette.bridge : palette.edge,
+    }));
     renderer.setSetting("labelColor", { color: palette.label });
+    // refresh() re-fires afterRender, which repaints the cartography underlay
+    // with the palette paletteRef now carries.
     renderer.refresh();
   }, [palette]);
 
