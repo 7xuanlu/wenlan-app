@@ -1,7 +1,7 @@
 # Windows Native Smoke Design
 
-**Status:** design for review  
-**Date:** 2026-07-18  
+**Status:** design for review
+**Date:** 2026-07-18
 **Repositories:** `7xuanlu/wenlan-app` and `7xuanlu/wenlan`
 
 ## Outcome
