@@ -18,6 +18,7 @@ import {
 import { MetadataRow, RailPanelTitle } from "./MemoryDetailPrimitives";
 import FocusGraph from "./FocusGraph";
 import AtlasView from "./AtlasView";
+import { slotForEntityType } from "../../lib/graph/palette";
 
 interface EntityDetailProps {
   entityId: string;
@@ -679,18 +680,133 @@ export default function EntityDetail({ entityId, onBack, onEntityClick, onMemory
             })}
           </div>
         </div>
-        <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            position: "relative",
+            // Artifact screen 02 focusgrid: stage + 300px entity panel.
+            ...(overlayMode === "focus"
+              ? { display: "grid", gridTemplateColumns: "minmax(0, 1fr) 300px" }
+              : {}),
+          }}
+        >
           {overlayMode === "focus" ? (
-            <FocusGraph
-              detail={detail}
-              onEntityClick={(id) => {
-                setGraphOpen(false);
-                onEntityClick(id);
-              }}
-              fill
-              showVerbs={showVerbs}
-              memoriesCount={linkedMemories.length}
-            />
+            <>
+              <div style={{ position: "relative", minWidth: 0 }}>
+                <FocusGraph
+                  detail={detail}
+                  onEntityClick={(id) => {
+                    setGraphOpen(false);
+                    onEntityClick(id);
+                  }}
+                  fill
+                  showVerbs={showVerbs}
+                  memoriesCount={linkedMemories.length}
+                />
+              </div>
+              <aside
+                aria-label={t("focus.panelLabel")}
+                style={{
+                  borderLeft: "1px solid var(--mem-border)",
+                  background: "var(--mem-surface)",
+                  padding: 18,
+                  overflowY: "auto",
+                  fontFamily: "var(--mem-font-body)",
+                }}
+              >
+                <div
+                  style={{
+                    font: "500 10px var(--mem-font-mono)",
+                    letterSpacing: "0.14em",
+                    textTransform: "uppercase",
+                    color: "var(--mem-text-tertiary)",
+                  }}
+                >
+                  <i
+                    aria-hidden="true"
+                    style={{ color: `var(--kg-${slotForEntityType(entity.entity_type)})`, fontStyle: "normal" }}
+                  >
+                    ●
+                  </i>
+                  {` ${entity.entity_type} · ${entity.confirmed ? t("focus.confirmedState") : t("focus.unconfirmedState")}`}
+                </div>
+                <h4 style={{ fontSize: 22, fontWeight: 600, margin: "6px 0 2px", color: "var(--mem-text)" }}>
+                  {entity.name}
+                </h4>
+                <div style={{ fontSize: 12, color: "var(--mem-text-tertiary)" }}>
+                  {t("focus.observations", { count: detail.observations.length })}
+                  {` · ${t("focus.relations", { count: detail.relations.length })}`}
+                  {` · ${t("focus.updatedAgo", { ago: timeAgo(entity.updated_at, locale) })}`}
+                </div>
+                <hr style={{ border: "none", borderTop: "1px solid var(--mem-detail-divider)", margin: "14px 0" }} />
+                <div>
+                  {detail.relations.map((rel) => (
+                    <button
+                      key={rel.id}
+                      type="button"
+                      onClick={() => {
+                        setGraphOpen(false);
+                        onEntityClick(rel.entity_id);
+                      }}
+                      style={{
+                        display: "flex",
+                        alignItems: "baseline",
+                        gap: 8,
+                        padding: "5px 0",
+                        fontSize: 12.5,
+                        width: "100%",
+                        background: "none",
+                        border: "none",
+                        cursor: "pointer",
+                        textAlign: "left",
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      <span
+                        aria-hidden="true"
+                        style={{
+                          width: 7,
+                          height: 7,
+                          borderRadius: "var(--mem-radius-full)",
+                          flex: "none",
+                          alignSelf: "center",
+                          background: `var(--kg-${slotForEntityType(rel.entity_type)})`,
+                        }}
+                      />
+                      <code
+                        style={{
+                          font: "500 10px var(--mem-font-mono)",
+                          color: "var(--mem-text-tertiary)",
+                          letterSpacing: "0.04em",
+                          minWidth: 96,
+                        }}
+                      >
+                        {rel.direction === "incoming" ? `${rel.relation_type} ←` : `${rel.relation_type} →`}
+                      </code>
+                      <span style={{ color: "var(--mem-text)" }}>{rel.entity_name}</span>
+                    </button>
+                  ))}
+                </div>
+                <hr style={{ border: "none", borderTop: "1px solid var(--mem-detail-divider)", margin: "14px 0" }} />
+                <button
+                  type="button"
+                  onClick={() => setGraphOpen(false)}
+                  style={{
+                    display: "inline-block",
+                    font: "500 12.5px var(--mem-font-body)",
+                    color: "var(--mem-text)",
+                    background: "var(--mem-indigo-bg)",
+                    border: "1px solid var(--mem-distilled-border)",
+                    borderRadius: "var(--mem-radius-md)",
+                    padding: "7px 14px",
+                    cursor: "pointer",
+                  }}
+                >
+                  {t("focus.openEntity")}
+                </button>
+              </aside>
+            </>
           ) : (
             <AtlasView
               focusEntityId={entity.id}

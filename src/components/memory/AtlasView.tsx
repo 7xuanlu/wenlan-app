@@ -231,6 +231,13 @@ export default function AtlasView({ onNodeClick, focusEntityId, onBack }: AtlasV
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const [searchFocused, setSearchFocused] = useState(false);
+  // Regions on/off governs only the cartography underlay (hulls + names +
+  // graticule); the count line and rail keep reporting regions either way.
+  // Ref mirror so the sigma mount effect (which recreates the underlay per
+  // model) can apply the current choice without re-running on toggle.
+  const [showRegions, setShowRegions] = useState(true);
+  const showRegionsRef = useRef(true);
+  const underlayRef = useRef<HTMLCanvasElement | null>(null);
 
   const matches = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -321,7 +328,9 @@ export default function AtlasView({ onNodeClick, focusEntityId, onBack }: AtlasV
     underlay.style.inset = "0";
     underlay.style.width = "100%";
     underlay.style.height = "100%";
+    underlay.style.display = showRegionsRef.current ? "" : "none";
     container.appendChild(underlay);
+    underlayRef.current = underlay;
 
     const renderer = new Sigma(graph, container, {
       labelRenderedSizeThreshold: 6,
@@ -572,6 +581,15 @@ export default function AtlasView({ onNodeClick, focusEntityId, onBack }: AtlasV
     renderer.refresh();
   }, [palette]);
 
+  useEffect(() => {
+    const underlay = underlayRef.current;
+    if (!underlay) return;
+    underlay.style.display = showRegions ? "" : "none";
+    // The canvas keeps its last frame while hidden; repaint on re-show so it
+    // matches wherever the camera and drags went in the meantime.
+    if (showRegions) sigmaRef.current?.refresh();
+  }, [showRegions]);
+
   const statusStyle = {
     height: "100%",
     width: "100%",
@@ -784,6 +802,26 @@ export default function AtlasView({ onNodeClick, focusEntityId, onBack }: AtlasV
             </ul>
           )}
         </div>
+        <button
+          type="button"
+          aria-pressed={showRegions}
+          onClick={() => {
+            showRegionsRef.current = !showRegions;
+            setShowRegions(!showRegions);
+          }}
+          style={{
+            fontSize: 12,
+            color: showRegions ? "var(--mem-text)" : "var(--mem-text-secondary)",
+            border: `1px solid ${showRegions ? "var(--mem-distilled-border)" : "var(--mem-border)"}`,
+            borderRadius: "var(--mem-radius-full)",
+            padding: "4px 12px",
+            background: showRegions ? "var(--mem-indigo-bg)" : "transparent",
+            cursor: "pointer",
+            fontFamily: "inherit",
+          }}
+        >
+          {t("atlas.regionsToggle")}
+        </button>
         <span
           style={{
             marginLeft: "auto",

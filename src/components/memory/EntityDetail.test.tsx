@@ -138,6 +138,38 @@ describe("EntityDetail full graph overlay", () => {
     expect(screen.queryByRole("dialog", { name: "Full screen" })).not.toBeInTheDocument();
   });
 
+  it("renders the artifact entity panel beside the Focus graph — eyebrow, meta, typed rows", async () => {
+    const onEntityClick = vi.fn();
+    renderDetail(onEntityClick);
+    await screen.findByRole("button", { name: /Bob \(person\) · outgoing · knows/ });
+    fireEvent.click(screen.getByRole("button", { name: "Full screen" }));
+
+    const panel = screen.getByRole("complementary", { name: "Entity panel" });
+    expect(within(panel).getByText("Origin")).toBeInTheDocument();
+    expect(within(panel).getByText(/project · confirmed/)).toBeInTheDocument();
+    expect(within(panel).getByText(/0 observations · 3 relations · updated/)).toBeInTheDocument();
+    // Direction renders as verb + arrow: outgoing →, incoming ←.
+    expect(within(panel).getByText("knows →")).toBeInTheDocument();
+    expect(within(panel).getByText("mentions ←")).toBeInTheDocument();
+
+    // A relation row is the graph's focusable twin — navigates and closes.
+    fireEvent.click(within(panel).getByRole("button", { name: /mentions ←\s*Alice/ }));
+    expect(onEntityClick).toHaveBeenCalledWith("A");
+    expect(screen.queryByRole("dialog", { name: "Full screen" })).not.toBeInTheDocument();
+  });
+
+  it("panel's Open entity button closes the overlay without navigating", async () => {
+    const onEntityClick = vi.fn();
+    renderDetail(onEntityClick);
+    await screen.findByRole("button", { name: /Bob \(person\) · outgoing · knows/ });
+    fireEvent.click(screen.getByRole("button", { name: "Full screen" }));
+
+    const panel = screen.getByRole("complementary", { name: "Entity panel" });
+    fireEvent.click(within(panel).getByRole("button", { name: "Open entity ↗" }));
+    expect(screen.queryByRole("dialog", { name: "Full screen" })).not.toBeInTheDocument();
+    expect(onEntityClick).not.toHaveBeenCalled();
+  });
+
   it("moves focus into the dialog on open — the close button takes initial focus", async () => {
     renderDetail();
     await screen.findByRole("button", { name: /Bob \(person\) · outgoing · knows/ });

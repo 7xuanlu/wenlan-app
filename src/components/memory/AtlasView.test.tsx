@@ -828,6 +828,29 @@ describe("AtlasView", () => {
     expect(document.getElementById("atlas-search-option-1")).toHaveTextContent("Isolate");
   });
 
+  it("Regions chip hides the cartography underlay and repaints it on re-show", async () => {
+    mockConnectedPair();
+
+    renderWithQuery(<AtlasView />);
+    await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
+    const instance = capturedSigmaInstances[0];
+
+    const chip = screen.getByRole("button", { name: "Regions" });
+    const underlay = document.querySelector('[data-testid="atlas-cartography"]') as HTMLCanvasElement;
+    expect(chip).toHaveAttribute("aria-pressed", "true");
+    expect(underlay.style.display).not.toBe("none");
+
+    fireEvent.click(chip);
+    expect(chip).toHaveAttribute("aria-pressed", "false");
+    expect(underlay.style.display).toBe("none");
+
+    // Re-show must refresh: the hidden canvas kept its stale last frame.
+    const refreshSpy = vi.spyOn(instance, "refresh");
+    fireEvent.click(chip);
+    expect(underlay.style.display).not.toBe("none");
+    expect(refreshSpy).toHaveBeenCalled();
+  });
+
   it("jumps the camera instantly on search select under prefers-reduced-motion", async () => {
     const matchMediaMock = vi.fn().mockReturnValue({ matches: true } as MediaQueryList);
     vi.stubGlobal("matchMedia", matchMediaMock);
