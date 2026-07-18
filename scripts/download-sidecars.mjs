@@ -78,6 +78,37 @@ function verifySha256(path, expected, asset) {
   }
 }
 
+export function archiveExtractionCommand(
+  format,
+  archivePath,
+  extractRoot,
+  platform = process.platform,
+) {
+  if (format === "zip" && platform === "win32") {
+    return {
+      commandName: "powershell.exe",
+      args: [
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        resolve(SCRIPT_DIR, "extract-zip.ps1"),
+        "-ArchivePath",
+        archivePath,
+        "-DestinationPath",
+        extractRoot,
+      ],
+    };
+  }
+
+  return {
+    commandName: "tar",
+    args: ["-xf", archivePath, "-C", extractRoot],
+  };
+}
+
 function downloadReleaseAsset(product, destination) {
   command(
     "gh",
@@ -137,9 +168,14 @@ function resolvePayload(product, downloadedPath, extractRoot) {
   }
 
   mkdirSync(extractRoot, { recursive: true });
+  const extraction = archiveExtractionCommand(
+    product.format,
+    downloadedPath,
+    extractRoot,
+  );
   command(
-    "tar",
-    ["-xf", downloadedPath, "-C", extractRoot],
+    extraction.commandName,
+    extraction.args,
     `failed to extract ${product.asset}`,
   );
   return product.payload.map((entry) => ({

@@ -66,8 +66,14 @@ describe("Windows native smoke workflow contract", () => {
     expect(text).toContain("WENLAN_DOWNLOAD_SIDECARS: \"1\"");
     expect(text).toContain("WENLAN_DATA_DIR=");
     expect(text).toContain("WENLAN_SIDECAR_MANIFEST=");
-    expect(text).toContain(
-      "pnpm tauri build --no-bundle --target x86_64-pc-windows-msvc",
+    const extractionProof =
+      "pnpm exec vitest run scripts/download-sidecars.test.ts --maxWorkers=1";
+    const nativeBuild =
+      "pnpm tauri build --no-bundle --target x86_64-pc-windows-msvc";
+    expect(text).toContain(extractionProof);
+    expect(text).toContain(nativeBuild);
+    expect(text.indexOf(extractionProof)).toBeLessThan(
+      text.indexOf(nativeBuild),
     );
     expect(text).toContain("target/x86_64-pc-windows-msvc/release/wenlan-app.exe");
   });

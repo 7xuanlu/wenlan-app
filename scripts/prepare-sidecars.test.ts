@@ -22,6 +22,7 @@ const tauriBuildScriptPath = resolve(root, "scripts/prepare-tauri-build-sidecars
 const resolverScriptPath = resolve(root, "scripts/resolve-backend-dir.sh");
 const lockScriptPath = resolve(root, "scripts/sidecar-lock.mjs");
 const downloadScriptPath = resolve(root, "scripts/download-sidecars.mjs");
+const extractZipScriptPath = resolve(root, "scripts/extract-zip.ps1");
 const tempRoots: string[] = [];
 const pathOverrideEnvKeys = new Set([
   "WENLAN_BACKEND_DIR",
@@ -62,6 +63,9 @@ function writeAppScripts(appRoot: string): void {
   copyFileSync(lockScriptPath, resolve(appRoot, "scripts/sidecar-lock.mjs"));
   if (existsSync(downloadScriptPath)) {
     copyFileSync(downloadScriptPath, resolve(appRoot, "scripts/download-sidecars.mjs"));
+  }
+  if (existsSync(extractZipScriptPath)) {
+    copyFileSync(extractZipScriptPath, resolve(appRoot, "scripts/extract-zip.ps1"));
   }
 }
 
