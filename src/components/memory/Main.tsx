@@ -29,7 +29,7 @@ import DistillReviewPanel from "./DistillReviewPanel";
 import SettingsPage from "./SettingsPage";
 import { ImportView } from "./ImportView";
 import { SetupWizard } from "../SetupWizard";
-import Sidebar, { SidebarToggleButton } from "./Sidebar";
+import Sidebar, { SidebarHeaderDivider, SidebarToggleButton } from "./Sidebar";
 import SettingsSidebar from "./settings/SettingsSidebar";
 import SpaceDetail from "./SpaceDetail";
 import { SpacesOverview } from "./spaces";
@@ -449,6 +449,9 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
         }}
         data-tauri-drag-region
       >
+        <SidebarHeaderDivider
+          visible={responsiveSidebar.presentation === "desktop" && !responsiveSidebar.collapsed}
+        />
         <SidebarToggleButton collapsed={responsiveSidebar.collapsed} onToggle={responsiveSidebar.toggle} ref={sidebarToggleRef} />
         {(!standardSidebarMounted || !responsiveSidebar.open) && <ReviewEnvironmentBadge compact />}
         <div className="flex-1" data-tauri-drag-region />

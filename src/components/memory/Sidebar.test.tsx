@@ -8,7 +8,7 @@ import { i18n } from "../../i18n";
 import { RECENT_PAGES_STORAGE_KEY } from "../../lib/recentPages";
 import { RECENT_SPACES_STORAGE_KEY } from "../../lib/recentSpaces";
 import type { Page, Space } from "../../lib/tauri";
-import Sidebar, { SidebarToggleButton } from "./Sidebar";
+import Sidebar, { SidebarHeaderDivider, SidebarToggleButton } from "./Sidebar";
 
 const { listAgentsMock, listAllActivePagesMock, listSpacesMock } = vi.hoisted(() => ({
   listAgentsMock: vi.fn().mockResolvedValue([]),
@@ -397,9 +397,28 @@ describe("Sidebar", () => {
     expect(screen.queryByText(/No agents connected/i)).not.toBeInTheDocument();
   });
 
-  it("exposes a stable native titlebar hook for the sidebar toggle", () => {
+  it("keeps the sidebar toggle on the shared header centerline", () => {
     render(<SidebarToggleButton collapsed={false} onToggle={() => {}} />);
 
-    expect(screen.getByTitle("Hide sidebar")).toHaveAttribute("data-sidebar-toggle", "true");
+    const toggle = screen.getByTitle("Hide sidebar");
+    expect(toggle).toHaveAttribute("data-sidebar-toggle", "true");
+    expect(toggle.style.alignSelf).toBe("");
+    expect(toggle.style.marginTop).toBe("");
+  });
+
+  it("continues the desktop sidebar divider through the full header", () => {
+    const { container, rerender } = render(<SidebarHeaderDivider visible />);
+
+    expect(container.querySelector('[data-sidebar-header-divider="true"]')).toHaveStyle({
+      backgroundColor: "var(--mem-border)",
+      height: "52px",
+      left: "239px",
+      position: "absolute",
+      top: "0px",
+      width: "1px",
+    });
+
+    rerender(<SidebarHeaderDivider visible={false} />);
+    expect(container.querySelector('[data-sidebar-header-divider="true"]')).not.toBeInTheDocument();
   });
 });

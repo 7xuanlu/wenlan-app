@@ -143,6 +143,9 @@ vi.mock("./Sidebar", () => ({
   SidebarToggleButton: (props: { onToggle: () => void; ref?: React.Ref<HTMLButtonElement> }) => (
     <button ref={props.ref} type="button" aria-label="Toggle sidebar" onClick={props.onToggle} />
   ),
+  SidebarHeaderDivider: (props: { visible: boolean }) => (
+    props.visible ? <div data-sidebar-header-divider="true" /> : null
+  ),
 }));
 vi.mock("./pages/PagesOverview", () => ({
   PagesOverview: (props: {
@@ -344,6 +347,16 @@ describe("Main search", () => {
     // Then the desktop state and preference both become expanded
     expect(sidebar).toHaveAttribute("data-collapsed", "false");
     expect(localStorage.getItem("wenlan-sidebar-collapsed")).toBe("false");
+  });
+
+  it("continues the expanded desktop sidebar divider through the header", async () => {
+    const user = userEvent.setup();
+    renderMain();
+
+    expect(document.querySelector('[data-sidebar-header-divider="true"]')).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Toggle sidebar" }));
+    expect(document.querySelector('[data-sidebar-header-divider="true"]')).not.toBeInTheDocument();
   });
 
   it("routes Spaces and create intent to one overview with focused creation", async () => {

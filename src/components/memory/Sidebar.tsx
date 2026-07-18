@@ -223,6 +223,27 @@ export default function Sidebar({
   );
 }
 
+export function SidebarHeaderDivider({ visible }: { readonly visible: boolean }) {
+  if (!visible) return null;
+
+  return (
+    <span
+      aria-hidden="true"
+      data-sidebar-header-divider="true"
+      style={{
+        backgroundColor: "var(--mem-border)",
+        height: 52,
+        left: 239,
+        pointerEvents: "none",
+        position: "absolute",
+        top: 0,
+        width: 1,
+        zIndex: 1,
+      }}
+    />
+  );
+}
+
 /** Sidebar toggle button for use in the header */
 export const SidebarToggleButton = forwardRef<HTMLButtonElement, { readonly collapsed: boolean; readonly onToggle: () => void }>(function SidebarToggleButton({ collapsed, onToggle }, ref) {
   const { t } = useTranslation();

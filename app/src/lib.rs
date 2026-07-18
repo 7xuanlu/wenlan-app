@@ -68,6 +68,11 @@ fn startup_reveal_fallback_delay() -> std::time::Duration {
     std::time::Duration::from_millis(1200)
 }
 
+#[cfg(target_os = "macos")]
+fn startup_reveal_fallback_needed(ready: bool, visible: bool) -> bool {
+    !ready || !visible
+}
+
 #[cfg(not(feature = "review-fixtures"))]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -241,6 +246,13 @@ pub fn run() {
                 use tauri::Manager;
 
                 if let Some(win) = app.get_webview_window("main") {
+                    // Size first because AppKit can recalculate titlebar control
+                    // frames while the window geometry changes.
+                    let _ = win.set_size(tauri::Size::Logical(tauri::LogicalSize::new(
+                        1100.0, 720.0,
+                    )));
+                    let _ = win.center();
+
                     if let Ok(raw_handle) = win.window_handle() {
                         if let raw_window_handle::RawWindowHandle::AppKit(appkit) =
                             raw_handle.as_raw()
@@ -262,8 +274,6 @@ pub fn run() {
                     // Size the window and keep app-ready as a focus/activation
                     // refinement. The main window is visible from config so launch
                     // cannot depend on a frontend event to appear.
-                    let _ = win.set_size(tauri::Size::Logical(tauri::LogicalSize::new(1100.0, 720.0)));
-                    let _ = win.center();
                     {
                         use tauri::Listener;
                         let app_ready = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -286,15 +296,15 @@ pub fn run() {
                             tokio::time::sleep(startup_reveal_fallback_delay()).await;
                             let ready = app_ready.load(std::sync::atomic::Ordering::SeqCst);
                             let visible = win_for_fallback.is_visible().unwrap_or(false);
-                            if !ready || !visible {
+                            if startup_reveal_fallback_needed(ready, visible) {
                                 log::warn!(
                                     "[startup] app-ready did not reveal the main window; showing fallback"
                                 );
+                                set_main_window_dock_visibility(&app_for_fallback, true);
+                                let _ = win_for_fallback.show();
+                                let _ = win_for_fallback.unminimize();
+                                let _ = win_for_fallback.set_focus();
                             }
-                            set_main_window_dock_visibility(&app_for_fallback, true);
-                            let _ = win_for_fallback.show();
-                            let _ = win_for_fallback.unminimize();
-                            let _ = win_for_fallback.set_focus();
                         });
                     }
                 }
@@ -1011,5 +1021,13 @@ mod tests {
 
         assert!(delay >= std::time::Duration::from_millis(500));
         assert!(delay <= std::time::Duration::from_secs(2));
+    }
+
+    #[test]
+    fn startup_fallback_only_reveals_when_ready_or_visibility_is_missing() {
+        assert!(!startup_reveal_fallback_needed(true, true));
+        assert!(startup_reveal_fallback_needed(false, true));
+        assert!(startup_reveal_fallback_needed(true, false));
+        assert!(startup_reveal_fallback_needed(false, false));
     }
 }

@@ -16,6 +16,24 @@ describe("runtime product identity", () => {
     expect(tauri.app.windows[0].title).toBe("Wenlan");
   });
 
+  it("keeps the persistent native titlebar inset aligned in both app variants", () => {
+    const production = JSON.parse(
+      readFileSync(resolve(root, "app/tauri.conf.json"), "utf8"),
+    );
+    const review = JSON.parse(
+      readFileSync(resolve(root, "app/tauri.review.conf.json"), "utf8"),
+    );
+
+    expect(production.app.windows[0].trafficLightPosition).toEqual({
+      x: 16,
+      y: 28,
+    });
+    expect(review.app.windows[0].trafficLightPosition).toEqual({
+      x: 16,
+      y: 28,
+    });
+  });
+
   it("uses Wenlan release artifact names", () => {
     const pkg = JSON.parse(
       readFileSync(resolve(root, "package.json"), "utf8"),
@@ -95,6 +113,8 @@ describe("runtime product identity", () => {
     expect(lib).toContain("set_activation_policy(activation_policy_for_main_window_visible(false))");
     expect(lib).toContain("startup_reveal_fallback_delay");
     expect(lib).toContain("app-ready did not reveal the main window");
+    expect(lib).not.toContain("align_macos_traffic_lights");
+    expect(lib).not.toContain("setFrameOrigin(button");
   });
 
   it("prepares sidecar binaries before Tauri validates external bins", () => {

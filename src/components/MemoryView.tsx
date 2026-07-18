@@ -31,7 +31,7 @@ import { getCollapsedSections, toggleSection, expandSection } from "../lib/colla
 import { readPreference, writePreference } from "../lib/preferenceStorage";
 import ViewToggle from "./ViewToggle";
 import SettingsPage from "./memory/SettingsPage";
-import Sidebar, { SidebarToggleButton } from "./memory/Sidebar";
+import Sidebar, { SidebarHeaderDivider, SidebarToggleButton } from "./memory/Sidebar";
 import AboutWenlanDialog from "./memory/AboutWenlanDialog";
 import { searchResultTarget } from "../lib/searchResultTarget";
 
@@ -897,6 +897,7 @@ export default function MemoryView({ onBack, onSelectFile, onSelectRecap, onSele
         }}
         data-tauri-drag-region
       >
+        <SidebarHeaderDivider visible={!sidebarCollapsed} />
         <SidebarToggleButton collapsed={sidebarCollapsed} onToggle={toggleSidebar} />
         <div className="flex-1" data-tauri-drag-region />
         {/* Right actions */}
