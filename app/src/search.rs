@@ -3959,12 +3959,16 @@ pub async fn list_recent_relations(
 
 #[tauri::command]
 pub async fn is_run_at_login_enabled() -> Result<bool, String> {
+    if crate::lifecycle::run_at_login_capability(std::env::consts::OS).is_err() {
+        return Ok(false);
+    }
     use crate::lifecycle::{is_run_at_login_enabled as inner, SystemLaunchctl};
     Ok(inner(&SystemLaunchctl))
 }
 
 #[tauri::command]
 pub async fn set_run_at_login(enabled: bool) -> Result<(), String> {
+    crate::lifecycle::run_at_login_capability(std::env::consts::OS).map_err(str::to_string)?;
     use crate::lifecycle::{set_run_at_login as inner, SystemLaunchctl};
     inner(enabled, &SystemLaunchctl)
         .await
