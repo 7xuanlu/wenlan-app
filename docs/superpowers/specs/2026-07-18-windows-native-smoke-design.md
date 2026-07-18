@@ -179,8 +179,9 @@ of retrying an opaque session-creation failure.
 3. Stage verified backend sidecars, `onnxruntime.dll`, and `cloudflared.exe`
    from the single lock contract.
 4. Build the release-profile Tauri executable with no smoke-only features.
-5. Start `msedgedriver` and `tauri-driver`, then open a WebDriver session for
-   the built executable.
+5. Start `tauri-driver` with the matching `msedgedriver.exe`; `tauri-driver`
+   owns that native-driver child, then open a WebDriver session for the built
+   executable.
 6. Wait for the first-run Setup Wizard and save `01-welcome.png`.
 7. Poll `/api/health`; save the exact response as `health.json`.
 8. Query `Win32_Process` and loaded modules. Require the backend parent PID to

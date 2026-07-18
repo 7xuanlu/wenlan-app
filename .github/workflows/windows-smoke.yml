@@ -1,0 +1,242 @@
+name: Windows Server 2022 native compatibility smoke
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  GH_TOKEN: ${{ github.token }}
+  TARGET_TRIPLE: x86_64-pc-windows-msvc
+  WENLAN_DOWNLOAD_SIDECARS: "1"
+
+jobs:
+  native-smoke:
+    name: Windows Server 2022 native compatibility smoke
+    runs-on: windows-2022
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out app
+        uses: actions/checkout@v4
+
+      - name: Initialize always-uploaded evidence
+        shell: pwsh
+        run: |
+          $evidence = Join-Path $env:GITHUB_WORKSPACE "windows-native-smoke"
+          New-Item -ItemType Directory -Path $evidence -Force | Out-Null
+          "WENLAN_DATA_DIR=$(Join-Path $env:RUNNER_TEMP "wenlan-native-smoke-data")" |
+            Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "WENLAN_SIDECAR_MANIFEST=$(Join-Path $evidence "staged-sidecars.json")" |
+            Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          $initial = [ordered]@{
+            claim = "Windows Server 2022 native compatibility smoke"
+            status = "workflow_initializing"
+            error = "native harness did not complete"
+          }
+          $initial | ConvertTo-Json -Depth 4 | Set-Content (Join-Path $evidence "result.json") -Encoding UTF8
+          @{ ok = $false; error = "health was not captured" } |
+            ConvertTo-Json | Set-Content (Join-Path $evidence "health.json") -Encoding UTF8
+          foreach ($name in @("processes-before.json", "processes-after-launch.json", "processes-after-close.json")) {
+            @{ app = @(); backend = @(); error = "process evidence was not captured" } |
+              ConvertTo-Json | Set-Content (Join-Path $evidence $name) -Encoding UTF8
+          }
+          "native harness did not start" | Set-Content (Join-Path $evidence "webdriver.log")
+          "app did not start" | Set-Content (Join-Path $evidence "app.log")
+          @{ error = "sidecars were not staged" } |
+            ConvertTo-Json | Set-Content (Join-Path $evidence "staged-sidecars.json") -Encoding UTF8
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Install pinned native WebDriver tools
+        shell: pwsh
+        run: |
+          cargo install tauri-driver --version 2.0.6 --locked
+          cargo install --git https://github.com/chippers/msedgedriver-tool --rev 8c4b34f51b45f5cf08013366d703de464ab871d1 --locked
+
+      - name: Record runner and prepare matching EdgeDriver
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $evidence = Join-Path $env:GITHUB_WORKSPACE "windows-native-smoke"
+          $driverDir = Join-Path $evidence "driver"
+          New-Item -ItemType Directory -Path $driverDir -Force | Out-Null
+
+          $registryPaths = @(
+            "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}",
+            "HKLM:\SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}",
+            "HKCU:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}",
+            "HKCU:\SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+          )
+          $webviewVersion = $null
+          foreach ($path in $registryPaths) {
+            $candidate = Get-ItemProperty -Path $path -ErrorAction SilentlyContinue
+            if ($candidate -and $candidate.pv) {
+              $webviewVersion = [string]$candidate.pv
+              break
+            }
+          }
+          if ([string]::IsNullOrWhiteSpace($webviewVersion)) {
+            throw "WebView2 Evergreen runtime was not found in the supported registry paths"
+          }
+
+          Push-Location $driverDir
+          try {
+            msedgedriver-tool
+            if ($LASTEXITCODE -ne 0) {
+              throw "msedgedriver-tool failed with exit code $LASTEXITCODE"
+            }
+          }
+          finally {
+            Pop-Location
+          }
+
+          $driverPath = Join-Path $driverDir "msedgedriver.exe"
+          if (-not (Test-Path $driverPath -PathType Leaf)) {
+            throw "msedgedriver-tool did not create $driverPath"
+          }
+          $driverVersionOutput = (& $driverPath --version 2>&1) -join " "
+          if ($LASTEXITCODE -ne 0) {
+            throw "msedgedriver --version failed: $driverVersionOutput"
+          }
+          $driverVersionMatch = [regex]::Match($driverVersionOutput, "\d+\.\d+\.\d+\.\d+")
+          if (-not $driverVersionMatch.Success) {
+            throw "could not parse EdgeDriver version from: $driverVersionOutput"
+          }
+          $driverVersion = $driverVersionMatch.Value
+          if ($driverVersion.Split(".")[0] -ne $webviewVersion.Split(".")[0]) {
+            throw "EdgeDriver major $driverVersion does not match WebView2 $webviewVersion"
+          }
+
+          $os = Get-CimInstance Win32_OperatingSystem
+          $windowsBuild = "$($os.Caption) $($os.Version) build $($os.BuildNumber)"
+          $backendTag = (node scripts/sidecar-lock.mjs get backend_tag).Trim()
+          $backendCommit = (gh api "repos/7xuanlu/wenlan/commits/$backendTag" --jq .sha).Trim()
+          if ($LASTEXITCODE -ne 0 -or -not $backendCommit) {
+            throw "could not resolve backend commit for $backendTag"
+          }
+
+          "WINDOWS_BUILD=$windowsBuild" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "WEBVIEW2_VERSION=$webviewVersion" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "MSEDGEDRIVER_VERSION=$driverVersion" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "TAURI_DRIVER_VERSION=2.0.6" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "WENLAN_BACKEND_COMMIT=$backendCommit" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+          $metadata = [ordered]@{
+            claim = "Windows Server 2022 native compatibility smoke"
+            app_commit = $env:GITHUB_SHA
+            backend_tag = $backendTag
+            backend_commit = $backendCommit
+            windows = [ordered]@{
+              caption = [string]$os.Caption
+              version = [string]$os.Version
+              build_number = [string]$os.BuildNumber
+              runner_image = [string]$env:ImageVersion
+            }
+            webview2_version = $webviewVersion
+            msedgedriver_version = $driverVersion
+            tauri_driver_version = "2.0.6"
+            rustc = (rustc --version)
+            cargo = (cargo --version)
+            cargo_profile = "release"
+            cargo_features = "default"
+          }
+          $metadata | ConvertTo-Json -Depth 6 |
+            Set-Content (Join-Path $evidence "toolchain.json") -Encoding UTF8
+
+      - name: Build release-profile native Tauri executable
+        run: pnpm tauri build --no-bundle --target x86_64-pc-windows-msvc
+
+      - name: Run native app, backend, UI, and full-quit proof
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $evidence = Join-Path $env:GITHUB_WORKSPACE "windows-native-smoke"
+          $driverPath = Join-Path $evidence "driver\msedgedriver.exe"
+          $tauriDriver = Join-Path $env:USERPROFILE ".cargo\bin\tauri-driver.exe"
+          $driverStdout = Join-Path $evidence "tauri-driver.stdout.log"
+          $driverStderr = Join-Path $evidence "tauri-driver.stderr.log"
+          $driverProcess = Start-Process `
+            -FilePath $tauriDriver `
+            -ArgumentList @("--native-driver", $driverPath) `
+            -RedirectStandardOutput $driverStdout `
+            -RedirectStandardError $driverStderr `
+            -PassThru
+          $driverProcess.Id | Set-Content (Join-Path $evidence "tauri-driver.pid")
+
+          $ready = $false
+          for ($attempt = 0; $attempt -lt 40; $attempt += 1) {
+            if ($driverProcess.HasExited) {
+              throw "tauri-driver exited before port 4444 became ready"
+            }
+            $client = [System.Net.Sockets.TcpClient]::new()
+            try {
+              $connect = $client.ConnectAsync("127.0.0.1", 4444)
+              if ($connect.Wait(250) -and $client.Connected) {
+                $ready = $true
+                break
+              }
+            }
+            finally {
+              $client.Dispose()
+            }
+            Start-Sleep -Milliseconds 250
+          }
+          if (-not $ready) {
+            throw "tauri-driver did not listen on 127.0.0.1:4444"
+          }
+
+          pnpm test:native:windows -- `
+            --app target/x86_64-pc-windows-msvc/release/wenlan-app.exe `
+            --evidence-dir windows-native-smoke
+          if ($LASTEXITCODE -ne 0) {
+            throw "native smoke harness failed with exit code $LASTEXITCODE"
+          }
+
+      - name: Collect driver logs and clean processes
+        if: always()
+        shell: pwsh
+        run: |
+          $evidence = Join-Path $env:GITHUB_WORKSPACE "windows-native-smoke"
+          $webdriverLog = Join-Path $evidence "webdriver.log"
+          foreach ($entry in @(
+            @{ Label = "tauri-driver stdout"; Path = (Join-Path $evidence "tauri-driver.stdout.log") },
+            @{ Label = "tauri-driver stderr"; Path = (Join-Path $evidence "tauri-driver.stderr.log") }
+          )) {
+            if (Test-Path $entry.Path) {
+              Add-Content $webdriverLog "`n=== $($entry.Label) ==="
+              Get-Content $entry.Path | Add-Content $webdriverLog
+            }
+          }
+          $pidPath = Join-Path $evidence "tauri-driver.pid"
+          if (Test-Path $pidPath) {
+            Stop-Process -Id ([int](Get-Content $pidPath)) -Force -ErrorAction SilentlyContinue
+          }
+          Get-Process msedgedriver -ErrorAction SilentlyContinue |
+            Stop-Process -Force -ErrorAction SilentlyContinue
+
+      - name: Upload native evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-native-smoke
+          path: windows-native-smoke
+          if-no-files-found: warn
+          retention-days: 14

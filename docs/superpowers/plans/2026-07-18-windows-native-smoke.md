@@ -378,7 +378,7 @@ The workflow:
    `WENLAN_DOWNLOAD_SIDECARS=1`, a fresh `WENLAN_DATA_DIR`, and
    `WENLAN_SIDECAR_MANIFEST`;
 5. runs `pnpm tauri build --no-bundle --target x86_64-pc-windows-msvc`;
-6. starts matching EdgeDriver and `tauri-driver`, runs
+6. starts `tauri-driver` with the matching EdgeDriver (which it owns), runs
    `pnpm test:native:windows`, and retains their logs;
 7. uploads `windows-native-smoke` on success or failure.
 
