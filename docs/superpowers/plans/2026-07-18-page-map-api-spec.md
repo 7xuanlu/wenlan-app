@@ -1,8 +1,12 @@
 # Page Map — daemon API & data-model spec (v1)
 
-**Status:** draft for review, 2026-07-18. Resolves the 22 Codex gap-review
-items from `2026-07-18-page-map-mind-map.md` (the plan; direction, tooling,
-and mockup all approved there) into buildable decisions, grounded in a
+**Status:** implemented 2026-07-18 in daemon PR
+[7xuanlu/wenlan#364](https://github.com/7xuanlu/wenlan/pull/364), hardened
+by a two-family pre-merge review (contract review: holds; adversarial
+review: 7 findings → 8 fixes, folded into the text below as "review:"
+notes). Resolves the 22 Codex gap-review items from
+`2026-07-18-page-map-mind-map.md` (the plan; direction, tooling, and
+mockup all approved there) into buildable decisions, grounded in a
 conventions recon of the daemon repo (`7xuanlu/wenlan`, file:line anchors
 below are into that repo). Implementation target: `crates/wenlan-server`
 (+ DTOs in `crates/wenlan-types`), migration 73.
@@ -76,13 +80,18 @@ tombstones like `refinement_queue` (db.rs:2932-2941), no new tombstone table.
 
 - **Node id** is the *occurrence*: the same memory can appear under two
   parents as two nodes.
-- **`fingerprint`** = `"{ref_kind}:{ref_id}@{parent_ref}"` where
-  `parent_ref` is the parent's own `ref_kind:ref_id` (root: `"~"`). The
-  unique index makes it the dedup AND tombstone key in one: an improve pass
-  proposing something previously dismissed hits the same fingerprint row
-  (status `dismissed`) and is skipped — a fresh uuid cannot bypass a
-  tombstone. Duplicate leaves under *different* parents get different
-  fingerprints and are allowed (plan's duplicate-leaf convention).
+- **`fingerprint`** = `ref_kind`, `ref_id`, `parent_ref` joined by the unit
+  separator U+001F (root `parent_ref` = `"~"`; otherwise `parent_ref` is
+  the parent's own `ref_kind` + U+001F + `ref_id`). `ref_kind`/`ref_id`
+  containing U+001F are rejected with 422, which makes the encoding
+  unambiguous. (review: the earlier `"{ref_kind}:{ref_id}@{parent_ref}"`
+  format allowed delimiter collisions between distinct identities —
+  unescaped `:`/`@` in ref_ids.) The unique index makes it the dedup AND
+  tombstone key in one: an improve pass proposing something previously
+  dismissed hits the same fingerprint row (status `dismissed`) and is
+  skipped — a fresh uuid cannot bypass a tombstone. Duplicate leaves under
+  *different* parents get different fingerprints and are allowed (plan's
+  duplicate-leaf convention).
 - Dismissal is `status='dismissed'` on the existing row (retained, hidden by
   default) — the daemon's status-as-tombstone idiom
   (`resolve_refinement_if_open`, db.rs:21576-21592).
@@ -104,6 +113,16 @@ suggested --dismiss-> dismissed (tombstone)
   `ref_id` against its table. Deleted/merged backing objects render ghosted
   with client-side relink/remove actions (Codex #14); nothing cascades from
   content tables into the map in v1.
+- **Dismissed is terminal**: every PATCH or DELETE against a row with
+  `status='dismissed'` → 422, no exceptions. (review: a re-parent PATCH on
+  a dismissed node used to recompute its fingerprint, freeing the old key
+  and letting a re-create bypass the tombstone.)
+- **Dismissal cannot orphan**: dismissing/deleting a node with live
+  (non-dismissed) children → 422 (dismiss leaves-first; the client may
+  implement subtree dismissal bottom-up); creating a node under a
+  dismissed parent, or an edge with a dismissed endpoint → 422. (review:
+  previously a dismissed mid-tree node vanished from the default GET while
+  its children still referenced it — an invalid graph for the client.)
 
 ### Content ownership (Codex #3)
 
@@ -152,14 +171,23 @@ is version-skew surface in a repo with no handshake.
   merge trivially because the dragged nodes' new x/y are the user's intent.
 - Client op ids / idempotency keys: **deferred** — conditional writes make
   replays visible as 409s; revisit only if real duplicate-write bugs appear.
+- First mutation against an absent map: the handler initializes the map
+  (creating the `page_maps` row + root) and substitutes the freshly-created
+  revision for the client's `base_revision` ONLY when this call actually
+  created the map (init returns created-vs-already-existed atomically, off
+  the INSERT's rows_affected); if the map already existed the client's
+  `base_revision` is enforced as usual (stale → 409). (review: closes a
+  check-then-act window where two concurrent first-writers both bypassed
+  CAS.)
 
 ### Improve pass (Codex #8, #21)
 
-- **On-demand**: `POST .../map/improve` runs synchronously and returns
-  `{ revision, suggested_nodes, suggested_edges, skipped_tombstoned }`
-  inline — the `/api/steep` precedent (routes.rs:670-721). No job ids; the
-  daemon has no observable-job infrastructure and this spec does not invent
-  one.
+- **On-demand**: `POST .../map/improve` runs synchronously and returns the
+  full refreshed map — same envelope as `GET`, current revision included —
+  rather than a `{ suggested_nodes, suggested_edges, skipped_tombstoned }`
+  delta: one render path, and the suggestions are visible in the map
+  payload as `status='suggested'` rows. No job ids; the daemon has no
+  observable-job infrastructure and this spec does not invent one.
 - **Proactive**: new `Phase::PageMaps` in the trigger-phase matrix
   (wenlan-core refinery/mod.rs:376-414), riding the existing `Idle` trigger.
   Skips pages whose `last_modified <= generated_at`. Logged via
@@ -171,6 +199,24 @@ is version-skew surface in a repo with no handshake.
 - **Scheduling caps**: one page per pass iteration, most-recently-modified
   first; per-pass budget of 5 pages; nothing runs when the auto-suggest
   config flag is off.
+- **Deterministic-only in v1**: suggestions come from the page's real
+  fields only — its entity, ATX headings as `section` nodes,
+  `source_memory_ids` as memory nodes, resolved `[[wikilinks]]` as page
+  nodes + suggested cross-link edges. No LLM call; an LLM enrichment step
+  can layer behind the same insert-only accessors later.
+- **Caps**: 20 candidates per category (memories, sections, wikilinks) per
+  pass.
+- **Watermark**: `generated_at` stores the page's `last_modified` captured
+  at pass start, stamped only when the pass runs to completion; a
+  CAS-conflict early stop leaves it unstamped (the idempotent re-run next
+  tick resumes cheaply). The scheduler compares parsed instants, never
+  strings, failing safe to "eligible". (review: stamping wall-clock "now"
+  even on early stop both skipped conflicted pages forever and hid edits
+  made during a pass.)
+- **Scan window**: the proactive pass scans the newest 200 active pages
+  per tick; older pages rely on the explicit POST improve. A persistent
+  cursor is the revisit if proactive coverage on larger corpora starts to
+  matter.
 
 ### Auto-suggest preference (Codex #16)
 
@@ -234,6 +280,10 @@ create (`BadRequest`), 404 unknown page/node/edge (`NotFound`), 409 revision
 conflict (`Conflict`), 422 invariant violations (`ValidationError`), 500
 internal. The app distinguishes by status code; a machine-readable `code`
 field is deferred until a case appears that status + context can't express.
+Creating a node/edge whose fingerprint (or edge key) is tombstoned → 409 (a
+state conflict; `DELETE .../map` is the documented escape hatch).
+Present-but-invalid enum values (`ref_kind`, edge `kind`, `status`) → 422;
+only structurally missing/malformed fields are 400.
 
 ### Compatibility & migration (Codex #1, #6)
 
@@ -262,6 +312,10 @@ field is deferred until a case appears that status + context can't express.
   synchronous (>~2s p95 on real pages).
 - **Machine-readable error codes** (#17): trigger — a UX flow needs to
   distinguish two 422s.
+- **LLM-sourced suggestions**: trigger — the deterministic pass proves
+  insufficient on real pages.
+- **Proactive-scan persistent cursor**: trigger — corpora meaningfully
+  larger than 200 active pages where proactive coverage matters.
 
 Frontend-side items (#18 UX matrix, #19 a11y, #20 scale budgets, #22 i18n
 beyond strings) are Map-tab work and land with the UI phase, not here.
