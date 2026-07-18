@@ -63,10 +63,15 @@ vi.mock("sigma", () => {
     graphToViewport(coords: { x: number; y: number }) {
       return { x: coords.x * 6, y: coords.y * 6 };
     }
-    camera = { ratio: 1, setState: vi.fn() };
+    camera = { ratio: 1, setState: vi.fn(), getBoundedRatio: (r: number) => r };
     getCamera() {
       return this.camera;
     }
+    getViewportZoomedState = vi.fn((pos: { x: number; y: number }, ratio: number) => ({
+      x: pos.x,
+      y: pos.y,
+      ratio,
+    }));
     refresh() {}
     setSetting(_key: string, _value: unknown) {}
     kill() {}
@@ -242,6 +247,41 @@ describe("AtlasView", () => {
     // Hover re-arms the moment the drag ends.
     instance.handlers.get("enterNode")?.({ node: "e2" });
     expect(container.style.cursor).toBe("pointer");
+  });
+
+  it("applies every wheel delta directly to the camera — no animated stepped zoom", async () => {
+    mockConnectedPair();
+
+    renderWithQuery(<AtlasView />);
+    await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
+    const instance = capturedSigmaInstances[0];
+    const mouseCaptor = instance.getMouseCaptor();
+    const preventSigmaDefault = vi.fn();
+
+    // The mount zoom-out already called setState once; count from here.
+    instance.camera.setState.mockClear();
+    instance.camera.ratio = 1;
+    mouseCaptor.handlers.get("wheel")?.({
+      x: 100,
+      y: 50,
+      delta: 1,
+      preventSigmaDefault,
+      original: { deltaY: -120, deltaMode: 0, ctrlKey: false },
+    });
+
+    // Sigma's own eased-lurch handler must be suppressed...
+    expect(preventSigmaDefault).toHaveBeenCalled();
+    // ...and the camera set synchronously with d3-zoom's delta scale:
+    // ratio 1 * 2^(-120 * 0.002) — zoomed toward the cursor.
+    expect(instance.getViewportZoomedState).toHaveBeenCalledWith(
+      { x: 100, y: 50 },
+      Math.pow(2, -120 * 0.002),
+    );
+    expect(instance.camera.setState).toHaveBeenCalledWith({
+      x: 100,
+      y: 50,
+      ratio: Math.pow(2, -120 * 0.002),
+    });
   });
 
   it("suppresses onNodeClick when clickNode follows a moved drag", async () => {

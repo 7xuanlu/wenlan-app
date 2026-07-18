@@ -272,6 +272,28 @@ export default function AtlasView({ onNodeClick }: AtlasViewProps) {
       else sim.alphaTarget(0);
     });
 
+    // Direct wheel zoom. Sigma's default quantizes the gesture into 1.7x
+    // steps eased over 250ms and DROPS any wheel event landing within
+    // zoomDuration/5 = 50ms of the last accepted one — a trackpad's
+    // 60-120 events/s collapse to ~20 animated lurches, which reads as a
+    // low refresh rate (measured: paint cadence stays 120fps; only the
+    // camera moves in steps). The old graph's d3-zoom applies every delta
+    // 1:1 in the same frame; do the same, with d3-zoom's own delta scale,
+    // zooming toward the cursor.
+    mouseCaptor.on("wheel", (e) => {
+      e.preventSigmaDefault();
+      const we = e.original as WheelEvent;
+      // d3-zoom wheelDelta: pixel-mode deltas x0.002, line-mode x0.05,
+      // page-mode x1, and pinch (ctrlKey wheel on mac) x10. Camera ratio
+      // is inverse scale, so positive deltaY (scroll down) grows it.
+      const scale = we.deltaMode === 1 ? 0.05 : we.deltaMode ? 1 : 0.002;
+      const factor = Math.pow(2, we.deltaY * scale * (we.ctrlKey ? 10 : 1));
+      const camera = renderer.getCamera();
+      const newRatio = camera.getBoundedRatio(camera.ratio * factor);
+      if (newRatio === camera.ratio) return;
+      camera.setState(renderer.getViewportZoomedState({ x: e.x, y: e.y }, newRatio));
+    });
+
     return () => {
       sim.stop();
       simRef.current = null;
