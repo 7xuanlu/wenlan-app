@@ -58,6 +58,13 @@ per-node accept/dismiss/pin stays as the artifact specifies, and AI never
 rewrites a curated node. The daemon API therefore includes the
 create/update/delete surface from day one, with `ref` required on create.
 
+**Auto-suggest is user-configurable** (Lucian, 2026-07-18): a setting
+toggles whether ghost suggestions appear automatically (daemon may run map
+passes proactively) or only on demand via "✦ Improve map". Default: on.
+The setting gates only the proactive pass — `improve_page_map` stays
+available either way. Surface the toggle in Settings and echo current state
+on the map toolbar.
+
 Council-specified on-ramp (so the ref requirement doesn't make the canvas
 feel broken): typing loose text into a new node auto-creates a **backing
 memory through the existing capture pipeline** — visible, undoable, subject
