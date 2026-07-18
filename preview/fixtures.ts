@@ -12,7 +12,9 @@ import type {
   RecentActivityItem,
   RefinementProposalSummary,
   MemoryItem,
+  Entity,
   EntityDetail,
+  RelationWithEntity,
   DistillReviewResponse,
   PageChange,
   ListMemoryRevisionsResponse,
@@ -689,6 +691,295 @@ export const REVIEW_ENTITIES: Record<string, EntityDetail> = {
     relations: [],
   },
 };
+
+// --- AtlasView / FocusGraph preview fixture ---
+// 16 entities spanning the 5 validated palette slots (project/technology/
+// organization/person/concept) plus place (folds to neutral), so every slot
+// swatch has a rendered proof. gk-remote-office takes no relation below,
+// exercising the empty-focus case. The four gk-z* entities form a second
+// community (Zettelkasten is its own degree peak — Knowledge Graph ties it
+// at 4 but never exceeds it), so the Atlas cartography layer renders two
+// hulls, a minor region label, and the amber bridge edge.
+const GRAPH_ENTITY_SEED: { id: string; name: string; entity_type: string }[] = [
+  { id: "gk-wenlan", name: "Wenlan", entity_type: "project" },
+  { id: "gk-desktop", name: "Wenlan Desktop", entity_type: "project" },
+  { id: "gk-rust", name: "Rust", entity_type: "technology" },
+  { id: "gk-typescript", name: "TypeScript", entity_type: "technology" },
+  { id: "gk-tauri", name: "Tauri", entity_type: "technology" },
+  { id: "gk-sqlite", name: "SQLite", entity_type: "technology" },
+  { id: "gk-anthropic", name: "Anthropic", entity_type: "organization" },
+  { id: "gk-github", name: "GitHub", entity_type: "organization" },
+  { id: "gk-lucian", name: "Lucian", entity_type: "person" },
+  { id: "gk-ada", name: "Ada", entity_type: "person" },
+  { id: "gk-knowledge-graph", name: "Knowledge Graph", entity_type: "concept" },
+  { id: "gk-remote-office", name: "Remote Office", entity_type: "place" },
+  { id: "gk-zettel", name: "Zettelkasten", entity_type: "concept" },
+  { id: "gk-znotes", name: "Field Notes", entity_type: "concept" },
+  { id: "gk-zobsidian", name: "Obsidian", entity_type: "technology" },
+  { id: "gk-zmochi", name: "Mochi", entity_type: "technology" },
+];
+
+// [relationId, fromId, verb, toId] — mirrored below onto both endpoints'
+// detail.relations (outgoing on the source's list, incoming on the
+// target's), the same way the real daemon returns one relation from either
+// entity's perspective. 20 tuples, 11 distinct verbs, both directions.
+const GRAPH_RELATION_SEED: [string, string, string, string][] = [
+  ["gkr-1", "gk-wenlan", "uses", "gk-rust"],
+  ["gkr-2", "gk-wenlan", "uses", "gk-typescript"],
+  ["gkr-3", "gk-desktop", "uses", "gk-tauri"],
+  ["gkr-4", "gk-desktop", "uses", "gk-sqlite"],
+  ["gkr-5", "gk-desktop", "depends_on", "gk-wenlan"],
+  ["gkr-6", "gk-lucian", "maintains", "gk-wenlan"],
+  ["gkr-7", "gk-lucian", "maintains", "gk-desktop"],
+  ["gkr-8", "gk-ada", "contributes_to", "gk-desktop"],
+  ["gkr-9", "gk-wenlan", "hosted_on", "gk-github"],
+  ["gkr-10", "gk-desktop", "hosted_on", "gk-github"],
+  ["gkr-11", "gk-lucian", "works_with", "gk-anthropic"],
+  ["gkr-12", "gk-wenlan", "implements", "gk-knowledge-graph"],
+  ["gkr-13", "gk-desktop", "visualizes", "gk-knowledge-graph"],
+  ["gkr-14", "gk-ada", "works_with", "gk-lucian"],
+  ["gkr-15", "gk-knowledge-graph", "relates_to", "gk-rust"],
+  ["gkr-16", "gk-zettel", "organizes", "gk-znotes"],
+  ["gkr-17", "gk-zobsidian", "implements", "gk-zettel"],
+  ["gkr-18", "gk-zmochi", "relates_to", "gk-zettel"],
+  ["gkr-19", "gk-znotes", "hosted_on", "gk-zobsidian"],
+  // The single inter-community edge — the cartography layer's bridge.
+  ["gkr-20", "gk-knowledge-graph", "inspired_by", "gk-zettel"],
+];
+
+const graphEntitySeedById = new Map(GRAPH_ENTITY_SEED.map((e) => [e.id, e]));
+
+export const GRAPH_ENTITIES: Entity[] = GRAPH_ENTITY_SEED.map((seed, i) => ({
+  id: seed.id,
+  name: seed.name,
+  entity_type: seed.entity_type,
+  // Two spaces mirroring the two communities — feeds the Atlas Space selector.
+  domain: seed.id.startsWith("gk-z") ? "notes" : "wenlan-dev",
+  source_agent: "claude-code",
+  confidence: 0.9,
+  confirmed: true,
+  created_at: 1_752_000_000 + i * 1000,
+  updated_at: 1_752_000_000 + i * 1000,
+}));
+
+const graphEntityById = new Map(GRAPH_ENTITIES.map((e) => [e.id, e]));
+
+export const GRAPH_DETAILS: Record<string, EntityDetail> = Object.fromEntries(
+  GRAPH_ENTITY_SEED.map((seed) => {
+    const relations: RelationWithEntity[] = [];
+    for (const [id, fromId, verb, toId] of GRAPH_RELATION_SEED) {
+      const isSource = fromId === seed.id;
+      const isTarget = toId === seed.id;
+      if (!isSource && !isTarget) continue;
+      const other = graphEntitySeedById.get(isSource ? toId : fromId)!;
+      relations.push({
+        id,
+        relation_type: verb,
+        direction: isSource ? "outgoing" : "incoming",
+        entity_id: other.id,
+        entity_name: other.name,
+        entity_type: other.entity_type,
+        source_agent: "claude-code",
+        created_at: 1_752_000_000,
+      });
+    }
+    return [seed.id, { entity: graphEntityById.get(seed.id)!, observations: [], relations }];
+  }),
+);
+
+// --- Graph memories preview fixture (served by preview/mocks/core.ts) ---
+// 8 memories tied to GRAPH_ENTITY_SEED ids: five resolve via entity_id, two
+// (gm-6, gm-7) resolve only through the title-contains-entity-name fallback
+// (entity_id unset), and one (gm-8) matches no entity at all — mirrors a
+// stray memory the graph correctly drops rather than rendering as an orphan.
+export const GRAPH_MEMORIES: MemoryItem[] = [
+  {
+    source_id: "gm-1",
+    title: "Wenlan runs fully local, no cloud dependency for recall",
+    content: "The daemon never sends memory content off-device for core recall.",
+    summary: null,
+    memory_type: "fact",
+    domain: "architecture",
+    source_agent: "claude-code",
+    confidence: 0.95,
+    confirmed: true,
+    stability: "confirmed",
+    pinned: false,
+    supersedes: null,
+    last_modified: 1_752_100_000,
+    chunk_count: 1,
+    entity_id: "gk-wenlan",
+  },
+  {
+    source_id: "gm-2",
+    title: "Rust's ownership model prevents data races at compile time",
+    content: "No garbage collector; the borrow checker enforces one mutable reference at a time.",
+    summary: null,
+    memory_type: "fact",
+    domain: "engineering",
+    source_agent: "claude-code",
+    confidence: 0.92,
+    confirmed: true,
+    stability: "confirmed",
+    pinned: false,
+    supersedes: null,
+    last_modified: 1_752_105_000,
+    chunk_count: 1,
+    entity_id: "gk-rust",
+  },
+  {
+    source_id: "gm-3",
+    title: "Tauri IPC bridge marshals commands over a typed invoke() boundary",
+    content: "Frontend calls invoke(cmd, args); Rust commands register via tauri::generate_handler!.",
+    summary: null,
+    memory_type: "fact",
+    domain: "engineering",
+    source_agent: "codex",
+    confidence: 0.8,
+    confirmed: false,
+    stability: "learned",
+    pinned: false,
+    supersedes: null,
+    last_modified: 1_752_110_000,
+    chunk_count: 1,
+    entity_id: "gk-tauri",
+  },
+  {
+    source_id: "gm-4",
+    title: "Lucian prefers Zed for Rust work, VS Code for everything else",
+    content: "Switched to Zed mid-2026 for the faster LSP experience on large Rust crates.",
+    summary: null,
+    memory_type: "preference",
+    domain: null,
+    source_agent: "claude-code",
+    confidence: 0.9,
+    confirmed: true,
+    stability: "confirmed",
+    pinned: false,
+    supersedes: null,
+    last_modified: 1_752_115_000,
+    chunk_count: 1,
+    entity_id: "gk-lucian",
+    is_recap: true,
+  },
+  {
+    source_id: "gm-5",
+    title: "Anthropic model routing prefers pinned sources over auto fallback",
+    content: "A pinned_degraded result means the pin isn't configured yet and the chain fell back.",
+    summary: null,
+    memory_type: "fact",
+    domain: "engineering",
+    source_agent: "claude-code",
+    confidence: 0.7,
+    confirmed: false,
+    stability: "new",
+    pinned: false,
+    supersedes: null,
+    last_modified: 1_752_120_000,
+    chunk_count: 1,
+    entity_id: "gk-anthropic",
+  },
+  {
+    source_id: "gm-6",
+    title: "GitHub Actions flakiness traced to a shared runner cache",
+    content: "Intermittent CI failures cleared up after pinning the cache key to the lockfile hash.",
+    summary: null,
+    memory_type: "gotcha",
+    domain: "engineering",
+    source_agent: "codex",
+    confidence: 0.75,
+    confirmed: false,
+    stability: "new",
+    pinned: false,
+    supersedes: null,
+    last_modified: 1_752_125_000,
+    chunk_count: 1,
+    // No entity_id — resolves via the title→entity-name fallback (GitHub).
+  },
+  {
+    source_id: "gm-7",
+    title: "SQLite vacuum reclaims space but blocks writers for its duration",
+    content: "Run VACUUM during low-traffic windows; it rewrites the whole file.",
+    summary: null,
+    memory_type: "fact",
+    domain: "engineering",
+    source_agent: "claude-code",
+    confidence: 0.88,
+    confirmed: true,
+    stability: "confirmed",
+    pinned: false,
+    supersedes: null,
+    last_modified: 1_752_130_000,
+    chunk_count: 1,
+    // No entity_id — resolves via the title→entity-name fallback (SQLite).
+  },
+  {
+    source_id: "gm-8",
+    title: "Stray note with no matching graph entity",
+    content: "Never linked to any knowledge-graph entity — exercises the drop-if-unlinked path.",
+    summary: null,
+    memory_type: "fact",
+    domain: null,
+    source_agent: "claude-code",
+    confidence: 0.5,
+    confirmed: false,
+    stability: "new",
+    pinned: false,
+    supersedes: null,
+    last_modified: 1_752_135_000,
+    chunk_count: 1,
+  },
+];
+
+// 3 fixture pages: (1) anchored to gk-wenlan via entity_id, citing 2 memories;
+// (2) anchored to gk-remote-office — the entity that otherwise has zero
+// relations, so this page gives it its first graph link; (3) no anchor
+// entity at all, citing only gm-1, so it appears only when both the Pages
+// and Memories toggles are on (needs gm-1's node to exist to link to).
+export const GRAPH_PAGES: Page[] = [
+  {
+    id: "page-wenlan-overview",
+    title: "Wenlan Project Overview",
+    summary: null,
+    content: "# Wenlan\n\nLocal-first personal memory layer: daemon, desktop shell, and knowledge graph.",
+    entity_id: "gk-wenlan",
+    domain: "architecture",
+    source_memory_ids: ["gm-1", "gm-2"],
+    version: 1,
+    status: "active",
+    created_at: "2026-07-10T09:00:00+00:00",
+    last_compiled: "2026-07-12T10:00:00+00:00",
+    last_modified: "2026-07-12T10:00:00+00:00",
+  },
+  {
+    id: "page-remote-office",
+    title: "Remote Office Setup",
+    summary: null,
+    content: "# Remote Office\n\nNotes on the remote-office arrangement.",
+    entity_id: "gk-remote-office",
+    domain: null,
+    source_memory_ids: [],
+    version: 1,
+    status: "active",
+    created_at: "2026-07-11T09:00:00+00:00",
+    last_compiled: "2026-07-11T09:00:00+00:00",
+    last_modified: "2026-07-11T09:00:00+00:00",
+  },
+  {
+    id: "page-distillation-pipeline",
+    title: "Distillation Pipeline Overview",
+    summary: null,
+    content: "# Distillation Pipeline\n\nHow memories get synthesized into pages.",
+    entity_id: null,
+    domain: null,
+    source_memory_ids: ["gm-1"],
+    version: 1,
+    status: "active",
+    created_at: "2026-07-09T09:00:00+00:00",
+    last_compiled: "2026-07-13T09:00:00+00:00",
+    last_modified: "2026-07-13T09:00:00+00:00",
+  },
+];
 
 export const REVIEW_DISTILL: DistillReviewResponse = {
   pages_created: 0,

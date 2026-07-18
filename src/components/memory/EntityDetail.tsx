@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
@@ -16,6 +16,9 @@ import {
   type RelationWithEntity,
 } from "../../lib/tauri";
 import { MetadataRow, RailPanelTitle } from "./MemoryDetailPrimitives";
+import FocusGraph from "./FocusGraph";
+import AtlasView from "./AtlasView";
+import { slotForEntityType } from "../../lib/graph/palette";
 
 interface EntityDetailProps {
   entityId: string;
@@ -23,16 +26,6 @@ interface EntityDetailProps {
   onEntityClick: (entityId: string) => void;
   onMemoryClick?: (sourceId: string) => void;
 }
-
-interface GraphNeighbor {
-  entityId: string;
-  name: string;
-  entityType: string;
-  verbs: string[];
-  direction: "incoming" | "outgoing";
-}
-
-const GRAPH_NODE_CAP = 8;
 
 function timeAgo(ts: number, locale: string): string {
   const diff = Math.floor(Date.now() / 1000 - ts);
@@ -57,111 +50,6 @@ function monogram(name: string): string {
     .toUpperCase();
 }
 
-interface EntityGraphProps {
-  name: string;
-  neighbors: GraphNeighbor[];
-  hiddenCount: number;
-  onEntityClick: (entityId: string) => void;
-}
-
-/** One-hop connection map: this entity centered, incoming relations on the
- *  left, outgoing on the right. DOM buttons over an SVG edge layer so every
- *  neighbor stays keyboard-reachable (unlike the canvas ConstellationMap). */
-function EntityGraph({ name, neighbors, hiddenCount, onEntityClick }: EntityGraphProps) {
-  const { t } = useTranslation();
-  const incoming = neighbors.filter((n) => n.direction === "incoming");
-  const outgoing = neighbors.filter((n) => n.direction === "outgoing");
-  const maxSide = Math.max(incoming.length, outgoing.length);
-  const height = Math.min(280, 128 + maxSide * 30);
-
-  const place = (list: GraphNeighbor[], side: "left" | "right") =>
-    list.map((n, i) => {
-      const y = ((i + 1) / (list.length + 1)) * 100;
-      const spread = (i % 2) * 6;
-      const x = side === "right" ? 76 - spread : 24 + spread;
-      return { ...n, x, y };
-    });
-  const placed = [...place(incoming, "left"), ...place(outgoing, "right")];
-
-  return (
-    <div
-      className="entity-graph"
-      style={{ height }}
-      role="group"
-      aria-label={t("entityDetail.graphLabel", { name })}
-    >
-      <svg
-        className="entity-graph-edges"
-        viewBox="0 0 100 100"
-        preserveAspectRatio="none"
-        aria-hidden="true"
-      >
-        {placed.map((n) => (
-          <line
-            key={`edge-${n.entityId}-${n.direction}`}
-            x1="50"
-            y1="50"
-            x2={n.x}
-            y2={n.y}
-            vectorEffect="non-scaling-stroke"
-          />
-        ))}
-      </svg>
-      {incoming.length > 0 && (
-        <span className="entity-graph-caption is-left" aria-hidden="true">
-          ← {t("entityDetail.incoming")}
-        </span>
-      )}
-      {outgoing.length > 0 && (
-        <span className="entity-graph-caption is-right" aria-hidden="true">
-          {t("entityDetail.outgoing")} →
-        </span>
-      )}
-      {placed.map((n) => (
-        <span
-          key={`verb-${n.entityId}-${n.direction}`}
-          className="entity-graph-verb"
-          style={{ left: `${50 + (n.x - 50) * 0.55}%`, top: `${50 + (n.y - 50) * 0.55}%` }}
-          aria-hidden="true"
-        >
-          {n.verbs[0]}
-          {n.verbs.length > 1 ? ` +${n.verbs.length - 1}` : ""}
-        </span>
-      ))}
-      <div className="entity-graph-center" aria-hidden="true">
-        <span className="entity-graph-center-dot" />
-        <span className="entity-graph-center-name">{name}</span>
-      </div>
-      {placed.map((n) => {
-        const isIncoming = n.direction === "incoming";
-        const dirLabel = t(isIncoming ? "entityDetail.incoming" : "entityDetail.outgoing");
-        return (
-        <button
-          key={`node-${n.entityId}-${n.direction}`}
-          type="button"
-          className={`entity-graph-node ${isIncoming ? "is-left" : "is-right"}`}
-          style={{ left: `${n.x}%`, top: `${n.y}%` }}
-          onClick={() => onEntityClick(n.entityId)}
-          title={`${n.verbs.join(", ")} — ${n.name}`}
-          aria-label={`${n.name} (${n.entityType}) · ${dirLabel} · ${n.verbs.join(", ")}`}
-        >
-          <span className="entity-graph-node-dot" aria-hidden="true" />
-          <span className="entity-graph-node-text">
-            <span className="entity-graph-node-name">{n.name}</span>
-            <span className="entity-graph-node-type">{n.entityType}</span>
-          </span>
-        </button>
-        );
-      })}
-      {hiddenCount > 0 && (
-        <span className="entity-graph-more">
-          {t("entityDetail.moreConnections", { count: hiddenCount })}
-        </span>
-      )}
-    </div>
-  );
-}
-
 export default function EntityDetail({ entityId, onBack, onEntityClick, onMemoryClick }: EntityDetailProps) {
   const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
@@ -170,8 +58,27 @@ export default function EntityDetail({ entityId, onBack, onEntityClick, onMemory
   const [newObs, setNewObs] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [graphOpen, setGraphOpen] = useState(false);
+  // Resets to "focus" every time the overlay opens — no persistence across opens.
+  const [overlayMode, setOverlayMode] = useState<"focus" | "map">("focus");
+  // Artifact screen 02's "Show verbs" chip — on by default, reset on open.
+  const [showVerbs, setShowVerbs] = useState(true);
   // Set when Escape cancels an edit, so the unmount blur doesn't save the draft
   const cancelEditRef = useRef(false);
+
+  useEffect(() => {
+    if (!graphOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        // Capture phase: wins the race against Main's window listener,
+        // which treats Escape as "back" while view.kind === "entity".
+        e.stopPropagation();
+        setGraphOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [graphOpen]);
 
   const locale = i18n.resolvedLanguage ?? i18n.language;
 
@@ -249,8 +156,8 @@ export default function EntityDetail({ entityId, onBack, onEntityClick, onMemory
     [detail?.observations],
   );
 
-  // Ledger shows raw relation records (curation needs to see duplicates);
-  // only the graph aggregates — its neighbor Map dedupes per (entity, direction).
+  // Ledger shows raw relation records (curation needs to see duplicates); the
+  // graph (FocusGraph) does its own aggregation from the GraphModel.
   const relations = useMemo(() => detail?.relations ?? [], [detail?.relations]);
 
   const sortedRelations = useMemo(
@@ -265,27 +172,12 @@ export default function EntityDetail({ entityId, onBack, onEntityClick, onMemory
     [relations],
   );
 
-  // One graph node per (neighbor, direction); verbs collapse onto the edge.
-  const neighbors = useMemo(() => {
-    const map = new Map<string, GraphNeighbor>();
-    for (const rel of relations) {
-      const direction = rel.direction === "incoming" ? ("incoming" as const) : ("outgoing" as const);
-      const key = `${rel.entity_id}:${direction}`;
-      const existing = map.get(key);
-      if (existing) {
-        if (!existing.verbs.includes(rel.relation_type)) existing.verbs.push(rel.relation_type);
-      } else {
-        map.set(key, {
-          entityId: rel.entity_id,
-          name: rel.entity_name,
-          entityType: rel.entity_type,
-          verbs: [rel.relation_type],
-          direction,
-        });
-      }
-    }
-    return Array.from(map.values());
-  }, [relations]);
+  // Overlay toolbar count: distinct neighbor entities, self-loops excluded —
+  // an entity related both ways still counts once.
+  const neighborCount = useMemo(
+    () => new Set(relations.filter((r) => r.entity_id !== entityId).map((r) => r.entity_id)).size,
+    [relations, entityId],
+  );
 
   if (!detail) {
     return (
@@ -319,15 +211,6 @@ export default function EntityDetail({ entityId, onBack, onEntityClick, onMemory
 
   const { entity } = detail;
   const space = entity.space ?? entity.domain;
-  // Cap per direction so one lopsided side can't crowd the other out of the map
-  const incomingAll = neighbors.filter((n) => n.direction === "incoming");
-  const outgoingAll = neighbors.filter((n) => n.direction === "outgoing");
-  const outgoingShown = Math.min(outgoingAll.length, GRAPH_NODE_CAP - Math.min(incomingAll.length, Math.ceil(GRAPH_NODE_CAP / 2)));
-  const shownNeighbors = [
-    ...incomingAll.slice(0, GRAPH_NODE_CAP - outgoingShown),
-    ...outgoingAll.slice(0, outgoingShown),
-  ];
-  const hiddenCount = neighbors.length - shownNeighbors.length;
 
   const startEdit = (obs: Observation) => {
     setEditingObs(obs.id);
@@ -361,6 +244,7 @@ export default function EntityDetail({ entityId, onBack, onEntityClick, onMemory
   );
 
   return (
+    <>
     <main className="memory-detail-dossier" aria-label={t("entityDetail.dossierLabel")}>
       <header className="entity-dossier-header">
         <button
@@ -557,19 +441,31 @@ export default function EntityDetail({ entityId, onBack, onEntityClick, onMemory
           <div className="memory-detail-card">
             <div className="memory-detail-card-header">
               <h3 className="memory-detail-section-title">{t("entityDetail.connectionsTitle")}</h3>
-              {relations.length > 0 && <span className="entity-count">{relations.length}</span>}
+              <div className="memory-detail-actions">
+                {relations.length > 0 && <span className="entity-count">{relations.length}</span>}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOverlayMode("focus");
+                    setShowVerbs(true);
+                    setGraphOpen(true);
+                  }}
+                  className="memory-detail-icon-button"
+                  aria-label={t("entityDetail.expandGraph")}
+                  title={t("entityDetail.expandGraph")}
+                >
+                  <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3" />
+                  </svg>
+                </button>
+              </div>
             </div>
             <div className="memory-detail-card-body">
               {relations.length === 0 ? (
                 <p className="entity-empty">{t("entityDetail.emptyConnections")}</p>
               ) : (
                 <>
-                  <EntityGraph
-                    name={entity.name}
-                    neighbors={shownNeighbors}
-                    hiddenCount={hiddenCount}
-                    onEntityClick={onEntityClick}
-                  />
+                  <FocusGraph detail={detail} onEntityClick={onEntityClick} />
                   <div className="entity-relation-list">{sortedRelations.map(relationRow)}</div>
                 </>
               )}
@@ -666,5 +562,263 @@ export default function EntityDetail({ entityId, onBack, onEntityClick, onMemory
         )}
       </div>
     </main>
+    {graphOpen && (
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={t("entityDetail.expandGraph")}
+        className="fixed inset-0 z-50"
+        style={{
+          background: "var(--mem-bg)",
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
+        {/* Artifact screen 02 toolbar: crumb ▸ chip · count · Atlas|Focus
+            segment. The close button lives in-row (left) so nothing floats
+            over the graph. */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            padding: "10px 16px",
+            borderBottom: "1px solid var(--mem-border)",
+            background: "var(--mem-surface)",
+            fontFamily: "var(--mem-font-body)",
+            flexWrap: "wrap",
+          }}
+        >
+          <button
+            type="button"
+            autoFocus
+            onClick={() => setGraphOpen(false)}
+            className="memory-detail-icon-button"
+            aria-label={t("common.close")}
+            title={t("common.close")}
+          >
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
+          </button>
+          <span style={{ fontSize: 12, color: "var(--mem-text-tertiary)" }}>
+            {t("focus.crumbAtlas")}
+            {overlayMode === "focus" && (
+              <>
+                {" ▸ "}
+                <b style={{ color: "var(--mem-text)", fontWeight: 500 }}>
+                  {t("focus.crumbFocus", { name: entity.name })}
+                </b>
+              </>
+            )}
+          </span>
+          {overlayMode === "focus" && (
+            <button
+              type="button"
+              aria-pressed={showVerbs}
+              onClick={() => setShowVerbs((v) => !v)}
+              style={{
+                fontSize: 12,
+                color: showVerbs ? "var(--mem-text)" : "var(--mem-text-secondary)",
+                border: `1px solid ${showVerbs ? "var(--mem-distilled-border)" : "var(--mem-border)"}`,
+                borderRadius: "var(--mem-radius-full)",
+                padding: "4px 12px",
+                background: showVerbs ? "var(--mem-indigo-bg)" : "transparent",
+                cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              {t("focus.showVerbs")}
+            </button>
+          )}
+          {overlayMode === "focus" && (
+            <span
+              style={{
+                marginLeft: "auto",
+                font: "400 11px var(--mem-font-mono)",
+                color: "var(--mem-text-tertiary)",
+              }}
+            >
+              {t("focus.neighbors", { count: neighborCount })}
+              {linkedMemories.length > 0 &&
+                ` · ${t("focus.memoriesCount", { count: linkedMemories.length })}`}
+            </span>
+          )}
+          <div
+            role="group"
+            aria-label={t("focus.viewSegmentLabel")}
+            style={{
+              display: "flex",
+              border: "1px solid var(--mem-border)",
+              borderRadius: "var(--mem-radius-md)",
+              overflow: "hidden",
+              marginLeft: overlayMode === "focus" ? 0 : "auto",
+            }}
+          >
+            {(["map", "focus"] as const).map((mode) => {
+              const on = overlayMode === mode;
+              return (
+                <button
+                  key={mode}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => setOverlayMode(mode)}
+                  style={{
+                    fontSize: 12,
+                    padding: "4px 14px",
+                    border: "none",
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    color: on ? "var(--mem-text)" : "var(--mem-text-tertiary)",
+                    fontWeight: on ? 500 : 400,
+                    background: on ? "var(--mem-hover-strong)" : "transparent",
+                  }}
+                >
+                  {mode === "map" ? t("focus.segAtlas") : t("focus.segFocus")}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            position: "relative",
+            // Artifact screen 02 focusgrid: stage + 300px entity panel.
+            ...(overlayMode === "focus"
+              ? { display: "grid", gridTemplateColumns: "minmax(0, 1fr) 300px" }
+              : {}),
+          }}
+        >
+          {overlayMode === "focus" ? (
+            <>
+              <div style={{ position: "relative", minWidth: 0 }}>
+                <FocusGraph
+                  detail={detail}
+                  onEntityClick={(id) => {
+                    setGraphOpen(false);
+                    onEntityClick(id);
+                  }}
+                  fill
+                  showVerbs={showVerbs}
+                  memoriesCount={linkedMemories.length}
+                />
+              </div>
+              <aside
+                aria-label={t("focus.panelLabel")}
+                style={{
+                  borderLeft: "1px solid var(--mem-border)",
+                  background: "var(--mem-surface)",
+                  padding: 18,
+                  overflowY: "auto",
+                  fontFamily: "var(--mem-font-body)",
+                }}
+              >
+                <div
+                  style={{
+                    font: "500 10px var(--mem-font-mono)",
+                    letterSpacing: "0.14em",
+                    textTransform: "uppercase",
+                    color: "var(--mem-text-tertiary)",
+                  }}
+                >
+                  <i
+                    aria-hidden="true"
+                    style={{ color: `var(--kg-${slotForEntityType(entity.entity_type)})`, fontStyle: "normal" }}
+                  >
+                    ●
+                  </i>
+                  {` ${entity.entity_type} · ${entity.confirmed ? t("focus.confirmedState") : t("focus.unconfirmedState")}`}
+                </div>
+                <h4 style={{ fontSize: 22, fontWeight: 600, margin: "6px 0 2px", color: "var(--mem-text)" }}>
+                  {entity.name}
+                </h4>
+                <div style={{ fontSize: 12, color: "var(--mem-text-tertiary)" }}>
+                  {t("focus.observations", { count: detail.observations.length })}
+                  {` · ${t("focus.relations", { count: detail.relations.length })}`}
+                  {` · ${t("focus.updatedAgo", { ago: timeAgo(entity.updated_at, locale) })}`}
+                </div>
+                <hr style={{ border: "none", borderTop: "1px solid var(--mem-detail-divider)", margin: "14px 0" }} />
+                <div>
+                  {detail.relations.map((rel) => (
+                    <button
+                      key={rel.id}
+                      type="button"
+                      onClick={() => {
+                        setGraphOpen(false);
+                        onEntityClick(rel.entity_id);
+                      }}
+                      style={{
+                        display: "flex",
+                        alignItems: "baseline",
+                        gap: 8,
+                        padding: "5px 0",
+                        fontSize: 12.5,
+                        width: "100%",
+                        background: "none",
+                        border: "none",
+                        cursor: "pointer",
+                        textAlign: "left",
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      <span
+                        aria-hidden="true"
+                        style={{
+                          width: 7,
+                          height: 7,
+                          borderRadius: "var(--mem-radius-full)",
+                          flex: "none",
+                          alignSelf: "center",
+                          background: `var(--kg-${slotForEntityType(rel.entity_type)})`,
+                        }}
+                      />
+                      <code
+                        style={{
+                          font: "500 10px var(--mem-font-mono)",
+                          color: "var(--mem-text-tertiary)",
+                          letterSpacing: "0.04em",
+                          minWidth: 96,
+                        }}
+                      >
+                        {rel.direction === "incoming" ? `${rel.relation_type} ←` : `${rel.relation_type} →`}
+                      </code>
+                      <span style={{ color: "var(--mem-text)" }}>{rel.entity_name}</span>
+                    </button>
+                  ))}
+                </div>
+                <hr style={{ border: "none", borderTop: "1px solid var(--mem-detail-divider)", margin: "14px 0" }} />
+                <button
+                  type="button"
+                  onClick={() => setGraphOpen(false)}
+                  style={{
+                    display: "inline-block",
+                    font: "500 12.5px var(--mem-font-body)",
+                    color: "var(--mem-text)",
+                    background: "var(--mem-indigo-bg)",
+                    border: "1px solid var(--mem-distilled-border)",
+                    borderRadius: "var(--mem-radius-md)",
+                    padding: "7px 14px",
+                    cursor: "pointer",
+                  }}
+                >
+                  {t("focus.openEntity")}
+                </button>
+              </aside>
+            </>
+          ) : (
+            <AtlasView
+              focusEntityId={entity.id}
+              onNodeClick={(id) => {
+                setGraphOpen(false);
+                onEntityClick(id);
+              }}
+            />
+          )}
+        </div>
+      </div>
+    )}
+    </>
   );
 }

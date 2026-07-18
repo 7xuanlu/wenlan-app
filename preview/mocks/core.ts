@@ -17,8 +17,14 @@ import {
   RECENT_CHANGES,
   MEMORY_REVISIONS,
   REGISTERED_SOURCES,
+  GRAPH_ENTITIES,
+  GRAPH_DETAILS,
+  GRAPH_MEMORIES,
+  GRAPH_PAGES,
 } from "../fixtures";
 import { liveInvoke } from "./live-invoke";
+
+let graphObsSeq = 0;
 
 export async function invoke(
   cmd: string,
@@ -130,8 +136,68 @@ export async function invoke(
       // synthesized id resolve instead of dying on a fixture-only `null`.
       return REVIEW_MEMORIES[sourceId] ?? liveInvoke(cmd, args);
     }
-    case "get_entity_detail_cmd":
-      return REVIEW_ENTITIES[args?.entityId as string] ?? null;
+    case "list_entities_cmd":
+      return GRAPH_ENTITIES;
+    case "list_memories_cmd":
+      return GRAPH_MEMORIES;
+    case "list_pages":
+      return GRAPH_PAGES;
+    case "get_entity_detail_cmd": {
+      const entityId = args?.entityId as string;
+      return GRAPH_DETAILS[entityId] ?? REVIEW_ENTITIES[entityId] ?? null;
+    }
+    // --- EntityDetail dossier mutations, for the "entity" preview mode ---
+    // Scoped to the GRAPH_DETAILS fixture only; a REVIEW_ENTITIES id (the
+    // review-queue dialogs never fire these commands) is a harmless no-op.
+    case "confirm_entity_cmd": {
+      const detail = GRAPH_DETAILS[args?.entityId as string];
+      if (detail) detail.entity.confirmed = args?.confirmed as boolean;
+      return null;
+    }
+    case "delete_entity_cmd": {
+      const entityId = args?.entityId as string;
+      delete GRAPH_DETAILS[entityId];
+      const idx = GRAPH_ENTITIES.findIndex((e) => e.id === entityId);
+      if (idx !== -1) GRAPH_ENTITIES.splice(idx, 1);
+      return null;
+    }
+    case "add_observation_cmd": {
+      const entityId = args?.entityId as string;
+      const id = `gk-obs-${graphObsSeq++}`;
+      GRAPH_DETAILS[entityId]?.observations.push({
+        id,
+        entity_id: entityId,
+        content: args?.content as string,
+        source_agent: (args?.sourceAgent as string) ?? null,
+        confidence: (args?.confidence as number) ?? null,
+        confirmed: false,
+        created_at: Math.floor(Date.now() / 1000),
+      });
+      return id;
+    }
+    case "update_observation_cmd": {
+      const observationId = args?.observationId as string;
+      for (const detail of Object.values(GRAPH_DETAILS)) {
+        const obs = detail.observations.find((o) => o.id === observationId);
+        if (obs) obs.content = args?.content as string;
+      }
+      return null;
+    }
+    case "delete_observation_cmd": {
+      const observationId = args?.observationId as string;
+      for (const detail of Object.values(GRAPH_DETAILS)) {
+        detail.observations = detail.observations.filter((o) => o.id !== observationId);
+      }
+      return null;
+    }
+    case "confirm_observation_cmd": {
+      const observationId = args?.observationId as string;
+      for (const detail of Object.values(GRAPH_DETAILS)) {
+        const obs = detail.observations.find((o) => o.id === observationId);
+        if (obs) obs.confirmed = args?.confirmed as boolean;
+      }
+      return null;
+    }
     // On-open evidence for topic/suggest_entity review dialogs — a plain
     // substring match against title/content, standing in for real search.
     case "search": {

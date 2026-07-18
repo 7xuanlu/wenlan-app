@@ -77,7 +77,7 @@ objc = "0.2"
 raw-window-handle = "0.6"
 
 # Workspace crates
-wenlan-types = "0.12.0"
+wenlan-types = "0.13.2"
 sysinfo = "0.33"
 pdf-extract = "0.10"
 zip = { version = "2.2", default-features = false, features = ["deflate"] }

@@ -22,6 +22,7 @@ src/components/memory/ConnectionsList.tsx	What Wenlan learned	1
 src/components/memory/ConstellationMap.tsx	Connection	1
 src/components/memory/ConstellationMap.tsx	Explore	1
 src/components/memory/ConstellationMap.tsx	Memory	1
+src/components/memory/ConstellationMap.tsx	Page	1
 src/components/memory/ConstellationMap.tsx	Your constellation will appear as knowledge grows	1
 src/components/memory/ContentRenderer.tsx	No content	2
 src/components/memory/DecisionLog.tsx	Alternatives considered	1

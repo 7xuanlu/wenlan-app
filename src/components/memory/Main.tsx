@@ -17,7 +17,7 @@ import EntityDetail from "./EntityDetail";
 import MemoryStream from "./MemoryStream";
 import type { SortMode } from "./MemoryStream";
 import HomePage from "./HomePage";
-import ConstellationMap from "./ConstellationMap";
+import AtlasView from "./AtlasView";
 import MemoryStatusBar from "./MemoryStatusBar";
 import MemorySearchResult from "./MemorySearchResult";
 import MemoryDetail from "./MemoryDetail";
@@ -217,6 +217,8 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
       navigateTo({ kind: "settings", section: "general" });
     } else if (entityId.startsWith("memory:")) {
       navigateTo({ kind: "memory", sourceId: entityId.replace("memory:", "") });
+    } else if (entityId.startsWith("page:")) {
+      navigateTo({ kind: "page", pageId: entityId.replace("page:", "") });
     } else {
       navigateTo({ kind: "entity", entityId });
     }
@@ -563,20 +565,7 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
             />
           ) : view.kind === "graph" ? (
             <div style={{ position: "relative", width: "100%", height: "100%" }}>
-              <ConstellationMap fullScreen onNodeClick={handleEntityClick} />
-              <button
-                onClick={navigateBack}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-colors duration-150 hover:bg-[var(--mem-hover-strong)]"
-                style={{
-                  position: "absolute", top: 12, left: 12, zIndex: 10,
-                  color: "var(--mem-text-secondary)", fontSize: 12, fontFamily: "var(--mem-font-body)",
-                  background: "var(--mem-surface)", border: "1px solid var(--mem-border)",
-                  cursor: "pointer", backdropFilter: "blur(8px)",
-                }}
-              >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-                {t("main.back")}
-              </button>
+              <AtlasView onNodeClick={handleEntityClick} onBack={navigateBack} />
             </div>
           ) : (
             <>

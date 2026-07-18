@@ -1,16 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Browser preview harness: page-detail citations, the review queue
-// (DistillReviewPanel + ReviewDialog), the first-run wizard, and settings.
+// (DistillReviewPanel + ReviewDialog), the first-run wizard, settings, and
+// the knowledge graph (AtlasView + EntityDetail/FocusGraph).
 //
 // The wizard and settings modes exist so pixel review of those surfaces is
 // cheap. Reviewing them used to mean building the Tauri app and clicking
 // through a real first run, which is why a whole redesign round once shipped
 // green tests and zero reviewed pixels. Every step and section is directly
 // addressable here.
-import { StrictMode, useState } from "react";
+import { StrictMode, Suspense, lazy, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import PageDetail from "../src/components/memory/PageDetail";
+import EntityDetail from "../src/components/memory/EntityDetail";
 import DistillReviewPanel from "../src/components/memory/DistillReviewPanel";
 import { SetupWizard, STEP_ORDER, type WizardStep } from "../src/components/SetupWizard";
 import SettingsPage from "../src/components/memory/SettingsPage";
@@ -20,7 +22,14 @@ import SettingsSidebar, {
 } from "../src/components/memory/settings/SettingsSidebar";
 import { initializeI18n } from "../src/i18n";
 import { resetReviewFixtures, REVIEW_FAIL } from "./fixtures";
+import BakeoffHarness from "./bakeoff/BakeoffHarness";
+import type { BakeoffRenderer } from "./bakeoff/bakeoffResult";
 import "../src/index.css";
+
+// Lazy so sigma lands in its own vite chunk, same as the bake-off adapters
+// (see BakeoffHarness) — that chunk stays once the bake-off scaffolding is
+// deleted in a later round.
+const AtlasView = lazy(() => import("../src/components/memory/AtlasView"));
 
 const VARIANTS = [
   { id: "page-cited", label: "Cited (all kinds)" },
@@ -67,12 +76,21 @@ const client = new QueryClient({
   defaultOptions: { queries: { retry: false, staleTime: 0, gcTime: 0 } },
 });
 
-type Mode = "page" | "review" | "wizard" | "settings";
+type Mode = "page" | "review" | "wizard" | "settings" | "atlas" | "entity" | "bakeoff";
+
+// Quick-select entities for the "entity" tab: gk-wenlan is the highest-degree
+// hub, gk-lucian shows a person node with mixed in/out edges, gk-remote-office
+// is the fixture's zero-relation entity (empty-focus case).
+const ENTITY_VARIANTS = [
+  { id: "gk-wenlan", label: "Wenlan (hub)" },
+  { id: "gk-lucian", label: "Lucian (person)" },
+  { id: "gk-remote-office", label: "Remote Office (empty)" },
+];
 
 // Deep links: ?mode=wizard&step=connect, ?mode=settings&section=intelligence,
-// ?theme=light. Without these every surface would only be reachable by
-// clicking, so a screenshot pass couldn't address one — which is the whole
-// point of these modes existing.
+// ?mode=graph, ?mode=atlas, ?mode=entity&entity=gk-lucian, ?theme=light. Without these
+// every surface would only be reachable by clicking, so a screenshot pass
+// couldn't address one — which is the whole point of these modes existing.
 const params = new URLSearchParams(window.location.search);
 const param = <T extends string>(key: string, allowed: readonly T[], fallback: T): T => {
   const value = params.get(key) as T | null;
@@ -93,9 +111,10 @@ const BAR_H = SHOW_BAR ? 41 : 0;
 
 function Harness() {
   const [mode, setMode] = useState<Mode>(
-    param("mode", ["page", "review", "wizard", "settings"] as const, "review"),
+    param("mode", ["page", "review", "wizard", "settings", "atlas", "entity", "bakeoff"] as const, "review"),
   );
   const [pageId, setPageId] = useState(params.get("page") ?? "page-cited");
+  const [entityId, setEntityId] = useState(params.get("entity") ?? "gk-wenlan");
   const [theme, setTheme] = useState(INITIAL_THEME);
   const [reviewRun, setReviewRun] = useState(0);
   const [failing, setFailing] = useState(false);
@@ -109,6 +128,10 @@ function Harness() {
       "general",
     ),
   );
+  const [renderer, setRenderer] = useState<BakeoffRenderer>(
+    param("renderer", ["cytoscape", "sigma", "g6"] as const, "cytoscape"),
+  );
+  const bakeoffN = Number(params.get("n")) || 1000;
 
   const applyTheme = (next: string) => {
     document.documentElement.setAttribute("data-theme", next);
@@ -152,6 +175,15 @@ function Harness() {
         <button onClick={() => setMode("settings")} style={tab(mode === "settings")}>
           Settings
         </button>
+        <button onClick={() => setMode("atlas")} style={tab(mode === "atlas")}>
+          Atlas
+        </button>
+        <button onClick={() => setMode("entity")} style={tab(mode === "entity")}>
+          Entity
+        </button>
+        <button onClick={() => setMode("bakeoff")} style={tab(mode === "bakeoff")}>
+          Bakeoff
+        </button>
         <span style={{ opacity: 0.4 }}>|</span>
         {mode === "wizard" ? (
           WIZARD_STEPS.map((s) => (
@@ -171,7 +203,19 @@ function Harness() {
               {v.label}
             </button>
           ))
-        ) : (
+        ) : mode === "entity" ? (
+          ENTITY_VARIANTS.map((v) => (
+            <button key={v.id} onClick={() => setEntityId(v.id)} style={tab(entityId === v.id)}>
+              {v.label}
+            </button>
+          ))
+        ) : mode === "bakeoff" ? (
+          (["cytoscape", "sigma", "g6"] as const).map((r) => (
+            <button key={r} onClick={() => setRenderer(r)} style={tab(renderer === r)}>
+              {r}
+            </button>
+          ))
+        ) : mode === "atlas" ? null : (
           <>
             <button
               onClick={() => {
@@ -261,6 +305,29 @@ function Harness() {
             />
           </div>
         </div>
+      ) : mode === "atlas" ? (
+        // Full-bleed like graph/wizard. sigma lands in its own lazy chunk
+        // (see the AtlasView import above) so Suspense covers the load.
+        <div style={{ height: `calc(100vh - ${BAR_H}px)` }}>
+          <Suspense fallback={<div style={{ padding: 16 }}>Loading atlas…</div>}>
+            <AtlasView
+              onNodeClick={(id: string) => {
+                setEntityId(id);
+                setMode("entity");
+              }}
+              // Main.tsx passes navigateBack here; a logging stub keeps the
+              // previewed toolbar at Main parity.
+              onBack={() => console.log("[preview] onBack")}
+            />
+          </Suspense>
+        </div>
+      ) : mode === "bakeoff" ? (
+        // Full-bleed like graph/wizard. renderer/n are URL-driven
+        // (?mode=bakeoff&renderer=cytoscape&n=1000); the sub-tab row above
+        // only switches renderer at a fixed n.
+        <div style={{ height: `calc(100vh - ${BAR_H}px)` }}>
+          <BakeoffHarness renderer={renderer} n={bakeoffN} />
+        </div>
       ) : (
         <div style={{ maxWidth: 860, margin: "0 auto", padding: "24px 16px" }}>
           {mode === "page" ? (
@@ -273,6 +340,14 @@ function Harness() {
                 console.log("[preview] onPageClick:", id);
                 setPageId(id);
               }}
+            />
+          ) : mode === "entity" ? (
+            <EntityDetail
+              key={entityId}
+              entityId={entityId}
+              onBack={() => setMode("atlas")}
+              onEntityClick={(id: string) => setEntityId(id)}
+              onMemoryClick={(id: string) => console.log("[preview] onMemoryClick:", id)}
             />
           ) : (
             <DistillReviewPanel

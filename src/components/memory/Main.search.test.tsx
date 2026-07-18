@@ -37,8 +37,28 @@ vi.mock("../../lib/tauri", () => ({
 vi.mock("./ActivityFeed", () => ({ default: () => <div /> }));
 vi.mock("./IdentityDetail", () => ({ default: () => <div /> }));
 vi.mock("./MemoryStream", () => ({ default: () => <div /> }));
-vi.mock("./HomePage", () => ({ default: () => <div data-testid="home-page" /> }));
-vi.mock("./ConstellationMap", () => ({ default: () => <div /> }));
+vi.mock("./HomePage", () => ({
+  default: (props: { onNavigateGraph?: () => void }) => (
+    <div data-testid="home-page">
+      <button type="button" onClick={() => props.onNavigateGraph?.()}>
+        Open graph view
+      </button>
+    </div>
+  ),
+}));
+vi.mock("./AtlasView", () => ({
+  default: (props: { onBack?: () => void; onNodeClick?: (id: string) => void }) => (
+    <div data-testid="atlas-view">
+      <button type="button" onClick={() => props.onBack?.()}>
+        Atlas back
+      </button>
+      <button type="button" onClick={() => props.onNodeClick?.("ent-1")}>
+        Atlas node
+      </button>
+    </div>
+  ),
+}));
+vi.mock("./EntityDetail", () => ({ default: () => <div data-testid="entity-detail" /> }));
 vi.mock("./MemoryStatusBar", () => ({ default: () => <div /> }));
 vi.mock("./MemorySearchResult", () => ({ default: () => <div /> }));
 vi.mock("./MemoryDetail", () => ({ default: () => <div data-testid="memory-detail" /> }));
@@ -126,6 +146,21 @@ describe("Main search", () => {
     eventListeners.get("focus-search")?.();
 
     expect(searchInput).toHaveFocus();
+  });
+
+  it("renders AtlasView as the Graph view — back returns home, node clicks open the entity", async () => {
+    const user = userEvent.setup();
+    renderMain();
+
+    await user.click(screen.getByRole("button", { name: "Open graph view" }));
+    expect(screen.getByTestId("atlas-view")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Atlas back" }));
+    expect(screen.getByTestId("home-page")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Open graph view" }));
+    await user.click(screen.getByRole("button", { name: "Atlas node" }));
+    expect(screen.getByTestId("entity-detail")).toBeInTheDocument();
   });
 
   it("opens memory detail when initialMemoryId arrives after mount", async () => {

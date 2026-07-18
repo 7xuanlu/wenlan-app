@@ -328,6 +328,32 @@ html[data-theme="dark"] {
     0 2px 6px rgba(3, 4, 8, 0.38);
   /* Depth on dark: ink-black shadow so surfaces lift without a grey cast. */
   --mem-shadow-toast: var(--mem-shadow-overlay);
+  /* Knowledge-graph slots — validated 5-slot categorical palette + neutral.
+     Order and hex are load-bearing (passes the dataviz ΔE validator: 11.6
+     normal / 1.6 deutan). Slots map project/technology/organization/person/
+     concept; place/event/unknown wear --kg-neutral. Edges never wear a slot. */
+  --kg-project: #c98500;
+  --kg-tool: #3987e5;
+  --kg-org: #d95926;
+  --kg-person: #9085e9;
+  --kg-concept: #008300;
+  --kg-neutral: #969BAD;
+  /* Edge inks must stay OPAQUE: sigma's WebGL pipeline packs colors
+     non-premultiplied under premultiplied blending, so any alpha here
+     renders as an additive wash (bluish sky) instead of a gray. These are
+     the old translucent inks pre-composited over --mem-surface —
+     rgba(150,155,173,.30/.55) over #171A23. Canvas 2D paints them to the
+     same pixels, so ConstellationMap is unchanged. */
+  --kg-edge: #3D414C;
+  --kg-edge-strong: #5D616F;
+  /* Cartography layer (design-mockup artifact, screen 01). Hull/graticule are
+     painted by AtlasView's 2D underlay canvas — real alpha is fine there (the
+     opaque-only rule above is sigma-WebGL-specific). Bridge IS a sigma edge
+     color, hence opaque (the shared amber accent). */
+  --kg-hull: rgba(169, 174, 242, 0.05);
+  --kg-hull-border: rgba(169, 174, 242, 0.16);
+  --kg-graticule: rgba(150, 155, 173, 0.13);
+  --kg-bridge: #C7AA5C;
 }
 
 /* Light (cool paper workspace with restrained brand warmth) */
@@ -388,6 +414,23 @@ html[data-theme="light"] {
   /* Depth on light: a warm ink-toned shadow (anchored in the body text hue
      rather than flat grey) so the toast feels letterpressed on cream. */
   --mem-shadow-toast: var(--mem-shadow-overlay);
+  /* Knowledge-graph slots — light-theme variant of the validated palette.
+     Order and hex are load-bearing; see the dark block for slot semantics. */
+  --kg-project: #eda100;
+  --kg-tool: #2a78d6;
+  --kg-org: #eb6834;
+  --kg-person: #4a3aa7;
+  --kg-concept: #008300;
+  --kg-neutral: #8B93A3;
+  /* Opaque for the same sigma reason as the dark block:
+     rgba(88,97,116,.42/.72) pre-composited over #FFFFFF. */
+  --kg-edge: #B9BDC5;
+  --kg-edge-strong: #878D9B;
+  /* Cartography layer — light variants (see the dark block's note). */
+  --kg-hull: rgba(94, 88, 200, 0.045);
+  --kg-hull-border: rgba(94, 88, 200, 0.15);
+  --kg-graticule: rgba(139, 147, 163, 0.18);
+  --kg-bridge: #B5842E;
 }
 
 .wiki-home {
@@ -2417,12 +2460,19 @@ html[data-theme="light"] {
 
 .entity-graph-node-name {
   overflow: hidden;
-  color: var(--mem-accent-sage);
+  /* Text wears a text token; the colored dot carries entity identity. */
+  color: var(--mem-text);
   font-family: var(--mem-font-body);
   font-size: 12px;
   line-height: 1.3;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Center node reads as "you are here": its dot wears the entity's slot color
+   (set inline) ringed by the dossier focus color. */
+.focus-graph-center-dot {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--mem-focus-ring) 45%, transparent);
 }
 
 .entity-graph-node-type {
