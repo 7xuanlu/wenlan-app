@@ -17,7 +17,7 @@ function normalizeWindowsPath(value) {
     .toLowerCase();
 }
 
-function sameWindowsPath(actual, expected) {
+export function sameWindowsPath(actual, expected) {
   return (
     normalizeWindowsPath(actual) !== "" &&
     normalizeWindowsPath(actual) === normalizeWindowsPath(expected)
@@ -41,6 +41,8 @@ export function validateNativeSmokeEvidence(evidence, expected) {
 
   const app = evidence?.processes?.after_launch?.app;
   const backend = evidence?.processes?.after_launch?.backend;
+  const workloadApp = evidence?.processes?.after_workload?.app;
+  const workloadBackend = evidence?.processes?.after_workload?.backend;
   const marker = expected?.marker;
   const screenshots = evidence?.screenshots;
 
@@ -87,12 +89,40 @@ export function validateNativeSmokeEvidence(evidence, expected) {
     `expected ${describeValue(expected?.backendExecutable)}, got ${describeValue(backend?.executable_path)}`,
   );
   check(
-    "onnxruntime-module",
+    "workload-app-pid",
+    Number.isInteger(app?.pid) && workloadApp?.pid === app.pid,
+    `expected workload app PID ${describeValue(app?.pid)}, got ${describeValue(workloadApp?.pid)}`,
+  );
+  check(
+    "workload-backend-pid",
+    Number.isInteger(backend?.pid) && workloadBackend?.pid === backend.pid,
+    `expected workload backend PID ${describeValue(backend?.pid)}, got ${describeValue(workloadBackend?.pid)}`,
+  );
+  check(
+    "workload-backend-parent-pid",
+    Number.isInteger(app?.pid) && workloadBackend?.parent_pid === app.pid,
+    `expected workload backend parent ${describeValue(app?.pid)}, got ${describeValue(workloadBackend?.parent_pid)}`,
+  );
+  check(
+    "workload-backend-executable",
+    sameWindowsPath(workloadBackend?.executable_path, expected?.backendExecutable),
+    `expected ${describeValue(expected?.backendExecutable)}, got ${describeValue(workloadBackend?.executable_path)}`,
+  );
+  check(
+    "onnxruntime-loaded-before-workload",
     Array.isArray(backend?.loaded_modules) &&
-      backend.loaded_modules.some((modulePath) =>
+      !backend.loaded_modules.some((modulePath) =>
         sameWindowsPath(modulePath, expected?.onnxruntimeDll),
       ),
-    `expected loaded module ${describeValue(expected?.onnxruntimeDll)}, got ${describeValue(backend?.loaded_modules)}`,
+    `bundled module was already loaded before workload: ${describeValue(backend?.loaded_modules)}`,
+  );
+  check(
+    "onnxruntime-module",
+    Array.isArray(workloadBackend?.loaded_modules) &&
+      workloadBackend.loaded_modules.some((modulePath) =>
+        sameWindowsPath(modulePath, expected?.onnxruntimeDll),
+      ),
+    `expected loaded module ${describeValue(expected?.onnxruntimeDll)}, got ${describeValue(workloadBackend?.loaded_modules)}`,
   );
   check(
     "marker-contract",
@@ -118,6 +148,14 @@ export function validateNativeSmokeEvidence(evidence, expected) {
     typeof evidence?.marker?.ui_text === "string" &&
       evidence.marker.ui_text.includes(marker),
     `native UI text did not contain ${describeValue(marker)}`,
+  );
+  check(
+    "ui-positive-result",
+    typeof expected?.sourceAgent === "string" &&
+      expected.sourceAgent.length > 0 &&
+      typeof evidence?.marker?.ui_text === "string" &&
+      evidence.marker.ui_text.includes(expected.sourceAgent),
+    `native UI result did not contain source agent ${describeValue(expected?.sourceAgent)}`,
   );
 
   for (const [key, name] of [

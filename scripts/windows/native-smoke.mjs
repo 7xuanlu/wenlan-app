@@ -12,13 +12,17 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { remote } from "webdriverio";
 import { readSidecarLock } from "../sidecar-lock.mjs";
-import { validateNativeSmokeEvidence } from "./native-smoke-evidence.mjs";
+import {
+  sameWindowsPath,
+  validateNativeSmokeEvidence,
+} from "./native-smoke-evidence.mjs";
 import {
   appLogCandidates,
   cleanupProcessInvocation,
 } from "./process-control.mjs";
 
 const CLAIM = "Windows Server 2022 native compatibility smoke";
+const SOURCE_AGENT = "windows-native-smoke";
 const TARGET_TRIPLE = "x86_64-pc-windows-msvc";
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(SCRIPT_DIR, "..", "..");
@@ -258,6 +262,10 @@ async function main() {
     args.evidenceDir,
     "processes-after-launch.json",
   );
+  const workloadPath = resolve(
+    args.evidenceDir,
+    "processes-after-workload.json",
+  );
   const closePath = resolve(args.evidenceDir, "processes-after-close.json");
   const welcomePath = resolve(args.evidenceDir, "01-welcome.png");
   const appReadyPath = resolve(args.evidenceDir, "02-app-ready.png");
@@ -308,6 +316,15 @@ async function main() {
           loaded_modules: [],
         },
       },
+      after_workload: {
+        app: { pid: 0, executable_path: "" },
+        backend: {
+          pid: 0,
+          parent_pid: 0,
+          executable_path: "",
+          loaded_modules: [],
+        },
+      },
       after_close: { app_alive: true, backend_alive: true },
     },
     screenshots: {
@@ -320,6 +337,8 @@ async function main() {
   };
 
   let browser;
+  let workloadPollState = "not-started";
+  let lastWorkloadSnapshot = null;
   try {
     const portOccupied = await isPortOpen(7878);
     evidence.processes.before.port_7878_in_use = portOccupied;
@@ -392,7 +411,7 @@ async function main() {
       body: JSON.stringify({
         content,
         memory_type: "fact",
-        source_agent: "windows-native-smoke",
+        source_agent: SOURCE_AGENT,
         title: marker,
       }),
     });
@@ -415,31 +434,52 @@ async function main() {
 
     const search = await browser.$("[data-wenlan-search-input]");
     await search.setValue(marker);
-    const markerText = await browser.$(
-      `//p[contains(normalize-space(.), ${JSON.stringify(marker)})]`,
+    const positiveResultCard = await browser.$(
+      `//p[contains(normalize-space(.), ${JSON.stringify(marker)})]/parent::div[.//span[normalize-space(.)=${JSON.stringify(SOURCE_AGENT)}]]`,
     );
-    await markerText.waitForDisplayed({ timeout: 60_000 });
-    const resultCard = await markerText.$("..");
-    await resultCard.click();
-    await browser.waitUntil(async () => (await search.getValue()) === "", {
-      timeout: 30_000,
-      interval: 250,
-      timeoutMsg: "clicking the memory search result did not clear search",
-    });
-    const dossier = await browser.$('main[aria-label="Memory dossier"]');
-    await dossier.waitForDisplayed({ timeout: 30_000 });
-    await browser.waitUntil(
-      async () => (await dossier.getText()).includes(marker),
-      {
-        timeout: 30_000,
-        interval: 500,
-        timeoutMsg: "memory dossier never rendered the unique marker",
-      },
-    );
-    evidence.marker.ui_text = await dossier.getText();
+    await positiveResultCard.waitForDisplayed({ timeout: 60_000 });
+    evidence.marker.ui_text = await positiveResultCard.getText();
+    if (!evidence.marker.ui_text.includes(marker)) {
+      throw new Error("visible native search result omitted the unique marker");
+    }
+    if (!evidence.marker.ui_text.includes(SOURCE_AGENT)) {
+      throw new Error("visible native search result omitted its source agent");
+    }
     await browser.saveScreenshot(memoryVisiblePath);
     evidence.screenshots.memory_visible.exists = existsSync(memoryVisiblePath);
-    log("captured native memory dossier with the backend marker");
+    log("captured native search result with the backend marker");
+
+    workloadPollState = "polling";
+    const exercised = await poll(
+      "same app/backend process with bundled onnxruntime.dll loaded",
+      async () => {
+        const snapshot = collectProcessEvidence(
+          args.app,
+          runtime.backendExecutable,
+          workloadPath,
+        );
+        lastWorkloadSnapshot = snapshot;
+        const app = snapshot.app[0];
+        const backend = snapshot.backend[0];
+        const sameProcesses =
+          snapshot.app.length === 1 &&
+          snapshot.backend.length === 1 &&
+          app.pid === evidence.processes.after_launch.app.pid &&
+          backend.pid === evidence.processes.after_launch.backend.pid;
+        const bundledOnnxLoaded = backend?.loaded_modules?.some((modulePath) =>
+          sameWindowsPath(modulePath, runtime.onnxruntimeDll),
+        );
+        return sameProcesses && bundledOnnxLoaded ? snapshot : null;
+      },
+      60_000,
+      500,
+    );
+    evidence.processes.after_workload = {
+      app: exercised.app[0],
+      backend: exercised.backend[0],
+    };
+    workloadPollState = "captured";
+    log("confirmed the exercised backend loaded the bundled onnxruntime.dll");
 
     evidence.lifecycle.fake_launch_agents_exists = existsSync(
       resolve(process.env.USERPROFILE || process.env.HOME || "", "Library", "LaunchAgents"),
@@ -478,6 +518,7 @@ async function main() {
       backendExecutable: runtime.backendExecutable,
       onnxruntimeDll: runtime.onnxruntimeDll,
       marker,
+      sourceAgent: SOURCE_AGENT,
     });
     evidence.assertions = validation.assertions;
     evidence.status = "passed";
@@ -494,6 +535,7 @@ async function main() {
           backendExecutable: runtime.backendExecutable,
           onnxruntimeDll: runtime.onnxruntimeDll,
           marker,
+          sourceAgent: SOURCE_AGENT,
         });
       } catch (validationError) {
         if (
@@ -519,6 +561,16 @@ async function main() {
       backend: [],
       error: "process evidence was not captured before failure",
     });
+    if (workloadPollState !== "captured") {
+      writeJson(workloadPath, {
+        status: workloadPollState === "polling" ? "failed" : "not-captured",
+        app: lastWorkloadSnapshot?.app ?? [],
+        backend: lastWorkloadSnapshot?.backend ?? [],
+        error:
+          evidence.error ||
+          "process evidence was not captured before failure",
+      });
+    }
     writeJsonIfMissing(closePath, {
       app: [],
       backend: [],

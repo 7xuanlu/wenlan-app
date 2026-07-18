@@ -24,6 +24,15 @@ type Evidence = {
         pid: number;
       };
     };
+    after_workload: {
+      app: { executable_path: string; pid: number };
+      backend: {
+        executable_path: string;
+        loaded_modules: string[];
+        parent_pid: number;
+        pid: number;
+      };
+    };
     before: { port_7878_in_use: boolean };
   };
   screenshots: Record<
@@ -37,6 +46,7 @@ type ExpectedEvidence = {
   backendExecutable: string;
   marker: string;
   onnxruntimeDll: string;
+  sourceAgent: string;
 };
 
 type ValidationResult = {
@@ -69,11 +79,20 @@ function completeEvidence(): Evidence {
       backend_content: `A native proof containing ${MARKER}`,
       expected: MARKER,
       stored_source_id: "windows-smoke-source",
-      ui_text: `Memory detail: A native proof containing ${MARKER}`,
+      ui_text: `A native proof containing ${MARKER}\nwindows-native-smoke`,
     },
     processes: {
       before: { port_7878_in_use: false },
       after_launch: {
+        app: { pid: 4100, executable_path: APP_EXE },
+        backend: {
+          pid: 4200,
+          parent_pid: 4100,
+          executable_path: BACKEND_EXE,
+          loaded_modules: ["C:\\Windows\\System32\\kernel32.dll"],
+        },
+      },
+      after_workload: {
         app: { pid: 4100, executable_path: APP_EXE },
         backend: {
           pid: 4200,
@@ -100,6 +119,7 @@ const expected: ExpectedEvidence = {
   backendExecutable: BACKEND_EXE,
   marker: MARKER,
   onnxruntimeDll: ONNX_DLL,
+  sourceAgent: "windows-native-smoke",
 };
 
 async function loadEvidenceModule(): Promise<EvidenceModule> {
@@ -146,12 +166,26 @@ describe("Windows native smoke evidence validator", () => {
       },
     },
     {
+      name: "ONNX runtime was already loaded before workload",
+      assertion: "onnxruntime-loaded-before-workload",
+      mutate: (evidence: Evidence) => {
+        evidence.processes.after_launch.backend.loaded_modules.push(ONNX_DLL);
+      },
+    },
+    {
       name: "wrong ONNX runtime",
       assertion: "onnxruntime-module",
       mutate: (evidence: Evidence) => {
-        evidence.processes.after_launch.backend.loaded_modules = [
+        evidence.processes.after_workload.backend.loaded_modules = [
           "C:\\Windows\\System32\\onnxruntime.dll",
         ];
+      },
+    },
+    {
+      name: "backend PID changed during workload",
+      assertion: "workload-backend-pid",
+      mutate: (evidence: Evidence) => {
+        evidence.processes.after_workload.backend.pid = 9999;
       },
     },
     {
@@ -166,6 +200,13 @@ describe("Windows native smoke evidence validator", () => {
       assertion: "ui-marker",
       mutate: (evidence: Evidence) => {
         evidence.marker.ui_text = "some other memory";
+      },
+    },
+    {
+      name: "query echoed without a positive result",
+      assertion: "ui-positive-result",
+      mutate: (evidence: Evidence) => {
+        evidence.marker.ui_text = `No captures found for ${MARKER}`;
       },
     },
     {
