@@ -333,12 +333,14 @@ describe("AtlasView", () => {
 
     instance.handlers.get("downNode")?.({ node: "e1" });
 
-    // downNode pins the pressed node and reheats the sim toward alphaTarget 0.3.
+    // downNode pins the pressed node and reheats the sim: alpha JUMPS to 0.3
+    // (not just alphaTarget's 3%/tick ramp from the settled 0 — that ramp is
+    // the round-7 "drag feels laggy" bug).
     expect(restartSpy).toHaveBeenCalledTimes(1);
     expect(sim.alphaTarget()).toBeCloseTo(0.3);
+    expect(sim.alpha()).toBeCloseTo(0.3);
 
     mouseCaptor.handlers.get("mousemovebody")?.(dragEvent(200, 200));
-    sim.alpha(1);
     sim.tick(30);
 
     const after = { x: graph.getNodeAttribute("e2", "x"), y: graph.getNodeAttribute("e2", "y") };

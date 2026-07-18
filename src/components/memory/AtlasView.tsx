@@ -183,7 +183,13 @@ export default function AtlasView({ onNodeClick }: AtlasViewProps) {
       if (simNode) {
         simNode.fx = simNode.x;
         simNode.fy = simNode.y;
-        sim.alphaTarget(0.3).restart();
+        // alpha JUMPS to the target instead of ramping: the sim rests at
+        // alpha 0, and alphaTarget alone climbs at only 3%/tick — neighbor
+        // forces stay near-zero for the first ~1/3s of a drag, which reads
+        // as lag (measured 3x early neighbor response with the jump). Safe
+        // on a settled sim: the equilibrium-invariant test reheats to 0.3
+        // and pins bbox drift < 3%.
+        sim.alpha(0.3).alphaTarget(0.3).restart();
       }
     });
     const mouseCaptor = renderer.getMouseCaptor();
