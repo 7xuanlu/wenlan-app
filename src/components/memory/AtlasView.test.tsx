@@ -40,8 +40,14 @@ vi.mock("sigma", () => {
     getMouseCaptor() {
       return this.mouseCaptor;
     }
+    // 100-unit graph span in a 400px-min-dim container: the fill-aware
+    // default density is 0.6 * 400 / 100 = 2.4 px/unit (inside the [1.5, 3]
+    // clamp), so the mount zoom-out must be exactly 6 / 2.4 = 2.5.
     getBBox() {
-      return { x: [0, 0], y: [0, 0] };
+      return { x: [-50, 50], y: [-40, 40] };
+    }
+    getDimensions() {
+      return { width: 400, height: 600 };
     }
     getCustomBBox() {
       return this.customBBox;
@@ -214,6 +220,30 @@ describe("AtlasView", () => {
     expect(refreshSpy).toHaveBeenCalledTimes(2);
   });
 
+  it("locks hover while a drag is live — enter/leave neither repaint nor flip the cursor until release", async () => {
+    mockConnectedPair();
+
+    renderWithQuery(<AtlasView />);
+    await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
+    const instance = capturedSigmaInstances[0];
+    const container = instance.container as HTMLElement;
+    const mouseCaptor = instance.getMouseCaptor();
+
+    instance.handlers.get("downNode")?.({ node: "e1" });
+    expect(container.style.cursor).toBe("grabbing");
+
+    const refreshSpy = vi.spyOn(instance, "refresh");
+    instance.handlers.get("enterNode")?.({ node: "e2" });
+    instance.handlers.get("leaveNode")?.({});
+    expect(refreshSpy).not.toHaveBeenCalled();
+    expect(container.style.cursor).toBe("grabbing");
+
+    mouseCaptor.handlers.get("mouseup")?.({});
+    // Hover re-arms the moment the drag ends.
+    instance.handlers.get("enterNode")?.({ node: "e2" });
+    expect(container.style.cursor).toBe("pointer");
+  });
+
   it("suppresses onNodeClick when clickNode follows a moved drag", async () => {
     const entities = [makeEntity({ id: "e1", name: "Alice" })];
     mockListEntities.mockResolvedValue(entities);
@@ -323,15 +353,15 @@ describe("AtlasView", () => {
     original: { preventDefault: () => {}, stopPropagation: () => {} },
   });
 
-  it("caps the initial screen density at 1.5 px/graph-unit by zooming the fitted camera out", async () => {
+  it("zooms the fitted camera out to the fill-aware default density (60% fill, clamped [1.5, 3])", async () => {
     mockConnectedPair();
 
     renderWithQuery(<AtlasView />);
     await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
     const instance = capturedSigmaInstances[0];
-    // The mock's fit density is 6 px/unit (graphToViewport scales by 6), so
-    // the cap must widen the camera ratio by exactly 6 / 1.5 = 4.
-    expect(instance.camera.setState).toHaveBeenCalledWith({ ratio: 4 });
+    // Mock fit density 6 px/unit (graphToViewport scales by 6); target is
+    // 0.6 * min(400, 600) / span 100 = 2.4 px/unit → ratio 6 / 2.4 = 2.5.
+    expect(instance.camera.setState).toHaveBeenCalledWith({ ratio: 2.5 });
   });
 
   it("paints synchronously on every physics tick — the writeback drives sigma's refresh", async () => {

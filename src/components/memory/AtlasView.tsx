@@ -154,30 +154,45 @@ export default function AtlasView({ onNodeClick }: AtlasViewProps) {
       // Preview/debug handle only — stripped from prod builds.
       (window as unknown as Record<string, unknown>).__ATLAS_SIGMA = renderer;
     }
-    // Density cap: sigma's fit stretches a small cluster to fill whatever
-    // container it gets (measured 7.3 px/graph-unit in preview) — links
-    // render several times longer than ConstellationMap's, which mounts at
-    // a fixed 1.5 px/unit regardless of container. Cap the initial density
-    // at the old graph's; only ever zoom OUT from fit (a graph too big to
-    // fit keeps the fit).
+    // Default zoom: sigma's fit stretches a small cluster edge-to-edge no
+    // matter how big the container (7.3 px/graph-unit in preview) — links
+    // render ~5x longer than the old graph's ("too wide"). A fixed density
+    // cap at the old graph's exact 1.5 px/unit overshot the other way: in a
+    // large container the cluster filled <20% of the view ("too far away").
+    // The liked reference — the old Graph tab — sits at ~60% fill of the
+    // smaller container axis, so target that fill, clamped to [1.5, 3]
+    // px/unit: never denser than the old graph's spacing floor, never back
+    // to the fit sprawl on huge screens. Only ever zoom OUT from fit.
     const o = renderer.graphToViewport({ x: 0, y: 0 });
     const u = renderer.graphToViewport({ x: 1, y: 0 });
     const pxPerUnit = Math.hypot(u.x - o.x, u.y - o.y);
-    if (pxPerUnit > 1.5) {
+    const bbox = renderer.getBBox();
+    const span = Math.max(bbox.x[1] - bbox.x[0], bbox.y[1] - bbox.y[0]);
+    const { width, height } = renderer.getDimensions();
+    const targetDensity = Math.min(3, Math.max(1.5, (0.6 * Math.min(width, height)) / span));
+    if (pxPerUnit > targetDensity) {
       const camera = renderer.getCamera();
-      camera.setState({ ratio: camera.ratio * (pxPerUnit / 1.5) });
+      camera.setState({ ratio: camera.ratio * (pxPerUnit / targetDensity) });
     }
     renderer.on("clickNode", ({ node }) => {
       // A moved drag must not also navigate on release.
       if (movedDuringPressRef.current) return;
       onNodeClick?.(node);
     });
+    // Hover is LOCKED while a drag is live: our drag doesn't capture the
+    // pointer (sigma's captor keeps picking), so sweeping the grabbed node
+    // across other hit areas would fire enter/leave mid-drag — the graph
+    // dims/undims, labels pop, and the cursor flickers grabbing→pointer→
+    // default. force-graph never shows this (d3-drag captures the pointer,
+    // hover is inert mid-drag), and the flashing reads as jank.
     renderer.on("enterNode", ({ node }) => {
+      if (draggedNodeRef.current) return;
       hoverStateRef.current = hoverStateFor(graph, node);
       container.style.cursor = "pointer";
       renderer.refresh();
     });
     renderer.on("leaveNode", () => {
+      if (draggedNodeRef.current) return;
       hoverStateRef.current = hoverStateFor(graph, null);
       container.style.cursor = "default";
       renderer.refresh();
