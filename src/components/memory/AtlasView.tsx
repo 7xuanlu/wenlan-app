@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import Graph from "graphology";
@@ -19,7 +20,12 @@ import {
   drawRadialNodeLabel,
 } from "../../lib/graph/atlas";
 import type { HoverState, AtlasSimNode } from "../../lib/graph/atlas";
-import { communitiesFor, cartographyScene, drawCartography } from "../../lib/graph/cartography";
+import {
+  communitiesFor,
+  cartographyScene,
+  drawCartography,
+  MIN_REGION_SIZE,
+} from "../../lib/graph/cartography";
 import { useGraphPalette, colorForEntityType, nodeFillFor } from "../../lib/graph/palette";
 import type { GraphPalette } from "../../lib/graph/palette";
 
@@ -112,6 +118,83 @@ export default function AtlasView({ onNodeClick }: AtlasViewProps) {
 
   const model = useMemo(() => buildGraphModel(entities, details), [entities, details]);
   const communities = useMemo(() => communitiesFor(model), [model]);
+
+  // Region count for the toolbar — membership sizes only, so it agrees with
+  // the hulls drawCartography actually draws without needing node positions.
+  const regionCount = useMemo(() => {
+    const sizes = new Map<number, number>();
+    for (const node of model.nodes) {
+      const community = communities.get(node.id);
+      if (community === undefined) continue;
+      sizes.set(community, (sizes.get(community) ?? 0) + 1);
+    }
+    let count = 0;
+    for (const size of sizes.values()) if (size >= MIN_REGION_SIZE) count += 1;
+    return count;
+  }, [model, communities]);
+
+  // Toolbar search (artifact screen 01): type → listbox of entity names,
+  // Enter/click → camera fly + the same emphasis hover applies.
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const [query, setQuery] = useState("");
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [searchFocused, setSearchFocused] = useState(false);
+
+  const matches = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return [];
+    return model.nodes.filter((node) => node.name.toLowerCase().includes(needle)).slice(0, 8);
+  }, [model, query]);
+
+  // ⌘K / Ctrl+K jumps to the search box from anywhere in the window.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  const focusEntity = (nodeId: string) => {
+    setQuery("");
+    setActiveIndex(0);
+    searchInputRef.current?.blur();
+    const renderer = sigmaRef.current;
+    const graph = graphRef.current;
+    if (!renderer || !graph || !graph.hasNode(nodeId)) return;
+    // Same emphasis as hovering the node: its neighborhood stays lit, the
+    // rest dims. Cleared naturally by the next enter/leaveNode.
+    hoverStateRef.current = hoverStateFor(graph, nodeId);
+    const display = renderer.getNodeDisplayData(nodeId);
+    if (display) {
+      const camera = renderer.getCamera();
+      // Ratio only ever shrinks (zooms in) — landing further out than the
+      // current view would read as the map running away from the match.
+      const state = { x: display.x, y: display.y, ratio: Math.min(camera.ratio, 1) };
+      if (prefersReducedMotion()) camera.setState(state);
+      else camera.animate(state, { duration: 450 });
+    }
+    renderer.refresh();
+  };
+
+  const onSearchKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActiveIndex((i) => Math.min(i + 1, Math.max(matches.length - 1, 0)));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveIndex((i) => Math.max(i - 1, 0));
+    } else if (e.key === "Enter") {
+      const match = matches[activeIndex] ?? matches[0];
+      if (match) focusEntity(match.id);
+    } else if (e.key === "Escape") {
+      setQuery("");
+      searchInputRef.current?.blur();
+    }
+  };
 
   // Mount/rebuild sigma whenever the model changes. `palette` is read here
   // (fresh at build time) but deliberately not a dependency — a theme flip
@@ -435,14 +518,157 @@ export default function AtlasView({ onNodeClick }: AtlasViewProps) {
   }
 
   const entityCount = model.nodes.length;
-  const connectionCount = model.edges.length;
-  const countParts = [`${entityCount} ${entityCount === 1 ? "entity" : "entities"}`];
-  if (connectionCount > 0) {
-    countParts.push(`${connectionCount} ${connectionCount === 1 ? "connection" : "connections"}`);
-  }
+  const countLine =
+    regionCount > 0
+      ? `${t("atlas.countEntities", { count: entityCount })} · ${t("atlas.countRegions", { count: regionCount })}`
+      : t("atlas.countEntities", { count: entityCount });
+  const dropdownOpen = searchFocused && query.trim().length > 0;
 
   return (
-    <div style={{ position: "relative", height: "100%", width: "100%" }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", width: "100%" }}>
+      {/* Toolbar — artifact screen 01: ⌘K search + mono count line. The
+          filter chips and Atlas|Focus segment wait for their features. */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          padding: "12px 16px",
+          borderBottom: "1px solid var(--mem-border)",
+          flexWrap: "wrap",
+          background: "var(--mem-surface)",
+          fontFamily: "var(--mem-font-body)",
+        }}
+      >
+        <div style={{ position: "relative", flex: "0 1 300px", minWidth: 250 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              background: "var(--mem-bg)",
+              border: `1px solid ${searchFocused ? "var(--mem-accent-indigo-border)" : "var(--mem-border)"}`,
+              borderRadius: "var(--mem-radius-md)",
+              padding: "7px 12px",
+            }}
+          >
+            <input
+              ref={searchInputRef}
+              type="text"
+              role="combobox"
+              aria-expanded={dropdownOpen}
+              aria-controls="atlas-search-listbox"
+              aria-label={t("atlas.searchLabel")}
+              placeholder={t("atlas.searchPlaceholder")}
+              value={query}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setActiveIndex(0);
+              }}
+              onFocus={() => setSearchFocused(true)}
+              onBlur={() => setSearchFocused(false)}
+              onKeyDown={onSearchKeyDown}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                background: "transparent",
+                border: "none",
+                outline: "none",
+                font: "400 13px var(--mem-font-body)",
+                color: "var(--mem-text)",
+                padding: 0,
+              }}
+            />
+            <kbd
+              style={{
+                font: "400 10px var(--mem-font-mono)",
+                color: "var(--mem-text-tertiary)",
+                border: "1px solid var(--mem-border)",
+                borderRadius: 4,
+                padding: "1px 5px",
+              }}
+            >
+              ⌘K
+            </kbd>
+          </div>
+          {dropdownOpen && (
+            <ul
+              id="atlas-search-listbox"
+              role="listbox"
+              style={{
+                position: "absolute",
+                top: "calc(100% + 6px)",
+                left: 0,
+                right: 0,
+                margin: 0,
+                padding: 4,
+                listStyle: "none",
+                background: "var(--mem-surface)",
+                border: "1px solid var(--mem-popover-border, var(--mem-border))",
+                borderRadius: "var(--mem-radius-md)",
+                boxShadow: "0 8px 24px rgba(0, 0, 0, 0.12)",
+                zIndex: 20,
+                maxHeight: 280,
+                overflowY: "auto",
+              }}
+            >
+              {matches.map((node, index) => (
+                <li
+                  key={node.id}
+                  role="option"
+                  aria-selected={index === activeIndex}
+                  // preventDefault keeps the input's blur from closing the
+                  // list before this row's click lands.
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => focusEntity(node.id)}
+                  onMouseEnter={() => setActiveIndex(index)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "6px 10px",
+                    borderRadius: "var(--mem-radius-sm)",
+                    fontSize: 13,
+                    color: "var(--mem-text)",
+                    cursor: "pointer",
+                    background: index === activeIndex ? "var(--mem-hover)" : "transparent",
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: "50%",
+                      flexShrink: 0,
+                      backgroundColor: colorForEntityType(node.entityType, palette),
+                      opacity: 0.85,
+                    }}
+                  />
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {node.name}
+                  </span>
+                </li>
+              ))}
+              {matches.length === 0 && (
+                <li style={{ padding: "6px 10px", fontSize: 12, color: "var(--mem-text-tertiary)" }}>
+                  {t("atlas.noMatches")}
+                </li>
+              )}
+            </ul>
+          )}
+        </div>
+        <span
+          style={{
+            marginLeft: "auto",
+            font: "400 11px var(--mem-font-mono)",
+            color: "var(--mem-text-tertiary)",
+          }}
+        >
+          {countLine}
+        </span>
+      </div>
+
+      <div style={{ position: "relative", flex: 1, minHeight: 0 }}>
       <div ref={containerRef} data-testid="atlas-view" style={{ height: "100%", width: "100%" }} />
 
       {/* Legend — top-right, same furniture as the old canvas graph (minus
@@ -497,19 +723,24 @@ export default function AtlasView({ onNodeClick }: AtlasViewProps) {
         </div>
       </div>
 
-      {/* Corner stats — bottom-right, mirroring the old graph's count line. */}
-      <div
+      {/* Hint chip — bottom-left, artifact's map affordance line. */}
+      <span
         style={{
           position: "absolute",
-          bottom: 8,
-          right: 8,
-          fontSize: 10,
+          left: 14,
+          bottom: 12,
+          font: "400 10.5px var(--mem-font-mono)",
           color: "var(--mem-text-tertiary)",
-          fontFamily: "var(--mem-font-body)",
+          background: "var(--mem-surface)",
+          border: "1px solid var(--mem-border)",
+          borderRadius: "var(--mem-radius-full)",
+          padding: "4px 11px",
           pointerEvents: "none",
+          opacity: 0.9,
         }}
       >
-        {countParts.join(", ")}
+        {t("atlas.hint")}
+      </span>
       </div>
     </div>
   );

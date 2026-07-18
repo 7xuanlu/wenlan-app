@@ -11,7 +11,7 @@ import type { GraphPalette } from "./palette";
 
 /** Minimum members before a community earns a hull + name — a 1-2 node
  *  "region" is noise, not geography. */
-const MIN_REGION_SIZE = 3;
+export const MIN_REGION_SIZE = 3;
 
 /** Screen-px padding between a member node and its hull edge. */
 const HULL_PAD = 26;

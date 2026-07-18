@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 vi.mock("../../lib/tauri", () => ({
@@ -63,9 +63,14 @@ vi.mock("sigma", () => {
     graphToViewport(coords: { x: number; y: number }) {
       return { x: coords.x * 6, y: coords.y * 6 };
     }
-    camera = { ratio: 1, setState: vi.fn(), getBoundedRatio: (r: number) => r };
+    camera = { ratio: 1, setState: vi.fn(), animate: vi.fn(), getBoundedRatio: (r: number) => r };
     getCamera() {
       return this.camera;
+    }
+    // Fixed display coords — enough for the search-fly tests to pin that the
+    // camera target comes from getNodeDisplayData, not raw graph coords.
+    getNodeDisplayData(_node: string) {
+      return { x: 0.42, y: 0.24 };
     }
     getViewportZoomedState = vi.fn((pos: { x: number; y: number }, ratio: number) => ({
       x: pos.x,
@@ -250,8 +255,11 @@ describe("AtlasView", () => {
     for (const label of ["Project", "Technology", "Organization", "Person", "Theme", "Connection"]) {
       expect(screen.getByText(label)).toBeInTheDocument();
     }
-    // Alice + Bob with one deduped relation between them.
-    expect(screen.getByText("2 entities, 1 connection")).toBeInTheDocument();
+    // Alice + Bob are two singleton communities — no regions, so the toolbar
+    // count line shows entities only (artifact format).
+    expect(screen.getByText("2 entities")).toBeInTheDocument();
+    // Map affordance hint, bottom-left.
+    expect(screen.getByText("scroll to zoom · more labels appear as you approach")).toBeInTheDocument();
   });
 
   it("refreshes on enterNode and again on leaveNode", async () => {
@@ -626,6 +634,119 @@ describe("AtlasView", () => {
     expect(ctx.setLineDash).toHaveBeenCalledWith([1, 7]);
     expect(ctx.arc).toHaveBeenCalledTimes(3);
     expect(ctx.fillText).not.toHaveBeenCalled();
+  });
+
+  // Two 3-cliques joined by one bridge (a1–b1). Peak-climbing puts each
+  // triangle in its own community (a1/b1 are their own degree peaks — the
+  // bridge neighbor ties at 3, never strictly higher), so 2 regions.
+  function mockTwoTriangles() {
+    const names: Record<string, string> = {
+      a1: "Alice",
+      a2: "Anna",
+      a3: "Ada",
+      b1: "Bob",
+      b2: "Ben",
+      b3: "Bea",
+    };
+    const entities = Object.entries(names).map(([id, name]) => makeEntity({ id, name }));
+    const rel = (id: string, target: string) => ({
+      id,
+      relation_type: "knows",
+      direction: "outgoing" as const,
+      entity_id: target,
+      entity_name: names[target],
+      entity_type: "concept",
+      source_agent: null,
+      created_at: Date.now(),
+    });
+    mockListEntities.mockResolvedValue(entities);
+    mockGetEntityDetail.mockImplementation(async (id: string) => {
+      const relations =
+        id === "a1"
+          ? [rel("r1", "a2"), rel("r2", "a3"), rel("rb", "b1")]
+          : id === "a2"
+            ? [rel("r3", "a3")]
+            : id === "b1"
+              ? [rel("r4", "b2"), rel("r5", "b3")]
+              : id === "b2"
+                ? [rel("r6", "b3")]
+                : [];
+      return { entity: entities.find((e) => e.id === id)!, observations: [], relations };
+    });
+  }
+
+  it("shows the artifact count line — entities · regions — in the toolbar", async () => {
+    mockTwoTriangles();
+
+    renderWithQuery(<AtlasView />);
+    await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
+
+    expect(screen.getByText("6 entities · 2 regions")).toBeInTheDocument();
+  });
+
+  it("focuses the search input on ⌘K", async () => {
+    mockConnectedPair();
+
+    renderWithQuery(<AtlasView />);
+    await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
+
+    const input = screen.getByPlaceholderText("Jump to anything…");
+    expect(document.activeElement).not.toBe(input);
+
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+    expect(document.activeElement).toBe(input);
+  });
+
+  it("matches case-insensitively and Enter flies the camera to the match with hover emphasis", async () => {
+    mockConnectedPairWithIsolate();
+
+    renderWithQuery(<AtlasView />);
+    await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
+    const instance = capturedSigmaInstances[0];
+    const { settings } = instance;
+
+    // e3 is not in Alice's neighborhood — its reducer output must change
+    // once the search emphasis lands (the hover-dim path).
+    const attrs = { color: "#abc", size: 4, entityType: "concept", confirmed: false };
+    const before = settings.nodeReducer("e3", attrs);
+
+    const input = screen.getByPlaceholderText("Jump to anything…");
+    fireEvent.focus(input);
+    // Lowercase query against "Alice" — pins the case-insensitive match.
+    fireEvent.change(input, { target: { value: "ali" } });
+    expect(screen.getByRole("option", { name: /Alice/ })).toBeInTheDocument();
+
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    // Camera target comes from getNodeDisplayData (mock: 0.42/0.24); ratio
+    // never grows past the current view (mock camera ratio 1).
+    expect(instance.camera.animate).toHaveBeenCalledWith(
+      { x: 0.42, y: 0.24, ratio: 1 },
+      { duration: 450 },
+    );
+    expect(settings.nodeReducer("e3", attrs)).not.toEqual(before);
+  });
+
+  it("jumps the camera instantly on search select under prefers-reduced-motion", async () => {
+    const matchMediaMock = vi.fn().mockReturnValue({ matches: true } as MediaQueryList);
+    vi.stubGlobal("matchMedia", matchMediaMock);
+    try {
+      mockConnectedPair();
+
+      renderWithQuery(<AtlasView />);
+      await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
+      const instance = capturedSigmaInstances[0];
+
+      const input = screen.getByPlaceholderText("Jump to anything…");
+      fireEvent.focus(input);
+      fireEvent.change(input, { target: { value: "alice" } });
+      fireEvent.keyDown(input, { key: "Enter" });
+
+      expect(instance.camera.setState).toHaveBeenCalledWith({ x: 0.42, y: 0.24, ratio: 1 });
+      expect(instance.camera.animate).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("drags an isolate by direct manipulation, without restarting the sim", async () => {
