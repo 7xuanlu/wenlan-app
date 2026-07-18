@@ -273,6 +273,40 @@ describe("AtlasView", () => {
     return entities;
   }
 
+  // Same connected pair plus a third, unrelated entity — degree 0, so it
+  // never joins the sim (see atlas.ts's createAtlasSimulation) and rides the
+  // round-1 isolate ring instead.
+  function mockConnectedPairWithIsolate() {
+    const entities = [
+      makeEntity({ id: "e1", name: "Alice" }),
+      makeEntity({ id: "e2", name: "Bob" }),
+      makeEntity({ id: "e3", name: "Isolate" }),
+    ];
+    mockListEntities.mockResolvedValue(entities);
+    mockGetEntityDetail.mockImplementation(async (id: string) => {
+      if (id === "e1") {
+        return {
+          entity: entities[0],
+          observations: [],
+          relations: [
+            {
+              id: "rel-1",
+              relation_type: "knows",
+              direction: "outgoing" as const,
+              entity_id: "e2",
+              entity_name: "Bob",
+              entity_type: "person",
+              source_agent: null,
+              created_at: Date.now(),
+            },
+          ],
+        };
+      }
+      return { entity: entities.find((e) => e.id === id)!, observations: [], relations: [] };
+    });
+    return entities;
+  }
+
   const dragEvent = (x: number, y: number) => ({
     x,
     y,
@@ -342,5 +376,52 @@ describe("AtlasView", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+
+  it("places the isolate ring from the sim's SETTLED bbox, not a pre-settle one", async () => {
+    mockConnectedPairWithIsolate();
+
+    renderWithQuery(<AtlasView />);
+    await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
+    const graph = capturedSigmaInstances[0].graph;
+
+    // This fails if placeIsolateRing ran BEFORE createAtlasSimulation's
+    // settle: the isolate would be frozen at a ring radius derived from the
+    // pre-settle bbox, which no longer matches the connected pair's actual
+    // (post-settle) final bbox read here.
+    const xs = ["e1", "e2"].map((id) => graph.getNodeAttribute(id, "x") as number);
+    const ys = ["e1", "e2"].map((id) => graph.getNodeAttribute(id, "y") as number);
+    const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+    const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+    const expectedRadius =
+      Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys), 1) * 0.65;
+
+    const dx = (graph.getNodeAttribute("e3", "x") as number) - cx;
+    const dy = (graph.getNodeAttribute("e3", "y") as number) - cy;
+    expect(Math.hypot(dx, dy)).toBeCloseTo(expectedRadius, 6);
+  });
+
+  it("drags an isolate by direct manipulation, without restarting the sim", async () => {
+    mockConnectedPairWithIsolate();
+
+    renderWithQuery(<AtlasView />);
+    await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
+    const instance = capturedSigmaInstances[0];
+    const graph = instance.graph;
+    const mouseCaptor = instance.getMouseCaptor();
+    const sim = (window as any).__ATLAS_SIM;
+    const restartSpy = vi.spyOn(sim, "restart");
+
+    const before = { x: graph.getNodeAttribute("e3", "x"), y: graph.getNodeAttribute("e3", "y") };
+
+    // Isolates aren't sim members — downNode's lookup misses, so there's
+    // nothing to pin or reheat.
+    instance.handlers.get("downNode")?.({ node: "e3" });
+    expect(restartSpy).not.toHaveBeenCalled();
+
+    mouseCaptor.handlers.get("mousemovebody")?.(dragEvent(500, 500));
+
+    const after = { x: graph.getNodeAttribute("e3", "x"), y: graph.getNodeAttribute("e3", "y") };
+    expect(after).not.toEqual(before);
   });
 });

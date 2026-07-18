@@ -408,7 +408,7 @@ html[data-theme="light"] {
   --kg-person: #4a3aa7;
   --kg-concept: #008300;
   --kg-neutral: #8B93A3;
-  --kg-edge: rgba(88, 97, 116, 0.35);
+  --kg-edge: rgba(88, 97, 116, 0.42);
   --kg-edge-strong: rgba(88, 97, 116, 0.72);
 }
 

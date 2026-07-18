@@ -1,7 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import Graph from "graphology";
 import forceAtlas2 from "graphology-layout-forceatlas2";
-import { forceSimulation, forceLink, forceManyBody, type Simulation, type SimulationNodeDatum } from "d3-force";
+import {
+  forceSimulation,
+  forceLink,
+  forceManyBody,
+  forceCenter,
+  type Simulation,
+  type SimulationNodeDatum,
+} from "d3-force";
 import type { GraphModel } from "./model";
 import { colorForEntityType, type GraphPalette } from "./palette";
 
@@ -41,7 +48,7 @@ export function buildAtlasGraph(model: GraphModel, palette: GraphPalette): Graph
   // a view decision (see model.ts's parallel-edge note), fine at round-1 scale.
   for (const edge of model.edges) {
     graph.addEdgeWithKey(edge.id, edge.source, edge.target, {
-      size: 1.5,
+      size: 3,
       color: palette.edge,
     });
   }
@@ -57,12 +64,17 @@ export function buildAtlasGraph(model: GraphModel, palette: GraphPalette): Graph
 export function runAtlasLayout(graph: Graph): void {
   const iterations = Math.min(600, Math.max(100, graph.order * 6));
   forceAtlas2.assign(graph, { iterations, settings: forceAtlas2.inferSettings(graph) });
+}
 
-  // FA2 moves degree-0 nodes by gravity alone, so they linger near their
-  // seed-circle positions while the connected cluster packs the middle —
-  // and the camera then fits the stale circle's bbox, shoving the real graph
-  // off-center. Park isolates on a deterministic ring just outside the
-  // cluster instead: quiet periphery, honest bbox.
+/**
+ * Parks degree-0 isolates on a deterministic ring just outside the connected
+ * cluster instead of wherever FA2's gravity-only diffusion (or the d3 sim's
+ * settle) left them: quiet periphery, honest bbox. Computed from the graph's
+ * CURRENT connected-node bbox at call time — round 5 calls this AFTER the
+ * sim settles (see createAtlasSimulation) so the ring tracks the graph's
+ * rest-state extent, not FA2's raw seed packing.
+ */
+export function placeIsolateRing(graph: Graph): void {
   const isolates = isolateIds(graph);
   const isolateSet = new Set(isolates);
   let minX = Infinity;
@@ -108,25 +120,24 @@ interface AtlasSimLink {
 }
 
 /** d3-force simulation over the live graphology graph — the interaction engine.
- *  Created stopped; the caller starts it on drag. Matches the retired
- *  ConstellationMap feel: charge -40, alphaDecay 0.03, velocityDecay 0.25,
- *  d3-default link force. Parallel edges collapse to one link per undirected
- *  pair (d3 sums pull per link; sigma still RENDERS every parallel edge).
- *  Isolates get fx/fy pinned permanently — the round-1 ring holds. Every tick
- *  writes sim x/y back into the graph (sigma auto-repaints on attr change). */
+ *  Sim nodes are the CONNECTED subgraph only (degree > 0) — isolates hold
+ *  their round-1 ring position structurally (see placeIsolateRing) and are
+ *  never simulated. Matches the retired ConstellationMap feel: charge -40,
+ *  forceCenter(0, 0), alphaDecay 0.03, velocityDecay 0.25, d3-default link
+ *  force. Parallel edges collapse to one link per undirected pair (d3 sums
+ *  pull per link; sigma still RENDERS every parallel edge). Settles
+ *  synchronously to its own equilibrium before returning — a FA2 seed handed
+ *  straight to a fresh sim explodes toward the sim's roomier rest state on
+ *  first drag; settling here means the graph the caller paints is already at
+ *  rest, and a drag only flexes it (see round 5 spec). Every tick writes sim
+ *  x/y back into the graph (sigma auto-repaints on attr change). */
 export function createAtlasSimulation(graph: Graph): Simulation<AtlasSimNode, undefined> {
+  const isolates = new Set(isolateIds(graph));
   const nodes: AtlasSimNode[] = [];
   graph.forEachNode((id, attrs) => {
+    if (isolates.has(id)) return;
     nodes.push({ id, x: attrs.x as number, y: attrs.y as number });
   });
-
-  const isolates = new Set(isolateIds(graph));
-  for (const node of nodes) {
-    if (isolates.has(node.id)) {
-      node.fx = node.x;
-      node.fy = node.y;
-    }
-  }
 
   const seenPairs = new Set<string>();
   const links: AtlasSimLink[] = [];
@@ -140,6 +151,7 @@ export function createAtlasSimulation(graph: Graph): Simulation<AtlasSimNode, un
   const sim = forceSimulation(nodes)
     .force("link", forceLink<AtlasSimNode, AtlasSimLink>(links).id((d) => d.id))
     .force("charge", forceManyBody<AtlasSimNode>().strength(-40))
+    .force("center", forceCenter(0, 0))
     .alphaDecay(0.03)
     .velocityDecay(0.25);
 
@@ -163,6 +175,10 @@ export function createAtlasSimulation(graph: Graph): Simulation<AtlasSimNode, un
     return sim;
   };
 
+  // Settle to equilibrium synchronously before first paint (≈ full alpha
+  // decay at 0.03) — see the doc comment above.
+  sim.tick(220);
+  sim.alpha(0);
   sim.stop();
   return sim;
 }

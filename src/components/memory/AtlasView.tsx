@@ -12,6 +12,7 @@ import {
   buildAtlasGraph,
   runAtlasLayout,
   createAtlasSimulation,
+  placeIsolateRing,
   hoverStateFor,
   nodeDisplay,
   edgeDisplay,
@@ -116,6 +117,7 @@ export default function AtlasView({ onNodeClick }: AtlasViewProps) {
       // Preview/debug handle only — stripped from prod builds.
       (window as unknown as Record<string, unknown>).__ATLAS_SIM = sim;
     }
+    placeIsolateRing(graph);
 
     const renderer = new Sigma(graph, container, {
       labelRenderedSizeThreshold: 6,
@@ -175,11 +177,14 @@ export default function AtlasView({ onNodeClick }: AtlasViewProps) {
       graph.setNodeAttribute(node, "highlighted", true);
       container.style.cursor = "grabbing";
       const simNode = sim.nodes().find((n) => n.id === node);
+      // Isolates aren't sim members (see createAtlasSimulation) — an isolate
+      // drag is pure direct manipulation via mousemovebody's graphology
+      // writes, so there's nothing here to pin or reheat.
       if (simNode) {
         simNode.fx = simNode.x;
         simNode.fy = simNode.y;
+        sim.alphaTarget(0.3).restart();
       }
-      sim.alphaTarget(0.3).restart();
     });
     const mouseCaptor = renderer.getMouseCaptor();
     mouseCaptor.on("mousedown", () => {

@@ -8,6 +8,7 @@ import {
   buildAtlasGraph,
   runAtlasLayout,
   createAtlasSimulation,
+  placeIsolateRing,
   isolateIds,
   hoverStateFor,
   nodeDisplay,
@@ -104,14 +105,14 @@ describe("buildAtlasGraph", () => {
     expect(graph.getNodeAttribute("x", "color")).toBe(PALETTE.neutral);
   });
 
-  it("colors edges with the palette's quiet edge tone, size 1", () => {
+  it("colors edges with the palette's quiet edge tone, size 3 (old graph's effective weight)", () => {
     const model = makeModel(
       [node({ id: "a" }), node({ id: "b" })],
       [edge({ id: "e1", source: "a", target: "b" })],
     );
     const graph = buildAtlasGraph(model, PALETTE);
     expect(graph.getEdgeAttribute("e1", "color")).toBe(PALETTE.edge);
-    expect(graph.getEdgeAttribute("e1", "size")).toBe(1.5);
+    expect(graph.getEdgeAttribute("e1", "size")).toBe(3);
   });
 
   it("keeps distinct parallel relations between the same pair as distinct edges", () => {
@@ -156,13 +157,40 @@ describe("runAtlasLayout", () => {
     });
   });
 
-  it("parks degree-0 isolates on a ring outside the connected cluster", () => {
+  it("is deterministic: laying out identically-built graphs lands on the same positions", () => {
+    const model = makeModel(
+      [node({ id: "a" }), node({ id: "b" }), node({ id: "c" })],
+      [edge({ id: "e1", source: "a", target: "b" }), edge({ id: "e2", source: "b", target: "c" })],
+    );
+    const g1 = buildAtlasGraph(model, PALETTE);
+    const g2 = buildAtlasGraph(model, PALETTE);
+    runAtlasLayout(g1);
+    runAtlasLayout(g2);
+    for (const id of ["a", "b", "c"]) {
+      expect(g1.getNodeAttribute(id, "x")).toBeCloseTo(g2.getNodeAttribute(id, "x") as number, 10);
+      expect(g1.getNodeAttribute(id, "y")).toBeCloseTo(g2.getNodeAttribute(id, "y") as number, 10);
+    }
+  });
+});
+
+describe("placeIsolateRing", () => {
+  it("parks degree-0 isolates on a ring outside the connected cluster's CURRENT bbox", () => {
     const model = makeModel(
       [node({ id: "a", degree: 1 }), node({ id: "b", degree: 1 }), node({ id: "iso1" }), node({ id: "iso2" })],
       [edge({ id: "e1", source: "a", target: "b" })],
     );
     const graph = buildAtlasGraph(model, PALETTE);
-    runAtlasLayout(graph);
+    // Move the connected pair AFTER building — proves the ring is computed
+    // from the bbox at CALL time, not wherever buildAtlasGraph originally
+    // seeded them (round 5: this runs after the sim settles, so the
+    // connected cluster has moved by the time this is called).
+    graph.setNodeAttribute("a", "x", 5);
+    graph.setNodeAttribute("a", "y", 0);
+    graph.setNodeAttribute("b", "x", -5);
+    graph.setNodeAttribute("b", "y", 0);
+
+    placeIsolateRing(graph);
+
     const xs = ["a", "b"].map((id) => graph.getNodeAttribute(id, "x") as number);
     const ys = ["a", "b"].map((id) => graph.getNodeAttribute(id, "y") as number);
     const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
@@ -176,21 +204,6 @@ describe("runAtlasLayout", () => {
       const dx = (graph.getNodeAttribute(id, "x") as number) - cx;
       const dy = (graph.getNodeAttribute(id, "y") as number) - cy;
       expect(Math.hypot(dx, dy)).toBeCloseTo(expectedRadius, 6);
-    }
-  });
-
-  it("is deterministic: laying out identically-built graphs lands on the same positions", () => {
-    const model = makeModel(
-      [node({ id: "a" }), node({ id: "b" }), node({ id: "c" })],
-      [edge({ id: "e1", source: "a", target: "b" }), edge({ id: "e2", source: "b", target: "c" })],
-    );
-    const g1 = buildAtlasGraph(model, PALETTE);
-    const g2 = buildAtlasGraph(model, PALETTE);
-    runAtlasLayout(g1);
-    runAtlasLayout(g2);
-    for (const id of ["a", "b", "c"]) {
-      expect(g1.getNodeAttribute(id, "x")).toBeCloseTo(g2.getNodeAttribute(id, "x") as number, 10);
-      expect(g1.getNodeAttribute(id, "y")).toBeCloseTo(g2.getNodeAttribute(id, "y") as number, 10);
     }
   });
 });
@@ -231,21 +244,45 @@ describe("createAtlasSimulation", () => {
     expect(distAfter).toBeLessThan(distBefore);
   });
 
-  it("keeps an isolate's GRAPH position unchanged across ticks (fx/fy pinned)", () => {
+  it("excludes isolates from the simulation entirely — the ring-hold is structural, not fx/fy", () => {
     const model = makeModel(
       [node({ id: "a", degree: 1 }), node({ id: "b", degree: 1 }), node({ id: "iso" })],
       [edge({ id: "e1", source: "a", target: "b" })],
     );
     const graph = buildAtlasGraph(model, PALETTE);
-    graph.setNodeAttribute("iso", "x", 10);
-    graph.setNodeAttribute("iso", "y", 10);
-
     const sim = createAtlasSimulation(graph);
-    sim.alpha(1);
-    sim.tick(30);
+    expect(sim.nodes().some((n) => n.id === "iso")).toBe(false);
+  });
 
-    expect(graph.getNodeAttribute("iso", "x")).toBeCloseTo(10, 6);
-    expect(graph.getNodeAttribute("iso", "y")).toBeCloseTo(10, 6);
+  it("EQUILIBRIUM INVARIANT: settles to near-zero alpha at creation, and reheating without a drag barely moves the connected cluster", () => {
+    const graph = starGraph();
+    const sim = createAtlasSimulation(graph);
+
+    expect(sim.alpha()).toBeLessThanOrEqual(0.01);
+
+    const bboxDiagonal = () => {
+      let minX = Infinity;
+      let maxX = -Infinity;
+      let minY = Infinity;
+      let maxY = -Infinity;
+      for (const n of sim.nodes()) {
+        minX = Math.min(minX, n.x!);
+        maxX = Math.max(maxX, n.x!);
+        minY = Math.min(minY, n.y!);
+        maxY = Math.max(maxY, n.y!);
+      }
+      return Math.hypot(maxX - minX, maxY - minY);
+    };
+
+    const before = bboxDiagonal();
+    // Reheat WITHOUT touching fx/fy on anything — no drag in progress, so a
+    // sim already at its own equilibrium should barely move.
+    sim.alphaTarget(0);
+    sim.alpha(0.3);
+    sim.tick(60);
+    const after = bboxDiagonal();
+
+    expect(Math.abs(after - before) / before).toBeLessThan(0.03);
   });
 
   it("collapses parallel edges between the same pair to a single sim link", () => {
@@ -278,6 +315,30 @@ describe("createAtlasSimulation", () => {
       y: graph.getNodeAttribute("s1", "y") as number,
     };
     expect(after).not.toEqual(before);
+  });
+});
+
+describe("full atlas pipeline", () => {
+  it("is deterministic end to end: FA2 seed, sim settle, and ring placement land on identical positions", () => {
+    const model = makeModel(
+      [node({ id: "a" }), node({ id: "b" }), node({ id: "c" }), node({ id: "iso" })],
+      [edge({ id: "e1", source: "a", target: "b" }), edge({ id: "e2", source: "b", target: "c" })],
+    );
+
+    function run(): Graph {
+      const graph = buildAtlasGraph(model, PALETTE);
+      runAtlasLayout(graph);
+      createAtlasSimulation(graph);
+      placeIsolateRing(graph);
+      return graph;
+    }
+
+    const g1 = run();
+    const g2 = run();
+    for (const id of ["a", "b", "c", "iso"]) {
+      expect(g1.getNodeAttribute(id, "x")).toBeCloseTo(g2.getNodeAttribute(id, "x") as number, 6);
+      expect(g1.getNodeAttribute(id, "y")).toBeCloseTo(g2.getNodeAttribute(id, "y") as number, 6);
+    }
   });
 });
 
