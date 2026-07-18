@@ -9,7 +9,10 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
-import { archiveExtractionCommand } from "./download-sidecars.mjs";
+import {
+  archiveExtractionCommand,
+  installStagedFile,
+} from "./download-sidecars.mjs";
 
 describe("archive extraction command", () => {
   it("uses a PowerShell file with named argv for Windows ZIP paths", () => {
@@ -109,5 +112,91 @@ describe("archive extraction command", () => {
         "/tmp/extracted",
       ],
     });
+  });
+});
+
+describe("staged sidecar installation", () => {
+  it("falls back to an atomic destination-volume transfer on EXDEV", () => {
+    const staged = String.raw`C:\Temp\wenlan-server.exe`;
+    const destination = String.raw`D:\checkout\app\binaries\wenlan-server.exe`;
+    const transfer = `${destination}.install-${process.pid}`;
+    const calls: string[] = [];
+    let firstRename = true;
+
+    installStagedFile(staged, destination, {
+      rmSync(path: string) {
+        calls.push(`rm:${path}`);
+      },
+      renameSync(from: string, to: string) {
+        calls.push(`rename:${from}->${to}`);
+        if (firstRename) {
+          firstRename = false;
+          throw Object.assign(new Error("cross-device link"), { code: "EXDEV" });
+        }
+      },
+      copyFileSync(from: string, to: string) {
+        calls.push(`copy:${from}->${to}`);
+      },
+      chmodSync(path: string, mode: number) {
+        calls.push(`chmod:${path}:${mode.toString(8)}`);
+      },
+    });
+
+    expect(calls).toEqual([
+      `rename:${staged}->${destination}`,
+      `rm:${transfer}`,
+      `copy:${staged}->${transfer}`,
+      `chmod:${transfer}:755`,
+      `rename:${transfer}->${destination}`,
+      `rm:${staged}`,
+      `rm:${transfer}`,
+    ]);
+  });
+
+  it("preserves the old destination and cleans transfer state when fallback copy fails", () => {
+    const staged = "staged";
+    const destination = "destination";
+    const transfer = `${destination}.install-${process.pid}`;
+    const copyError = Object.assign(new Error("disk full"), { code: "ENOSPC" });
+    const removed: string[] = [];
+
+    expect(() =>
+      installStagedFile(staged, destination, {
+        rmSync(path: string) {
+          removed.push(path);
+        },
+        renameSync() {
+          throw Object.assign(new Error("cross-device link"), { code: "EXDEV" });
+        },
+        copyFileSync() {
+          throw copyError;
+        },
+        chmodSync() {
+          throw new Error("chmod must not run");
+        },
+      }),
+    ).toThrow(copyError);
+    expect(removed).toEqual([transfer, transfer]);
+    expect(removed).not.toContain(destination);
+    expect(removed).not.toContain(staged);
+  });
+
+  it("does not hide non-cross-device rename failures", () => {
+    const error = Object.assign(new Error("access denied"), { code: "EACCES" });
+
+    expect(() =>
+      installStagedFile("staged", "destination", {
+        rmSync() {},
+        renameSync() {
+          throw error;
+        },
+        copyFileSync() {
+          throw new Error("copy must not run");
+        },
+        chmodSync() {
+          throw new Error("chmod must not run");
+        },
+      }),
+    ).toThrow(error);
   });
 });

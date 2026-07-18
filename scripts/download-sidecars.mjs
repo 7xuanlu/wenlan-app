@@ -24,6 +24,12 @@ import {
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(SCRIPT_DIR, "..");
 const BIN_DIR = resolve(REPO_ROOT, "app", "binaries");
+const DEFAULT_FILE_OPERATIONS = Object.freeze({
+  chmodSync,
+  copyFileSync,
+  renameSync,
+  rmSync,
+});
 
 function parseArgs(argv) {
   const parsed = {
@@ -215,12 +221,42 @@ function stagePayload(payload, stagingRoot) {
   });
 }
 
+export function installStagedFile(
+  stagedPath,
+  destinationPath,
+  operations = DEFAULT_FILE_OPERATIONS,
+) {
+  try {
+    operations.renameSync(stagedPath, destinationPath);
+    return;
+  } catch (error) {
+    if (
+      !error ||
+      typeof error !== "object" ||
+      !("code" in error) ||
+      error.code !== "EXDEV"
+    ) {
+      throw error;
+    }
+  }
+
+  const transferPath = `${destinationPath}.install-${process.pid}`;
+  operations.rmSync(transferPath, { force: true });
+  try {
+    operations.copyFileSync(stagedPath, transferPath);
+    operations.chmodSync(transferPath, 0o755);
+    operations.renameSync(transferPath, destinationPath);
+    operations.rmSync(stagedPath, { force: true });
+  } finally {
+    operations.rmSync(transferPath, { force: true });
+  }
+}
+
 function installPayload(staged) {
   mkdirSync(BIN_DIR, { recursive: true });
   for (const entry of staged) {
     const destinationPath = resolve(BIN_DIR, entry.destination);
-    rmSync(destinationPath, { force: true });
-    renameSync(entry.stagedPath, destinationPath);
+    installStagedFile(entry.stagedPath, destinationPath);
     stripQuarantine(destinationPath);
     entry.destinationPath = destinationPath;
   }
