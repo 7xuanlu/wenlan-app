@@ -13,11 +13,16 @@ import { fileURLToPath } from "node:url";
 import { remote } from "webdriverio";
 import { readSidecarLock } from "../sidecar-lock.mjs";
 import { validateNativeSmokeEvidence } from "./native-smoke-evidence.mjs";
+import {
+  appLogCandidates,
+  cleanupProcessInvocation,
+} from "./process-control.mjs";
 
 const CLAIM = "Windows Server 2022 native compatibility smoke";
 const TARGET_TRIPLE = "x86_64-pc-windows-msvc";
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(SCRIPT_DIR, "..", "..");
+const CLEANUP_SCRIPT = resolve(SCRIPT_DIR, "cleanup-processes.ps1");
 const PROCESS_SCRIPT = resolve(SCRIPT_DIR, "process-evidence.ps1");
 
 function parseArgs(argv) {
@@ -202,19 +207,16 @@ async function invokeFullQuit(browser) {
     if (!internals || typeof internals.invoke !== "function") {
       throw new Error("Tauri invoke internals are unavailable");
     }
+    // Do not await: the command exits this WebView before its IPC promise can
+    // settle. The post-request app/backend process snapshot is the outcome
+    // proof; this flag records only that the product command was requested.
     void internals.invoke("quit_wenlan_full");
     return true;
   });
 }
 
 function copyAppLog(evidenceDir) {
-  const home = process.env.HOME || process.env.USERPROFILE || "";
-  const candidates = [
-    home
-      ? resolve(home, "Library", "Logs", "com.wenlan.desktop", "wenlan.log")
-      : "",
-    process.env.WENLAN_APP_LOG || "",
-  ].filter(Boolean);
+  const candidates = appLogCandidates();
   const destination = resolve(evidenceDir, "app.log");
   const source = candidates.find((candidate) => existsSync(candidate));
   if (source) {
@@ -228,13 +230,12 @@ function copyAppLog(evidenceDir) {
 }
 
 function bestEffortCleanup(appExecutable, backendExecutable) {
-  const command = [
-    `$paths=@(${JSON.stringify(appExecutable)},${JSON.stringify(backendExecutable)});`,
-    "Get-CimInstance Win32_Process |",
-    "Where-Object { $paths -contains $_.ExecutablePath } |",
-    "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }",
-  ].join(" ");
-  spawnSync("pwsh", ["-NoProfile", "-NonInteractive", "-Command", command], {
+  const invocation = cleanupProcessInvocation(
+    appExecutable,
+    backendExecutable,
+    CLEANUP_SCRIPT,
+  );
+  spawnSync(invocation.command, invocation.args, {
     encoding: "utf8",
   });
 }
@@ -288,7 +289,7 @@ async function main() {
     health: { ok: false, response: {} },
     lifecycle: {
       fake_launch_agents_exists: false,
-      full_quit_invoked: false,
+      full_quit_requested: false,
     },
     marker: {
       expected: marker,
@@ -443,8 +444,8 @@ async function main() {
     evidence.lifecycle.fake_launch_agents_exists = existsSync(
       resolve(process.env.USERPROFILE || process.env.HOME || "", "Library", "LaunchAgents"),
     );
-    evidence.lifecycle.full_quit_invoked = (await invokeFullQuit(browser)) === true;
-    log("invoked registered quit_wenlan_full command");
+    evidence.lifecycle.full_quit_requested = (await invokeFullQuit(browser)) === true;
+    log("requested registered quit_wenlan_full command");
 
     const afterClose = await poll(
       "app and backend full quit",

@@ -136,9 +136,9 @@ export function validateNativeSmokeEvidence(evidence, expected) {
   }
 
   check(
-    "full-quit-invoked",
-    evidence?.lifecycle?.full_quit_invoked === true,
-    "the registered full-quit command was not invoked",
+    "full-quit-requested",
+    evidence?.lifecycle?.full_quit_requested === true,
+    "the registered full-quit command was not requested",
   );
   check(
     "no-fake-launchagents",

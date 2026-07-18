@@ -5,7 +5,7 @@ type Evidence = {
   health: { ok: boolean; response: Record<string, unknown> };
   lifecycle: {
     fake_launch_agents_exists: boolean;
-    full_quit_invoked: boolean;
+    full_quit_requested: boolean;
   };
   marker: {
     backend_content: string;
@@ -63,7 +63,7 @@ function completeEvidence(): Evidence {
     health: { ok: true, response: { status: "ok" } },
     lifecycle: {
       fake_launch_agents_exists: false,
-      full_quit_invoked: true,
+      full_quit_requested: true,
     },
     marker: {
       backend_content: `A native proof containing ${MARKER}`,
@@ -180,6 +180,13 @@ describe("Windows native smoke evidence validator", () => {
       assertion: "backend-exited",
       mutate: (evidence: Evidence) => {
         evidence.processes.after_close.backend_alive = true;
+      },
+    },
+    {
+      name: "full quit was not requested",
+      assertion: "full-quit-requested",
+      mutate: (evidence: Evidence) => {
+        evidence.lifecycle.full_quit_requested = false;
       },
     },
     {
