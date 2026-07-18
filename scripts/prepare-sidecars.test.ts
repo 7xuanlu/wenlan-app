@@ -20,6 +20,8 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const scriptPath = resolve(root, "scripts/prepare-sidecars.sh");
 const tauriBuildScriptPath = resolve(root, "scripts/prepare-tauri-build-sidecars.sh");
 const resolverScriptPath = resolve(root, "scripts/resolve-backend-dir.sh");
+const lockScriptPath = resolve(root, "scripts/sidecar-lock.mjs");
+const downloadScriptPath = resolve(root, "scripts/download-sidecars.mjs");
 const tempRoots: string[] = [];
 const pathOverrideEnvKeys = new Set([
   "WENLAN_BACKEND_DIR",
@@ -57,6 +59,10 @@ function writeAppScripts(appRoot: string): void {
   copyFileSync(scriptPath, resolve(appRoot, "scripts/prepare-sidecars.sh"));
   copyFileSync(tauriBuildScriptPath, resolve(appRoot, "scripts/prepare-tauri-build-sidecars.sh"));
   copyFileSync(resolverScriptPath, resolve(appRoot, "scripts/resolve-backend-dir.sh"));
+  copyFileSync(lockScriptPath, resolve(appRoot, "scripts/sidecar-lock.mjs"));
+  if (existsSync(downloadScriptPath)) {
+    copyFileSync(downloadScriptPath, resolve(appRoot, "scripts/download-sidecars.mjs"));
+  }
 }
 
 function childEnv(overrides: Record<string, string> = {}): Record<string, string> {
@@ -342,55 +348,145 @@ describe("prepare-sidecars backend discovery", () => {
   });
 });
 
-const DAEMON_DEST_NAMES = [
+const DARWIN_DEST_NAMES = [
   "wenlan-aarch64-apple-darwin",
   "wenlan-server-aarch64-apple-darwin",
   "wenlan-mcp-aarch64-apple-darwin",
+  "cloudflared-aarch64-apple-darwin",
 ];
 
 function fakeBinaryContents(name: string): string {
   return `#!/usr/bin/env bash\necho fake-${name}\n`;
 }
 
-function buildFakeTarball(dir: string): { tarballPath: string; sha256: string } {
-  const contentsDir = resolve(dir, "contents");
-  mkdirSync(contentsDir, { recursive: true });
+function sha256(path: string): string {
+  return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
+interface FakeAssets {
+  paths: Record<string, string>;
+  hashes: {
+    backendDarwin: string;
+    backendWindows: string;
+    cloudflaredDarwin: string;
+    cloudflaredWindows: string;
+  };
+}
+
+function buildFakeAssets(dir: string, options: { omitWindowsDll?: boolean } = {}): FakeAssets {
+  const darwinContents = resolve(dir, "darwin-contents");
+  mkdirSync(darwinContents, { recursive: true });
   for (const name of ["wenlan", "wenlan-server", "wenlan-mcp"]) {
-    writeFileSync(resolve(contentsDir, name), fakeBinaryContents(name), { mode: 0o755 });
+    writeFileSync(resolve(darwinContents, name), fakeBinaryContents(name), { mode: 0o755 });
   }
-  const tarballPath = resolve(dir, "wenlan-darwin-arm64.tar.gz");
-  execFileSync("tar", ["czf", tarballPath, "-C", contentsDir, "wenlan", "wenlan-server", "wenlan-mcp"]);
-  const sha256 = createHash("sha256").update(readFileSync(tarballPath)).digest("hex");
-  return { tarballPath, sha256 };
+  const darwinBackend = resolve(dir, "wenlan-darwin-arm64.tar.gz");
+  execFileSync("tar", [
+    "czf",
+    darwinBackend,
+    "-C",
+    darwinContents,
+    "wenlan",
+    "wenlan-server",
+    "wenlan-mcp",
+  ]);
+
+  const darwinCloudContents = resolve(dir, "darwin-cloud-contents");
+  mkdirSync(darwinCloudContents, { recursive: true });
+  writeFileSync(
+    resolve(darwinCloudContents, "cloudflared"),
+    fakeBinaryContents("cloudflared"),
+    { mode: 0o755 },
+  );
+  const darwinCloudflared = resolve(dir, "cloudflared-darwin-arm64.tgz");
+  execFileSync("tar", [
+    "czf",
+    darwinCloudflared,
+    "-C",
+    darwinCloudContents,
+    "cloudflared",
+  ]);
+
+  const windowsContents = resolve(dir, "windows-contents");
+  mkdirSync(windowsContents, { recursive: true });
+  for (const name of ["wenlan.exe", "wenlan-server.exe", "wenlan-mcp.exe"]) {
+    writeFileSync(resolve(windowsContents, name), `fake-${name}\n`);
+  }
+  if (!options.omitWindowsDll) {
+    writeFileSync(resolve(windowsContents, "onnxruntime.dll"), "fake-onnxruntime\n");
+  }
+  const windowsBackend = resolve(dir, "wenlan-windows-x64.zip");
+  const windowsPayload = ["wenlan.exe", "wenlan-server.exe", "wenlan-mcp.exe"];
+  if (!options.omitWindowsDll) windowsPayload.push("onnxruntime.dll");
+  execFileSync("zip", ["-q", windowsBackend, ...windowsPayload], { cwd: windowsContents });
+
+  const windowsCloudflared = resolve(dir, "cloudflared-windows-amd64.exe");
+  writeFileSync(windowsCloudflared, "fake-cloudflared-windows\n");
+
+  return {
+    paths: {
+      "wenlan-darwin-arm64.tar.gz": darwinBackend,
+      "wenlan-windows-x64.zip": windowsBackend,
+      "cloudflared-darwin-arm64.tgz": darwinCloudflared,
+      "cloudflared-windows-amd64.exe": windowsCloudflared,
+    },
+    hashes: {
+      backendDarwin: sha256(darwinBackend),
+      backendWindows: sha256(windowsBackend),
+      cloudflaredDarwin: sha256(darwinCloudflared),
+      cloudflaredWindows: sha256(windowsCloudflared),
+    },
+  };
 }
 
-function writeVersionPin(appRoot: string, tag: string, sha256: string): void {
-  writeFileSync(resolve(appRoot, ".wenlan-backend-version"), `${tag}\n${sha256}\n`);
+function writeSidecarLock(
+  appRoot: string,
+  assets: FakeAssets,
+  overrides: Partial<FakeAssets["hashes"]> = {},
+): void {
+  const hashes = { ...assets.hashes, ...overrides };
+  writeFileSync(
+    resolve(appRoot, ".wenlan-backend-version"),
+    [
+      "backend_tag=v0.9.5",
+      `backend_darwin_arm64_sha256=${hashes.backendDarwin}`,
+      `backend_windows_x64_sha256=${hashes.backendWindows}`,
+      "cloudflared_version=2026.7.2",
+      `cloudflared_darwin_arm64_sha256=${hashes.cloudflaredDarwin}`,
+      `cloudflared_windows_x64_sha256=${hashes.cloudflaredWindows}`,
+      "",
+    ].join("\n"),
+  );
 }
 
-function writeFakeGh(binDir: string, opts: { tarballPath?: string; exitCode?: number }): void {
+function writeFakeGh(
+  binDir: string,
+  opts: { assets?: Record<string, string>; exitCode?: number },
+): void {
   mkdirSync(binDir, { recursive: true });
-  const script = opts.tarballPath
-    ? [
-        "#!/usr/bin/env bash",
-        "set -euo pipefail",
-        'DIR=""',
-        'prev=""',
-        'for arg in "$@"; do',
-        '  if [[ "$prev" == "--dir" ]]; then',
-        '    DIR="$arg"',
-        "  fi",
-        '  prev="$arg"',
-        "done",
-        'if [[ -z "$DIR" ]]; then',
-        '  echo "fake-gh: missing --dir" >&2',
-        "  exit 1",
-        "fi",
-        'mkdir -p "$DIR"',
-        `cp "${opts.tarballPath}" "$DIR/wenlan-darwin-arm64.tar.gz"`,
-        "",
-      ].join("\n")
-    : `#!/usr/bin/env bash\nexit ${opts.exitCode ?? 1}\n`;
+  if (!opts.assets) {
+    writeFileSync(
+      resolve(binDir, "gh"),
+      `#!/usr/bin/env bash\nexit ${opts.exitCode ?? 1}\n`,
+      { mode: 0o755 },
+    );
+    return;
+  }
+
+  const script = [
+    "#!/usr/bin/env node",
+    'const { copyFileSync, mkdirSync } = require("node:fs");',
+    `const assets = ${JSON.stringify(opts.assets)};`,
+    "const args = process.argv.slice(2);",
+    'const pattern = args[args.indexOf("--pattern") + 1];',
+    'const dir = args[args.indexOf("--dir") + 1];',
+    "if (!pattern || !dir || !assets[pattern]) {",
+    '  console.error(`fake-gh: unsupported download ${pattern ?? "<missing>"}`);',
+    "  process.exit(17);",
+    "}",
+    "mkdirSync(dir, { recursive: true });",
+    'copyFileSync(assets[pattern], `${dir}/${pattern}`);',
+    "",
+  ].join("\n");
   writeFileSync(resolve(binDir, "gh"), script, { mode: 0o755 });
 }
 
@@ -413,120 +509,218 @@ function withFakeBin(fakeBinDir: string): Record<string, string> {
   return { PATH: `${fakeBinDir}:${process.env.PATH ?? ""}` };
 }
 
+function wrongHash(hash: string): string {
+  return hash.slice(0, -1) + (hash.endsWith("0") ? "1" : "0");
+}
+
 describe("prepare-sidecars --download mode", () => {
-  it("installs the three daemon sidecars from the pinned release asset", () => {
+  it("installs verified Darwin backend and cloudflared sidecars", () => {
     const base = makeTempRoot();
     const appRoot = resolve(base, "wenlan-app");
     writeAppScripts(appRoot);
 
-    const { tarballPath, sha256 } = buildFakeTarball(base);
-    writeVersionPin(appRoot, "v0.9.5", sha256);
+    const assets = buildFakeAssets(base);
+    writeSidecarLock(appRoot, assets);
 
     const fakeBinDir = resolve(base, "fake-bin");
-    writeFakeGh(fakeBinDir, { tarballPath });
+    writeFakeGh(fakeBinDir, { assets: assets.paths });
 
-    const result = runDownload(appRoot, withFakeBin(fakeBinDir));
+    const result = runDownload(appRoot, {
+      ...withFakeBin(fakeBinDir),
+      TARGET_TRIPLE: "aarch64-apple-darwin",
+    });
 
     expect(result.status, `stderr: ${result.stderr}`).toBe(0);
-
-    const originalNames = ["wenlan", "wenlan-server", "wenlan-mcp"];
-    for (const [destName, originalName] of DAEMON_DEST_NAMES.map(
-      (destName, i) => [destName, originalNames[i]] as const,
-    )) {
+    for (const destName of DARWIN_DEST_NAMES) {
       const dest = resolve(appRoot, "app/binaries", destName);
-      expect(existsSync(dest)).toBe(true);
+      expect(existsSync(dest), dest).toBe(true);
       expect(statSync(dest).mode & 0o777).toBe(0o755);
-      expect(readFileSync(dest, "utf8")).toBe(fakeBinaryContents(originalName));
     }
+    expect(
+      readFileSync(
+        resolve(appRoot, "app/binaries/wenlan-server-aarch64-apple-darwin"),
+        "utf8",
+      ),
+    ).toBe(fakeBinaryContents("wenlan-server"));
+    expect(
+      readFileSync(
+        resolve(appRoot, "app/binaries/cloudflared-aarch64-apple-darwin"),
+        "utf8",
+      ),
+    ).toBe(fakeBinaryContents("cloudflared"));
   });
 
-  it("fails loud and installs nothing when the release asset download fails", () => {
+  it("installs the Windows executables and onnxruntime.dll with the required names", () => {
     const base = makeTempRoot();
     const appRoot = resolve(base, "wenlan-app");
     writeAppScripts(appRoot);
 
-    const { sha256 } = buildFakeTarball(base);
-    writeVersionPin(appRoot, "v0.9.5", sha256);
+    const assets = buildFakeAssets(base);
+    writeSidecarLock(appRoot, assets);
+    const fakeBinDir = resolve(base, "fake-bin");
+    writeFakeGh(fakeBinDir, { assets: assets.paths });
+    const manifestPath = resolve(base, "staged-sidecars.json");
 
+    const result = runDownload(appRoot, {
+      ...withFakeBin(fakeBinDir),
+      TARGET_TRIPLE: "x86_64-pc-windows-msvc",
+      WENLAN_SIDECAR_MANIFEST: manifestPath,
+    });
+
+    expect(result.status, `stderr: ${result.stderr}`).toBe(0);
+    const expected = [
+      "wenlan-x86_64-pc-windows-msvc.exe",
+      "wenlan-server-x86_64-pc-windows-msvc.exe",
+      "wenlan-mcp-x86_64-pc-windows-msvc.exe",
+      "cloudflared-x86_64-pc-windows-msvc.exe",
+      "onnxruntime.dll",
+    ];
+    for (const name of expected) {
+      expect(existsSync(resolve(appRoot, "app/binaries", name)), name).toBe(true);
+    }
+
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+    expect(manifest).toMatchObject({
+      target_triple: "x86_64-pc-windows-msvc",
+      backend: {
+        tag: "v0.9.5",
+        asset: "wenlan-windows-x64.zip",
+        sha256: assets.hashes.backendWindows,
+      },
+      cloudflared: {
+        version: "2026.7.2",
+        asset: "cloudflared-windows-amd64.exe",
+        sha256: assets.hashes.cloudflaredWindows,
+      },
+    });
+    expect(manifest.staged).toHaveLength(5);
+    expect(
+      manifest.staged.every((entry: { sha256?: string }) =>
+        /^[0-9a-f]{64}$/.test(entry.sha256 ?? ""),
+      ),
+    ).toBe(true);
+  });
+
+  it("fails loud and installs nothing when a release asset download fails", () => {
+    const base = makeTempRoot();
+    const appRoot = resolve(base, "wenlan-app");
+    writeAppScripts(appRoot);
+
+    const assets = buildFakeAssets(base);
+    writeSidecarLock(appRoot, assets);
     const fakeBinDir = resolve(base, "fake-bin");
     writeFakeGh(fakeBinDir, { exitCode: 17 });
 
-    const result = runDownload(appRoot, withFakeBin(fakeBinDir));
+    const result = runDownload(appRoot, {
+      ...withFakeBin(fakeBinDir),
+      TARGET_TRIPLE: "aarch64-apple-darwin",
+    });
 
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain("failed to download");
-    for (const destName of DAEMON_DEST_NAMES) {
+    for (const destName of DARWIN_DEST_NAMES) {
       expect(existsSync(resolve(appRoot, "app/binaries", destName))).toBe(false);
     }
   });
 
-  it("fails loud on sha256 mismatch and installs nothing", () => {
+  it.each([
+    ["backend", "backendDarwin"],
+    ["cloudflared", "cloudflaredDarwin"],
+  ] as const)("fails loud on a corrupt %s checksum and installs nothing", (_, key) => {
     const base = makeTempRoot();
     const appRoot = resolve(base, "wenlan-app");
     writeAppScripts(appRoot);
 
-    const { tarballPath, sha256 } = buildFakeTarball(base);
-    const wrongSha = sha256.slice(0, -1) + (sha256.endsWith("0") ? "1" : "0");
-    writeVersionPin(appRoot, "v0.9.5", wrongSha);
-
+    const assets = buildFakeAssets(base);
+    writeSidecarLock(appRoot, assets, { [key]: wrongHash(assets.hashes[key]) });
     const fakeBinDir = resolve(base, "fake-bin");
-    writeFakeGh(fakeBinDir, { tarballPath });
+    writeFakeGh(fakeBinDir, { assets: assets.paths });
 
-    const result = runDownload(appRoot, withFakeBin(fakeBinDir));
+    const result = runDownload(appRoot, {
+      ...withFakeBin(fakeBinDir),
+      TARGET_TRIPLE: "aarch64-apple-darwin",
+    });
 
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain("sha256 mismatch");
-    for (const destName of DAEMON_DEST_NAMES) {
+    for (const destName of DARWIN_DEST_NAMES) {
       expect(existsSync(resolve(appRoot, "app/binaries", destName))).toBe(false);
     }
   });
 
-  it("downloads sidecars from the tauri build hook when WENLAN_DOWNLOAD_SIDECARS=1", () => {
-    // The release flow has NO backend checkout: the tauri beforeBuildCommand
-    // wrapper must take the --download path, not fall through to --release
-    // (compile), which would die on resolve-backend-dir.
+  it("fails before staging when the Windows archive omits onnxruntime.dll", () => {
     const base = makeTempRoot();
     const appRoot = resolve(base, "wenlan-app");
     writeAppScripts(appRoot);
 
-    const { tarballPath, sha256 } = buildFakeTarball(base);
-    writeVersionPin(appRoot, "v0.9.5", sha256);
-
+    const assets = buildFakeAssets(base, { omitWindowsDll: true });
+    writeSidecarLock(appRoot, assets);
     const fakeBinDir = resolve(base, "fake-bin");
-    writeFakeGh(fakeBinDir, { tarballPath });
+    writeFakeGh(fakeBinDir, { assets: assets.paths });
+
+    const result = runDownload(appRoot, {
+      ...withFakeBin(fakeBinDir),
+      TARGET_TRIPLE: "x86_64-pc-windows-msvc",
+    });
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("missing required payload onnxruntime.dll");
+    expect(existsSync(resolve(appRoot, "app/binaries"))).toBe(false);
+  });
+
+  it("downloads sidecars from the Tauri build hook when WENLAN_DOWNLOAD_SIDECARS=1", () => {
+    const base = makeTempRoot();
+    const appRoot = resolve(base, "wenlan-app");
+    writeAppScripts(appRoot);
+
+    const assets = buildFakeAssets(base);
+    writeSidecarLock(appRoot, assets);
+    const fakeBinDir = resolve(base, "fake-bin");
+    writeFakeGh(fakeBinDir, { assets: assets.paths });
 
     const result = spawnSync("bash", ["scripts/prepare-tauri-build-sidecars.sh"], {
       cwd: appRoot,
       encoding: "utf8",
-      env: childEnv({ ...withFakeBin(fakeBinDir), WENLAN_DOWNLOAD_SIDECARS: "1" }),
+      env: childEnv({
+        ...withFakeBin(fakeBinDir),
+        WENLAN_DOWNLOAD_SIDECARS: "1",
+        TARGET_TRIPLE: "x86_64-pc-windows-msvc",
+      }),
     });
 
     expect(result.status, `stderr: ${result.stderr}`).toBe(0);
-    for (const destName of DAEMON_DEST_NAMES) {
-      expect(existsSync(resolve(appRoot, "app/binaries", destName))).toBe(true);
-    }
+    expect(
+      existsSync(
+        resolve(
+          appRoot,
+          "app/binaries/wenlan-server-x86_64-pc-windows-msvc.exe",
+        ),
+      ),
+    ).toBe(true);
+    expect(existsSync(resolve(appRoot, "app/binaries/onnxruntime.dll"))).toBe(true);
   });
 
-  it("strips quarantine via xattr -cr on each installed daemon binary", () => {
+  it("strips quarantine via xattr -cr on each installed Darwin sidecar", () => {
     const base = makeTempRoot();
     const appRoot = resolve(base, "wenlan-app");
     writeAppScripts(appRoot);
 
-    const { tarballPath, sha256 } = buildFakeTarball(base);
-    writeVersionPin(appRoot, "v0.9.5", sha256);
-
+    const assets = buildFakeAssets(base);
+    writeSidecarLock(appRoot, assets);
     const fakeBinDir = resolve(base, "fake-bin");
-    writeFakeGh(fakeBinDir, { tarballPath });
+    writeFakeGh(fakeBinDir, { assets: assets.paths });
     const xattrLog = resolve(base, "xattr.log");
     writeFakeXattr(fakeBinDir, xattrLog);
 
-    const result = runDownload(appRoot, withFakeBin(fakeBinDir));
+    const result = runDownload(appRoot, {
+      ...withFakeBin(fakeBinDir),
+      TARGET_TRIPLE: "aarch64-apple-darwin",
+    });
 
     expect(result.status, `stderr: ${result.stderr}`).toBe(0);
     const log = readFileSync(xattrLog, "utf8");
-    for (const destName of DAEMON_DEST_NAMES) {
-      const dest = resolve(appRoot, "app/binaries", destName);
-      expect(log).toContain(`-cr ${dest}`);
+    for (const destName of DARWIN_DEST_NAMES) {
+      expect(log).toContain(`-cr ${resolve(appRoot, "app/binaries", destName)}`);
     }
   });
 });
