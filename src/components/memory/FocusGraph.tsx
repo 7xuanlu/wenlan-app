@@ -13,6 +13,13 @@ interface FocusGraphProps {
   // When set, height comes from the container (100%) instead of the
   // content-driven cap — for a full-screen host, not more graph data.
   fill?: boolean;
+  // Verb labels on the edges — on by default; the overlay's "Show verbs"
+  // chip is the only thing that turns them off.
+  showVerbs?: boolean;
+  // Linked-memory count for this entity. In fill mode it renders as the
+  // artifact's small dot cluster hanging off the center node; the accessible
+  // count lives in the overlay toolbar, so the cluster is decoration.
+  memoriesCount?: number;
 }
 
 interface FocusNeighbor {
@@ -75,7 +82,13 @@ interface PlacedNeighbor extends FocusNeighbor {
  * canvas ConstellationMap can't). Consumes buildEgoModel + useGraphPalette so
  * no daemon shape is read for drawing and colors track the theme.
  */
-export default function FocusGraph({ detail, onEntityClick, fill }: FocusGraphProps) {
+export default function FocusGraph({
+  detail,
+  onEntityClick,
+  fill,
+  showVerbs = true,
+  memoriesCount = 0,
+}: FocusGraphProps) {
   const { t } = useTranslation();
   const palette = useGraphPalette();
   const rawId = useId();
@@ -138,6 +151,13 @@ export default function FocusGraph({ detail, onEntityClick, fill }: FocusGraphPr
 
   const centerColor = palette[slotForEntityType(detail.entity.entity_type)];
 
+  // Artifact screen 02: memories hang off the center as a small dot cluster on
+  // a thin plain edge — attached to their entity, not dust across the map.
+  // Fill mode only; the inline card is too shallow for the offset.
+  const memoryCluster = fill && memoriesCount > 0;
+  const clusterDX = 72;
+  const clusterDY = 112;
+
   return (
     <div
       ref={containerRef}
@@ -193,6 +213,15 @@ export default function FocusGraph({ detail, onEntityClick, fill }: FocusGraphPr
             />
           );
         })}
+        {memoryCluster && (
+          <line
+            x1={width / 2}
+            y1={height / 2}
+            x2={width / 2 + clusterDX - 10}
+            y2={height / 2 + clusterDY - 14}
+            style={{ stroke: palette.edge, strokeWidth: 1 }}
+          />
+        )}
       </svg>
       {shownIncoming.length > 0 && (
         <span className="entity-graph-caption is-left" aria-hidden="true">
@@ -204,17 +233,18 @@ export default function FocusGraph({ detail, onEntityClick, fill }: FocusGraphPr
           {t("entityDetail.outgoing")} →
         </span>
       )}
-      {placed.map((n) => (
-        <span
-          key={`verb-${n.entityId}-${n.direction}`}
-          className="entity-graph-verb"
-          style={{ left: `${50 + (n.x - 50) * 0.55}%`, top: `${50 + (n.y - 50) * 0.55}%` }}
-          aria-hidden="true"
-        >
-          {n.verbs[0]}
-          {n.verbs.length > 1 ? ` +${n.verbs.length - 1}` : ""}
-        </span>
-      ))}
+      {showVerbs &&
+        placed.map((n) => (
+          <span
+            key={`verb-${n.entityId}-${n.direction}`}
+            className="entity-graph-verb"
+            style={{ left: `${50 + (n.x - 50) * 0.55}%`, top: `${50 + (n.y - 50) * 0.55}%` }}
+            aria-hidden="true"
+          >
+            {n.verbs[0]}
+            {n.verbs.length > 1 ? ` +${n.verbs.length - 1}` : ""}
+          </span>
+        ))}
       <div className="entity-graph-center" aria-hidden="true">
         <span
           className="entity-graph-center-dot focus-graph-center-dot"
@@ -248,6 +278,59 @@ export default function FocusGraph({ detail, onEntityClick, fill }: FocusGraphPr
           </button>
         );
       })}
+      {memoryCluster && (
+        <span
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            left: `calc(50% + ${clusterDX}px)`,
+            top: `calc(50% + ${clusterDY}px)`,
+            transform: "translateY(-50%)",
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+          }}
+        >
+          <span style={{ display: "flex", gap: 3 }}>
+            {Array.from({ length: Math.min(memoriesCount, 3) }, (_, i) => (
+              <span
+                key={i}
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: "50%",
+                  background: "var(--mem-accent-indigo)",
+                  opacity: 0.6,
+                  // Loose cluster, not a row — echoes the artifact's scatter.
+                  transform: `translateY(${(i % 2) * 5 - 2}px)`,
+                }}
+              />
+            ))}
+          </span>
+          <span style={{ font: "400 10px var(--mem-font-mono)", color: "var(--mem-text-tertiary)" }}>
+            {t("focus.memoriesLabel", { count: memoriesCount })}
+          </span>
+        </span>
+      )}
+      {fill && (
+        <span
+          style={{
+            position: "absolute",
+            left: 14,
+            bottom: 12,
+            font: "400 10.5px var(--mem-font-mono)",
+            color: "var(--mem-text-tertiary)",
+            background: "var(--mem-surface)",
+            border: "1px solid var(--mem-border)",
+            borderRadius: "var(--mem-radius-full)",
+            padding: "4px 11px",
+            pointerEvents: "none",
+            opacity: 0.9,
+          }}
+        >
+          {t("focus.hint")}
+        </span>
+      )}
       {hiddenCount > 0 && (
         <span className="entity-graph-more">
           {t("entityDetail.moreConnections", { count: hiddenCount })}

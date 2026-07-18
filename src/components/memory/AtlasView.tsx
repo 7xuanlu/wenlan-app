@@ -45,6 +45,10 @@ const LEGEND_ITEMS: { label: string; key: string }[] = [
 
 interface AtlasViewProps {
   onNodeClick?: (entityId: string) => void;
+  // Initial framing: center this entity with its neighborhood emphasized
+  // (EntityDetail's overlay "Atlas" mode). Applied instantly on mount — a
+  // starting frame, not a transition — so no camera animation.
+  focusEntityId?: string;
 }
 
 // jsdom has no matchMedia; treat its absence as "no preference" rather than
@@ -62,7 +66,7 @@ function prefersReducedMotion(): boolean {
  * the shipped view; this is Atlas round 1, preview-addressable only (no
  * Main.tsx wiring yet).
  */
-export default function AtlasView({ onNodeClick }: AtlasViewProps) {
+export default function AtlasView({ onNodeClick, focusEntityId }: AtlasViewProps) {
   const { t } = useTranslation();
   const palette = useGraphPalette();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -399,6 +403,18 @@ export default function AtlasView({ onNodeClick }: AtlasViewProps) {
     if (pxPerUnit > targetDensity) {
       const camera = renderer.getCamera();
       camera.setState({ ratio: camera.ratio * (pxPerUnit / targetDensity) });
+    }
+    // Overlay entry point: land already centered on the focused entity with
+    // the same emphasis the search fly applies. setState, never animate —
+    // this is the first frame the user sees, not a camera move.
+    if (focusEntityId && graph.hasNode(focusEntityId)) {
+      hoverStateRef.current = hoverStateFor(graph, focusEntityId);
+      const display = renderer.getNodeDisplayData(focusEntityId);
+      if (display) {
+        const camera = renderer.getCamera();
+        camera.setState({ x: display.x, y: display.y, ratio: Math.min(camera.ratio, 1) });
+      }
+      renderer.refresh();
     }
     renderer.on("clickNode", ({ node }) => {
       // A moved drag must not also navigate on release.

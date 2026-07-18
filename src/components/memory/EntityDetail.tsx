@@ -17,7 +17,7 @@ import {
 } from "../../lib/tauri";
 import { MetadataRow, RailPanelTitle } from "./MemoryDetailPrimitives";
 import FocusGraph from "./FocusGraph";
-import ConstellationMap from "./ConstellationMap";
+import AtlasView from "./AtlasView";
 
 interface EntityDetailProps {
   entityId: string;
@@ -60,6 +60,8 @@ export default function EntityDetail({ entityId, onBack, onEntityClick, onMemory
   const [graphOpen, setGraphOpen] = useState(false);
   // Resets to "focus" every time the overlay opens — no persistence across opens.
   const [overlayMode, setOverlayMode] = useState<"focus" | "map">("focus");
+  // Artifact screen 02's "Show verbs" chip — on by default, reset on open.
+  const [showVerbs, setShowVerbs] = useState(true);
   // Set when Escape cancels an edit, so the unmount blur doesn't save the draft
   const cancelEditRef = useRef(false);
 
@@ -167,6 +169,13 @@ export default function EntityDetail({ entityId, onBack, onEntityClick, onMemory
             : 1,
       ),
     [relations],
+  );
+
+  // Overlay toolbar count: distinct neighbor entities, self-loops excluded —
+  // an entity related both ways still counts once.
+  const neighborCount = useMemo(
+    () => new Set(relations.filter((r) => r.entity_id !== entityId).map((r) => r.entity_id)).size,
+    [relations, entityId],
   );
 
   if (!detail) {
@@ -437,6 +446,7 @@ export default function EntityDetail({ entityId, onBack, onEntityClick, onMemory
                   type="button"
                   onClick={() => {
                     setOverlayMode("focus");
+                    setShowVerbs(true);
                     setGraphOpen(true);
                   }}
                   className="memory-detail-icon-button"
@@ -557,50 +567,139 @@ export default function EntityDetail({ entityId, onBack, onEntityClick, onMemory
         aria-modal="true"
         aria-label={t("entityDetail.expandGraph")}
         className="fixed inset-0 z-50"
-        style={{ background: "var(--mem-bg)" }}
+        style={{
+          background: "var(--mem-bg)",
+          display: "flex",
+          flexDirection: "column",
+        }}
       >
-        {overlayMode === "focus" ? (
-          <FocusGraph
-            detail={detail}
-            onEntityClick={(id) => {
-              setGraphOpen(false);
-              onEntityClick(id);
-            }}
-            fill
-          />
-        ) : (
-          <ConstellationMap
-            focusEntityId={entity.id}
-            onNodeClick={(id) => {
-              setGraphOpen(false);
-              onEntityClick(id);
-            }}
-          />
-        )}
-        <button
-          type="button"
-          onClick={() => setGraphOpen(false)}
-          className="memory-detail-icon-button"
-          aria-label={t("common.close")}
-          title={t("common.close")}
-          // Top-left, not top-right: FocusGraph's own "outgoing →" caption
-          // (and ConstellationMap's corner label) anchor top-right, so a
-          // top-right close button would sit on top of them.
-          style={{ position: "absolute", top: 10, left: 10 }}
+        {/* Artifact screen 02 toolbar: crumb ▸ chip · count · Atlas|Focus
+            segment. The close button lives in-row (left) so nothing floats
+            over the graph. */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            padding: "10px 16px",
+            borderBottom: "1px solid var(--mem-border)",
+            background: "var(--mem-surface)",
+            fontFamily: "var(--mem-font-body)",
+            flexWrap: "wrap",
+          }}
         >
-          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M18 6 6 18M6 6l12 12" />
-          </svg>
-        </button>
-        <button
-          type="button"
-          onClick={() => setOverlayMode((m) => (m === "focus" ? "map" : "focus"))}
-          className="memory-detail-text-button"
-          // Right after the close button, same top offset, small gap.
-          style={{ position: "absolute", top: 10, left: 50 }}
-        >
-          {overlayMode === "focus" ? t("entityDetail.viewFullGraph") : t("entityDetail.focusView")}
-        </button>
+          <button
+            type="button"
+            onClick={() => setGraphOpen(false)}
+            className="memory-detail-icon-button"
+            aria-label={t("common.close")}
+            title={t("common.close")}
+          >
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
+          </button>
+          <span style={{ fontSize: 12, color: "var(--mem-text-tertiary)" }}>
+            {t("focus.crumbAtlas")}
+            {overlayMode === "focus" && (
+              <>
+                {" ▸ "}
+                <b style={{ color: "var(--mem-text)", fontWeight: 500 }}>
+                  {t("focus.crumbFocus", { name: entity.name })}
+                </b>
+              </>
+            )}
+          </span>
+          {overlayMode === "focus" && (
+            <button
+              type="button"
+              aria-pressed={showVerbs}
+              onClick={() => setShowVerbs((v) => !v)}
+              style={{
+                fontSize: 12,
+                color: showVerbs ? "var(--mem-text)" : "var(--mem-text-secondary)",
+                border: `1px solid ${showVerbs ? "var(--mem-distilled-border)" : "var(--mem-border)"}`,
+                borderRadius: "var(--mem-radius-full)",
+                padding: "4px 12px",
+                background: showVerbs ? "var(--mem-indigo-bg)" : "transparent",
+                cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              {t("focus.showVerbs")}
+            </button>
+          )}
+          {overlayMode === "focus" && (
+            <span
+              style={{
+                marginLeft: "auto",
+                font: "400 11px var(--mem-font-mono)",
+                color: "var(--mem-text-tertiary)",
+              }}
+            >
+              {t("focus.neighbors", { count: neighborCount })}
+              {linkedMemories.length > 0 &&
+                ` · ${t("focus.memoriesCount", { count: linkedMemories.length })}`}
+            </span>
+          )}
+          <div
+            role="group"
+            aria-label={t("focus.viewSegmentLabel")}
+            style={{
+              display: "flex",
+              border: "1px solid var(--mem-border)",
+              borderRadius: "var(--mem-radius-md)",
+              overflow: "hidden",
+              marginLeft: overlayMode === "focus" ? 0 : "auto",
+            }}
+          >
+            {(["map", "focus"] as const).map((mode) => {
+              const on = overlayMode === mode;
+              return (
+                <button
+                  key={mode}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => setOverlayMode(mode)}
+                  style={{
+                    fontSize: 12,
+                    padding: "4px 14px",
+                    border: "none",
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    color: on ? "var(--mem-text)" : "var(--mem-text-tertiary)",
+                    fontWeight: on ? 500 : 400,
+                    background: on ? "var(--mem-hover-strong)" : "transparent",
+                  }}
+                >
+                  {mode === "map" ? t("focus.segAtlas") : t("focus.segFocus")}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
+          {overlayMode === "focus" ? (
+            <FocusGraph
+              detail={detail}
+              onEntityClick={(id) => {
+                setGraphOpen(false);
+                onEntityClick(id);
+              }}
+              fill
+              showVerbs={showVerbs}
+              memoriesCount={linkedMemories.length}
+            />
+          ) : (
+            <AtlasView
+              focusEntityId={entity.id}
+              onNodeClick={(id) => {
+                setGraphOpen(false);
+                onEntityClick(id);
+              }}
+            />
+          )}
+        </div>
       </div>
     )}
     </>

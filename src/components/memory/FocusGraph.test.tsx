@@ -221,4 +221,56 @@ describe("FocusGraph", () => {
     const { container: c2 } = render(<FocusGraph detail={noConf} onEntityClick={vi.fn()} />);
     expect((c2.querySelector("line") as SVGLineElement).style.strokeOpacity).toBe("1");
   });
+
+  it("hides the verb labels when showVerbs is false, keeps the edges and nodes", () => {
+    const detail = makeDetail(makeEntity({ id: "E" }), [
+      makeRel({ id: "r1", direction: "outgoing", entity_id: "B", relation_type: "maintains" }),
+    ]);
+    const { container } = render(
+      <FocusGraph detail={detail} onEntityClick={vi.fn()} showVerbs={false} />,
+    );
+    expect(container.querySelectorAll(".entity-graph-verb")).toHaveLength(0);
+    expect(container.querySelectorAll("line")).toHaveLength(1);
+    expect(screen.getByRole("button", { name: /Bob/ })).toBeInTheDocument();
+  });
+
+  it("renders the memory dot cluster with its count label in fill mode only", () => {
+    const detail = makeDetail(makeEntity({ id: "E" }), [
+      makeRel({ id: "r1", direction: "outgoing", entity_id: "B" }),
+    ]);
+    const { container } = render(
+      <FocusGraph detail={detail} onEntityClick={vi.fn()} fill memoriesCount={3} />,
+    );
+    expect(screen.getByText("memories (3)")).toBeInTheDocument();
+    // The cluster hangs off the center on its own thin line: neighbor edge +
+    // cluster line.
+    expect(container.querySelectorAll("line")).toHaveLength(2);
+
+    cleanup();
+
+    // Inline card (no fill): no cluster even with memories.
+    render(<FocusGraph detail={detail} onEntityClick={vi.fn()} memoriesCount={3} />);
+    expect(screen.queryByText("memories (3)")).not.toBeInTheDocument();
+
+    cleanup();
+
+    // Fill with zero memories: no cluster, no dangling line.
+    const { container: c3 } = render(
+      <FocusGraph detail={detail} onEntityClick={vi.fn()} fill memoriesCount={0} />,
+    );
+    expect(c3.querySelectorAll("line")).toHaveLength(1);
+  });
+
+  it("shows the confidence hint chip in fill mode only", () => {
+    const detail = makeDetail(makeEntity({ id: "E" }), [
+      makeRel({ id: "r1", direction: "outgoing", entity_id: "B" }),
+    ]);
+    render(<FocusGraph detail={detail} onEntityClick={vi.fn()} fill />);
+    expect(screen.getByText("edge opacity = relation confidence")).toBeInTheDocument();
+
+    cleanup();
+
+    render(<FocusGraph detail={detail} onEntityClick={vi.fn()} />);
+    expect(screen.queryByText("edge opacity = relation confidence")).not.toBeInTheDocument();
+  });
 });

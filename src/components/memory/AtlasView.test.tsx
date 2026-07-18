@@ -828,6 +828,29 @@ describe("AtlasView", () => {
     }
   });
 
+  it("lands centered on focusEntityId at mount with emphasis, never animating", async () => {
+    mockConnectedPairWithIsolate();
+
+    // Baseline: an unfocused mount, for the reducer comparison below.
+    const attrs = { color: "#abc", size: 4, entityType: "concept", confirmed: false };
+    const { unmount } = renderWithQuery(<AtlasView />);
+    await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
+    const plain = capturedSigmaInstances[0].settings.nodeReducer("e3", attrs);
+    unmount();
+    capturedSigmaInstances.length = 0;
+
+    renderWithQuery(<AtlasView focusEntityId="e1" />);
+    await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
+    const instance = capturedSigmaInstances[0];
+
+    // First frame, not a transition: setState with the display coords.
+    expect(instance.camera.setState).toHaveBeenCalledWith({ x: 0.42, y: 0.24, ratio: 1 });
+    expect(instance.camera.animate).not.toHaveBeenCalled();
+
+    // e3 is outside e1's neighborhood — the mounted reducer already dims it.
+    expect(instance.settings.nodeReducer("e3", attrs)).not.toEqual(plain);
+  });
+
   it("drags an isolate by direct manipulation, without restarting the sim", async () => {
     mockConnectedPairWithIsolate();
 
