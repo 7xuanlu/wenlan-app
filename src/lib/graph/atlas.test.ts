@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import type Graph from "graphology";
 import type { ForceLink, SimulationLinkDatum } from "d3-force";
 import type { GraphModel, GraphNode, GraphEdge } from "./model";
@@ -315,6 +315,16 @@ describe("createAtlasSimulation", () => {
       y: graph.getNodeAttribute("s1", "y") as number,
     };
     expect(after).not.toEqual(before);
+  });
+
+  it("invokes onTick after every writeback — once for the settle batch, once per manual tick", () => {
+    const graph = starGraph();
+    const onTick = vi.fn();
+    const sim = createAtlasSimulation(graph, onTick);
+    // The settle runs as a single wrapped tick(220) call → one writeback.
+    expect(onTick).toHaveBeenCalledTimes(1);
+    sim.tick(1);
+    expect(onTick).toHaveBeenCalledTimes(2);
   });
 });
 

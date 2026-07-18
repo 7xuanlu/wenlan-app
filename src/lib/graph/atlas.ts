@@ -131,7 +131,10 @@ interface AtlasSimLink {
  *  first drag; settling here means the graph the caller paints is already at
  *  rest, and a drag only flexes it (see round 5 spec). Every tick writes sim
  *  x/y back into the graph (sigma auto-repaints on attr change). */
-export function createAtlasSimulation(graph: Graph): Simulation<AtlasSimNode, undefined> {
+export function createAtlasSimulation(
+  graph: Graph,
+  onTick?: () => void,
+): Simulation<AtlasSimNode, undefined> {
   const isolates = new Set(isolateIds(graph));
   const nodes: AtlasSimNode[] = [];
   graph.forEachNode((id, attrs) => {
@@ -155,12 +158,19 @@ export function createAtlasSimulation(graph: Graph): Simulation<AtlasSimNode, un
     .alphaDecay(0.03)
     .velocityDecay(0.25);
 
+  // onTick runs after every position writeback so the caller can PAINT in
+  // the same frame the physics stepped. Relying on sigma's graph-event
+  // scheduled render instead paints every tick one frame late: d3's timer
+  // and sigma's scheduler are separate rAF queues, and a render requested
+  // mid-frame only runs on the next one — a constant extra frame of drag
+  // latency (the old force-graph loop ticked and painted together).
   const writeBack = () => {
     for (const node of nodes) {
       if (node.fx != null && node.fy != null) continue;
       graph.setNodeAttribute(node.id, "x", node.x);
       graph.setNodeAttribute(node.id, "y", node.y);
     }
+    onTick?.();
   };
   sim.on("tick", writeBack);
 

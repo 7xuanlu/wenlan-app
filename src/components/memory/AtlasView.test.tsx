@@ -314,6 +314,21 @@ describe("AtlasView", () => {
     original: { preventDefault: () => {}, stopPropagation: () => {} },
   });
 
+  it("paints synchronously on every physics tick — the writeback drives sigma's refresh", async () => {
+    mockConnectedPair();
+
+    renderWithQuery(<AtlasView />);
+    await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
+    const instance = capturedSigmaInstances[0];
+    const sim = (window as any).__ATLAS_SIM;
+
+    const refreshSpy = vi.spyOn(instance, "refresh");
+    sim.tick(1);
+    // One frame late (sigma's own event-scheduled render) is the round-8
+    // drag-latency bug — the writeback must paint in the same frame.
+    expect(refreshSpy).toHaveBeenCalled();
+  });
+
   it("moves a connected non-dragged node as the reheated sim ticks", async () => {
     mockConnectedPair();
 

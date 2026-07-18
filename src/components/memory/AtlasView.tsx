@@ -111,7 +111,10 @@ export default function AtlasView({ onNodeClick }: AtlasViewProps) {
     runAtlasLayout(graph);
     graphRef.current = graph;
 
-    const sim = createAtlasSimulation(graph);
+    // Same-frame paint per physics step (see createAtlasSimulation's onTick
+    // note). sigmaRef is still null during the synchronous settle ticks, so
+    // the 220 pre-paint steps don't render.
+    const sim = createAtlasSimulation(graph, () => sigmaRef.current?.refresh());
     simRef.current = sim;
     if (import.meta.env.DEV) {
       // Preview/debug handle only — stripped from prod builds.
