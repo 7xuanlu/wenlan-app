@@ -851,6 +851,60 @@ describe("AtlasView", () => {
     expect(refreshSpy).toHaveBeenCalled();
   });
 
+  it("Space selector scopes the graph to one space and back", async () => {
+    const entities = [
+      makeEntity({ id: "e1", name: "Alice", domain: "wenlan-dev" }),
+      makeEntity({ id: "e2", name: "Bob", domain: "wenlan-dev" }),
+      makeEntity({ id: "e3", name: "Isolate", domain: "personal" }),
+    ];
+    mockListEntities.mockResolvedValue(entities);
+    mockGetEntityDetail.mockImplementation(async (id: string) => ({
+      entity: entities.find((e) => e.id === id)!,
+      observations: [],
+      relations:
+        id === "e1"
+          ? [
+              {
+                id: "rel-1",
+                relation_type: "knows",
+                direction: "outgoing" as const,
+                entity_id: "e2",
+                entity_name: "Bob",
+                entity_type: "person",
+                source_agent: null,
+                created_at: Math.floor(Date.now() / 1000),
+              },
+            ]
+          : [],
+    }));
+
+    renderWithQuery(<AtlasView />);
+    await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
+
+    const select = screen.getByRole("combobox", { name: "Space" });
+    expect(
+      Array.from((select as HTMLSelectElement).options).map((o) => o.textContent),
+    ).toEqual(["All spaces", "personal", "wenlan-dev"]);
+    expect(screen.getByText("3 entities")).toBeInTheDocument();
+
+    fireEvent.change(select, { target: { value: "wenlan-dev" } });
+    expect(await screen.findByText("2 entities")).toBeInTheDocument();
+
+    fireEvent.change(select, { target: { value: "" } });
+    expect(await screen.findByText("3 entities")).toBeInTheDocument();
+  });
+
+  it("hides the Space selector when no entity carries a space", async () => {
+    mockConnectedPair();
+
+    renderWithQuery(<AtlasView />);
+    await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
+
+    // Toolbar is provably rendered (Regions chip present) before the absence claim.
+    expect(screen.getByRole("button", { name: "Regions" })).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Space" })).not.toBeInTheDocument();
+  });
+
   it("jumps the camera instantly on search select under prefers-reduced-motion", async () => {
     const matchMediaMock = vi.fn().mockReturnValue({ matches: true } as MediaQueryList);
     vi.stubGlobal("matchMedia", matchMediaMock);

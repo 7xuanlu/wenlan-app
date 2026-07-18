@@ -124,7 +124,26 @@ export default function AtlasView({ onNodeClick, focusEntityId, onBack }: AtlasV
     staleTime: 120_000,
   });
 
-  const model = useMemo(() => buildGraphModel(entities, details), [entities, details]);
+  // Same field precedence as the entity page (EntityDetail's `space ?? domain`).
+  const spaces = useMemo(
+    () =>
+      Array.from(
+        new Set(entities.map((e: Entity) => e.space ?? e.domain).filter((s): s is string => !!s)),
+      ).sort(),
+    [entities],
+  );
+  const [spaceFilter, setSpaceFilter] = useState<string | null>(null);
+
+  // Scoping filters the model INPUTS: the space's own entities plus whatever
+  // bridge neighbors their relations synthesize (those carry no space of their
+  // own). Regions, counts, and insights all re-derive from the scoped model.
+  const model = useMemo(() => {
+    if (!spaceFilter) return buildGraphModel(entities, details);
+    return buildGraphModel(
+      entities.filter((e: Entity) => (e.space ?? e.domain) === spaceFilter),
+      details.filter((d: EntityDetail) => (d.entity.space ?? d.entity.domain) === spaceFilter),
+    );
+  }, [entities, details, spaceFilter]);
   const communities = useMemo(() => communitiesFor(model), [model]);
 
   // Region count + names for the toolbar and rail — membership only, so it
@@ -822,6 +841,30 @@ export default function AtlasView({ onNodeClick, focusEntityId, onBack }: AtlasV
         >
           {t("atlas.regionsToggle")}
         </button>
+        {spaces.length > 0 && (
+          <select
+            aria-label={t("atlas.spaceLabel")}
+            value={spaceFilter ?? ""}
+            onChange={(event) => setSpaceFilter(event.target.value || null)}
+            style={{
+              fontSize: 12,
+              color: spaceFilter ? "var(--mem-text)" : "var(--mem-text-secondary)",
+              border: `1px solid ${spaceFilter ? "var(--mem-distilled-border)" : "var(--mem-border)"}`,
+              borderRadius: "var(--mem-radius-full)",
+              padding: "4px 10px",
+              background: spaceFilter ? "var(--mem-indigo-bg)" : "transparent",
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            <option value="">{t("atlas.spaceAll")}</option>
+            {spaces.map((space) => (
+              <option key={space} value={space}>
+                {space}
+              </option>
+            ))}
+          </select>
+        )}
         <span
           style={{
             marginLeft: "auto",

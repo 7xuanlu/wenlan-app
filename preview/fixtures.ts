@@ -753,7 +753,8 @@ export const GRAPH_ENTITIES: Entity[] = GRAPH_ENTITY_SEED.map((seed, i) => ({
   id: seed.id,
   name: seed.name,
   entity_type: seed.entity_type,
-  domain: null,
+  // Two spaces mirroring the two communities — feeds the Atlas Space selector.
+  domain: seed.id.startsWith("gk-z") ? "notes" : "wenlan-dev",
   source_agent: "claude-code",
   confidence: 0.9,
   confirmed: true,

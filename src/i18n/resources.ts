@@ -577,6 +577,8 @@ const en = {
     countRegions_other: "{{count}} regions",
     hint: "scroll to zoom · more labels appear as you approach",
     regionsToggle: "Regions",
+    spaceLabel: "Space",
+    spaceAll: "All spaces",
     rail: {
       gapTitle: "Gap",
       bridgeTitle: "Bridge",
@@ -1764,6 +1766,8 @@ const zhHans = {
     countRegions_other: "{{count}} 个区域",
     hint: "滚动缩放 · 靠近可见更多标签",
     regionsToggle: "区域",
+    spaceLabel: "空间",
+    spaceAll: "全部空间",
     rail: {
       gapTitle: "缺口",
       bridgeTitle: "桥接",
@@ -2932,6 +2936,8 @@ const zhHant = {
     countRegions_other: "{{count}} 個區域",
     hint: "捲動縮放 · 靠近可見更多標籤",
     regionsToggle: "區域",
+    spaceLabel: "空間",
+    spaceAll: "全部空間",
     rail: {
       gapTitle: "缺口",
       bridgeTitle: "橋接",
