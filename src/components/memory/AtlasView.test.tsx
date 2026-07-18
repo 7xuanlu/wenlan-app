@@ -684,6 +684,85 @@ describe("AtlasView", () => {
     expect(screen.getByText("6 entities · 2 regions")).toBeInTheDocument();
   });
 
+  it("renders Bridge and This-week rail cards from live graph data, and no Gap card without isolates", async () => {
+    mockTwoTriangles();
+
+    renderWithQuery(<AtlasView />);
+    await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
+
+    // Region names come from regionLeader (a1/b1 are the degree-3 hubs);
+    // the only cross-region edge is rb: a1 → b1.
+    expect(screen.getByText("Bridge")).toBeInTheDocument();
+    expect(
+      screen.getByText("Alice touches Bob through a single link — Alice → Bob."),
+    ).toBeInTheDocument();
+
+    // All 7 relations are stamped now; a1 and b1 tie at 3 gained, the
+    // smaller name wins.
+    expect(screen.getByText("This week")).toBeInTheDocument();
+    expect(
+      screen.getByText("7 new connections. Alice gained 3 — the fastest-growing node."),
+    ).toBeInTheDocument();
+
+    expect(screen.queryByText("Gap")).not.toBeInTheDocument();
+  });
+
+  it("renders a Gap card for isolates whose action flies the camera to the isolate", async () => {
+    mockConnectedPairWithIsolate();
+
+    renderWithQuery(<AtlasView />);
+    await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
+    const instance = capturedSigmaInstances[0];
+
+    expect(screen.getByText("Gap")).toBeInTheDocument();
+    expect(screen.getByText("Isolate has no connections yet.")).toBeInTheDocument();
+    expect(screen.queryByText("Bridge")).not.toBeInTheDocument();
+    expect(
+      screen.getByText("1 new connection. Alice gained 1 — the fastest-growing node."),
+    ).toBeInTheDocument();
+
+    // Cards render gap-first, so the first action belongs to the isolate.
+    const actions = screen.getAllByRole("button", { name: "Show in Atlas →" });
+    fireEvent.click(actions[0]);
+    expect(instance.camera.animate).toHaveBeenCalledWith(
+      { x: 0.42, y: 0.24, ratio: 1 },
+      { duration: 450 },
+    );
+  });
+
+  it("hides the This-week card (and the empty rail) when all relations are older than a week", async () => {
+    const entities = [makeEntity({ id: "e1", name: "Alice" }), makeEntity({ id: "e2", name: "Bob" })];
+    mockListEntities.mockResolvedValue(entities);
+    mockGetEntityDetail.mockImplementation(async (id: string) => {
+      if (id === "e1") {
+        return {
+          entity: entities[0],
+          observations: [],
+          relations: [
+            {
+              id: "rel-old",
+              relation_type: "knows",
+              direction: "outgoing" as const,
+              entity_id: "e2",
+              entity_name: "Bob",
+              entity_type: "person",
+              source_agent: null,
+              created_at: Date.now() - 8 * 24 * 60 * 60 * 1000,
+            },
+          ],
+        };
+      }
+      return { entity: entities[1], observations: [], relations: [] };
+    });
+
+    renderWithQuery(<AtlasView />);
+    await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
+
+    expect(screen.queryByText("This week")).not.toBeInTheDocument();
+    // No gaps, no bridges, no recent relations — the rail column is gone.
+    expect(screen.queryByRole("button", { name: "Show in Atlas →" })).not.toBeInTheDocument();
+  });
+
   it("focuses the search input on ⌘K", async () => {
     mockConnectedPair();
 

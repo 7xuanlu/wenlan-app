@@ -162,6 +162,24 @@ export function convexHull(points: { x: number; y: number }[]): { x: number; y: 
  * then by id — deterministic). Sorted largest-first so the caller can give
  * the dominant region the bigger type.
  */
+/** The member a region is named after: highest degree, ties broken by
+ *  smaller name then smaller id — one rule shared by the drawn region labels
+ *  and the insight rail so the two can never disagree. */
+export function regionLeader<T extends { id: string; name: string; degree: number }>(
+  members: T[],
+): T {
+  let hub = members[0];
+  for (const m of members) {
+    if (
+      m.degree > hub.degree ||
+      (m.degree === hub.degree && (m.name < hub.name || (m.name === hub.name && m.id < hub.id)))
+    ) {
+      hub = m;
+    }
+  }
+  return hub;
+}
+
 export function communityRegions(graph: Graph, communities: Map<string, number>): Region[] {
   const members = new Map<number, string[]>();
   for (const [id, community] of communities) {
@@ -171,16 +189,13 @@ export function communityRegions(graph: Graph, communities: Map<string, number>)
   const regions: Region[] = [];
   for (const ids of members.values()) {
     if (ids.length < MIN_REGION_SIZE) continue;
-    let hubId = ids[0];
-    for (const id of ids) {
-      const d = graph.degree(id);
-      const hubD = graph.degree(hubId);
-      const name = graph.getNodeAttribute(id, "label") as string;
-      const hubName = graph.getNodeAttribute(hubId, "label") as string;
-      if (d > hubD || (d === hubD && (name < hubName || (name === hubName && id < hubId)))) {
-        hubId = id;
-      }
-    }
+    const hubId = regionLeader(
+      ids.map((id) => ({
+        id,
+        name: graph.getNodeAttribute(id, "label") as string,
+        degree: graph.degree(id),
+      })),
+    ).id;
     regions.push({
       hull: convexHull(
         ids.map((id) => ({

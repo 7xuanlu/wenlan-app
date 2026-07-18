@@ -9,6 +9,7 @@ import type { Simulation } from "d3-force";
 import { listEntities, getEntityDetail } from "../../lib/tauri";
 import type { Entity, EntityDetail } from "../../lib/tauri";
 import { buildGraphModel } from "../../lib/graph/model";
+import type { GraphNode } from "../../lib/graph/model";
 import {
   buildAtlasGraph,
   runAtlasLayout,
@@ -24,6 +25,8 @@ import {
   communitiesFor,
   cartographyScene,
   drawCartography,
+  bridgeEdgeTest,
+  regionLeader,
   MIN_REGION_SIZE,
 } from "../../lib/graph/cartography";
 import { useGraphPalette, colorForEntityType, nodeFillFor } from "../../lib/graph/palette";
@@ -119,19 +122,102 @@ export default function AtlasView({ onNodeClick }: AtlasViewProps) {
   const model = useMemo(() => buildGraphModel(entities, details), [entities, details]);
   const communities = useMemo(() => communitiesFor(model), [model]);
 
-  // Region count for the toolbar — membership sizes only, so it agrees with
-  // the hulls drawCartography actually draws without needing node positions.
-  const regionCount = useMemo(() => {
-    const sizes = new Map<number, number>();
+  // Region count + names for the toolbar and rail — membership only, so it
+  // agrees with the hulls drawCartography actually draws without needing
+  // node positions; names share regionLeader with the drawn labels.
+  const regionInfo = useMemo(() => {
+    const groups = new Map<number, GraphNode[]>();
     for (const node of model.nodes) {
       const community = communities.get(node.id);
       if (community === undefined) continue;
-      sizes.set(community, (sizes.get(community) ?? 0) + 1);
+      const list = groups.get(community);
+      if (list) list.push(node);
+      else groups.set(community, [node]);
     }
-    let count = 0;
-    for (const size of sizes.values()) if (size >= MIN_REGION_SIZE) count += 1;
-    return count;
+    const names = new Map<number, string>();
+    for (const [community, members] of groups) {
+      if (members.length >= MIN_REGION_SIZE) names.set(community, regionLeader(members).name);
+    }
+    return { count: names.size, names };
   }, [model, communities]);
+
+  // Insight rail (artifact screen 01) — only cards whose data is real today:
+  // isolates as the gap signal, cross-region bridges, this week's relations.
+  // Every action is a live focusEntity fly, no dead links.
+  const insights = useMemo(() => {
+    const cards: { key: string; title: string; body: string; focusId: string }[] = [];
+    const nodeName = new Map(model.nodes.map((n) => [n.id, n.name]));
+
+    const isolates = model.nodes.filter((n) => n.degree === 0);
+    if (isolates.length > 0) {
+      const first = isolates[0];
+      cards.push({
+        key: "gap",
+        title: t("atlas.rail.gapTitle"),
+        body:
+          isolates.length === 1
+            ? t("atlas.rail.gapOne", { name: first.name })
+            : t("atlas.rail.gapMore", { name: first.name, count: isolates.length - 1 }),
+        focusId: first.id,
+      });
+    }
+
+    const isBridge = bridgeEdgeTest(communities);
+    const bridge = model.edges.find((e) => isBridge(e.source, e.target));
+    if (bridge) {
+      const pairKey = (s: string, t2: string) => {
+        const a = communities.get(s)!;
+        const b = communities.get(t2)!;
+        return a < b ? `${a}:${b}` : `${b}:${a}`;
+      };
+      const pair = pairKey(bridge.source, bridge.target);
+      const pairCount = model.edges.filter(
+        (e) => isBridge(e.source, e.target) && pairKey(e.source, e.target) === pair,
+      ).length;
+      cards.push({
+        key: "bridge",
+        title: t("atlas.rail.bridgeTitle"),
+        body: t("atlas.rail.bridgeBody", {
+          count: pairCount,
+          a: regionInfo.names.get(communities.get(bridge.source)!),
+          b: regionInfo.names.get(communities.get(bridge.target)!),
+          link: `${nodeName.get(bridge.source)} → ${nodeName.get(bridge.target)}`,
+        }),
+        focusId: bridge.source,
+      });
+    }
+
+    const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const recent = model.edges.filter((e) => e.createdAt >= weekAgo);
+    if (recent.length > 0) {
+      const gained = new Map<string, number>();
+      for (const e of recent) {
+        gained.set(e.source, (gained.get(e.source) ?? 0) + 1);
+        if (e.target !== e.source) gained.set(e.target, (gained.get(e.target) ?? 0) + 1);
+      }
+      let topId = "";
+      let topN = 0;
+      for (const [id, n] of gained) {
+        const name = nodeName.get(id) ?? "";
+        const topName = nodeName.get(topId) ?? "";
+        if (n > topN || (n === topN && name < topName)) {
+          topId = id;
+          topN = n;
+        }
+      }
+      cards.push({
+        key: "week",
+        title: t("atlas.rail.weekTitle"),
+        body: t("atlas.rail.weekBody", {
+          count: recent.length,
+          name: nodeName.get(topId),
+          gained: topN,
+        }),
+        focusId: topId,
+      });
+    }
+    return cards;
+  }, [model, communities, regionInfo, t]);
 
   // Toolbar search (artifact screen 01): type → listbox of entity names,
   // Enter/click → camera fly + the same emphasis hover applies.
@@ -519,8 +605,8 @@ export default function AtlasView({ onNodeClick }: AtlasViewProps) {
 
   const entityCount = model.nodes.length;
   const countLine =
-    regionCount > 0
-      ? `${t("atlas.countEntities", { count: entityCount })} · ${t("atlas.countRegions", { count: regionCount })}`
+    regionInfo.count > 0
+      ? `${t("atlas.countEntities", { count: entityCount })} · ${t("atlas.countRegions", { count: regionInfo.count })}`
       : t("atlas.countEntities", { count: entityCount });
   const dropdownOpen = searchFocused && query.trim().length > 0;
 
@@ -668,7 +754,15 @@ export default function AtlasView({ onNodeClick }: AtlasViewProps) {
         </span>
       </div>
 
-      <div style={{ position: "relative", flex: 1, minHeight: 0 }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: insights.length > 0 ? "minmax(0, 1fr) 292px" : "minmax(0, 1fr)",
+          flex: 1,
+          minHeight: 0,
+        }}
+      >
+      <div style={{ position: "relative", minWidth: 0 }}>
       <div ref={containerRef} data-testid="atlas-view" style={{ height: "100%", width: "100%" }} />
 
       {/* Legend — top-right, same furniture as the old canvas graph (minus
@@ -741,6 +835,74 @@ export default function AtlasView({ onNodeClick }: AtlasViewProps) {
       >
         {t("atlas.hint")}
       </span>
+      </div>
+
+      {/* Insight rail — artifact screen 01's 292px column. Renders only
+          cards with live data behind them; every action is a real fly. */}
+      {insights.length > 0 && (
+        <aside
+          style={{
+            borderLeft: "1px solid var(--mem-border)",
+            background: "var(--mem-surface)",
+            padding: "16px 16px 20px",
+            display: "flex",
+            flexDirection: "column",
+            gap: 14,
+            overflowY: "auto",
+            fontFamily: "var(--mem-font-body)",
+          }}
+        >
+          {insights.map((card) => (
+            <div
+              key={card.key}
+              style={{
+                background: "var(--mem-detail-surface-raised)",
+                border: "1px solid var(--mem-border)",
+                borderRadius: "var(--mem-radius-md)",
+                padding: "12px 14px",
+              }}
+            >
+              <div
+                style={{
+                  font: "500 10px var(--mem-font-mono)",
+                  letterSpacing: ".14em",
+                  textTransform: "uppercase",
+                  color: "var(--mem-accent-warm)",
+                }}
+              >
+                {card.title}
+              </div>
+              <p
+                style={{
+                  margin: "6px 0 0",
+                  fontSize: 12.5,
+                  lineHeight: 1.5,
+                  color: "var(--mem-text-secondary)",
+                }}
+              >
+                {card.body}
+              </p>
+              <button
+                type="button"
+                onClick={() => focusEntity(card.focusId)}
+                style={{
+                  display: "inline-block",
+                  background: "none",
+                  border: "none",
+                  padding: 0,
+                  marginTop: 8,
+                  fontSize: 11.5,
+                  color: "var(--mem-accent-indigo)",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+              >
+                {t("atlas.rail.showInAtlas")}
+              </button>
+            </div>
+          ))}
+        </aside>
+      )}
       </div>
     </div>
   );
