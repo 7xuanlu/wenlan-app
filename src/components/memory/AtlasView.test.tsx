@@ -280,41 +280,7 @@ describe("AtlasView", () => {
     original: { preventDefault: () => {}, stopPropagation: () => {} },
   });
 
-  // Deterministic requestAnimationFrame/cancelAnimationFrame stand-in — jsdom
-  // has neither. Models real single-in-flight-handle cancel semantics (the
-  // settle loop only ever has one frame scheduled at a time) rather than a
-  // bare FIFO, so the "new downNode cancels it" assertion is meaningful.
-  function stubRaf() {
-    let nextHandle = 0;
-    const scheduled = new Map<number, FrameRequestCallback>();
-    const order: number[] = [];
-    vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
-      const handle = ++nextHandle;
-      scheduled.set(handle, cb);
-      order.push(handle);
-      return handle;
-    });
-    vi.stubGlobal("cancelAnimationFrame", (handle: number) => {
-      scheduled.delete(handle);
-    });
-    return {
-      runFrame(): boolean {
-        while (order.length > 0) {
-          const handle = order.shift()!;
-          const cb = scheduled.get(handle);
-          if (cb) {
-            scheduled.delete(handle);
-            cb(0);
-            return true;
-          }
-        }
-        return false;
-      },
-      pendingCount: () => order.filter((h) => scheduled.has(h)).length,
-    };
-  }
-
-  it("moves a connected non-dragged node when the dragged node is moved", async () => {
+  it("moves a connected non-dragged node as the reheated sim ticks", async () => {
     mockConnectedPair();
 
     renderWithQuery(<AtlasView />);
@@ -322,48 +288,30 @@ describe("AtlasView", () => {
     const instance = capturedSigmaInstances[0];
     const graph = instance.graph;
     const mouseCaptor = instance.getMouseCaptor();
+    // d3-timer's automatic per-frame loop never fires on its own inside a
+    // test — drive the DEV-only captured sim ref directly instead.
+    // sim.tick() is synchronous and writes back to the graph (see atlas.ts's
+    // createAtlasSimulation).
+    const sim = (window as any).__ATLAS_SIM;
+    const restartSpy = vi.spyOn(sim, "restart");
 
     const before = { x: graph.getNodeAttribute("e2", "x"), y: graph.getNodeAttribute("e2", "y") };
 
     instance.handlers.get("downNode")?.({ node: "e1" });
-    mouseCaptor.handlers.get("mousemovebody")?.(dragEvent(40, 40));
+
+    // downNode pins the pressed node and reheats the sim toward alphaTarget 0.3.
+    expect(restartSpy).toHaveBeenCalledTimes(1);
+    expect(sim.alphaTarget()).toBeCloseTo(0.3);
+
+    mouseCaptor.handlers.get("mousemovebody")?.(dragEvent(200, 200));
+    sim.alpha(1);
+    sim.tick(30);
 
     const after = { x: graph.getNodeAttribute("e2", "x"), y: graph.getNodeAttribute("e2", "y") };
     expect(after).not.toEqual(before);
   });
 
-  it("keeps stepping neighbor positions across settle frames after a moved drag, and a new downNode cancels it", async () => {
-    const raf = stubRaf();
-    try {
-      mockConnectedPair();
-
-      renderWithQuery(<AtlasView />);
-      await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
-      const instance = capturedSigmaInstances[0];
-      const graph = instance.graph;
-      const mouseCaptor = instance.getMouseCaptor();
-
-      instance.handlers.get("downNode")?.({ node: "e1" });
-      mouseCaptor.handlers.get("mousemovebody")?.(dragEvent(40, 40));
-      mouseCaptor.handlers.get("mouseup")?.({});
-
-      expect(raf.pendingCount()).toBe(1);
-      const postMouseup = { x: graph.getNodeAttribute("e2", "x"), y: graph.getNodeAttribute("e2", "y") };
-
-      for (let i = 0; i < 5; i += 1) raf.runFrame();
-      const afterFrames = { x: graph.getNodeAttribute("e2", "x"), y: graph.getNodeAttribute("e2", "y") };
-      expect(afterFrames).not.toEqual(postMouseup);
-      expect(raf.pendingCount()).toBe(1); // still settling, next frame queued
-
-      instance.handlers.get("downNode")?.({ node: "e2" });
-      expect(raf.pendingCount()).toBe(0);
-    } finally {
-      vi.unstubAllGlobals();
-    }
-  });
-
-  it("skips the settle loop under prefers-reduced-motion, without gating drag-follow itself", async () => {
-    const raf = stubRaf();
+  it("stops the sim (skipping the decay tail) on mouseup under prefers-reduced-motion, without gating the dragged node's own instant response", async () => {
     const matchMediaMock = vi.fn().mockReturnValue({ matches: true } as MediaQueryList);
     vi.stubGlobal("matchMedia", matchMediaMock);
     try {
@@ -374,21 +322,23 @@ describe("AtlasView", () => {
       const instance = capturedSigmaInstances[0];
       const graph = instance.graph;
       const mouseCaptor = instance.getMouseCaptor();
+      const sim = (window as any).__ATLAS_SIM;
+      const stopSpy = vi.spyOn(sim, "stop");
 
-      const before = { x: graph.getNodeAttribute("e2", "x"), y: graph.getNodeAttribute("e2", "y") };
+      const before = { x: graph.getNodeAttribute("e1", "x"), y: graph.getNodeAttribute("e1", "y") };
 
       instance.handlers.get("downNode")?.({ node: "e1" });
-      mouseCaptor.handlers.get("mousemovebody")?.(dragEvent(40, 40));
+      mouseCaptor.handlers.get("mousemovebody")?.(dragEvent(200, 200));
 
-      // Drag-follow is direct manipulation, not an animation — it must run
-      // regardless of the reduced-motion preference.
-      const afterDrag = { x: graph.getNodeAttribute("e2", "x"), y: graph.getNodeAttribute("e2", "y") };
+      // Drag-follow is direct manipulation, not an animation — the dragged
+      // node's own position updates instantly regardless of reduced motion.
+      const afterDrag = { x: graph.getNodeAttribute("e1", "x"), y: graph.getNodeAttribute("e1", "y") };
       expect(afterDrag).not.toEqual(before);
 
       mouseCaptor.handlers.get("mouseup")?.({});
 
       expect(matchMediaMock).toHaveBeenCalledWith("(prefers-reduced-motion: reduce)");
-      expect(raf.pendingCount()).toBe(0);
+      expect(stopSpy).toHaveBeenCalledTimes(1);
     } finally {
       vi.unstubAllGlobals();
     }

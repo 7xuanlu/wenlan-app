@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import Graph from "graphology";
 import forceAtlas2 from "graphology-layout-forceatlas2";
+import { forceSimulation, forceLink, forceManyBody, type Simulation, type SimulationNodeDatum } from "d3-force";
 import type { GraphModel } from "./model";
 import { colorForEntityType, type GraphPalette } from "./palette";
 
@@ -40,7 +41,7 @@ export function buildAtlasGraph(model: GraphModel, palette: GraphPalette): Graph
   // a view decision (see model.ts's parallel-edge note), fine at round-1 scale.
   for (const edge of model.edges) {
     graph.addEdgeWithKey(edge.id, edge.source, edge.target, {
-      size: 1,
+      size: 1.5,
       color: palette.edge,
     });
   }
@@ -87,21 +88,6 @@ export function runAtlasLayout(graph: Graph): void {
   });
 }
 
-/** One (or a few) FA2 refinement steps over the live graph. `pinned` positions
- *  are restored after the step — the dragged node under the pointer, and the
- *  round-1 isolate ring (gravity would otherwise pull parked isolates inward). */
-export function stepAtlasLayout(
-  graph: Graph,
-  opts: { iterations?: number; pinned?: ReadonlyMap<string, { x: number; y: number }> } = {},
-): void {
-  const { iterations = 1, pinned } = opts;
-  forceAtlas2.assign(graph, { iterations, settings: forceAtlas2.inferSettings(graph) });
-  pinned?.forEach((pos, id) => {
-    graph.setNodeAttribute(id, "x", pos.x);
-    graph.setNodeAttribute(id, "y", pos.y);
-  });
-}
-
 /** Degree-0 node ids — the round-1 isolate ring that gravity would otherwise
  *  pull inward during a live layout step. */
 export function isolateIds(graph: Graph): string[] {
@@ -110,6 +96,75 @@ export function isolateIds(graph: Graph): string[] {
     if (graph.degree(id) === 0) isolates.push(id);
   });
   return isolates;
+}
+
+export interface AtlasSimNode extends SimulationNodeDatum {
+  id: string;
+}
+
+interface AtlasSimLink {
+  source: string;
+  target: string;
+}
+
+/** d3-force simulation over the live graphology graph — the interaction engine.
+ *  Created stopped; the caller starts it on drag. Matches the retired
+ *  ConstellationMap feel: charge -40, alphaDecay 0.03, velocityDecay 0.25,
+ *  d3-default link force. Parallel edges collapse to one link per undirected
+ *  pair (d3 sums pull per link; sigma still RENDERS every parallel edge).
+ *  Isolates get fx/fy pinned permanently — the round-1 ring holds. Every tick
+ *  writes sim x/y back into the graph (sigma auto-repaints on attr change). */
+export function createAtlasSimulation(graph: Graph): Simulation<AtlasSimNode, undefined> {
+  const nodes: AtlasSimNode[] = [];
+  graph.forEachNode((id, attrs) => {
+    nodes.push({ id, x: attrs.x as number, y: attrs.y as number });
+  });
+
+  const isolates = new Set(isolateIds(graph));
+  for (const node of nodes) {
+    if (isolates.has(node.id)) {
+      node.fx = node.x;
+      node.fy = node.y;
+    }
+  }
+
+  const seenPairs = new Set<string>();
+  const links: AtlasSimLink[] = [];
+  graph.forEachEdge((_edge, _attrs, source, target) => {
+    const pairKey = [source, target].sort().join("|");
+    if (seenPairs.has(pairKey)) return;
+    seenPairs.add(pairKey);
+    links.push({ source, target });
+  });
+
+  const sim = forceSimulation(nodes)
+    .force("link", forceLink<AtlasSimNode, AtlasSimLink>(links).id((d) => d.id))
+    .force("charge", forceManyBody<AtlasSimNode>().strength(-40))
+    .alphaDecay(0.03)
+    .velocityDecay(0.25);
+
+  const writeBack = () => {
+    for (const node of nodes) {
+      if (node.fx != null && node.fy != null) continue;
+      graph.setNodeAttribute(node.id, "x", node.x);
+      graph.setNodeAttribute(node.id, "y", node.y);
+    }
+  };
+  sim.on("tick", writeBack);
+
+  // d3's own per-frame loop (driven by restart()) calls its internal tick
+  // step directly, bypassing this method — wrapping it only affects manual
+  // callers, which keeps sim.tick() synchronous AND graph-synced for tests
+  // without double-writing during live, restart()-driven dragging.
+  const rawTick = sim.tick.bind(sim);
+  sim.tick = (iterations?: number) => {
+    rawTick(iterations);
+    writeBack();
+    return sim;
+  };
+
+  sim.stop();
+  return sim;
 }
 
 export interface HoverState {

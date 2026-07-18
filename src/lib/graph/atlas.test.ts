@@ -1,18 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { describe, it, expect } from "vitest";
 import type Graph from "graphology";
+import type { ForceLink, SimulationLinkDatum } from "d3-force";
 import type { GraphModel, GraphNode, GraphEdge } from "./model";
 import type { GraphPalette } from "./palette";
 import {
   buildAtlasGraph,
   runAtlasLayout,
-  stepAtlasLayout,
+  createAtlasSimulation,
   isolateIds,
   hoverStateFor,
   nodeDisplay,
   edgeDisplay,
 } from "./atlas";
-import type { HoverState } from "./atlas";
+import type { HoverState, AtlasSimNode } from "./atlas";
 
 const PALETTE: GraphPalette = {
   project: "#111111",
@@ -110,7 +111,7 @@ describe("buildAtlasGraph", () => {
     );
     const graph = buildAtlasGraph(model, PALETTE);
     expect(graph.getEdgeAttribute("e1", "color")).toBe(PALETTE.edge);
-    expect(graph.getEdgeAttribute("e1", "size")).toBe(1);
+    expect(graph.getEdgeAttribute("e1", "size")).toBe(1.5);
   });
 
   it("keeps distinct parallel relations between the same pair as distinct edges", () => {
@@ -194,7 +195,7 @@ describe("runAtlasLayout", () => {
   });
 });
 
-describe("stepAtlasLayout", () => {
+describe("createAtlasSimulation", () => {
   function starGraph(): Graph {
     // Hub "h" with four spokes, laid out once so the spokes start near the hub.
     const model = makeModel(
@@ -211,52 +212,72 @@ describe("stepAtlasLayout", () => {
     return graph;
   }
 
-  it("pulls a distant displaced hub's neighbor closer", () => {
+  it("pulls a neighbor closer to a hub displaced via fx/fy", () => {
     const graph = starGraph();
-    const hubX = graph.getNodeAttribute("h", "x") as number;
-    const hubY = graph.getNodeAttribute("h", "y") as number;
-    const newHub = { x: hubX + 50, y: hubY + 50 };
+    const sim = createAtlasSimulation(graph);
+    const simNodes = sim.nodes();
+    const hub = simNodes.find((n) => n.id === "h")!;
+    const neighbor = simNodes.find((n) => n.id === "s1")!;
 
-    const neighborBefore = {
-      x: graph.getNodeAttribute("s1", "x") as number,
-      y: graph.getNodeAttribute("s1", "y") as number,
-    };
-    graph.setNodeAttribute("h", "x", newHub.x);
-    graph.setNodeAttribute("h", "y", newHub.y);
-    const distBefore = Math.hypot(neighborBefore.x - newHub.x, neighborBefore.y - newHub.y);
+    const newHub = { x: hub.x! + 300, y: hub.y! + 300 };
+    const distBefore = Math.hypot(neighbor.x! - newHub.x, neighbor.y! - newHub.y);
 
-    stepAtlasLayout(graph, { pinned: new Map([["h", newHub]]) });
+    hub.fx = newHub.x;
+    hub.fy = newHub.y;
+    sim.alpha(1);
+    sim.tick(30);
 
-    const distAfter = Math.hypot(
-      (graph.getNodeAttribute("s1", "x") as number) - newHub.x,
-      (graph.getNodeAttribute("s1", "y") as number) - newHub.y,
-    );
+    const distAfter = Math.hypot(neighbor.x! - newHub.x, neighbor.y! - newHub.y);
     expect(distAfter).toBeLessThan(distBefore);
   });
 
-  it("restores pinned entries exactly after the step", () => {
-    const graph = starGraph();
-    const pinned = new Map([
-      ["h", { x: 12.5, y: -7.25 }],
-      ["s2", { x: 3, y: 4 }],
-    ]);
-    stepAtlasLayout(graph, { pinned });
-    expect(graph.getNodeAttribute("h", "x")).toBeCloseTo(12.5, 10);
-    expect(graph.getNodeAttribute("h", "y")).toBeCloseTo(-7.25, 10);
-    expect(graph.getNodeAttribute("s2", "x")).toBeCloseTo(3, 10);
-    expect(graph.getNodeAttribute("s2", "y")).toBeCloseTo(4, 10);
+  it("keeps an isolate's GRAPH position unchanged across ticks (fx/fy pinned)", () => {
+    const model = makeModel(
+      [node({ id: "a", degree: 1 }), node({ id: "b", degree: 1 }), node({ id: "iso" })],
+      [edge({ id: "e1", source: "a", target: "b" })],
+    );
+    const graph = buildAtlasGraph(model, PALETTE);
+    graph.setNodeAttribute("iso", "x", 10);
+    graph.setNodeAttribute("iso", "y", 10);
+
+    const sim = createAtlasSimulation(graph);
+    sim.alpha(1);
+    sim.tick(30);
+
+    expect(graph.getNodeAttribute("iso", "x")).toBeCloseTo(10, 6);
+    expect(graph.getNodeAttribute("iso", "y")).toBeCloseTo(10, 6);
   });
 
-  it("is deterministic: identical graphs stepped identically land identical", () => {
-    const g1 = starGraph();
-    const g2 = starGraph();
-    const pinned = new Map([["h", { x: 1, y: 1 }]]);
-    stepAtlasLayout(g1, { pinned: new Map(pinned) });
-    stepAtlasLayout(g2, { pinned: new Map(pinned) });
-    for (const id of ["h", "s1", "s2", "s3", "s4"]) {
-      expect(g1.getNodeAttribute(id, "x")).toBeCloseTo(g2.getNodeAttribute(id, "x") as number, 10);
-      expect(g1.getNodeAttribute(id, "y")).toBeCloseTo(g2.getNodeAttribute(id, "y") as number, 10);
-    }
+  it("collapses parallel edges between the same pair to a single sim link", () => {
+    const model = makeModel(
+      [node({ id: "a" }), node({ id: "b" })],
+      [
+        edge({ id: "e1", source: "a", target: "b", type: "founded" }),
+        edge({ id: "e2", source: "a", target: "b", type: "mentors" }),
+      ],
+    );
+    const graph = buildAtlasGraph(model, PALETTE);
+    const sim = createAtlasSimulation(graph);
+    const linkForce = sim.force<ForceLink<AtlasSimNode, SimulationLinkDatum<AtlasSimNode>>>("link");
+    expect(linkForce?.links()).toHaveLength(1);
+  });
+
+  it("syncs ticked positions back onto the graphology graph for connected nodes", () => {
+    const graph = starGraph();
+    const before = {
+      x: graph.getNodeAttribute("s1", "x") as number,
+      y: graph.getNodeAttribute("s1", "y") as number,
+    };
+
+    const sim = createAtlasSimulation(graph);
+    sim.alpha(1);
+    sim.tick(30);
+
+    const after = {
+      x: graph.getNodeAttribute("s1", "x") as number,
+      y: graph.getNodeAttribute("s1", "y") as number,
+    };
+    expect(after).not.toEqual(before);
   });
 });
 

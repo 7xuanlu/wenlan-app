@@ -4,19 +4,19 @@ import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import Graph from "graphology";
 import Sigma from "sigma";
+import type { Simulation } from "d3-force";
 import { listEntities, getEntityDetail } from "../../lib/tauri";
 import type { Entity, EntityDetail } from "../../lib/tauri";
 import { buildGraphModel } from "../../lib/graph/model";
 import {
   buildAtlasGraph,
   runAtlasLayout,
-  stepAtlasLayout,
-  isolateIds,
+  createAtlasSimulation,
   hoverStateFor,
   nodeDisplay,
   edgeDisplay,
 } from "../../lib/graph/atlas";
-import type { HoverState } from "../../lib/graph/atlas";
+import type { HoverState, AtlasSimNode } from "../../lib/graph/atlas";
 import { useGraphPalette, colorForEntityType } from "../../lib/graph/palette";
 import type { GraphPalette } from "../../lib/graph/palette";
 
@@ -24,11 +24,9 @@ interface AtlasViewProps {
   onNodeClick?: (entityId: string) => void;
 }
 
-const SETTLE_MAX_FRAMES = 30;
-
 // jsdom has no matchMedia; treat its absence as "no preference" rather than
-// throwing (see the settle-loop wiring below, which is exercised by tests
-// that don't stub it).
+// throwing (see the mouseup wiring below, which is exercised by tests that
+// don't stub it).
 function prefersReducedMotion(): boolean {
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -47,6 +45,7 @@ export default function AtlasView({ onNodeClick }: AtlasViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const sigmaRef = useRef<Sigma | null>(null);
   const graphRef = useRef<Graph | null>(null);
+  const simRef = useRef<Simulation<AtlasSimNode, undefined> | null>(null);
   // Reducer inputs, read from refs so hover/theme changes repaint without a
   // React re-render or a renderer rebuild (see the mount effect below).
   const hoverStateRef = useRef<HoverState>({ hovered: null, neighbors: new Set() });
@@ -56,13 +55,6 @@ export default function AtlasView({ onNodeClick }: AtlasViewProps) {
   // clickNode so a drag-release doesn't also fire entity navigation.
   const draggedNodeRef = useRef<string | null>(null);
   const movedDuringPressRef = useRef(false);
-  // Isolate ring snapshot for the current drag/settle cycle — captured once
-  // on downNode (stepAtlasLayout's `pinned` contract) so FA2 gravity doesn't
-  // reel the round-1 isolate ring back toward the cluster mid-drag.
-  const isolatePinsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
-  // Bounded post-drag settle loop's requestAnimationFrame handle, or null
-  // when no settle is in flight.
-  const settleFrameRef = useRef<number | null>(null);
 
   const {
     data: entities = [],
@@ -118,6 +110,13 @@ export default function AtlasView({ onNodeClick }: AtlasViewProps) {
     runAtlasLayout(graph);
     graphRef.current = graph;
 
+    const sim = createAtlasSimulation(graph);
+    simRef.current = sim;
+    if (import.meta.env.DEV) {
+      // Preview/debug handle only — stripped from prod builds.
+      (window as unknown as Record<string, unknown>).__ATLAS_SIM = sim;
+    }
+
     const renderer = new Sigma(graph, container, {
       labelRenderedSizeThreshold: 6,
       // Default camera fit maps the graph bbox edge-to-edge on the tighter
@@ -162,43 +161,25 @@ export default function AtlasView({ onNodeClick }: AtlasViewProps) {
       renderer.refresh();
     });
 
-    // Bounded post-drag settle loop — steps FA2 a frame at a time so the
-    // neighborhood keeps flowing after release instead of freezing mid-drag.
-    // The isolate ring stays pinned; the released node is free to drift.
-    const cancelSettle = () => {
-      if (settleFrameRef.current !== null) {
-        if (typeof window.cancelAnimationFrame === "function") {
-          window.cancelAnimationFrame(settleFrameRef.current);
-        }
-        settleFrameRef.current = null;
-      }
-    };
-    const startSettleLoop = () => {
-      let frame = 0;
-      const tick = () => {
-        frame += 1;
-        stepAtlasLayout(graph, { iterations: 1, pinned: isolatePinsRef.current });
-        renderer.refresh();
-        settleFrameRef.current = frame < SETTLE_MAX_FRAMES ? window.requestAnimationFrame(tick) : null;
-      };
-      settleFrameRef.current = window.requestAnimationFrame(tick);
-    };
-
     // Node drag — sigma v3's mouse-manipulation pattern (see mouse.d.ts /
     // sigma.esm.js MouseCaptor): downNode starts it, the captor's own
-    // mousemovebody/mouseup/mousedown carry the rest.
+    // mousemovebody/mouseup/mousedown carry the rest. Physics now come from
+    // the d3-force simulation (see atlas.ts's createAtlasSimulation) instead
+    // of a stepped FA2 loop — downNode pins the pressed node and reheats the
+    // sim; mousemovebody drags that pin along with the pointer; mouseup
+    // releases it and lets alpha decay naturally (or stops outright under
+    // reduced motion).
     renderer.on("downNode", ({ node }) => {
       draggedNodeRef.current = node;
       movedDuringPressRef.current = false;
       graph.setNodeAttribute(node, "highlighted", true);
       container.style.cursor = "grabbing";
-      cancelSettle();
-      isolatePinsRef.current = new Map(
-        isolateIds(graph).map((id) => {
-          const attrs = graph.getNodeAttributes(id);
-          return [id, { x: attrs.x as number, y: attrs.y as number }];
-        }),
-      );
+      const simNode = sim.nodes().find((n) => n.id === node);
+      if (simNode) {
+        simNode.fx = simNode.x;
+        simNode.fy = simNode.y;
+      }
+      sim.alphaTarget(0.3).restart();
     });
     const mouseCaptor = renderer.getMouseCaptor();
     mouseCaptor.on("mousedown", () => {
@@ -212,12 +193,14 @@ export default function AtlasView({ onNodeClick }: AtlasViewProps) {
       const pos = renderer.viewportToGraph(e);
       graph.setNodeAttribute(draggedNode, "x", pos.x);
       graph.setNodeAttribute(draggedNode, "y", pos.y);
-      // Live force feel: step FA2 with the dragged node re-pinned at the
-      // pointer each frame, so its neighborhood flows toward the drag instead
-      // of hanging inert until release.
-      const pinned = new Map(isolatePinsRef.current);
-      pinned.set(draggedNode, { x: pos.x, y: pos.y });
-      stepAtlasLayout(graph, { iterations: 1, pinned });
+      // Instant response between ticks — the dragged node's own position
+      // isn't waiting on the next sim tick; its neighbors flow toward this
+      // pin as the sim (reheated on downNode) keeps ticking.
+      const simNode = sim.nodes().find((n) => n.id === draggedNode);
+      if (simNode) {
+        simNode.fx = pos.x;
+        simNode.fy = pos.y;
+      }
       // Sigma's own click suppression (draggedEvents vs. draggedEventsTolerance)
       // never sees this drag — preventSigmaDefault short-circuits handleMove
       // before that counter increments — so movedDuringPressRef above is what
@@ -228,19 +211,24 @@ export default function AtlasView({ onNodeClick }: AtlasViewProps) {
     });
     mouseCaptor.on("mouseup", () => {
       const draggedNode = draggedNodeRef.current;
-      const moved = movedDuringPressRef.current;
       if (draggedNode) {
         graph.setNodeAttribute(draggedNode, "highlighted", false);
+        const simNode = sim.nodes().find((n) => n.id === draggedNode);
+        if (simNode) {
+          simNode.fx = null;
+          simNode.fy = null;
+        }
         draggedNodeRef.current = null;
       }
       container.style.cursor = hoverStateRef.current.hovered ? "pointer" : "default";
-      if (moved && typeof window.requestAnimationFrame === "function" && !prefersReducedMotion()) {
-        startSettleLoop();
-      }
+      // Natural decay is the inertia tail; reduced motion skips it outright.
+      if (prefersReducedMotion()) sim.stop();
+      else sim.alphaTarget(0);
     });
 
     return () => {
-      cancelSettle();
+      sim.stop();
+      simRef.current = null;
       sigmaRef.current = null;
       graphRef.current = null;
       renderer.kill();
