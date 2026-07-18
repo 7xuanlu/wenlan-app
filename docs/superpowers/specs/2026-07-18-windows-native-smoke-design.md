@@ -81,6 +81,11 @@ client path; Playwright does not speak the `tauri-driver` protocol. Keep the
 native smoke separate from the fast browser E2E suite so the evidence boundary
 is obvious and failures are diagnosable.
 
+Before `windows-smoke.yml` exists on the default branch, dispatch the
+default-branch `ci.yml` with its `windows_native_smoke` input. That caller uses
+the reusable workflow from the same branch commit and skips the normal macOS
+jobs. Once merged, `windows-smoke.yml` can also be dispatched directly.
+
 Do not add an RDP tunnel to the hosted runner. A GitHub-hosted runner is an
 ephemeral VM, but GitHub does not expose its desktop as an interactive product
 surface. Third-party tunnel credentials and session services add security and

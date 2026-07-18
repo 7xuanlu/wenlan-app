@@ -1,6 +1,7 @@
 name: Windows Server 2022 native compatibility smoke
 
 on:
+  workflow_call:
   workflow_dispatch:
 
 permissions:

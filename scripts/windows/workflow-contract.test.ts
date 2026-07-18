@@ -8,9 +8,19 @@ const WORKFLOW_PATH = resolve(
   "workflows",
   "windows-smoke.yml",
 );
+const CI_WORKFLOW_PATH = resolve(
+  process.cwd(),
+  ".github",
+  "workflows",
+  "ci.yml",
+);
 
 function workflow(): string {
   return readFileSync(WORKFLOW_PATH, "utf8");
+}
+
+function ciWorkflow(): string {
+  return readFileSync(CI_WORKFLOW_PATH, "utf8");
 }
 
 describe("Windows native smoke workflow contract", () => {
@@ -22,6 +32,16 @@ describe("Windows native smoke workflow contract", () => {
     expect(text).toContain("contents: read");
     expect(text).toContain("Windows Server 2022 native compatibility smoke");
     expect(text).not.toMatch(/\b(push|pull_request|schedule):/);
+  });
+
+  it("can bootstrap a branch run through the default-branch CI dispatcher", () => {
+    const windows = workflow();
+    const ci = ciWorkflow();
+
+    expect(windows).toContain("workflow_call:");
+    expect(ci).toContain("windows_native_smoke:");
+    expect(ci).toContain("inputs.windows_native_smoke");
+    expect(ci).toContain("uses: ./.github/workflows/windows-smoke.yml");
   });
 
   it("pins the native driver toolchain and checks WebView2 compatibility", () => {

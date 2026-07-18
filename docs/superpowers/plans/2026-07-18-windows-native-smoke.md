@@ -368,19 +368,21 @@ release publication, signing, deployment, or merge steps.
 
 The workflow:
 
-1. checks out the branch and installs Node 20, pnpm, Rust stable, and Windows
+1. is callable directly after it reaches the default branch and through the
+   existing `ci.yml` manual dispatcher before merge;
+2. checks out the branch and installs Node 20, pnpm, Rust stable, and Windows
    WebView2 build prerequisites;
-2. installs `tauri-driver` 2.0.6 and `msedgedriver-tool` at
+3. installs `tauri-driver` 2.0.6 and `msedgedriver-tool` at
    `8c4b34f51b45f5cf08013366d703de464ab871d1`;
-3. records Windows edition/build, runner image, WebView2 version, Edge driver
+4. records Windows edition/build, runner image, WebView2 version, Edge driver
    version, Rust/Cargo versions, and the release profile/features;
-4. sets `TARGET_TRIPLE=x86_64-pc-windows-msvc`,
+5. sets `TARGET_TRIPLE=x86_64-pc-windows-msvc`,
    `WENLAN_DOWNLOAD_SIDECARS=1`, a fresh `WENLAN_DATA_DIR`, and
    `WENLAN_SIDECAR_MANIFEST`;
-5. runs `pnpm tauri build --no-bundle --target x86_64-pc-windows-msvc`;
-6. starts `tauri-driver` with the matching EdgeDriver (which it owns), runs
+6. runs `pnpm tauri build --no-bundle --target x86_64-pc-windows-msvc`;
+7. starts `tauri-driver` with the matching EdgeDriver (which it owns), runs
    `pnpm test:native:windows`, and retains their logs;
-7. uploads `windows-native-smoke` on success or failure.
+8. uploads `windows-native-smoke` on success or failure.
 
 The workflow and `result.json` call the claim exactly:
 
