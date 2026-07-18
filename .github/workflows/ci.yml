@@ -98,9 +98,13 @@ jobs:
       - name: Download pinned daemon sidecars
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET_TRIPLE: aarch64-apple-darwin
+          WENLAN_SIDECAR_MANIFEST: ${{ runner.temp }}/staged-sidecars.json
         run: bash scripts/prepare-sidecars.sh --download
 
       - name: Smoke test downloaded binaries
         run: |
           ./app/binaries/wenlan-server-aarch64-apple-darwin --help
           ./app/binaries/wenlan-aarch64-apple-darwin --help
+          ./app/binaries/cloudflared-aarch64-apple-darwin --version
+          node -e "const fs=require('fs'); const p=process.env.RUNNER_TEMP+'/staged-sidecars.json'; const m=JSON.parse(fs.readFileSync(p)); if(m.staged.length!==4) throw new Error('expected four staged Darwin sidecars')"

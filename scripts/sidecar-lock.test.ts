@@ -23,6 +23,14 @@ type SidecarSpec = {
 
 type LockModule = {
   parseSidecarLock(text: string): SidecarLock;
+  replaceBackendRelease(
+    text: string,
+    next: {
+      tag: string;
+      darwinArm64Sha256: string;
+      windowsX64Sha256: string;
+    },
+  ): string;
   sidecarSpecForTarget(lock: SidecarLock, targetTriple: string): SidecarSpec;
 };
 
@@ -96,6 +104,26 @@ describe("sidecar lock", () => {
     const { parseSidecarLock } = await loadLockModule();
 
     expect(() => parseSidecarLock(text)).toThrow(message);
+  });
+
+  it("replaces both backend hashes while preserving every cloudflared field", async () => {
+    const { parseSidecarLock, replaceBackendRelease } = await loadLockModule();
+
+    const updated = replaceBackendRelease(VALID_LOCK, {
+      tag: "v0.14.0",
+      darwinArm64Sha256: "e".repeat(64),
+      windowsX64Sha256: "f".repeat(64),
+    });
+
+    expect(parseSidecarLock(updated)).toEqual({
+      backend_tag: "v0.14.0",
+      backend_darwin_arm64_sha256: "e".repeat(64),
+      backend_windows_x64_sha256: "f".repeat(64),
+      cloudflared_version: "2026.7.2",
+      cloudflared_darwin_arm64_sha256: "c".repeat(64),
+      cloudflared_windows_x64_sha256: "d".repeat(64),
+    });
+    expect(updated).toContain("cloudflared_version=2026.7.2");
   });
 });
 

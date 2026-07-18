@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -58,6 +58,20 @@ export function parseSidecarLock(text) {
 
 export function readSidecarLock(path = DEFAULT_LOCK_PATH) {
   return parseSidecarLock(readFileSync(path, "utf8"));
+}
+
+function serializeSidecarLock(lock) {
+  return `${REQUIRED_SIDECAR_LOCK_KEYS.map((key) => `${key}=${lock[key]}`).join("\n")}\n`;
+}
+
+export function replaceBackendRelease(text, next) {
+  const current = parseSidecarLock(text);
+  return serializeSidecarLock({
+    ...current,
+    backend_tag: next.tag,
+    backend_darwin_arm64_sha256: next.darwinArm64Sha256,
+    backend_windows_x64_sha256: next.windowsX64Sha256,
+  });
 }
 
 function backendPayload(targetTriple, extension) {
@@ -129,8 +143,9 @@ export function sidecarSpecForTarget(lock, targetTriple) {
 }
 
 function runCli(argv) {
-  const [command, argument] = argv;
-  const lock = readSidecarLock();
+  const [command, argument, third, fourth] = argv;
+  const lockText = readFileSync(DEFAULT_LOCK_PATH, "utf8");
+  const lock = parseSidecarLock(lockText);
   if (command === "get" && argument && LOCK_KEY_SET.has(argument)) {
     process.stdout.write(`${lock[argument]}\n`);
     return;
@@ -139,8 +154,17 @@ function runCli(argv) {
     process.stdout.write(`${JSON.stringify(sidecarSpecForTarget(lock, argument), null, 2)}\n`);
     return;
   }
+  if (command === "update-backend" && argument && third && fourth) {
+    const updated = replaceBackendRelease(lockText, {
+      tag: argument,
+      darwinArm64Sha256: third,
+      windowsX64Sha256: fourth,
+    });
+    writeFileSync(DEFAULT_LOCK_PATH, updated);
+    return;
+  }
   throw new Error(
-    "usage: node scripts/sidecar-lock.mjs get <key> | spec <target-triple>",
+    "usage: node scripts/sidecar-lock.mjs get <key> | spec <target-triple> | update-backend <tag> <darwin-sha256> <windows-sha256>",
   );
 }
 

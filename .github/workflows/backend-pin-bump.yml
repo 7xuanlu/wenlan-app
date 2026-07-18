@@ -1,9 +1,10 @@
 name: Backend pin bump
 
 # Polls the sibling daemon repo (7xuanlu/wenlan) for a newer release. When a
-# newer release's arm64 asset downloads, checksums, extracts, and runs clean,
-# this opens a PR bumping .wenlan-backend-version (tag + sha256) AND the app's
-# own release version to match. A human reviews and merges that PR.
+# newer release's Darwin and Windows assets download and checksum, and the
+# Darwin payload extracts and runs clean, this opens a PR bumping the one
+# backend tag plus both platform hashes AND the app's own release version to
+# match. A human reviews and merges that PR.
 #
 # The app version files are NOT optional extras here: scripts/release-version-
 # sync.test.ts asserts package.json / app/tauri.conf.json / app/Cargo.toml all
@@ -42,12 +43,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
       - name: Read pinned tag
         id: pinned
         run: |
-          PINNED="$(sed -n '1p' .wenlan-backend-version | tr -d '[:space:]')"
+          PINNED="$(node scripts/sidecar-lock.mjs get backend_tag)"
           if [ -z "$PINNED" ]; then
-            echo "error: .wenlan-backend-version has no tag on line 1" >&2
+            echo "error: .wenlan-backend-version has no backend_tag" >&2
             exit 1
           fi
           echo "tag=$PINNED" >> "$GITHUB_OUTPUT"
@@ -89,7 +95,7 @@ jobs:
       # finished uploading -- this replaces a weak size-only check and
       # closes the race where a release tag is published before its asset
       # upload completes.
-      - name: Download candidate asset
+      - name: Download candidate assets
         if: steps.compare.outputs.up_to_date != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -102,20 +108,35 @@ jobs:
             echo "error: failed to download wenlan-darwin-arm64.tar.gz from 7xuanlu/wenlan release $LATEST (tag-without-asset race?)" >&2
             exit 1
           fi
+          if ! gh release download "$LATEST" --repo 7xuanlu/wenlan \
+              --pattern 'wenlan-windows-x64.zip' \
+              --dir "$RUNNER_TEMP/pin" --clobber; then
+            echo "error: failed to download wenlan-windows-x64.zip from 7xuanlu/wenlan release $LATEST (tag-without-asset race?)" >&2
+            exit 1
+          fi
 
-      - name: Compute checksum
+      - name: Compute checksums
         if: steps.compare.outputs.up_to_date != 'true'
         id: sha
         run: |
-          SHA="$(shasum -a 256 "$RUNNER_TEMP/pin/wenlan-darwin-arm64.tar.gz" | awk '{print $1}')"
-          echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
-          echo "sha256: $SHA"
+          DARWIN_SHA="$(shasum -a 256 "$RUNNER_TEMP/pin/wenlan-darwin-arm64.tar.gz" | awk '{print $1}')"
+          WINDOWS_SHA="$(shasum -a 256 "$RUNNER_TEMP/pin/wenlan-windows-x64.zip" | awk '{print $1}')"
+          echo "darwin_sha256=$DARWIN_SHA" >> "$GITHUB_OUTPUT"
+          echo "windows_sha256=$WINDOWS_SHA" >> "$GITHUB_OUTPUT"
+          echo "darwin sha256: $DARWIN_SHA"
+          echo "windows sha256: $WINDOWS_SHA"
 
-      - name: Extract asset
+      - name: Validate candidate payloads
         if: steps.compare.outputs.up_to_date != 'true'
         run: |
           mkdir -p "$RUNNER_TEMP/pin/x"
           tar xzf "$RUNNER_TEMP/pin/wenlan-darwin-arm64.tar.gz" -C "$RUNNER_TEMP/pin/x"
+          for payload in wenlan.exe wenlan-server.exe wenlan-mcp.exe onnxruntime.dll; do
+            if ! unzip -Z1 "$RUNNER_TEMP/pin/wenlan-windows-x64.zip" | grep -qx "$payload"; then
+              echo "error: Windows candidate is missing $payload" >&2
+              exit 1
+            fi
+          done
 
       # Extraction succeeding already proves the tarball is a complete,
       # non-truncated download. Running --help on both binaries is the
@@ -152,7 +173,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           LATEST="${{ steps.latest.outputs.tag }}"
-          SHA="${{ steps.sha.outputs.sha256 }}"
+          DARWIN_SHA="${{ steps.sha.outputs.darwin_sha256 }}"
+          WINDOWS_SHA="${{ steps.sha.outputs.windows_sha256 }}"
           VERSION="${LATEST#v}"
           BRANCH="backend-pin/$LATEST"
 
@@ -160,7 +182,16 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git checkout -b "$BRANCH"
 
-          printf '%s\n%s\n' "$LATEST" "$SHA" > .wenlan-backend-version
+          CLOUDFLARED_VERSION_BEFORE="$(node scripts/sidecar-lock.mjs get cloudflared_version)"
+          CLOUDFLARED_DARWIN_SHA_BEFORE="$(node scripts/sidecar-lock.mjs get cloudflared_darwin_arm64_sha256)"
+          CLOUDFLARED_WINDOWS_SHA_BEFORE="$(node scripts/sidecar-lock.mjs get cloudflared_windows_x64_sha256)"
+          node scripts/sidecar-lock.mjs update-backend "$LATEST" "$DARWIN_SHA" "$WINDOWS_SHA"
+          if [ "$(node scripts/sidecar-lock.mjs get cloudflared_version)" != "$CLOUDFLARED_VERSION_BEFORE" ] || \
+             [ "$(node scripts/sidecar-lock.mjs get cloudflared_darwin_arm64_sha256)" != "$CLOUDFLARED_DARWIN_SHA_BEFORE" ] || \
+             [ "$(node scripts/sidecar-lock.mjs get cloudflared_windows_x64_sha256)" != "$CLOUDFLARED_WINDOWS_SHA_BEFORE" ]; then
+            echo "error: backend pin update changed the cloudflared lock" >&2
+            exit 1
+          fi
 
           # BSD sed (macos-14 runner) needs the empty -i argument.
           sed -i '' -E 's/^(  "version": )"[^"]*"/\1"'"$VERSION"'"/' package.json app/tauri.conf.json
@@ -192,9 +223,9 @@ jobs:
 
           gh pr create \
             --title "chore: adopt Wenlan $LATEST" \
-            --body "Bumps \`.wenlan-backend-version\` to \`$LATEST\` (sha256 \`$SHA\`), and the app's own release version to \`$VERSION\` to match.
+            --body "Bumps \`.wenlan-backend-version\` to \`$LATEST\` (Darwin sha256 \`$DARWIN_SHA\`, Windows sha256 \`$WINDOWS_SHA\`), and the app's own release version to \`$VERSION\` to match.
 
-          This workflow already downloaded \`wenlan-darwin-arm64.tar.gz\` from the \`$LATEST\` release, verified its sha256, extracted it, and ran \`wenlan-server --help\` and \`wenlan --help\` successfully on an arm64 runner before opening this PR (see the run that opened this PR). It also re-read all four version files from disk and confirmed they agree.
+          This workflow already downloaded both pinned backend assets from the \`$LATEST\` release, verified their independent sha256 values and required payloads, then ran the Darwin \`wenlan-server --help\` and \`wenlan --help\` successfully on an arm64 runner before opening this PR (see the run that opened this PR). It preserved all cloudflared lock fields and re-read all four app version files from disk.
 
           The app version files ship together with the pin because \`scripts/release-version-sync.test.ts\` requires it. Note: GitHub does not run \`pull_request\` workflows for PRs opened by \`GITHUB_TOKEN\`, so ci.yml will not run here -- the in-workflow smoke and the lockstep assertion above are the gate for this change." \
             --head "$BRANCH" \
