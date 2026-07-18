@@ -5,7 +5,9 @@
 picture instead of re-deriving it. Tooling settled 2026-07-18 (see "Tooling
 decision" below); direction fork settled 2026-07-18: **hybrid**;
 council-reviewed 2026-07-18: **approve-with-changes**, changes folded in.
-Next steps: radial-layout spike, then the daemon API work in
+Mockup approved 2026-07-18 (Lucian) with two follow-ups, both folded in
+below: the edge-anchoring criterion and the full CRUD surface (edge ops
+were the gap). Next steps: radial-layout spike, then the daemon API work in
 `7xuanlu/wenlan`.
 
 **Design source of truth:** "Knowledge Atlas — design mockups" artifact,
@@ -105,6 +107,15 @@ API boundary.
   REQUIRED (claim/entity/memory/page id); `update_map_node`,
   `delete_map_node`. Refless free content is rejected at the API boundary —
   that is where the grounding invariant is enforced.
+- Edge CRUD (Lucian, 2026-07-18 — this was the gap in the sketch): edges
+  carry `{ id, from, to, label?, kind: section|citation|wikilink|user|
+  suggested }`. User-drawn connections via `create_map_edge(page_id,
+  { from, to, label? })`; `update_map_edge` folds accept/dismiss of a
+  suggested link plus relabel (same shrunk fan-out as nodes);
+  `delete_map_edge`. Dismissed suggested links get tombstones, same as
+  nodes — never re-proposed.
+- `put_page_map_layout` persists per-node `x/y/width/height` (JSON Canvas
+  convention), not positions alone — user resize is layout state too.
 
 ## Tooling decision (2026-07-18) — two-agent survey, verified against npm/GitHub/docs
 
@@ -194,6 +205,13 @@ dissents / deliberate defaults:
   wrong for this; the earlier "plain absolutely-positioned DOM/SVG is likely
   enough" note is superseded (drag/zoom/pan/minimap are exactly the wheel
   React Flow already ships). Obsidian Canvas is DOM boxes; same grain.
+- **Acceptance criterion — edges anchor to node bounds, structurally**
+  (Lucian, 2026-07-18, after catching edge drift in the static mockup):
+  edges must be computed from node geometry (React Flow handles), never
+  hand-placed coordinates, so they stay attached through drag, zoom,
+  resize, and text reflow. The mockup's drift came from a fixed-coordinate
+  SVG stretching with the container — a bug class React Flow makes
+  impossible, but verify in the spike anyway: drag a node, edges follow.
 - Reuse the artifact's visual tokens: ghost styling for suggestions
   (`--mem-indigo-bg` + dashed border), `✦` marker, per-node Accept/Dismiss
   chips, `[n]` citation badges.
