@@ -338,8 +338,14 @@ html[data-theme="dark"] {
   --kg-person: #9085e9;
   --kg-concept: #008300;
   --kg-neutral: #969BAD;
-  --kg-edge: rgba(150, 155, 173, 0.30);
-  --kg-edge-strong: rgba(150, 155, 173, 0.55);
+  /* Edge inks must stay OPAQUE: sigma's WebGL pipeline packs colors
+     non-premultiplied under premultiplied blending, so any alpha here
+     renders as an additive wash (bluish sky) instead of a gray. These are
+     the old translucent inks pre-composited over --mem-surface —
+     rgba(150,155,173,.30/.55) over #171A23. Canvas 2D paints them to the
+     same pixels, so ConstellationMap is unchanged. */
+  --kg-edge: #3D414C;
+  --kg-edge-strong: #5D616F;
 }
 
 /* Light (cool paper workspace with restrained brand warmth) */
@@ -408,8 +414,10 @@ html[data-theme="light"] {
   --kg-person: #4a3aa7;
   --kg-concept: #008300;
   --kg-neutral: #8B93A3;
-  --kg-edge: rgba(88, 97, 116, 0.42);
-  --kg-edge-strong: rgba(88, 97, 116, 0.72);
+  /* Opaque for the same sigma reason as the dark block:
+     rgba(88,97,116,.42/.72) pre-composited over #FFFFFF. */
+  --kg-edge: #B9BDC5;
+  --kg-edge-strong: #878D9B;
 }
 
 .wiki-home {
