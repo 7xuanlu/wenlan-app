@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 type ProcessControlModule = {
@@ -54,8 +56,29 @@ describe("Windows native smoke process cleanup", () => {
       }),
     ).toEqual([
       "/explicit/wenlan.log",
-      "/windows-profile/Library/Logs/com.wenlan.desktop/wenlan.log",
-      "/git-home/Library/Logs/com.wenlan.desktop/wenlan.log",
+      resolve(
+        "/windows-profile",
+        "Library",
+        "Logs",
+        "com.wenlan.desktop",
+        "wenlan.log",
+      ),
+      resolve(
+        "/git-home",
+        "Library",
+        "Logs",
+        "com.wenlan.desktop",
+        "wenlan.log",
+      ),
     ]);
+  });
+
+  it("rejects empty cleanup paths before enumerating system processes", () => {
+    const script = readFileSync(
+      resolve(process.cwd(), "scripts", "windows", "cleanup-processes.ps1"),
+      "utf8",
+    );
+
+    expect(script.match(/\[ValidateNotNullOrEmpty\(\)\]/g)).toHaveLength(2);
   });
 });

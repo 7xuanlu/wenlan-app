@@ -1,8 +1,10 @@
 param(
   [Parameter(Mandatory = $true)]
+  [ValidateNotNullOrEmpty()]
   [string]$AppExecutable,
 
   [Parameter(Mandatory = $true)]
+  [ValidateNotNullOrEmpty()]
   [string]$BackendExecutable
 )
 
