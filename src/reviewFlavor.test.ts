@@ -112,7 +112,9 @@ describe("fixture-only native Review flavor", () => {
 
   it("builds and verifies the fixture-only Review artifact in CI", () => {
     const ci = read(".github/workflows/ci.yml");
+    const pkg = JSON.parse(read("package.json"));
 
     expect(ci).toContain("pnpm review:build && pnpm review:verify");
+    expect(pkg.devDependencies["@tauri-apps/cli"]).toMatch(/^\^?2\./);
   });
 });
