@@ -16,10 +16,22 @@ import {
   hoverStateFor,
   nodeDisplay,
   edgeDisplay,
+  drawRadialNodeLabel,
 } from "../../lib/graph/atlas";
 import type { HoverState, AtlasSimNode } from "../../lib/graph/atlas";
-import { useGraphPalette, colorForEntityType } from "../../lib/graph/palette";
+import { useGraphPalette, colorForEntityType, nodeFillFor } from "../../lib/graph/palette";
 import type { GraphPalette } from "../../lib/graph/palette";
+
+// Same 5-slot legend as the old canvas graph (see ConstellationMap's
+// LEGEND_ITEMS note): place, event, and unknown types fold to neutral and
+// get no swatch; concept is labeled "Theme" to match the product copy.
+const LEGEND_ITEMS: { label: string; key: string }[] = [
+  { label: "Project", key: "project" },
+  { label: "Technology", key: "technology" },
+  { label: "Organization", key: "organization" },
+  { label: "Person", key: "person" },
+  { label: "Theme", key: "concept" },
+];
 
 interface AtlasViewProps {
   onNodeClick?: (entityId: string) => void;
@@ -143,6 +155,16 @@ export default function AtlasView({ onNodeClick }: AtlasViewProps) {
       // sizes by sqrt(camera ratio), which shrinks items badly once the
       // density cap below zooms the camera out ~5x from fit.
       zoomToSizeRatioFunction: () => 1,
+      // Edges are 1.5 CSS px (the old graph's stroke); sigma's default floor
+      // of 1.7 would silently bump them back up.
+      minEdgeThickness: 1,
+      // 12px system-font labels placed radially around the node, facing the
+      // cluster center — sigma's default is 14px Arial pinned to the right.
+      defaultDrawNodeLabel: (
+        ctx: CanvasRenderingContext2D,
+        data: Record<string, any>,
+        s: Record<string, any>,
+      ) => drawRadialNodeLabel(ctx, data, s, graph),
       nodeReducer: (node, attrs) => nodeDisplay(hoverStateRef.current, node, attrs, paletteRef.current),
       edgeReducer: (edge, attrs) => {
         const [source, target] = graph.extremities(edge);
@@ -314,7 +336,7 @@ export default function AtlasView({ onNodeClick }: AtlasViewProps) {
     if (!graph || !renderer) return;
     graph.updateEachNodeAttributes((_id, attrs) => ({
       ...attrs,
-      color: colorForEntityType(attrs.entityType, palette),
+      color: nodeFillFor(attrs.entityType, attrs.confirmed, palette),
     }));
     graph.updateEachEdgeAttributes((_id, attrs) => ({ ...attrs, color: palette.edge }));
     renderer.setSetting("labelColor", { color: palette.label });
@@ -370,5 +392,83 @@ export default function AtlasView({ onNodeClick }: AtlasViewProps) {
     );
   }
 
-  return <div ref={containerRef} data-testid="atlas-view" style={{ height: "100%", width: "100%" }} />;
+  const entityCount = model.nodes.length;
+  const connectionCount = model.edges.length;
+  const countParts = [`${entityCount} ${entityCount === 1 ? "entity" : "entities"}`];
+  if (connectionCount > 0) {
+    countParts.push(`${connectionCount} ${connectionCount === 1 ? "connection" : "connections"}`);
+  }
+
+  return (
+    <div style={{ position: "relative", height: "100%", width: "100%" }}>
+      <div ref={containerRef} data-testid="atlas-view" style={{ height: "100%", width: "100%" }} />
+
+      {/* Legend — top-right, same furniture as the old canvas graph (minus
+          the memories/pages/labels toggles Atlas doesn't have yet). */}
+      <div
+        style={{
+          position: "absolute",
+          top: 10,
+          right: 10,
+          display: "flex",
+          flexDirection: "column",
+          gap: 5,
+          padding: "6px 10px",
+          fontSize: 10,
+          fontFamily: "var(--mem-font-body)",
+          color: "var(--mem-text-tertiary)",
+          background: "var(--mem-surface)",
+          border: "1px solid var(--mem-border)",
+          borderRadius: 6,
+          opacity: 0.85,
+          pointerEvents: "none",
+        }}
+      >
+        {LEGEND_ITEMS.map(({ label, key }) => (
+          <div key={key} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+            <span
+              style={{
+                display: "inline-block",
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                backgroundColor: colorForEntityType(key, palette),
+                opacity: 0.7,
+                flexShrink: 0,
+              }}
+            />
+            <span>{label}</span>
+          </div>
+        ))}
+        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <span
+            style={{
+              display: "inline-block",
+              width: 12,
+              height: 0,
+              borderTop: "1px solid var(--mem-text-tertiary)",
+              opacity: 0.5,
+              flexShrink: 0,
+            }}
+          />
+          <span>{t("constellationMap.legendConnection")}</span>
+        </div>
+      </div>
+
+      {/* Corner stats — bottom-right, mirroring the old graph's count line. */}
+      <div
+        style={{
+          position: "absolute",
+          bottom: 8,
+          right: 8,
+          fontSize: 10,
+          color: "var(--mem-text-tertiary)",
+          fontFamily: "var(--mem-font-body)",
+          pointerEvents: "none",
+        }}
+      >
+        {countParts.join(", ")}
+      </div>
+    </div>
+  );
 }

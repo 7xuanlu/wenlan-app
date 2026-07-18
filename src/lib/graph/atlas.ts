@@ -10,15 +10,17 @@ import {
   type SimulationNodeDatum,
 } from "d3-force";
 import type { GraphModel } from "./model";
-import { colorForEntityType, type GraphPalette } from "./palette";
+import { nodeFillFor, type GraphPalette } from "./palette";
 
 const MIN_NODE_SIZE = 3;
-const MAX_NODE_SIZE = 12;
+const MAX_NODE_SIZE = 8;
 
-// Sqrt-scaled so a 10x-degree hub isn't a 10x-radius node — keeps the
-// busiest entity legible without swallowing the canvas.
-function sizeForDegree(degree: number): number {
-  return Math.min(MAX_NODE_SIZE, MIN_NODE_SIZE + Math.sqrt(degree) * 2);
+// The old canvas graph's exact radius scale: a stability base (confirmed 4,
+// everything else 3) plus half a px per connection, capped at 8 — finer than
+// the sqrt scale it replaced, and size itself encodes confirmation.
+function nodeSizeFor(confirmed: boolean | null, degree: number): number {
+  const base = confirmed === true ? 4 : MIN_NODE_SIZE;
+  return Math.min(MAX_NODE_SIZE, base + degree * 0.5);
 }
 
 /**
@@ -31,14 +33,20 @@ function sizeForDegree(degree: number): number {
  */
 export function buildAtlasGraph(model: GraphModel, palette: GraphPalette): Graph {
   const graph = new Graph({ multi: true });
+  // ponytail: the old graph's confirmed-glow halo (r+3 disc at 0.1 alpha) is
+  // skipped — it needs a custom WebGL node program in sigma; the tiered fills
+  // and size base carry the confirmed/unconfirmed distinction instead.
   const n = model.nodes.length;
   model.nodes.forEach((node, i) => {
     const angle = (2 * Math.PI * i) / Math.max(n, 1);
     graph.addNode(node.id, {
       label: node.name,
-      size: sizeForDegree(node.degree),
-      color: colorForEntityType(node.entityType, palette),
+      size: nodeSizeFor(node.confirmed, node.degree),
+      color: nodeFillFor(node.entityType, node.confirmed, palette),
       entityType: node.entityType,
+      // Kept on the node so the theme-flip recolor (AtlasView) can recompute
+      // the stability-tiered fill without re-reading the model.
+      confirmed: node.confirmed,
       x: Math.cos(angle),
       y: Math.sin(angle),
     });
@@ -49,8 +57,10 @@ export function buildAtlasGraph(model: GraphModel, palette: GraphPalette): Graph
   for (const edge of model.edges) {
     graph.addEdgeWithKey(edge.id, edge.source, edge.target, {
       // Rendered 1:1 in CSS px (AtlasView pins zoomToSizeRatioFunction to 1),
-      // calibrated to the old canvas graph's ~2px effective stroke.
-      size: 2,
+      // calibrated to the old canvas graph's exact stroke: lineWidth 1 at its
+      // fixed k=1.499 zoom ≈ 1.5 CSS px. Needs minEdgeThickness lowered in
+      // AtlasView — sigma's default floor (1.7) silently bumps this back up.
+      size: 1.5,
       color: palette.edge,
     });
   }
@@ -247,4 +257,45 @@ export function edgeDisplay(
     return { ...attrs, color: palette.edgeStrong, zIndex: 1 };
   }
   return { ...attrs, hidden: true };
+}
+
+/**
+ * Sector-radial label drawer, ported verbatim from the old canvas graph:
+ * 12px system font at 85% ink, placed left/right/above/below the node by its
+ * angle from the graph center (0,0 — forceCenter pins the cluster there) so
+ * labels face INWARD toward the cluster instead of expanding the bbox.
+ * Graph y is negated for the angle: sigma renders graph +y screen-up while
+ * the old canvas rendered it screen-down, and inward placement must track
+ * the on-screen quadrant, not the raw coordinate. Wired into sigma via
+ * settings.defaultDrawNodeLabel (data carries the node key plus viewport
+ * x/y/size — see sigma's renderLabels call site).
+ */
+export function drawRadialNodeLabel(
+  context: CanvasRenderingContext2D,
+  data: Record<string, any>,
+  settings: Record<string, any>,
+  graph: Graph,
+): void {
+  if (!data.label) return;
+  const pad = (data.size as number) + 8;
+  const gx = graph.getNodeAttribute(data.key, "x") as number;
+  const gy = graph.getNodeAttribute(data.key, "y") as number;
+  const angle = Math.atan2(-gy, gx);
+  const sector = Math.round((angle + Math.PI) / (Math.PI / 2)) % 4;
+
+  context.font = "12px -apple-system, sans-serif";
+  context.fillStyle = settings.labelColor?.color ?? "#000000";
+  context.globalAlpha = 0.85;
+  if (sector === 0 || sector === 2) {
+    const isRight = sector === 0;
+    context.textAlign = isRight ? "left" : "right";
+    context.textBaseline = "middle";
+    context.fillText(data.label, data.x + (isRight ? pad : -pad), data.y);
+  } else {
+    const isBelow = sector === 1;
+    context.textAlign = "center";
+    context.textBaseline = isBelow ? "top" : "bottom";
+    context.fillText(data.label, data.x, data.y + (isBelow ? pad : -pad));
+  }
+  context.globalAlpha = 1;
 }

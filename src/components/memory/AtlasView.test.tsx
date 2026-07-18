@@ -208,6 +208,52 @@ describe("AtlasView", () => {
     expect(settings.defaultDrawNodeHover()).toBeUndefined();
   });
 
+  it("wires the radial label drawer over the live graph and lowers sigma's edge-thickness floor", async () => {
+    const entities = [makeEntity({ id: "e1", name: "Alice" })];
+    mockListEntities.mockResolvedValue(entities);
+    mockGetEntityDetail.mockResolvedValue({ entity: entities[0], observations: [], relations: [] });
+
+    renderWithQuery(<AtlasView />);
+    await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
+
+    const { settings } = capturedSigmaInstances[0];
+    // Edges are 1.5 CSS px — sigma's default floor (1.7) would bump them up.
+    expect(settings.minEdgeThickness).toBe(1);
+
+    // Drives the real drawRadialNodeLabel through the graph closure: the
+    // drawer reads e1's graph position for the sector, so this throws if the
+    // wiring doesn't reach the mounted graph.
+    const ctx = {
+      font: "",
+      fillStyle: "",
+      globalAlpha: 1,
+      textAlign: "",
+      textBaseline: "",
+      fillText: vi.fn(),
+    };
+    settings.defaultDrawNodeLabel(
+      ctx,
+      { key: "e1", label: "Alice", size: 4, x: 10, y: 20 },
+      { labelColor: { color: "#123456" } },
+    );
+    expect(ctx.fillText).toHaveBeenCalledWith("Alice", expect.any(Number), expect.any(Number));
+    expect(ctx.font).toBe("12px -apple-system, sans-serif");
+    expect(ctx.fillStyle).toBe("#123456");
+  });
+
+  it("renders the legend chips, connection sample, and count line over the graph", async () => {
+    mockConnectedPair();
+
+    renderWithQuery(<AtlasView />);
+    await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
+
+    for (const label of ["Project", "Technology", "Organization", "Person", "Theme", "Connection"]) {
+      expect(screen.getByText(label)).toBeInTheDocument();
+    }
+    // Alice + Bob with one deduped relation between them.
+    expect(screen.getByText("2 entities, 1 connection")).toBeInTheDocument();
+  });
+
   it("refreshes on enterNode and again on leaveNode", async () => {
     const entities = [makeEntity({ id: "e1", name: "Alice" })];
     mockListEntities.mockResolvedValue(entities);

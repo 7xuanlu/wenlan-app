@@ -567,6 +567,7 @@ const en = {
     retry: "Retry",
     empty: "Your constellation will appear as knowledge grows",
     coverageChip: "Connections shown for {{fetched}} of {{total}}",
+    legendConnection: "Connection",
   },
   identityCard: {
     setupProfile: "Set up your profile",
@@ -1709,6 +1710,7 @@ const zhHans = {
     retry: "重试",
     empty: "随着知识增长，你的星图将在这里出现",
     coverageChip: "已显示 {{total}} 个实体中 {{fetched}} 个的连接",
+    legendConnection: "连接",
   },
   identityCard: {
     setupProfile: "设置你的个人资料",
@@ -2832,6 +2834,7 @@ const zhHant = {
     retry: "重試",
     empty: "隨著知識增長，你的星圖將在這裡出現",
     coverageChip: "已顯示 {{total}} 個實體中 {{fetched}} 個的連接",
+    legendConnection: "連接",
   },
   identityCard: {
     setupProfile: "設定你的個人資料",

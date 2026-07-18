@@ -41,6 +41,8 @@ export interface GraphPalette {
   edgeStrong: string;
   /** Label ink — reads the shared --mem-text token, not a --kg-* slot. */
   label: string;
+  /** Graph ground (--mem-surface) — what translucent node fills composite against. */
+  surface: string;
 }
 
 // Read the resolved --kg-* custom properties off <html>. getComputedStyle
@@ -59,6 +61,7 @@ function readPalette(): GraphPalette {
     edge: read("--kg-edge"),
     edgeStrong: read("--kg-edge-strong"),
     label: read("--mem-text"),
+    surface: read("--mem-surface"),
   };
 }
 
@@ -84,4 +87,42 @@ export function useGraphPalette(): GraphPalette {
 /** Slot color for an entity type, resolved against the current palette. */
 export function colorForEntityType(entityType: string, palette: GraphPalette): string {
   return palette[slotForEntityType(entityType)];
+}
+
+const HEX6 = /^#[0-9a-f]{6}$/i;
+
+/**
+ * The opaque color a fill of `fg` at `alpha` over `bg` would produce. Sigma's
+ * WebGL blend treats packed colors as non-premultiplied under ONE /
+ * ONE_MINUS_SRC_ALPHA, so genuinely translucent fills additive-wash toward
+ * white — pre-compositing in JS is how Atlas gets translucent-LOOKING nodes.
+ * Non-hex inputs (jsdom's empty computed styles) pass `fg` through untouched.
+ */
+export function compositeOver(fg: string, bg: string, alpha: number): string {
+  if (!HEX6.test(fg) || !HEX6.test(bg)) return fg;
+  const channels = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  const f = channels(fg);
+  const b = channels(bg);
+  const mixed = f.map((v, i) =>
+    Math.round(v * alpha + b[i] * (1 - alpha))
+      .toString(16)
+      .padStart(2, "0"),
+  );
+  return `#${mixed.join("")}`;
+}
+
+/**
+ * Stability-tiered node fill matching the old canvas graph's translucency:
+ * confirmed entities at 0.9 alpha, everything else (unconfirmed, or
+ * relation-derived neighbors whose status is unknown — confirmed: null) at
+ * the airy 0.5. Composited over the surface, not real alpha (see
+ * compositeOver).
+ */
+export function nodeFillFor(
+  entityType: string,
+  confirmed: boolean | null,
+  palette: GraphPalette,
+): string {
+  const alpha = confirmed === true ? 0.9 : 0.5;
+  return compositeOver(colorForEntityType(entityType, palette), palette.surface, alpha);
 }

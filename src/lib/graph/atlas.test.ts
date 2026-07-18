@@ -13,6 +13,7 @@ import {
   hoverStateFor,
   nodeDisplay,
   edgeDisplay,
+  drawRadialNodeLabel,
 } from "./atlas";
 import type { HoverState, AtlasSimNode } from "./atlas";
 
@@ -26,6 +27,9 @@ const PALETTE: GraphPalette = {
   edge: "#777777",
   edgeStrong: "#888888",
   label: "#999999",
+  // Black surface keeps the composite math legible: composited channel is
+  // just slotChannel * alpha.
+  surface: "#000000",
 };
 
 function node(overrides: Partial<GraphNode> = {}): GraphNode {
@@ -34,7 +38,9 @@ function node(overrides: Partial<GraphNode> = {}): GraphNode {
     kind: "entity",
     name: overrides.name ?? "Node",
     entityType: overrides.entityType ?? "concept",
-    confirmed: overrides.confirmed ?? true,
+    // NOT `?? true`: null is a real value here (relation-derived neighbors),
+    // and ?? would silently promote it to confirmed.
+    confirmed: "confirmed" in overrides ? (overrides.confirmed as boolean | null) : true,
     degree: overrides.degree ?? 0,
     communityId: overrides.communityId ?? null,
     createdAt: overrides.createdAt ?? 100,
@@ -93,26 +99,48 @@ describe("buildAtlasGraph", () => {
     expect(sizes[2]).toBeLessThan(sizes[3]);
   });
 
-  it("colors nodes by their entityType's palette slot", () => {
+  it("fills nodes with the stability-tiered composite of their slot color over the surface", () => {
     const model = makeModel([
-      node({ id: "p", entityType: "project" }),
-      node({ id: "t", entityType: "technology" }),
-      node({ id: "x", entityType: "place" }), // unknown type -> neutral
+      node({ id: "p", entityType: "project", confirmed: true }),
+      node({ id: "t", entityType: "technology", confirmed: false }),
+      node({ id: "x", entityType: "place", confirmed: null }), // unknown type -> neutral
     ]);
     const graph = buildAtlasGraph(model, PALETTE);
-    expect(graph.getNodeAttribute("p", "color")).toBe(PALETTE.project);
-    expect(graph.getNodeAttribute("t", "color")).toBe(PALETTE.tool);
-    expect(graph.getNodeAttribute("x", "color")).toBe(PALETTE.neutral);
+    // Confirmed: project #111111 at 0.9 over #000000 → 0x11 * 0.9 = 15 → #0f0f0f.
+    expect(graph.getNodeAttribute("p", "color")).toBe("#0f0f0f");
+    // Unconfirmed: tool #222222 at 0.5 → 0x22 * 0.5 = 17 → #111111.
+    expect(graph.getNodeAttribute("t", "color")).toBe("#111111");
+    // Unknown status (relation-derived): neutral #666666 at 0.5 → #333333.
+    expect(graph.getNodeAttribute("x", "color")).toBe("#333333");
   });
 
-  it("colors edges with the palette's quiet edge tone, size 2 (CSS px — old graph's effective weight)", () => {
+  it("gives a confirmed node a larger size base than an unconfirmed one at equal degree, capped at 8", () => {
+    const model = makeModel([
+      node({ id: "conf", confirmed: true, degree: 2 }),
+      node({ id: "unconf", confirmed: false, degree: 2 }),
+      node({ id: "unknown", confirmed: null, degree: 2 }),
+      node({ id: "hub", confirmed: true, degree: 30 }),
+    ]);
+    const graph = buildAtlasGraph(model, PALETTE);
+    expect(graph.getNodeAttribute("conf", "size")).toBe(5); // 4 + 2*0.5
+    expect(graph.getNodeAttribute("unconf", "size")).toBe(4); // 3 + 2*0.5
+    expect(graph.getNodeAttribute("unknown", "size")).toBe(4);
+    expect(graph.getNodeAttribute("hub", "size")).toBe(8);
+  });
+
+  it("stores confirmed on the node so theme recoloring can recompute the tiered fill", () => {
+    const graph = buildAtlasGraph(makeModel([node({ id: "a", confirmed: null })]), PALETTE);
+    expect(graph.getNodeAttribute("a", "confirmed")).toBeNull();
+  });
+
+  it("colors edges with the palette's quiet edge tone, size 1.5 (CSS px — old graph's exact stroke)", () => {
     const model = makeModel(
       [node({ id: "a" }), node({ id: "b" })],
       [edge({ id: "e1", source: "a", target: "b" })],
     );
     const graph = buildAtlasGraph(model, PALETTE);
     expect(graph.getEdgeAttribute("e1", "color")).toBe(PALETTE.edge);
-    expect(graph.getEdgeAttribute("e1", "size")).toBe(2);
+    expect(graph.getEdgeAttribute("e1", "size")).toBe(1.5);
   });
 
   it("keeps distinct parallel relations between the same pair as distinct edges", () => {
@@ -464,5 +492,79 @@ describe("edgeDisplay", () => {
     const r2 = edgeDisplay(state, "e2", "a", "b", attrs, PALETTE);
     expect(r1.color).toBe(PALETTE.edgeStrong);
     expect(r2.color).toBe(PALETTE.edgeStrong);
+  });
+});
+
+describe("drawRadialNodeLabel", () => {
+  function mockCtx() {
+    return {
+      font: "",
+      fillStyle: "",
+      globalAlpha: 1,
+      textAlign: "",
+      textBaseline: "",
+      fillText: vi.fn(),
+    };
+  }
+
+  // One node whose GRAPH position we place per case; the drawer's viewport
+  // data stays fixed at (100, 50) size 4 → pad 12.
+  function graphWithNodeAt(gx: number, gy: number) {
+    const graph = buildAtlasGraph(makeModel([node({ id: "n1", name: "Alice" })]), PALETTE);
+    graph.setNodeAttribute("n1", "x", gx);
+    graph.setNodeAttribute("n1", "y", gy);
+    return graph;
+  }
+  const data = { key: "n1", label: "Alice", size: 4, x: 100, y: 50 };
+  const settings = { labelColor: { color: "#abcdef" } };
+
+  it("places the label INWARD (left of the node) for a node right of the graph center", () => {
+    const ctx = mockCtx();
+    drawRadialNodeLabel(ctx as any, data, settings, graphWithNodeAt(10, 0));
+    expect(ctx.textAlign).toBe("right");
+    expect(ctx.textBaseline).toBe("middle");
+    expect(ctx.fillText).toHaveBeenCalledWith("Alice", 88, 50);
+  });
+
+  it("places the label right of the node for a node left of the graph center", () => {
+    const ctx = mockCtx();
+    drawRadialNodeLabel(ctx as any, data, settings, graphWithNodeAt(-10, 0));
+    expect(ctx.textAlign).toBe("left");
+    expect(ctx.fillText).toHaveBeenCalledWith("Alice", 112, 50);
+  });
+
+  it("places the label below the node for a node above center — graph +y is SCREEN-UP in sigma", () => {
+    const ctx = mockCtx();
+    drawRadialNodeLabel(ctx as any, data, settings, graphWithNodeAt(0, 10));
+    expect(ctx.textAlign).toBe("center");
+    expect(ctx.textBaseline).toBe("top");
+    // Viewport y grows downward: +pad = below the node on screen = inward.
+    expect(ctx.fillText).toHaveBeenCalledWith("Alice", 100, 62);
+  });
+
+  it("places the label above the node for a node below center", () => {
+    const ctx = mockCtx();
+    drawRadialNodeLabel(ctx as any, data, settings, graphWithNodeAt(0, -10));
+    expect(ctx.textBaseline).toBe("bottom");
+    expect(ctx.fillText).toHaveBeenCalledWith("Alice", 100, 38);
+  });
+
+  it("draws 12px system-font ink from settings.labelColor at 85% alpha, restored after", () => {
+    const ctx = mockCtx();
+    let alphaAtDraw = 0;
+    ctx.fillText.mockImplementation(() => {
+      alphaAtDraw = ctx.globalAlpha;
+    });
+    drawRadialNodeLabel(ctx as any, data, settings, graphWithNodeAt(10, 0));
+    expect(ctx.font).toBe("12px -apple-system, sans-serif");
+    expect(ctx.fillStyle).toBe("#abcdef");
+    expect(alphaAtDraw).toBe(0.85);
+    expect(ctx.globalAlpha).toBe(1); // restored — the labels canvas is shared
+  });
+
+  it("draws nothing for an empty label (hover reducer blanks dimmed nodes)", () => {
+    const ctx = mockCtx();
+    drawRadialNodeLabel(ctx as any, { ...data, label: "" }, settings, graphWithNodeAt(10, 0));
+    expect(ctx.fillText).not.toHaveBeenCalled();
   });
 });

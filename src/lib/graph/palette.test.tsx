@@ -5,6 +5,8 @@ import {
   slotForEntityType,
   useGraphPalette,
   colorForEntityType,
+  compositeOver,
+  nodeFillFor,
   type GraphPalette,
 } from "./palette";
 
@@ -76,8 +78,52 @@ describe("colorForEntityType", () => {
       edge: "#edge",
       edgeStrong: "#edgeStrong",
       label: "#label",
+      surface: "#surface",
     };
     expect(colorForEntityType("technology", palette)).toBe("#tool");
     expect(colorForEntityType("place", palette)).toBe("#neutral");
+  });
+});
+
+describe("compositeOver", () => {
+  it("composites a translucent fill over the background into one opaque hex", () => {
+    // 0xff * 0.5 + 0x00 * 0.5 = 127.5 → 128 = 0x80.
+    expect(compositeOver("#ffffff", "#000000", 0.5)).toBe("#808080");
+    // Per channel: 0x40 * 0.9 + 0xf0 * 0.1 = 57.6 + 24 = 81.6 → 82 = 0x52.
+    expect(compositeOver("#404040", "#f0f0f0", 0.9)).toBe("#525252");
+  });
+
+  it("passes the foreground through untouched when either color is not 6-digit hex (jsdom's empty tokens)", () => {
+    expect(compositeOver("#123456", "", 0.5)).toBe("#123456");
+    expect(compositeOver("blue", "#000000", 0.5)).toBe("blue");
+  });
+});
+
+describe("nodeFillFor", () => {
+  // Values chosen for clean math over a black surface: channel = slot * alpha.
+  const palette: GraphPalette = {
+    project: "#111111",
+    tool: "#222222",
+    org: "#333333",
+    person: "#444444",
+    concept: "#555555",
+    neutral: "#666666",
+    edge: "#777777",
+    edgeStrong: "#888888",
+    label: "#999999",
+    surface: "#000000",
+  };
+
+  it("fills confirmed entities at 0.9 alpha and everything else at 0.5", () => {
+    // person #444444: 0x44 * 0.9 = 61.2 → 61 = 0x3d.
+    expect(nodeFillFor("person", true, palette)).toBe("#3d3d3d");
+    // 0x44 * 0.5 = 34 = 0x22 — unconfirmed and unknown (relation-derived) alike.
+    expect(nodeFillFor("person", false, palette)).toBe("#222222");
+    expect(nodeFillFor("person", null, palette)).toBe("#222222");
+  });
+
+  it("resolves the entity type through its palette slot before compositing", () => {
+    // place → neutral #666666: 0x66 * 0.5 = 51 = 0x33.
+    expect(nodeFillFor("place", null, palette)).toBe("#333333");
   });
 });
