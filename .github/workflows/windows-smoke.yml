@@ -207,7 +207,7 @@ jobs:
             throw "tauri-driver did not listen on 127.0.0.1:4444"
           }
 
-          pnpm test:native:windows -- `
+          pnpm test:native:windows `
             --app target/x86_64-pc-windows-msvc/release/wenlan-app.exe `
             --evidence-dir windows-native-smoke
           if ($LASTEXITCODE -ne 0) {

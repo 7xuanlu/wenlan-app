@@ -86,7 +86,8 @@ describe("Windows native smoke workflow contract", () => {
   it("runs the native harness and always uploads its complete evidence", () => {
     const text = workflow();
 
-    expect(text).toContain("pnpm test:native:windows --");
+    expect(text).toContain("pnpm test:native:windows `");
+    expect(text).not.toContain("pnpm test:native:windows --");
     expect(text).toContain("--evidence-dir windows-native-smoke");
     expect(text).toContain("if: always()");
     expect(text).toContain("name: windows-native-smoke");
