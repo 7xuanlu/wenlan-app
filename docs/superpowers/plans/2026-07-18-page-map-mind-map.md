@@ -3,8 +3,10 @@
 **Status:** not started — deliberately excluded from the KG redesign branch
 (PR #90). This file is the hand-off so a future session starts with the full
 picture instead of re-deriving it. Tooling settled 2026-07-18 (see "Tooling
-decision" below); direction fork settled 2026-07-18: **hybrid**. Next step
-is the daemon API work in `7xuanlu/wenlan`.
+decision" below); direction fork settled 2026-07-18: **hybrid**;
+council-reviewed 2026-07-18: **approve-with-changes**, changes folded in.
+Next steps: radial-layout spike, then the daemon API work in
+`7xuanlu/wenlan`.
 
 **Design source of truth:** "Knowledge Atlas — design mockups" artifact,
 screen 03 ("Page Map — AI drafts, you curate"). Screens 01 (Atlas) and
@@ -56,6 +58,13 @@ per-node accept/dismiss/pin stays as the artifact specifies, and AI never
 rewrites a curated node. The daemon API therefore includes the
 create/update/delete surface from day one, with `ref` required on create.
 
+Council-specified on-ramp (so the ref requirement doesn't make the canvas
+feel broken): typing loose text into a new node auto-creates a **backing
+memory through the existing capture pipeline** — visible, undoable, subject
+to normal curation — and the node refs that. Never auto-mint claims with
+implied citation provenance; raw refless content is still rejected at the
+API boundary.
+
 ## What exists today (verified on this branch, 2026-07-18)
 
 - `getPageLinks(pageId)` — `src/lib/tauri.ts:1133`; `listOrphanLinks` at
@@ -68,15 +77,23 @@ create/update/delete surface from day one, with `ref` required on create.
   (layout, pin state), per-node suggestions, accept/dismiss of map nodes, or
   an improve-map pass. All four are prerequisites; all are daemon-repo work.
 
-## Suggested daemon API sketch (adjust after the fork is settled)
+## Suggested daemon API sketch (fork settled; council-trimmed)
 
 - `get_page_map(page_id) -> { nodes, edges, layout, updated_at }` — nodes
   carry `{ id, kind: claim|entity|memory|page|section, ref_id, pinned,
   suggested, provenance }`.
 - `put_page_map_layout(page_id, positions)` — user drag persistence.
-- `accept_map_node(page_id, node_id)` / `dismiss_map_node(page_id, node_id)`.
+- `update_map_node(page_id, node_id, patch)` — ONE endpoint for
+  accept / dismiss / pin / content-edit (council: shrink the endpoint
+  fan-out; every endpoint is app↔daemon version-skew surface in a repo with
+  no runtime version handshake). Dismissals write **tombstones** so
+  `improve_page_map` can never re-propose a rejected suggestion.
 - `improve_page_map(page_id, scope)` — enqueue the AI pass; suggestions land
-  as `suggested: true` nodes on the next `get_page_map`.
+  as `suggested: true` nodes on the next `get_page_map`. Must define a
+  winner when racing user edits: curated state always wins.
+- Dangling refs (council): when a backing object is deleted, merged, or
+  superseded, its nodes enter a defined tombstone/ghost state — never a
+  silent break of the grounding invariant.
 - Hybrid (settled): `create_map_node(page_id, { content, ref })` — `ref`
   REQUIRED (claim/entity/memory/page id); `update_map_node`,
   `delete_map_node`. Refless free content is rejected at the API boundary —
@@ -86,7 +103,9 @@ create/update/delete surface from day one, with `ref` required on create.
 
 **Renderer: `@xyflow/react` (React Flow) 12.x.** MIT (clean with our
 AGPL-3.0-only app), fully controlled nodes/edges — the arrays ARE app state,
-so "every node is a pointer to a real object" holds by construction —
+the structural prerequisite for the pointer invariant (single source of
+truth, one place to validate; the daemon API boundary is the actual
+enforcer) —
 first-class custom React nodes (citation badges, Accept/Dismiss chips, ghost
 styling), built-in drag/zoom/pan/minimap, largest community in the field
 (37.7k★, daily commits). Known nit: transitive `zustand ^4` peer-dep warning
@@ -94,11 +113,15 @@ under React 19 (xyflow #5229/#4893) — cosmetic, pnpm override if noisy.
 
 **Auto-layout: `d3-flextree`.** Purpose-built for variable-height boxes
 (per-node `nodeSize` accessor), synchronous O(n) — fine at page-map scale.
-WTFPL, stale since ~2018: pin it, treat as vendored. Radial arrangement is
-the standard d3 x/y→angle/radius transform (documented for d3-hierarchy;
-same node shape, [unverified] for flextree specifically). Fallback if maps
-outgrow it: `elkjs` (active, native `mrtree`/`radial`, variable sizes; costs
-~8 MB unpacked, an EPL-2.0 license election, and worker execution).
+WTFPL, stale since ~2018: **vendor the source in-tree** (pinning is not
+vendoring — council correction; WTFPL permits it, and packaging/typing
+drift becomes our deliberate ownership cost). **Council gate: spike the
+radial case FIRST** — a naive x/y→angle/radius transform can re-collide
+variable-width boxes near the center; angular spacing must account for box
+size at radius. Fallback shape: bilateral (mirrored two-run) layout.
+Fallback engine: `elkjs` (active, native `mrtree`/`radial`, variable sizes;
+~8 MB unpacked, worker execution; its `EPL-2.0 OR GPL-3.0-or-later` dual
+license is AGPL-compatible either way — council-confirmed).
 
 **Persistence: first-party JSON schema; skip JSON Canvas.** The v1.0 spec is
 effectively closed (`text|file|link|group` nodes only, no extension
@@ -135,8 +158,28 @@ Rejected:
   arbitrary React per node. mind-elixir is healthiest but its React wrapper
   is near-dead; simple-mind-map's maintainer has moved to closed-source.
 
-Housekeeping when the map ships: `@antv/g6` and `cytoscape` devDeps are
-experiment leftovers — remove if still unused.
+Housekeeping (council-upgraded: do WITH this work, not at ship): remove the
+unused `@antv/g6` and `cytoscape` devDeps.
+
+## Council review (2026-07-18, /boule:debate: Claude + gpt-5.6-sol + Gemini 3 Pro)
+
+Verdict: **approve-with-changes** (tally 2 approve-with-changes / 1 approve;
+stake-free judge, medium confidence, position-stable across swapped
+orderings). The stack survived attack: React Flow over JointJS was endorsed
+unanimously on independent grounds; the JSON Canvas rejection hardened (an
+attacker's "prefixed-properties extensibility" counter-citation was exposed
+as fabricated by a primary-source check); the elkjs license worry dissolved.
+All surviving change items are folded into the sections above. Recorded
+dissents / deliberate defaults:
+
+- **Tree vs DAG**: a supporting item citing multiple claims is rendered by
+  duplicating the leaf node (standard mind-map convention) — deliberate
+  modeling default, revisit only if duplication confuses in practice.
+- **.canvas export**: optional and user-story-driven, not a requirement —
+  a lossy Obsidian export would strip curation state; add only if users ask.
+- **Vendoring depth**: one member held that pinning finished pure-math
+  d3-flextree suffices and an in-tree fork is busywork; we vendor anyway
+  (majority) — the cost is one small file of algorithm source.
 
 ## Frontend notes for the future session
 
