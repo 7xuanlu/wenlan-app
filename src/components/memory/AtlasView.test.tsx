@@ -103,7 +103,7 @@ function makeEntity(overrides: Partial<import("../../lib/tauri").Entity> = {}): 
     source_agent: overrides.source_agent ?? null,
     confidence: overrides.confidence ?? null,
     confirmed: overrides.confirmed ?? false,
-    created_at: overrides.created_at ?? Date.now(),
+    created_at: overrides.created_at ?? Math.floor(Date.now() / 1000),
     updated_at: overrides.updated_at ?? Date.now(),
   };
 }
@@ -395,7 +395,7 @@ describe("AtlasView", () => {
               entity_name: "Bob",
               entity_type: "person",
               source_agent: null,
-              created_at: Date.now(),
+              created_at: Math.floor(Date.now() / 1000),
             },
           ],
         };
@@ -429,7 +429,7 @@ describe("AtlasView", () => {
               entity_name: "Bob",
               entity_type: "person",
               source_agent: null,
-              created_at: Date.now(),
+              created_at: Math.floor(Date.now() / 1000),
             },
           ],
         };
@@ -656,7 +656,7 @@ describe("AtlasView", () => {
       entity_name: names[target],
       entity_type: "concept",
       source_agent: null,
-      created_at: Date.now(),
+      created_at: Math.floor(Date.now() / 1000),
     });
     mockListEntities.mockResolvedValue(entities);
     mockGetEntityDetail.mockImplementation(async (id: string) => {
@@ -746,7 +746,7 @@ describe("AtlasView", () => {
               entity_name: "Bob",
               entity_type: "person",
               source_agent: null,
-              created_at: Date.now() - 8 * 24 * 60 * 60 * 1000,
+              created_at: Math.floor(Date.now() / 1000) - 8 * 24 * 60 * 60,
             },
           ],
         };
@@ -803,6 +803,29 @@ describe("AtlasView", () => {
       { duration: 450 },
     );
     expect(settings.nodeReducer("e3", attrs)).not.toEqual(before);
+  });
+
+  it("points aria-activedescendant at the active option and tracks arrow keys", async () => {
+    mockConnectedPairWithIsolate();
+
+    renderWithQuery(<AtlasView />);
+    await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
+
+    const input = screen.getByPlaceholderText("Jump to anything…");
+    // Closed dropdown → no dangling descendant reference.
+    expect(input).not.toHaveAttribute("aria-activedescendant");
+
+    fireEvent.focus(input);
+    // "e" hits both Alice and Isolate.
+    fireEvent.change(input, { target: { value: "e" } });
+    expect(screen.getAllByRole("option")).toHaveLength(2);
+
+    expect(input).toHaveAttribute("aria-activedescendant", "atlas-search-option-0");
+    expect(document.getElementById("atlas-search-option-0")).toHaveTextContent("Alice");
+
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(input).toHaveAttribute("aria-activedescendant", "atlas-search-option-1");
+    expect(document.getElementById("atlas-search-option-1")).toHaveTextContent("Isolate");
   });
 
   it("jumps the camera instantly on search select under prefers-reduced-motion", async () => {

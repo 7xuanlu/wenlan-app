@@ -222,6 +222,14 @@ describe("FocusGraph", () => {
     expect((c2.querySelector("line") as SVGLineElement).style.strokeOpacity).toBe("1");
   });
 
+  it("floors edge opacity at 0.15 so a confidence-0 relation stays visible", () => {
+    const detail = makeDetail(makeEntity({ id: "E" }), [
+      makeRel({ id: "r1", direction: "outgoing", entity_id: "B", confidence: 0 }),
+    ]);
+    const { container } = render(<FocusGraph detail={detail} onEntityClick={vi.fn()} />);
+    expect((container.querySelector("line") as SVGLineElement).style.strokeOpacity).toBe("0.15");
+  });
+
   it("hides the verb labels when showVerbs is false, keeps the edges and nodes", () => {
     const detail = makeDetail(makeEntity({ id: "E" }), [
       makeRel({ id: "r1", direction: "outgoing", entity_id: "B", relation_type: "maintains" }),

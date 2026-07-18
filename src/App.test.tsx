@@ -40,6 +40,13 @@ vi.mock("./components/SetupWizard", () => ({
   default: () => <div data-testid="setup-wizard">wizard</div>,
 }));
 
+// EntityDetail transitively imports AtlasView → sigma, whose dist touches
+// WebGL2RenderingContext at module scope — jsdom has no such global, so the
+// real import crashes this whole suite before a single test runs.
+vi.mock("./components/memory/EntityDetail", () => ({
+  default: () => null,
+}));
+
 vi.mock("./components/onboarding/MilestoneToaster", () => ({
   MilestoneToaster: () => null,
 }));

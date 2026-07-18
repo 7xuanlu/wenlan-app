@@ -207,7 +207,7 @@ export default function FocusGraph({
               style={{
                 stroke: palette.edgeStrong,
                 strokeWidth: 1.3,
-                strokeOpacity: n.confidence ?? 1,
+                strokeOpacity: Math.max(n.confidence ?? 1, 0.15),
               }}
               markerEnd={`url(#${markerId})`}
             />

@@ -590,6 +590,7 @@ export default function EntityDetail({ entityId, onBack, onEntityClick, onMemory
         >
           <button
             type="button"
+            autoFocus
             onClick={() => setGraphOpen(false)}
             className="memory-detail-icon-button"
             aria-label={t("common.close")}

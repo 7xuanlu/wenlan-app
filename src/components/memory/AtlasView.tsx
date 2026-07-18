@@ -192,7 +192,8 @@ export default function AtlasView({ onNodeClick, focusEntityId, onBack }: AtlasV
       });
     }
 
-    const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    // createdAt is Unix seconds (daemon convention — see EntityDetail's * 1000)
+    const weekAgo = Date.now() / 1000 - 7 * 24 * 60 * 60;
     const recent = model.edges.filter((e) => e.createdAt >= weekAgo);
     if (recent.length > 0) {
       const gained = new Map<string, number>();
@@ -680,6 +681,9 @@ export default function AtlasView({ onNodeClick, focusEntityId, onBack }: AtlasV
               role="combobox"
               aria-expanded={dropdownOpen}
               aria-controls="atlas-search-listbox"
+              aria-activedescendant={
+                dropdownOpen && matches.length > 0 ? `atlas-search-option-${activeIndex}` : undefined
+              }
               aria-label={t("atlas.searchLabel")}
               placeholder={t("atlas.searchPlaceholder")}
               value={query}
@@ -737,6 +741,7 @@ export default function AtlasView({ onNodeClick, focusEntityId, onBack }: AtlasV
               {matches.map((node, index) => (
                 <li
                   key={node.id}
+                  id={`atlas-search-option-${index}`}
                   role="option"
                   aria-selected={index === activeIndex}
                   // preventDefault keeps the input's blur from closing the

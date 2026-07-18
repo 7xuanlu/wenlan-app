@@ -138,6 +138,14 @@ describe("EntityDetail full graph overlay", () => {
     expect(screen.queryByRole("dialog", { name: "Full screen" })).not.toBeInTheDocument();
   });
 
+  it("moves focus into the dialog on open — the close button takes initial focus", async () => {
+    renderDetail();
+    await screen.findByRole("button", { name: /Bob \(person\) · outgoing · knows/ });
+    fireEvent.click(screen.getByRole("button", { name: "Full screen" }));
+    const dialog = screen.getByRole("dialog", { name: "Full screen" });
+    expect(within(dialog).getByRole("button", { name: "Close" })).toHaveFocus();
+  });
+
   it("closes the dialog and forwards the clicked node id to onEntityClick", async () => {
     const onEntityClick = vi.fn();
     renderDetail(onEntityClick);
