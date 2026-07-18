@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import PageDetail from "./PageDetail";
@@ -82,6 +82,40 @@ function renderWithQuery(
     user: userEvent.setup(),
     ...render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>),
   };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, reject, resolve };
+}
+
+async function makeNextPageResolvable() {
+  const { getPage } = await import("../../lib/tauri");
+  const getPageMock = getPage as ReturnType<typeof vi.fn>;
+  const currentPage = await getPage("concept_abc");
+  getPageMock.mockImplementation(async (id: string) => {
+    if (id !== "concept_next") return currentPage;
+    return {
+      id: "concept_next",
+      title: "Next Page",
+      summary: null,
+      content: "Next page content.",
+      entity_id: null,
+      domain: null,
+      source_memory_ids: [],
+      version: 1,
+      status: "active",
+      created_at: "2026-04-09T00:00:00+00:00",
+      last_compiled: "2026-04-09T12:00:00+00:00",
+      last_modified: "2026-04-09T12:00:00+00:00",
+    };
+  });
+  getPageMock.mockClear();
 }
 
 describe("PageDetail", () => {
@@ -213,6 +247,271 @@ describe("PageDetail", () => {
       /@media \(max-width:\s*599px\)\s*\{[\s\S]*?\.page-detail-icon-actions\s*\{[^}]*display:\s*none;[\s\S]*?\.page-detail-primary-action\s*\{[^}]*display:\s*inline-flex;/,
     );
     confirmSpy.mockRestore();
+  });
+
+  it("returns to the Wiki inventory and invalidates Page queries after deletion", async () => {
+    const { deletePage } = await import("../../lib/tauri");
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    const { user } = renderWithQuery(<PageDetail {...defaultProps} />, queryClient);
+
+    try {
+      await screen.findByText("libSQL Architecture");
+      await user.click(screen.getByRole("button", { name: "Page actions" }));
+      await user.click(screen.getByRole("menuitem", { name: "Delete page" }));
+
+      await waitFor(() => expect(deletePage).toHaveBeenCalledWith("concept_abc"));
+      await waitFor(() => expect(defaultProps.onBack).toHaveBeenCalledOnce());
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["pages"] });
+    } finally {
+      confirmSpy.mockRestore();
+    }
+  });
+
+  it("surfaces deletion failures without navigating away and remains retryable", async () => {
+    const { deletePage } = await import("../../lib/tauri");
+    (deletePage as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("daemon offline"));
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const { user } = renderWithQuery(<PageDetail {...defaultProps} />);
+
+    try {
+      await screen.findByText("libSQL Architecture");
+      await user.click(screen.getByRole("button", { name: "Page actions" }));
+      await user.click(screen.getByRole("menuitem", { name: "Delete page" }));
+
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        "Could not delete this page. Try again.",
+      );
+      expect(defaultProps.onBack).not.toHaveBeenCalled();
+
+      await user.click(screen.getByRole("button", { name: "Page actions" }));
+      const retry = screen.getByRole("menuitem", { name: "Delete page" });
+      expect(retry).toBeEnabled();
+      await user.click(retry);
+
+      await waitFor(() => expect(deletePage).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(defaultProps.onBack).toHaveBeenCalledOnce());
+    } finally {
+      confirmSpy.mockRestore();
+    }
+  });
+
+  it("does not navigate away from a newer Page when an older deletion finishes", async () => {
+    const { deletePage } = await import("../../lib/tauri");
+    const pending = deferred<void>();
+    (deletePage as ReturnType<typeof vi.fn>).mockReturnValueOnce(pending.promise);
+    await makeNextPageResolvable();
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { rerender, user } = renderWithQuery(
+      <PageDetail {...defaultProps} />,
+      queryClient,
+    );
+
+    try {
+      await screen.findByRole("heading", { level: 1, name: "libSQL Architecture" });
+      await user.click(screen.getByRole("button", { name: "Page actions" }));
+      await user.click(screen.getByRole("menuitem", { name: "Delete page" }));
+      await waitFor(() => expect(deletePage).toHaveBeenCalledWith("concept_abc"));
+
+      rerender(
+        <QueryClientProvider client={queryClient}>
+          <PageDetail {...defaultProps} pageId="concept_next" />
+        </QueryClientProvider>,
+      );
+      await screen.findByRole("heading", { level: 1, name: "Next Page" });
+
+      await act(async () => pending.resolve());
+      expect(defaultProps.onBack).not.toHaveBeenCalled();
+      expect(screen.getByRole("heading", { level: 1, name: "Next Page" })).toBeVisible();
+    } finally {
+      confirmSpy.mockRestore();
+    }
+  });
+
+  it("does not show an older Page save failure on a newer Page", async () => {
+    const { updatePage } = await import("../../lib/tauri");
+    const pending = deferred<void>();
+    (updatePage as ReturnType<typeof vi.fn>).mockReturnValueOnce(pending.promise);
+    await makeNextPageResolvable();
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { rerender, user } = renderWithQuery(
+      <PageDetail {...defaultProps} />,
+      queryClient,
+    );
+
+    await screen.findByRole("heading", { level: 1, name: "libSQL Architecture" });
+    await user.click(screen.getByTitle("Edit page"));
+    const editor = screen.getByRole("textbox");
+    await user.clear(editor);
+    await user.type(editor, "Revised Page body");
+    await user.click(screen.getByRole("button", { name: "Save (Cmd+Enter)" }));
+    await waitFor(() =>
+      expect(updatePage).toHaveBeenCalledWith("concept_abc", "Revised Page body"),
+    );
+
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <PageDetail {...defaultProps} pageId="concept_next" />
+      </QueryClientProvider>,
+    );
+    await screen.findByRole("heading", { level: 1, name: "Next Page" });
+
+    await act(async () => {
+      pending.reject(new Error("late write failure"));
+      await pending.promise.catch(() => undefined);
+    });
+    expect(screen.queryByText("Could not save this page. Try again.")).toBeNull();
+    expect(screen.queryByRole("textbox")).toBeNull();
+  });
+
+  it("serializes Cmd+Enter saves so an older body cannot finish last", async () => {
+    const { updatePage } = await import("../../lib/tauri");
+    const pending = deferred<void>();
+    (updatePage as ReturnType<typeof vi.fn>).mockReturnValueOnce(pending.promise);
+    const { user } = renderWithQuery(<PageDetail {...defaultProps} />);
+
+    await screen.findByRole("heading", { level: 1, name: "libSQL Architecture" });
+    await user.click(screen.getByTitle("Edit page"));
+    const editor = screen.getByRole("textbox");
+    await user.clear(editor);
+    await user.type(editor, "One serialized Page body");
+
+    try {
+      fireEvent.keyDown(editor, { key: "Enter", metaKey: true });
+      fireEvent.keyDown(editor, { key: "Enter", metaKey: true });
+
+      await waitFor(() =>
+        expect(updatePage).toHaveBeenCalledWith(
+          "concept_abc",
+          "One serialized Page body",
+        ),
+      );
+      expect(updatePage).toHaveBeenCalledTimes(1);
+      expect(editor).toBeDisabled();
+    } finally {
+      await act(async () => pending.resolve());
+    }
+  });
+
+  it("does not show an older re-distill result on a newer Page", async () => {
+    const { redistillPage } = await import("../../lib/tauri");
+    const pending = deferred<{ status: "ok"; updated: true }>();
+    (redistillPage as ReturnType<typeof vi.fn>).mockReturnValueOnce(pending.promise);
+    await makeNextPageResolvable();
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { rerender, user } = renderWithQuery(
+      <PageDetail {...defaultProps} />,
+      queryClient,
+    );
+
+    await screen.findByRole("heading", { level: 1, name: "libSQL Architecture" });
+    await user.click(screen.getByTitle("Re-distill page"));
+    await waitFor(() => expect(redistillPage).toHaveBeenCalledWith("concept_abc"));
+
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <PageDetail {...defaultProps} pageId="concept_next" />
+      </QueryClientProvider>,
+    );
+    await screen.findByRole("heading", { level: 1, name: "Next Page" });
+
+    await act(async () => pending.resolve({ status: "ok", updated: true }));
+    expect(screen.queryByText("Page re-distilled.")).toBeNull();
+  });
+
+  it("distinguishes a Page load failure from not found and retries in place", async () => {
+    const { getPage } = await import("../../lib/tauri");
+    (getPage as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("daemon offline"));
+    const { user } = renderWithQuery(<PageDetail {...defaultProps} />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not load this page.",
+    );
+    expect(screen.queryByText("Page not found")).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "libSQL Architecture" })).toBeVisible();
+  });
+
+  it("keeps cached Page content visible when a background refetch fails", async () => {
+    const { getPage } = await import("../../lib/tauri");
+    const getPageMock = getPage as ReturnType<typeof vi.fn>;
+    const cachedPage = await getPage("concept_abc");
+    getPageMock.mockClear();
+    getPageMock.mockRejectedValueOnce(new Error("background refresh failed"));
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    queryClient.setQueryData(["page", "concept_abc"], cachedPage);
+
+    renderWithQuery(<PageDetail {...defaultProps} />, queryClient);
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "libSQL Architecture" }),
+    ).toBeVisible();
+    await waitFor(() =>
+      expect(
+        queryClient.getQueryState(["page", "concept_abc"])?.error,
+      ).toEqual(expect.any(Error)),
+    );
+    expect(
+      screen.getByRole("heading", { level: 1, name: "libSQL Architecture" }),
+    ).toBeVisible();
+    expect(screen.queryByText("Could not load this page.")).toBeNull();
+  });
+
+  it("keeps the editor open and retryable when saving fails", async () => {
+    const { updatePage } = await import("../../lib/tauri");
+    (updatePage as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("write failed"));
+    const { user } = renderWithQuery(<PageDetail {...defaultProps} />);
+
+    await screen.findByText("libSQL Architecture");
+    await user.click(screen.getByTitle("Edit page"));
+    const editor = screen.getByRole("textbox");
+    await user.clear(editor);
+    await user.type(editor, "Revised Page body");
+    await user.click(screen.getByRole("button", { name: "Save (Cmd+Enter)" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not save this page. Try again.",
+    );
+    expect(editor).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Save (Cmd+Enter)" }));
+    await waitFor(() => expect(updatePage).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByRole("textbox")).toBeNull());
+  });
+
+  it("surfaces copy failures and lets the user retry", async () => {
+    const { clipboardWrite } = await import("../../lib/tauri");
+    (clipboardWrite as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("clipboard denied"));
+    const { user } = renderWithQuery(<PageDetail {...defaultProps} />);
+
+    await screen.findByText("libSQL Architecture");
+    await user.click(screen.getByTitle("Copy as context"));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not copy this page. Try again.",
+    );
+
+    await user.click(screen.getByTitle("Copy as context"));
+    await waitFor(() => expect(clipboardWrite).toHaveBeenCalledTimes(2));
+    expect(await screen.findByTitle("Copied!")).toBeVisible();
+  });
+
+  it("surfaces export failures and lets the user retry", async () => {
+    const { exportPageToObsidian } = await import("../../lib/tauri");
+    (exportPageToObsidian as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("vault unavailable"));
+    const { user } = renderWithQuery(<PageDetail {...defaultProps} />);
+
+    await screen.findByText("libSQL Architecture");
+    await user.click(screen.getByTitle("Export to Obsidian"));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not export this page. Try again.",
+    );
+
+    await user.click(screen.getByTitle("Export to Obsidian"));
+    await waitFor(() => expect(exportPageToObsidian).toHaveBeenCalledTimes(2));
+    expect(await screen.findByTitle("Exported!")).toBeVisible();
   });
 
   it("keeps Page action menu keyboard events out of Main history and manages item focus", async () => {

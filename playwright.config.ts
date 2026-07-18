@@ -28,7 +28,10 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
-      use: { ...devices["Desktop Chrome"] },
+      use: {
+        ...devices["Desktop Chrome"],
+        timezoneId: "America/Los_Angeles",
+      },
     },
   ],
 });

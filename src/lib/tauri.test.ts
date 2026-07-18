@@ -831,6 +831,12 @@ describe('page domain compatibility', () => {
     });
     expect(result).toEqual({ id: 'page-new', attached_to: null, warnings: [] });
   });
+
+  it('deletes a Page through the exact desktop command contract', async () => {
+    await tauri.deletePage('page-delete-me');
+
+    expect(mockInvoke).toHaveBeenCalledWith('delete_page', { id: 'page-delete-me' });
+  });
 });
 
 describe('Page draft lifecycle wrappers', () => {

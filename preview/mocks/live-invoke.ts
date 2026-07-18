@@ -334,8 +334,24 @@ export const HANDLERS: Record<string, (a: any) => Promise<unknown>> = {
   get_page_revisions: (a) => get(`/api/pages/${enc(a.pageId)}/revisions`),
   redistill_page: (a) => post(`/api/distill/${enc(a.pageId)}`, {}),
   update_page: (a) => post(`/api/memory/${enc(a.id)}/update-page`, { content: a.content }),
-  delete_page: (a) => post(`/api/pages/${enc(a.id)}/archive`),
-  archive_page: (a) => post(`/api/pages/${enc(a.id)}/archive`),
+  delete_page: (a) => {
+    const id = String(a.id);
+    if (PREVIEW_AUTHORED_PAGES.has(id)) {
+      PREVIEW_AUTHORED_PAGES.delete(id);
+      PREVIEW_DELETED_PAGE_IDS.add(id);
+      return Promise.resolve(null);
+    }
+    return del(`/api/pages/${enc(id)}`);
+  },
+  archive_page: (a) => {
+    const id = String(a.id);
+    const local = PREVIEW_AUTHORED_PAGES.get(id);
+    if (local) {
+      PREVIEW_AUTHORED_PAGES.set(id, { ...local, status: "archived" });
+      return Promise.resolve(null);
+    }
+    return post(`/api/pages/${enc(id)}/archive`);
+  },
   list_orphan_links: (a) => get(`/api/pages/orphan-links${qs({ min_count: a?.minCount })}`),
 
   // --- memories ---

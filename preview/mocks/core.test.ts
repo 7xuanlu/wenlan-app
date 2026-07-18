@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { REVIEW_STATE } from "../fixtures";
+import { PAGES, PRISTINE, REVIEW_STATE } from "../fixtures";
 import { invoke } from "./core";
 import { liveInvoke } from "./live-invoke";
 
@@ -43,5 +43,17 @@ describe("preview core.ts — delete_memory in fixture mode", () => {
     });
     expect(result).toEqual({ deleted: true });
     expect(REVIEW_STATE.captures.map((c) => c.id)).toEqual(["cap_1", "cap_2"]);
+  });
+});
+
+describe("preview core.ts — delete_page in fixture mode", () => {
+  beforeEach(() => {
+    (window as { __PREVIEW_FIXTURES__?: boolean }).__PREVIEW_FIXTURES__ = true;
+    PAGES["page-cited"] = structuredClone(PRISTINE["page-cited"]);
+  });
+
+  it("removes the fixture Page instead of acknowledging a no-op", async () => {
+    await expect(invoke("delete_page", { id: "page-cited" })).resolves.toBeNull();
+    await expect(invoke("get_page", { id: "page-cited" })).resolves.toBeNull();
   });
 });

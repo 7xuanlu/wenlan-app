@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { i18n } from "../../i18n";
@@ -30,25 +30,37 @@ const validCleanupItem: ReviewItem = {
 
 function ReviewHarness({
   item,
+  items = [item],
   onResolve,
 }: {
   readonly item: ReviewItem;
+  readonly items?: ReviewItem[];
   readonly onResolve: (args: { item: ReviewItem; approve: boolean }) => Promise<unknown>;
 }) {
-  const [open, setOpen] = useState(false);
+  const [openId, setOpenId] = useState<string | null>(null);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return (
     <QueryClientProvider client={queryClient}>
-      <button type="button" onClick={() => setOpen(true)}>Open review</button>
+      <button type="button" onClick={() => setOpenId(reviewItemId(item))}>Open review</button>
       <ReviewDialog
-        items={[item]}
-        openId={open ? reviewItemId(item) : null}
-        onOpenChange={(next) => setOpen(next !== null)}
+        items={items}
+        openId={openId}
+        onOpenChange={setOpenId}
         onResolve={onResolve}
         isResolving={false}
       />
     </QueryClientProvider>
   );
+}
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, reject, resolve };
 }
 
 describe("ReviewDialog interaction safety", () => {
@@ -76,6 +88,85 @@ describe("ReviewDialog interaction safety", () => {
 
     await waitFor(() => expect(onResolve).toHaveBeenCalledTimes(1));
     expect(onResolve).toHaveBeenCalledWith({ item: validCleanupItem, approve: false });
+  });
+
+  it("keeps a failed cleanup decision visible and retryable", async () => {
+    const onResolve = vi.fn()
+      .mockRejectedValueOnce(new Error("daemon offline"))
+      .mockResolvedValueOnce(undefined);
+    const user = userEvent.setup();
+    render(<ReviewHarness item={validCleanupItem} onResolve={onResolve} />);
+    await user.click(screen.getByRole("button", { name: "Open review" }));
+
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Archive" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "The review action could not be saved. Try again.",
+    );
+    expect(within(dialog).getByRole("button", { name: "Archive" })).toBeEnabled();
+
+    await user.click(within(dialog).getByRole("button", { name: "Archive" }));
+    await waitFor(() => expect(onResolve).toHaveBeenCalledTimes(2));
+    expect(await within(dialog).findByRole("heading", { name: "All caught up" })).toBeVisible();
+  });
+
+  it("does not reopen a review after a pending decision finishes late", async () => {
+    const pending = deferred<void>();
+    const onResolve = vi.fn().mockReturnValue(pending.promise);
+    const user = userEvent.setup();
+    render(<ReviewHarness item={validCleanupItem} onResolve={onResolve} />);
+    await user.click(screen.getByRole("button", { name: "Open review" }));
+
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Archive" }));
+    await waitFor(() => expect(onResolve).toHaveBeenCalledOnce());
+    await user.click(within(dialog).getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    await act(async () => pending.resolve());
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Open review" }));
+    expect(
+      await screen.findByRole("button", { name: "Archive" }),
+    ).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "All caught up" })).toBeNull();
+  });
+
+  it("does not show an older decision failure on a skipped-to review", async () => {
+    const pending = deferred<void>();
+    const onResolve = vi.fn().mockReturnValue(pending.promise);
+    const nextItem: ReviewItem = {
+      ...validCleanupItem,
+      id: "cleanup-next",
+      payload: {
+        action: "page_keep_or_archive",
+        page_id: "page-next",
+        source_count: 1,
+      },
+    };
+    const user = userEvent.setup();
+    render(
+      <ReviewHarness
+        item={validCleanupItem}
+        items={[validCleanupItem, nextItem]}
+        onResolve={onResolve}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "Open review" }));
+
+    const firstDialog = await screen.findByRole("dialog");
+    await user.click(within(firstDialog).getByRole("button", { name: "Archive" }));
+    await waitFor(() => expect(onResolve).toHaveBeenCalledOnce());
+    await user.click(within(firstDialog).getByRole("button", { name: "Skip" }));
+    expect(await screen.findByText("2 of 2")).toBeVisible();
+
+    await act(async () => {
+      pending.reject(new Error("late daemon failure"));
+      await pending.promise.catch(() => undefined);
+    });
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByText("2 of 2")).toBeVisible();
   });
 
   it("fails closed when a cleanup proposal has no valid Page id", async () => {

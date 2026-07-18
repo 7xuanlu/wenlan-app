@@ -3316,6 +3316,32 @@ async fn delete_page_response(
 #[cfg(test)]
 mod page_status_command_type_tests {
     use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    async fn serve_status_once(
+        status: &'static str,
+        response_body: &'static str,
+    ) -> (crate::api::WenlanClient, tokio::task::JoinHandle<String>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let handle = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut bytes = vec![0_u8; 8192];
+            let size = stream.read(&mut bytes).await.unwrap();
+            let request = String::from_utf8_lossy(&bytes[..size]).to_string();
+            let response = format!(
+                "HTTP/1.1 {status}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                response_body.len(),
+                response_body,
+            );
+            stream.write_all(response.as_bytes()).await.unwrap();
+            request
+        });
+        (
+            crate::api::WenlanClient::with_base_url(format!("http://{address}")),
+            handle,
+        )
+    }
 
     #[allow(dead_code)]
     async fn archive_page_response_uses_typed_status_envelope(client: crate::api::WenlanClient) {
@@ -3346,6 +3372,33 @@ mod page_status_command_type_tests {
         }))
         .unwrap();
         assert_eq!(deleted.status, "deleted");
+    }
+
+    #[tokio::test]
+    async fn delete_page_uses_the_permanent_delete_route() {
+        let (client, request) = serve_status_once("200 OK", r#"{"status":"deleted"}"#).await;
+
+        let response = delete_page_response(&client, "page-delete-me")
+            .await
+            .unwrap();
+        let request = request.await.unwrap();
+
+        assert_eq!(response.status, "deleted");
+        assert!(request.starts_with("DELETE /api/pages/page-delete-me HTTP/1.1\r\n"));
+    }
+
+    #[tokio::test]
+    async fn delete_page_forwards_daemon_failures() {
+        let (client, request) =
+            serve_status_once("503 Service Unavailable", r#"{"error":"offline"}"#).await;
+
+        let error = delete_page_response(&client, "page-delete-me")
+            .await
+            .unwrap_err();
+        let request = request.await.unwrap();
+
+        assert!(request.starts_with("DELETE /api/pages/page-delete-me HTTP/1.1\r\n"));
+        assert!(error.contains("HTTP DELETE /api/pages/page-delete-me returned 503"));
     }
 }
 

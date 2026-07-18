@@ -109,4 +109,10 @@ describe("fixture-only native Review flavor", () => {
     expect(verifier).toContain("wenlan-review");
     expect(verifier).toContain("forbiddenBundleNames");
   });
+
+  it("builds and verifies the fixture-only Review artifact in CI", () => {
+    const ci = read(".github/workflows/ci.yml");
+
+    expect(ci).toContain("pnpm review:build && pnpm review:verify");
+  });
 });

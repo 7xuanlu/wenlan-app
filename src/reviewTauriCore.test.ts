@@ -89,6 +89,78 @@ describe("Review fixture IPC", () => {
     expect(pages.map((page) => page.id)).toContain(result.id);
   });
 
+  it("deletes an authored Page from detail reads and the active inventory", async () => {
+    const created = await invoke("create_page", {
+      title: "Disposable review note",
+      content: "This Page should disappear from the isolated Review runtime.",
+      space: null,
+    }) as { id: string };
+
+    await expect(invoke("delete_page", { id: created.id })).resolves.toBeNull();
+    await expect(invoke("get_page", { id: created.id })).resolves.toBeNull();
+
+    const pages = await invoke("list_pages", {
+      status: "active",
+      limit: 500,
+      offset: 0,
+    }) as Array<{ id: string }>;
+    expect(pages.map((page) => page.id)).not.toContain(created.id);
+  });
+
+  it("edits and re-distills a Page through the Review detail action contract", async () => {
+    const created = await invoke("create_page", {
+      title: "Editable review note",
+      content: "Original fixture content.",
+      space: null,
+    }) as { id: string };
+
+    await expect(invoke("update_page", {
+      id: created.id,
+      content: "Revised fixture content.",
+    })).resolves.toBeNull();
+    await expect(invoke("get_page", { id: created.id })).resolves.toMatchObject({
+      id: created.id,
+      content: "Revised fixture content.",
+    });
+    await expect(invoke("redistill_page", { pageId: created.id })).resolves.toEqual({
+      status: "ok",
+      updated: true,
+    });
+  });
+
+  it("models both Keep and Archive cleanup decisions in the Review queue", async () => {
+    const initial = await invoke("list_refinements", { limit: 50 }) as {
+      proposals: Array<{ id: string; payload?: { page_id?: string } | null }>;
+    };
+    const cleanup = initial.proposals.find((proposal) => proposal.payload?.page_id === "page-history");
+    expect(cleanup).toBeDefined();
+
+    await expect(invoke("reject_refinement", { id: cleanup?.id })).resolves.toMatchObject({
+      id: cleanup?.id,
+    });
+    await expect(invoke("list_refinements", { limit: 50 })).resolves.toEqual({
+      proposals: [],
+    });
+    await expect(invoke("get_page", { id: "page-history" })).resolves.toMatchObject({
+      status: "active",
+    });
+
+    resetReviewRuntime();
+    await expect(invoke("accept_refinement", { id: cleanup?.id })).resolves.toMatchObject({
+      id: cleanup?.id,
+      action_applied: "page_keep_or_archive",
+    });
+    const activePages = await invoke("list_pages", {
+      status: "active",
+      limit: 500,
+      offset: 0,
+    }) as Array<{ id: string }>;
+    expect(activePages.map((page) => page.id)).not.toContain("page-history");
+    await expect(invoke("get_page", { id: "page-history" })).resolves.toMatchObject({
+      status: "archived",
+    });
+  });
+
   it("always mints a legacy authored Page even when its title matches a fixture Page", async () => {
     const pagesBefore = await invoke("list_pages", { status: "active", limit: 500, offset: 0 }) as Array<{
       id: string;

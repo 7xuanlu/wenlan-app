@@ -73,6 +73,34 @@ describe("liveInvoke authored Page preview", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it("deletes a synthetic Page locally without mutating the live daemon", async () => {
+    const fetch = vi.fn(() => Promise.reject(new Error("synthetic deletion must stay local")));
+    vi.stubGlobal("fetch", fetch);
+    const created = await liveInvoke("create_page", {
+      title: "Delete locally",
+      content: "Preview-only content.",
+      space: null,
+    }) as { id: string };
+
+    await expect(liveInvoke("delete_page", { id: created.id })).resolves.toBeNull();
+    await expect(liveInvoke("get_page", { id: created.id })).resolves.toBeNull();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("maps daemon-backed Page deletion to DELETE rather than Archive", async () => {
+    const fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ status: "deleted" }), { status: 200 })
+    );
+    vi.stubGlobal("fetch", fetch);
+
+    await liveInvoke("delete_page", { id: "remote-page" });
+
+    expect(fetch).toHaveBeenCalledWith(
+      "/daemon/api/pages/remote-page",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+  });
+
   it("models partial draft snapshots, CAS updates, publish, discard, and title conflicts in memory", async () => {
     const fetch = vi.fn(async () =>
       new Response(JSON.stringify({ pages: [] }), { status: 200 })

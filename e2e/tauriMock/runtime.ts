@@ -56,7 +56,7 @@ export class TauriMockRuntime {
   private entityDetails: EntityDetail[];
   private memories: MemoryItem[];
   private readonly distillReview: DistillReviewResponse;
-  private readonly refinements: readonly RefinementProposalSummary[];
+  private refinements: RefinementProposalSummary[];
   private readonly callsLog: MockCommandCall[] = [];
   private readonly failures = new Map<string, string[]>();
   private readonly activityRows: readonly Record<string, unknown>[];
@@ -77,7 +77,7 @@ export class TauriMockRuntime {
     }));
     this.memories = fixture.memories.map((memory) => ({ ...memory }));
     this.distillReview = structuredClone(fixture.distillReview);
-    this.refinements = structuredClone(fixture.refinements);
+    this.refinements = structuredClone([...fixture.refinements]);
     this.activityRows = rawActions.map((action, index) => ({
       id: index + 1,
       timestamp: 1_783_728_000 - index * 60,
@@ -118,12 +118,17 @@ export class TauriMockRuntime {
       case "list_pages": return this.listPages(args);
       case "get_page": return this.pages.find((page) => page.id === requiredString(command, args, "id")) ?? null;
       case "create_page": return this.createPage(args);
+      case "update_page": return this.updatePage(args);
+      case "delete_page": return this.deletePage(args);
+      case "redistill_page": return this.redistillPage(args);
       case "create_page_draft": return this.createPageDraft(args);
       case "update_page_draft": return this.updatePageDraft(args);
       case "publish_page_draft": return this.publishPageDraft(args);
       case "discard_page_draft": return this.discardPageDraft(args);
       case "distill_review": return structuredClone(this.distillReview);
       case "list_refinements": return { proposals: structuredClone(this.refinements) };
+      case "accept_refinement": return this.resolveRefinement(args, true);
+      case "reject_refinement": return this.resolveRefinement(args, false);
       case "list_entities_cmd": return this.listEntities(args);
       case "get_entity_detail_cmd": return this.getEntityDetail(args);
       case "add_observation_cmd": return this.addObservation(args);
@@ -233,6 +238,62 @@ export class TauriMockRuntime {
       last_modified: now,
     }, ...this.pages];
     return { id, attached_to: null, warnings: [] };
+  }
+
+  private deletePage(args: unknown): null {
+    const id = requiredString("delete_page", args, "id");
+    this.pages = this.pages.filter((page) => page.id !== id);
+    return null;
+  }
+
+  private updatePage(args: unknown): null {
+    const id = requiredString("update_page", args, "id");
+    const content = requiredString("update_page", args, "content");
+    const index = this.pages.findIndex((page) => page.id === id);
+    const page = this.pages[index];
+    if (index < 0 || !page) throw new TauriMockArgumentError("update_page", "id");
+    this.pages[index] = {
+      ...page,
+      content,
+      citations: [],
+      user_edited: true,
+      version: page.version + 1,
+      last_modified: "2026-07-10T12:32:00Z",
+    };
+    return null;
+  }
+
+  private redistillPage(args: unknown): { status: "ok"; updated: true } {
+    const id = requiredString("redistill_page", args, "pageId");
+    const index = this.pages.findIndex((page) => page.id === id);
+    const page = this.pages[index];
+    if (index < 0 || !page) throw new TauriMockArgumentError("redistill_page", "pageId");
+    this.pages[index] = {
+      ...page,
+      last_compiled: "2026-07-10T12:33:00Z",
+      last_modified: "2026-07-10T12:33:00Z",
+      stale_reason: null,
+    };
+    return { status: "ok", updated: true };
+  }
+
+  private resolveRefinement(
+    args: unknown,
+    approve: boolean,
+  ): { id: string; action_applied: string } | { id: string } {
+    const command = approve ? "accept_refinement" : "reject_refinement";
+    const id = requiredString(command, args, "id");
+    const index = this.refinements.findIndex((proposal) => proposal.id === id);
+    const proposal = this.refinements[index];
+    if (index < 0 || !proposal) throw new TauriMockArgumentError(command, "id");
+    this.refinements.splice(index, 1);
+    if (approve && proposal.payload?.action === "page_keep_or_archive") {
+      const pageId = proposal.payload.page_id;
+      this.pages = this.pages.map((page) =>
+        page.id === pageId ? { ...page, status: "archived" } : page
+      );
+    }
+    return approve ? { id, action_applied: proposal.action } : { id };
   }
 
   private createPageDraft(args: unknown): KnowledgePage {

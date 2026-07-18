@@ -524,13 +524,18 @@ export default function ReviewDialog({
   const [showDone, setShowDone] = useState(false);
   const [sideBySide, setSideBySide] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
+  const [resolveError, setResolveError] = useState(false);
+  const [resolvingLocally, setResolvingLocally] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const navigationVersionRef = useRef(0);
+  const resolveRequestRef = useRef(0);
 
   const open = openId != null;
   const foundIndex = items.findIndex((entry) => reviewItemId(entry) === openId);
   const index = foundIndex >= 0 ? foundIndex : items.length > 0 ? 0 : -1;
   const item = showDone ? null : index >= 0 ? items[index] : null;
   const done = open && (showDone || items.length === 0);
+  const resolving = isResolving || resolvingLocally;
   const summary = useReviewItemSummary(item);
 
   const detailSourceId =
@@ -623,8 +628,13 @@ export default function ReviewDialog({
     };
   }, [open]);
 
+  useEffect(() => {
+    navigationVersionRef.current += 1;
+    setResolveError(false);
+  }, [openId]);
+
   const resolveCurrent = async (approve: boolean) => {
-    if (!item || isResolving) return;
+    if (!item || resolving) return;
     // reviewApproveBlocked already folds in reviewReadOnly — read-only kinds
     // (topic/page_candidate) can still dismiss (hide) even though they can't
     // approve.
@@ -638,7 +648,31 @@ export default function ReviewDialog({
       item.kind === "page_candidate" ||
       item.kind === "stale_page";
     const next = items[index + 1] ?? (index > 0 ? items[index - 1] : null);
-    await onResolve({ item, approve });
+    const navigationVersion = navigationVersionRef.current;
+    const requestId = ++resolveRequestRef.current;
+    setResolveError(false);
+    setResolvingLocally(true);
+    try {
+      await onResolve({ item, approve });
+    } catch {
+      if (
+        resolveRequestRef.current === requestId &&
+        navigationVersionRef.current === navigationVersion
+      ) {
+        setResolveError(true);
+      }
+      return;
+    } finally {
+      if (resolveRequestRef.current === requestId) {
+        setResolvingLocally(false);
+      }
+    }
+    if (
+      resolveRequestRef.current !== requestId ||
+      navigationVersionRef.current !== navigationVersion
+    ) {
+      return;
+    }
     setFlash(
       approve
         ? t(
@@ -664,12 +698,14 @@ export default function ReviewDialog({
   };
 
   const goTo = (offset: number) => {
-    if (items.length === 0) return;
+    if (items.length < 2) return;
     const nextIndex = (index + offset + items.length) % items.length;
+    navigationVersionRef.current += 1;
     onOpenChange(reviewItemId(items[nextIndex]));
   };
 
   const close = () => {
+    navigationVersionRef.current += 1;
     setShowDone(false);
     onOpenChange(null);
   };
@@ -1383,6 +1419,23 @@ export default function ReviewDialog({
               </p>
             )}
 
+            {resolveError && (
+              <p
+                role="alert"
+                style={{
+                  background: "var(--mem-status-danger-bg)",
+                  border: "1px solid var(--mem-status-danger-border)",
+                  borderRadius: 8,
+                  color: "var(--mem-status-danger-text)",
+                  font: "12px/1.5 var(--mem-font-body)",
+                  margin: "4px 20px 0",
+                  padding: "9px 11px",
+                }}
+              >
+                {t("review.actionError")}
+              </p>
+            )}
+
             <div
               style={{
                 display: "flex",
@@ -1396,7 +1449,7 @@ export default function ReviewDialog({
               {!reviewDismissBlocked(item) && (
                 <button
                   type="button"
-                  disabled={isResolving}
+                  disabled={resolving}
                   onClick={() => void resolveCurrent(false)}
                   style={{
                     ...actionButtonStyle,
@@ -1472,7 +1525,7 @@ export default function ReviewDialog({
               {!reviewApproveBlocked(item) && (
                 <button
                   type="button"
-                  disabled={isResolving}
+                  disabled={resolving}
                   onClick={() => void resolveCurrent(true)}
                   style={{
                     ...actionButtonStyle,

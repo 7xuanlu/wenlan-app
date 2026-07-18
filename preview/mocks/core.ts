@@ -72,6 +72,7 @@ export async function invoke(
       return { status: "ok", updated: true };
     }
     case "delete_page":
+      delete PAGES[args?.id as string];
       return null;
     // --- review queue (DistillReviewPanel + ReviewDialog preview) ---
     case "distill_review":

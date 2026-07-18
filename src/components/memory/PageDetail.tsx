@@ -145,8 +145,11 @@ export default function PageDetail({
   const queryClient = useQueryClient();
   const [copied, setCopied] = useState(false);
   const [exported, setExported] = useState(false);
+  const [copying, setCopying] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editContent, setEditContent] = useState("");
+  const [actionError, setActionError] = useState<string | null>(null);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [actionMenuOpen, setActionMenuOpen] = useState(false);
   const [redistillNotice, setRedistillNotice] = useState<{
@@ -161,8 +164,17 @@ export default function PageDetail({
   const actionMenuRef = useRef<HTMLDivElement>(null);
   const actionMenuListRef = useRef<HTMLDivElement>(null);
   const actionMenuInitialFocusRef = useRef<MenuInitialFocus>("first");
+  const activePageIdRef = useRef(pageId);
+  const saveInFlightRef = useRef(false);
+  activePageIdRef.current = pageId;
 
-  const { data: page, isLoading } = useQuery({
+  const {
+    data: page,
+    isLoading,
+    isLoadingError: pageLoadFailed,
+    isFetching: pageIsFetching,
+    refetch: refetchPage,
+  } = useQuery({
     queryKey: ["page", pageId],
     queryFn: () => getPage(pageId),
   });
@@ -240,35 +252,61 @@ export default function PageDetail({
 
   useEffect(() => {
     setRedistillNotice(null);
+    setActionError(null);
+    setCopied(false);
+    setExported(false);
+    setEditing(false);
+    setEditContent("");
   }, [pageId]);
 
   const updateMutation = useMutation({
-    mutationFn: (content: string) => updatePage(pageId, content),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["page", pageId] });
+    mutationFn: ({ id, content }: { id: string; content: string }) =>
+      updatePage(id, content),
+    onSuccess: (_result, { id }) => {
+      queryClient.invalidateQueries({ queryKey: ["page", id] });
       queryClient.invalidateQueries({ queryKey: ["pages"] });
-      queryClient.invalidateQueries({ queryKey: ["page-links", pageId] });
-      queryClient.invalidateQueries({ queryKey: ["page-revisions", pageId] });
+      queryClient.invalidateQueries({ queryKey: ["page-links", id] });
+      queryClient.invalidateQueries({ queryKey: ["page-revisions", id] });
+      if (activePageIdRef.current !== id) return;
+      setActionError(null);
       setEditing(false);
+    },
+    onError: (_error, { id }) => {
+      if (activePageIdRef.current !== id) return;
+      setActionError(t("pageDetail.saveError"));
+    },
+    onSettled: () => {
+      saveInFlightRef.current = false;
     },
   });
 
   const deleteMutation = useMutation({
-    mutationFn: () => deletePage(pageId),
-    onSuccess: () => {
+    mutationFn: (id: string) => deletePage(id),
+    onSuccess: (_result, id) => {
+      queryClient.invalidateQueries({ queryKey: ["page", id] });
       queryClient.invalidateQueries({ queryKey: ["pages"] });
+      queryClient.invalidateQueries({ queryKey: ["page-links", id] });
+      queryClient.invalidateQueries({ queryKey: ["page-revisions", id] });
+      queryClient.invalidateQueries({ queryKey: ["page-sources", id] });
+      if (activePageIdRef.current !== id) return;
+      setActionError(null);
       onBack();
+    },
+    onError: (_error, id) => {
+      if (activePageIdRef.current !== id) return;
+      setActionError(t("pageDetail.deleteError"));
     },
   });
 
   const redistillMutation = useMutation({
-    mutationFn: () => redistillPage(pageId),
-    onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["page", pageId] });
+    mutationFn: (id: string) => redistillPage(id),
+    onSuccess: (result, id) => {
+      queryClient.invalidateQueries({ queryKey: ["page", id] });
       queryClient.invalidateQueries({ queryKey: ["pages"] });
-      queryClient.invalidateQueries({ queryKey: ["page-links", pageId] });
-      queryClient.invalidateQueries({ queryKey: ["page-revisions", pageId] });
-      queryClient.invalidateQueries({ queryKey: ["page-sources", pageId] });
+      queryClient.invalidateQueries({ queryKey: ["page-links", id] });
+      queryClient.invalidateQueries({ queryKey: ["page-revisions", id] });
+      queryClient.invalidateQueries({ queryKey: ["page-sources", id] });
+      if (activePageIdRef.current !== id) return;
       if (result.status === "skipped") {
         setRedistillNotice({
           kind: "warning",
@@ -281,7 +319,8 @@ export default function PageDetail({
         message: result.updated ? "Page re-distilled." : "Page already up to date.",
       });
     },
-    onError: (error) => {
+    onError: (error, id) => {
+      if (activePageIdRef.current !== id) return;
       setRedistillNotice({
         kind: "error",
         message: error instanceof Error ? error.message : "Page re-distill failed.",
@@ -297,11 +336,12 @@ export default function PageDetail({
     ) {
       return;
     }
-    redistillMutation.mutate();
+    redistillMutation.mutate(pageId);
   };
 
   const copyAsContext = useCallback(async () => {
     if (!page) return;
+    const originPageId = page.id;
     const space = page.domain ? `**Space:** ${page.domain}` : "";
     const version = `**Version:** ${page.version}`;
     const compiled = `**Last compiled:** ${page.last_compiled}`;
@@ -312,30 +352,55 @@ export default function PageDetail({
       "",
       page.content,
     ].join("\n");
-    await clipboardWrite(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }, [page]);
+    setActionError(null);
+    setCopying(true);
+    try {
+      await clipboardWrite(text);
+      if (activePageIdRef.current !== originPageId) return;
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      if (activePageIdRef.current !== originPageId) return;
+      setActionError(t("pageDetail.copyError"));
+    } finally {
+      setCopying(false);
+    }
+  }, [page, t]);
 
   const handleExportToVault = useCallback(
     async (vaultPath: string) => {
+      const originPageId = pageId;
       setExportMenuOpen(false);
-      await exportPageToObsidian(pageId, `${vaultPath}/Wenlan/pages`);
-      setExported(true);
-      setTimeout(() => setExported(false), 2000);
+      setActionError(null);
+      setExporting(true);
+      try {
+        await exportPageToObsidian(originPageId, `${vaultPath}/Wenlan/pages`);
+        if (activePageIdRef.current !== originPageId) return;
+        setExported(true);
+        setTimeout(() => setExported(false), 2000);
+      } catch {
+        if (activePageIdRef.current !== originPageId) return;
+        setActionError(t("pageDetail.exportError"));
+      } finally {
+        setExporting(false);
+      }
     },
-    [pageId],
+    [pageId, t],
   );
 
   const handleSave = () => {
+    if (saveInFlightRef.current || updateMutation.isPending) return;
     if (editContent.trim() && editContent !== page?.content) {
-      updateMutation.mutate(editContent.trim());
+      setActionError(null);
+      saveInFlightRef.current = true;
+      updateMutation.mutate({ id: pageId, content: editContent.trim() });
     } else {
       setEditing(false);
     }
   };
 
   const beginEditing = () => {
+    setActionError(null);
     setEditContent(page?.content ?? "");
     setEditing(true);
     setActionMenuOpen(false);
@@ -343,7 +408,10 @@ export default function PageDetail({
 
   const requestDelete = () => {
     setActionMenuOpen(false);
-    if (confirm(t("pageDetail.deleteConfirm"))) deleteMutation.mutate();
+    if (confirm(t("pageDetail.deleteConfirm"))) {
+      setActionError(null);
+      deleteMutation.mutate(pageId);
+    }
   };
 
   const openExportMenu = (initialFocus: MenuInitialFocus) => {
@@ -410,6 +478,21 @@ export default function PageDetail({
   }, [actionMenuOpen]);
 
   if (isLoading) return null;
+
+  if (pageLoadFailed) {
+    return (
+      <div className="page-detail-load-state">
+        <p role="alert">{t("pageDetail.loadError")}</p>
+        <button
+          disabled={pageIsFetching}
+          onClick={() => void refetchPage()}
+          type="button"
+        >
+          {t("pageDetail.retry")}
+        </button>
+      </div>
+    );
+  }
 
   if (!page) {
     return (
@@ -599,6 +682,7 @@ export default function PageDetail({
             )}
             <button
               onClick={copyAsContext}
+              disabled={copying}
               className={`mem-icon-action ${copied ? "text-emerald-400" : ""}`}
               title={copied ? t("pageDetail.copied") : t("pageDetail.copyAsContext")}
               aria-label={copied ? t("pageDetail.copied") : t("pageDetail.copyAsContext")}
@@ -650,6 +734,7 @@ export default function PageDetail({
                       openExportMenu("first");
                     }
                   }}
+                  disabled={exporting}
                   className={`mem-icon-action ${exported ? "text-emerald-400" : ""}`}
                   title={exported ? t("pageDetail.exported") : t("pageDetail.exportToObsidian")}
                   aria-label={exported ? t("pageDetail.exported") : t("pageDetail.exportToObsidian")}
@@ -753,6 +838,7 @@ export default function PageDetail({
                   ) : null}
                   <button
                     className="page-detail-mobile-menu-item"
+                    disabled={copying}
                     onClick={() => {
                       setActionMenuOpen(false);
                       void copyAsContext();
@@ -775,6 +861,7 @@ export default function PageDetail({
                     obsidianSources.map((source) => (
                       <button
                         className="page-detail-mobile-menu-item"
+                        disabled={exporting}
                         key={source.id}
                         onClick={() => {
                           setActionMenuOpen(false);
@@ -847,11 +934,22 @@ export default function PageDetail({
         </div>
       )}
 
+      {actionError && (
+        <div
+          aria-live="assertive"
+          className="page-detail-action-error"
+          role="alert"
+        >
+          {actionError}
+        </div>
+      )}
+
       {/* Content — edit mode or rendered */}
       {editing ? (
         <div className="flex flex-col gap-2">
           <textarea
             ref={textareaRef}
+            disabled={updateMutation.isPending}
             value={editContent}
             onChange={(e) => setEditContent(e.target.value)}
             onKeyDown={handleKeyDown}
