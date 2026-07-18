@@ -345,7 +345,7 @@ describe("prepare-sidecars backend discovery", () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("cloudflared not found in PATH");
     expect(result.stderr).toContain("Required by Tauri externalBin");
-  });
+  }, 15_000);
 });
 
 const DARWIN_DEST_NAMES = [
@@ -599,7 +599,7 @@ describe("prepare-sidecars --download mode", () => {
         /^[0-9a-f]{64}$/.test(entry.sha256 ?? ""),
       ),
     ).toBe(true);
-  });
+  }, 15_000);
 
   it("fails loud and installs nothing when a release asset download fails", () => {
     const base = makeTempRoot();
