@@ -199,6 +199,66 @@ dissents / deliberate defaults:
   d3-flextree suffices and an in-tree fork is busywork; we vendor anyway
   (majority) — the cost is one small file of algorithm source.
 
+## Codex gap review (2026-07-18, gpt-5.6-sol xhigh, cross-model)
+
+Asked one question — "what is the plan silent on?" — with settled decisions
+excluded. 22 ranked gaps, most load-bearing first. None block the radial
+spike; items 1–17 are daemon-API-design inputs, 18–22 are frontend/UX
+inputs. Resolve or consciously defer each one when its layer gets designed.
+
+1. **Version-skew contract** — versioned routes/payloads, unknown-field and
+   unsupported-endpoint behavior (no runtime handshake exists between repos).
+2. **Optimistic concurrency** — monotonic map revision, conditional writes,
+   client op IDs; second-resolution `updated_at` + "curated wins" can't
+   prevent lost/replayed edits.
+3. **Content ownership** — does `update_map_node` content-edit change a
+   map-local label or the referenced object? Editable copies would break the
+   grounding invariant.
+4. **Suggestion/curation state machine** — replace `suggested`/`pinned`
+   booleans with explicit states (pending/accepted/curated/dismissed/
+   dangling/superseded); keep edge kind separate from suggestion state.
+5. **Occurrence identity** — node occurrence IDs ≠ backing-object IDs;
+   tombstones need semantic fingerprints or duplicate leaves and fresh IDs
+   bypass dismissals.
+6. **Schema migration** — storage schema version, forward migration,
+   interrupted-migration recovery, downgrade policy, before maps are durable
+   user data.
+7. **Atomicity + undo/redo** — transactions and inverse ops, especially for
+   backing-memory-plus-node creation (no orphans on failure or undo).
+8. **Improve-map job lifecycle** — job ID, base revision, status/cancel/
+   retry, dedup, stale-run-result discard.
+9. **Space-map API** — cross-page mode is promised but every endpoint is
+   keyed by `page_id`.
+10. **Whole-map lifecycle** — absent-map init, regenerate/reset, delete;
+    uninitialized vs empty vs all-dismissed.
+11. **Ref type completeness** — discriminated `ref` schema; citation/source
+    and section refs are missing from the four create types.
+12. **Graph invariants** — root uniqueness, cycles, self-loops, duplicate
+    edges, endpoint validation, root editability.
+13. **Provenance schema** — auditable source IDs, run/model, timestamps,
+    confidence — not one opaque field.
+14. **Referential integrity ops** — edge cascade on node delete; explicit
+    relink/remove/resolve for merged or superseded backing objects.
+15. **Layout ownership** — persist viewport + collapsed state; pinning ≠
+    position locking; auto-layout vs manually placed nodes.
+16. **Auto-suggest preference API** — where the setting lives (global/space/
+    page scope) and how the app reads/writes it; daemon sketch has no
+    preference surface today.
+17. **Error/conflict contract** — machine-readable errors for missing refs,
+    conflicts, failed AI jobs, daemon down.
+18. **UX state matrix** — loading, empty, generating, saving, offline,
+    partial-ref failure, conflict, undo-failure; saved/unsaved feedback
+    during drag.
+19. **Accessibility** — Outline as the semantic keyboard-operable tree
+    alternative; keyboard CRUD; suggestion state never color-only.
+20. **Scale budgets** — tested node/edge limits, bulk ref hydration,
+    coalesced layout writes, layout off the UI thread.
+21. **Proactive-AI scheduling** — debounce, per-page coalescing, concurrency
+    caps, offline/battery behavior, so default-on can't build an unbounded
+    queue.
+22. **i18n beyond strings** — AI output locale, RTL canvas, locale-aware
+    counts/times, re-layout after translation.
+
 ## Frontend notes for the future session
 
 - Renderer choice: settled — see "Tooling decision" above. sigma remains
