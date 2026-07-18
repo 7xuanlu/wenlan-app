@@ -48,7 +48,9 @@ export function buildAtlasGraph(model: GraphModel, palette: GraphPalette): Graph
   // a view decision (see model.ts's parallel-edge note), fine at round-1 scale.
   for (const edge of model.edges) {
     graph.addEdgeWithKey(edge.id, edge.source, edge.target, {
-      size: 3,
+      // Rendered 1:1 in CSS px (AtlasView pins zoomToSizeRatioFunction to 1),
+      // calibrated to the old canvas graph's ~2px effective stroke.
+      size: 2,
       color: palette.edge,
     });
   }

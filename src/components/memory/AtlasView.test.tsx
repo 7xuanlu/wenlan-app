@@ -52,6 +52,15 @@ vi.mock("sigma", () => {
     viewportToGraph(coords: { x: number; y: number }) {
       return coords;
     }
+    // Fake fit density: 6 px per graph unit, so the density cap (target 1.5)
+    // must zoom out by exactly 4x.
+    graphToViewport(coords: { x: number; y: number }) {
+      return { x: coords.x * 6, y: coords.y * 6 };
+    }
+    camera = { ratio: 1, setState: vi.fn() };
+    getCamera() {
+      return this.camera;
+    }
     refresh() {}
     setSetting(_key: string, _value: unknown) {}
     kill() {}
@@ -312,6 +321,17 @@ describe("AtlasView", () => {
     y,
     preventSigmaDefault: () => {},
     original: { preventDefault: () => {}, stopPropagation: () => {} },
+  });
+
+  it("caps the initial screen density at 1.5 px/graph-unit by zooming the fitted camera out", async () => {
+    mockConnectedPair();
+
+    renderWithQuery(<AtlasView />);
+    await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
+    const instance = capturedSigmaInstances[0];
+    // The mock's fit density is 6 px/unit (graphToViewport scales by 6), so
+    // the cap must widen the camera ratio by exactly 6 / 1.5 = 4.
+    expect(instance.camera.setState).toHaveBeenCalledWith({ ratio: 4 });
   });
 
   it("paints synchronously on every physics tick — the writeback drives sigma's refresh", async () => {

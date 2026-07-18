@@ -139,6 +139,10 @@ export default function AtlasView({ onNodeClick }: AtlasViewProps) {
       // (nodeDisplay forces it; renderLabels doesn't skip the hovered node),
       // so the box is pure loss. No-op it.
       defaultDrawNodeHover: () => {},
+      // Node/edge sizes are true CSS px at every zoom. The default divides
+      // sizes by sqrt(camera ratio), which shrinks items badly once the
+      // density cap below zooms the camera out ~5x from fit.
+      zoomToSizeRatioFunction: () => 1,
       nodeReducer: (node, attrs) => nodeDisplay(hoverStateRef.current, node, attrs, paletteRef.current),
       edgeReducer: (edge, attrs) => {
         const [source, target] = graph.extremities(edge);
@@ -149,6 +153,19 @@ export default function AtlasView({ onNodeClick }: AtlasViewProps) {
     if (import.meta.env.DEV) {
       // Preview/debug handle only — stripped from prod builds.
       (window as unknown as Record<string, unknown>).__ATLAS_SIGMA = renderer;
+    }
+    // Density cap: sigma's fit stretches a small cluster to fill whatever
+    // container it gets (measured 7.3 px/graph-unit in preview) — links
+    // render several times longer than ConstellationMap's, which mounts at
+    // a fixed 1.5 px/unit regardless of container. Cap the initial density
+    // at the old graph's; only ever zoom OUT from fit (a graph too big to
+    // fit keeps the fit).
+    const o = renderer.graphToViewport({ x: 0, y: 0 });
+    const u = renderer.graphToViewport({ x: 1, y: 0 });
+    const pxPerUnit = Math.hypot(u.x - o.x, u.y - o.y);
+    if (pxPerUnit > 1.5) {
+      const camera = renderer.getCamera();
+      camera.setState({ ratio: camera.ratio * (pxPerUnit / 1.5) });
     }
     renderer.on("clickNode", ({ node }) => {
       // A moved drag must not also navigate on release.

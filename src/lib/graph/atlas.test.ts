@@ -105,14 +105,14 @@ describe("buildAtlasGraph", () => {
     expect(graph.getNodeAttribute("x", "color")).toBe(PALETTE.neutral);
   });
 
-  it("colors edges with the palette's quiet edge tone, size 3 (old graph's effective weight)", () => {
+  it("colors edges with the palette's quiet edge tone, size 2 (CSS px — old graph's effective weight)", () => {
     const model = makeModel(
       [node({ id: "a" }), node({ id: "b" })],
       [edge({ id: "e1", source: "a", target: "b" })],
     );
     const graph = buildAtlasGraph(model, PALETTE);
     expect(graph.getEdgeAttribute("e1", "color")).toBe(PALETTE.edge);
-    expect(graph.getEdgeAttribute("e1", "size")).toBe(3);
+    expect(graph.getEdgeAttribute("e1", "size")).toBe(2);
   });
 
   it("keeps distinct parallel relations between the same pair as distinct edges", () => {
