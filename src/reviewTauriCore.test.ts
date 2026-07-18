@@ -63,6 +63,59 @@ describe("Review fixture IPC", () => {
     }
   });
 
+  it("models the enabled Sources and Memories reads and mutations", async () => {
+    const indexedFiles = await invoke("list_indexed_files") as Array<{
+      source_id: string;
+    }>;
+    expect(indexedFiles.map((file) => file.source_id)).toContain("memory-0");
+
+    await expect(invoke("set_stability_cmd", {
+      sourceId: "memory-0",
+      stability: "learned",
+    })).resolves.toBeNull();
+    await expect(invoke("unpin_memory", {
+      sourceId: "memory-0",
+    })).resolves.toBeNull();
+    await expect(invoke("update_memory_cmd", {
+      sourceId: "memory-0",
+      content: "Edited Review memory.",
+      domain: "Research",
+      confirmed: false,
+      memoryType: null,
+    })).resolves.toBeNull();
+    await expect(invoke("reclassify_memory_cmd", {
+      sourceId: "memory-0",
+      memoryType: "preference",
+    })).resolves.toBe("memory-0");
+
+    await expect(invoke("get_memory_detail", {
+      sourceId: "memory-0",
+    })).resolves.toMatchObject({
+      confirmed: false,
+      content: "Edited Review memory.",
+      domain: "Research",
+      memory_type: "preference",
+      pinned: false,
+      space: "Research",
+      stability: "learned",
+    });
+
+    await expect(invoke("pin_memory", {
+      sourceId: "memory-0",
+    })).resolves.toBeNull();
+    await expect(invoke("get_memory_detail", {
+      sourceId: "memory-0",
+    })).resolves.toMatchObject({ pinned: true });
+
+    await expect(invoke("delete_file_chunks", {
+      source: "memory",
+      sourceId: "memory-0",
+    })).resolves.toBeNull();
+    await expect(invoke("get_memory_detail", {
+      sourceId: "memory-0",
+    })).resolves.toBeNull();
+  });
+
   it("creates an authored Page in the isolated Review runtime", async () => {
     const result = await invoke("create_page", {
       title: "Manual review note",
@@ -342,6 +395,16 @@ describe("Review fixture IPC", () => {
   it("fails closed for unknown app and plugin commands", async () => {
     await expect(invoke("unknown_review_command")).rejects.toThrow(
       "Unknown Tauri command: unknown_review_command",
+    );
+    await expect(invoke("accept_pending_revision", {
+      sourceId: "memory-0",
+    })).rejects.toThrow(
+      "Unknown Tauri command: accept_pending_revision",
+    );
+    await expect(invoke("dismiss_pending_revision", {
+      sourceId: "memory-0",
+    })).rejects.toThrow(
+      "Unknown Tauri command: dismiss_pending_revision",
     );
     await expect(invoke("plugin:updater|check")).rejects.toThrow(
       "Unknown Tauri command: plugin:updater|check",

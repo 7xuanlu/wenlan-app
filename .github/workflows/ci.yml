@@ -85,6 +85,9 @@ jobs:
       - name: Run frontend e2e tests
         run: pnpm test:e2e
 
+      - name: Run fixture-only Review e2e tests
+        run: pnpm test:e2e:review
+
   download-smoke:
     name: Download Smoke
     # macos-14 is Apple Silicon (arm64) -- required because the pinned

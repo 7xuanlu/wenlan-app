@@ -34,6 +34,7 @@
     "postinstall": "git config core.hooksPath .githooks 2>/dev/null && chmod +x .githooks/* 2>/dev/null || true",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "test:e2e:review": "playwright test --config playwright.review.config.ts",
     "test:i18n": "vitest run src/i18n/locales.test.ts src/i18n/resources.test.ts src/i18n/index.test.ts src/i18n/hardcodedCopyGuard.test.ts",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",

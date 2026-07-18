@@ -34,7 +34,7 @@
 - [x] Add `review-fixtures` to `app/Cargo.toml` and select `run_review()` from `app/src/main.rs` only when compiled with that feature.
 - [x] Implement a minimal Tauri builder in a gated review module with no production plugins, state, setup hook, invoke handler, tray, sidecar, daemon, sync, tunnel, updater, MCP, or global shortcut path.
 - [x] Add `app/tauri.review.conf.json` with `Wenlan Review`, `com.wenlan.desktop.review`, Review-only frontend assets, no external binaries, no updater, no tray, and a minimal inline capability.
-- [x] Add `vite.review.config.ts` and `review/tauri-core.ts` so every app IPC call is served by a fresh in-memory fixture and unknown calls fail closed.
+- [x] Add `vite.review.config.ts` and `review/tauri-core.ts` so the declared Review capability allowlist is served by a fresh in-memory fixture and commands outside that bounded surface fail closed.
 - [x] Add build/open scripts and a bundle smoke verifier.
 
 ## Task 3 — Review proof-stamp and fixture coverage

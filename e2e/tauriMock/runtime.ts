@@ -143,6 +143,18 @@ export class TauriMockRuntime {
         const ids = new Set(stringArray(args, "ids"));
         return this.memories.filter((memory) => ids.has(memory.source_id));
       }
+      case "list_indexed_files": return this.listIndexedFiles();
+      case "update_memory_cmd": return this.updateMemory(args);
+      case "reclassify_memory_cmd": return this.reclassifyMemory(args);
+      case "set_stability_cmd": return this.setStability(args);
+      case "delete_file_chunks": return this.deleteFileChunks(args);
+      case "pin_memory": return this.setMemoryPinned(args, true);
+      case "unpin_memory": return this.setMemoryPinned(args, false);
+      case "confirm_memory": return this.confirmMemory(args);
+      case "delete_memory": return this.deleteMemory(args);
+      case "acknowledge_onboarding_milestone":
+        requiredString(command, args, "id");
+        return null;
       case "search": return this.search(args);
       default: return baseResponse(command, args, { activityRows: this.activityRows, memoryCount: this.memories.length });
     }
@@ -497,6 +509,130 @@ export class TauriMockRuntime {
     const limit = optionalValue(args, "limit");
     const filtered = this.memories.filter((memory) => !domain || memory.domain === domain || memory.space === domain);
     return typeof limit === "number" ? filtered.slice(0, limit) : filtered;
+  }
+
+  private listIndexedFiles(): readonly Record<string, unknown>[] {
+    return this.memories.map((memory) => ({
+      source: "review-fixture.md",
+      source_id: memory.source_id,
+      title: memory.title,
+      summary: memory.summary,
+      chunk_count: memory.chunk_count,
+      last_modified: memory.last_modified,
+      processing: false,
+      memory_type: memory.memory_type,
+      domain: memory.domain,
+      space: memory.space,
+      source_agent: memory.source_agent,
+      confidence: memory.confidence,
+      confirmed: memory.confirmed,
+      pinned: memory.pinned,
+    }));
+  }
+
+  private updateMemory(args: unknown): null {
+    const sourceId = requiredString("update_memory_cmd", args, "sourceId");
+    const content = optionalValue(args, "content");
+    const domain = optionalValue(args, "domain");
+    const confirmed = optionalValue(args, "confirmed");
+    const memoryType = optionalValue(args, "memoryType");
+    if (content !== null && content !== undefined && typeof content !== "string") {
+      throw new TauriMockArgumentError("update_memory_cmd", "content");
+    }
+    if (domain !== null && domain !== undefined && typeof domain !== "string") {
+      throw new TauriMockArgumentError("update_memory_cmd", "domain");
+    }
+    if (confirmed !== null && confirmed !== undefined && typeof confirmed !== "boolean") {
+      throw new TauriMockArgumentError("update_memory_cmd", "confirmed");
+    }
+    if (memoryType !== null && memoryType !== undefined && typeof memoryType !== "string") {
+      throw new TauriMockArgumentError("update_memory_cmd", "memoryType");
+    }
+    if (!this.memories.some((memory) => memory.source_id === sourceId)) {
+      throw new TauriMockArgumentError("update_memory_cmd", "sourceId");
+    }
+    this.memories = this.memories.map((memory) =>
+      memory.source_id === sourceId
+        ? {
+            ...memory,
+            ...(typeof content === "string" ? { content } : {}),
+            ...(typeof domain === "string" ? { domain, space: domain } : {}),
+            ...(typeof confirmed === "boolean" ? { confirmed } : {}),
+            ...(typeof memoryType === "string" ? { memory_type: memoryType } : {}),
+          }
+        : memory
+    );
+    return null;
+  }
+
+  private reclassifyMemory(args: unknown): string {
+    const sourceId = requiredString("reclassify_memory_cmd", args, "sourceId");
+    const memoryType = requiredString("reclassify_memory_cmd", args, "memoryType");
+    if (!this.memories.some((memory) => memory.source_id === sourceId)) {
+      throw new TauriMockArgumentError("reclassify_memory_cmd", "sourceId");
+    }
+    this.memories = this.memories.map((memory) =>
+      memory.source_id === sourceId ? { ...memory, memory_type: memoryType } : memory
+    );
+    return sourceId;
+  }
+
+  private setStability(args: unknown): null {
+    const sourceId = requiredString("set_stability_cmd", args, "sourceId");
+    const stability = requiredString("set_stability_cmd", args, "stability");
+    if (!["new", "learned", "confirmed"].includes(stability)) {
+      throw new TauriMockArgumentError("set_stability_cmd", "stability");
+    }
+    if (!this.memories.some((memory) => memory.source_id === sourceId)) {
+      throw new TauriMockArgumentError("set_stability_cmd", "sourceId");
+    }
+    this.memories = this.memories.map((memory) =>
+      memory.source_id === sourceId
+        ? {
+            ...memory,
+            stability: stability as "new" | "learned" | "confirmed",
+            confirmed: stability === "confirmed",
+          }
+        : memory
+    );
+    return null;
+  }
+
+  private setMemoryPinned(args: unknown, pinned: boolean): null {
+    const command = pinned ? "pin_memory" : "unpin_memory";
+    const sourceId = requiredString(command, args, "sourceId");
+    if (!this.memories.some((memory) => memory.source_id === sourceId)) {
+      throw new TauriMockArgumentError(command, "sourceId");
+    }
+    this.memories = this.memories.map((memory) =>
+      memory.source_id === sourceId ? { ...memory, pinned } : memory
+    );
+    return null;
+  }
+
+  private deleteFileChunks(args: unknown): null {
+    const source = requiredString("delete_file_chunks", args, "source");
+    const sourceId = requiredString("delete_file_chunks", args, "sourceId");
+    if (source !== "memory") {
+      throw new TauriMockArgumentError("delete_file_chunks", "source");
+    }
+    this.memories = this.memories.filter((memory) => memory.source_id !== sourceId);
+    return null;
+  }
+
+  private confirmMemory(args: unknown): null {
+    const sourceId = requiredString("confirm_memory", args, "sourceId");
+    const confirmed = requiredBoolean("confirm_memory", args, "confirmed");
+    this.memories = this.memories.map((memory) =>
+      memory.source_id === sourceId ? { ...memory, confirmed } : memory
+    );
+    return null;
+  }
+
+  private deleteMemory(args: unknown): null {
+    const sourceId = requiredString("delete_memory", args, "sourceId");
+    this.memories = this.memories.filter((memory) => memory.source_id !== sourceId);
+    return null;
   }
 
   private search(args: unknown) {
