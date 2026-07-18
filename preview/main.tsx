@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Browser preview harness: page-detail citations, the review queue
 // (DistillReviewPanel + ReviewDialog), the first-run wizard, settings, and
-// the knowledge graph (ConstellationMap + EntityDetail/FocusGraph).
+// the knowledge graph (AtlasView + EntityDetail/FocusGraph).
 //
 // The wizard and settings modes exist so pixel review of those surfaces is
 // cheap. Reviewing them used to mean building the Tauri app and clicking
@@ -12,7 +12,6 @@ import { StrictMode, Suspense, lazy, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import PageDetail from "../src/components/memory/PageDetail";
-import ConstellationMap from "../src/components/memory/ConstellationMap";
 import EntityDetail from "../src/components/memory/EntityDetail";
 import DistillReviewPanel from "../src/components/memory/DistillReviewPanel";
 import { SetupWizard, STEP_ORDER, type WizardStep } from "../src/components/SetupWizard";
@@ -77,7 +76,7 @@ const client = new QueryClient({
   defaultOptions: { queries: { retry: false, staleTime: 0, gcTime: 0 } },
 });
 
-type Mode = "page" | "review" | "wizard" | "settings" | "graph" | "atlas" | "entity" | "bakeoff";
+type Mode = "page" | "review" | "wizard" | "settings" | "atlas" | "entity" | "bakeoff";
 
 // Quick-select entities for the "entity" tab: gk-wenlan is the highest-degree
 // hub, gk-lucian shows a person node with mixed in/out edges, gk-remote-office
@@ -112,7 +111,7 @@ const BAR_H = SHOW_BAR ? 41 : 0;
 
 function Harness() {
   const [mode, setMode] = useState<Mode>(
-    param("mode", ["page", "review", "wizard", "settings", "graph", "atlas", "entity", "bakeoff"] as const, "review"),
+    param("mode", ["page", "review", "wizard", "settings", "atlas", "entity", "bakeoff"] as const, "review"),
   );
   const [pageId, setPageId] = useState(params.get("page") ?? "page-cited");
   const [entityId, setEntityId] = useState(params.get("entity") ?? "gk-wenlan");
@@ -176,9 +175,6 @@ function Harness() {
         <button onClick={() => setMode("settings")} style={tab(mode === "settings")}>
           Settings
         </button>
-        <button onClick={() => setMode("graph")} style={tab(mode === "graph")}>
-          Graph
-        </button>
         <button onClick={() => setMode("atlas")} style={tab(mode === "atlas")}>
           Atlas
         </button>
@@ -219,7 +215,7 @@ function Harness() {
               {r}
             </button>
           ))
-        ) : mode === "graph" || mode === "atlas" ? null : (
+        ) : mode === "atlas" ? null : (
           <>
             <button
               onClick={() => {
@@ -309,23 +305,6 @@ function Harness() {
             />
           </div>
         </div>
-      ) : mode === "graph" ? (
-        // Full-bleed like the wizard: ConstellationMap owns the whole Graph
-        // view in Main.tsx (src/components/memory/Main.tsx:566).
-        <div style={{ height: `calc(100vh - ${BAR_H}px)` }}>
-          <ConstellationMap
-            onNodeClick={(id: string) => {
-              // Mirrors Main.tsx's handleEntityClick: memory nodes are
-              // re-prefixed "memory:" by ConstellationMap itself.
-              if (id.startsWith("memory:")) {
-                console.log("[preview] onNodeClick (memory):", id);
-                return;
-              }
-              setEntityId(id);
-              setMode("entity");
-            }}
-          />
-        </div>
       ) : mode === "atlas" ? (
         // Full-bleed like graph/wizard. sigma lands in its own lazy chunk
         // (see the AtlasView import above) so Suspense covers the load.
@@ -336,6 +315,9 @@ function Harness() {
                 setEntityId(id);
                 setMode("entity");
               }}
+              // Main.tsx passes navigateBack here; a logging stub keeps the
+              // previewed toolbar at Main parity.
+              onBack={() => console.log("[preview] onBack")}
             />
           </Suspense>
         </div>
@@ -363,7 +345,7 @@ function Harness() {
             <EntityDetail
               key={entityId}
               entityId={entityId}
-              onBack={() => setMode("graph")}
+              onBack={() => setMode("atlas")}
               onEntityClick={(id: string) => setEntityId(id)}
               onMemoryClick={(id: string) => console.log("[preview] onMemoryClick:", id)}
             />

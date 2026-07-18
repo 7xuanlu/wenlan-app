@@ -79,7 +79,7 @@ interface PlacedNeighbor extends FocusNeighbor {
  * One-hop ego view: this entity centered, incoming relations arced left,
  * outgoing arced right. SVG edge layer carries arrowheads along the semantic
  * direction; DOM `<button>`s keep every neighbor keyboard-reachable (the
- * canvas ConstellationMap can't). Consumes buildEgoModel + useGraphPalette so
+ * canvas renderer can't). Consumes buildEgoModel + useGraphPalette so
  * no daemon shape is read for drawing and colors track the theme.
  */
 export default function FocusGraph({

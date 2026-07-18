@@ -112,7 +112,7 @@ describe("EntityDetail full graph overlay", () => {
     expect(screen.getByRole("button", { name: "Full screen" })).toBeInTheDocument();
   });
 
-  // FocusGraph is real here (not mocked): unlike ConstellationMap it's plain
+  // FocusGraph is real here (not mocked): unlike AtlasView it's plain
   // SVG/DOM with no canvas dependency, and it's already exercised unmocked by
   // the "connections card" tests above in this same file — mocking it here
   // would also intercept that usage. The overlay renders the same FocusGraph

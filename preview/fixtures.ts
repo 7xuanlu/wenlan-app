@@ -692,7 +692,7 @@ export const REVIEW_ENTITIES: Record<string, EntityDetail> = {
   },
 };
 
-// --- ConstellationMap / FocusGraph preview fixture ---
+// --- AtlasView / FocusGraph preview fixture ---
 // 16 entities spanning the 5 validated palette slots (project/technology/
 // organization/person/concept) plus place (folds to neutral), so every slot
 // swatch has a rendered proof. gk-remote-office takes no relation below,
@@ -786,7 +786,7 @@ export const GRAPH_DETAILS: Record<string, EntityDetail> = Object.fromEntries(
   }),
 );
 
-// --- ConstellationMap Pages-layer preview fixture ---
+// --- Graph memories preview fixture (served by preview/mocks/core.ts) ---
 // 8 memories tied to GRAPH_ENTITY_SEED ids: five resolve via entity_id, two
 // (gm-6, gm-7) resolve only through the title-contains-entity-name fallback
 // (entity_id unset), and one (gm-8) matches no entity at all — mirrors a

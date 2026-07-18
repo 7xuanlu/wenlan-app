@@ -9,10 +9,9 @@ vi.mock("../../lib/tauri", () => ({
 }));
 
 // jsdom has no WebGL context — a real Sigma would throw trying to acquire
-// one. Mocked at module level per repo convention for canvas/WebGL surfaces
-// (see ConstellationMap.test.tsx's react-force-graph-2d mock); the drawn
-// graph itself is verified live in preview. This test only proves the three
-// states, retry, mount/teardown, and the click handoff.
+// one. Mocked at module level per repo convention for canvas/WebGL surfaces;
+// the drawn graph itself is verified live in preview. This test only proves
+// the three states, retry, mount/teardown, and the click handoff.
 const capturedSigmaInstances = vi.hoisted(() => [] as any[]);
 vi.mock("sigma", () => {
   class MouseCaptorMock {
@@ -849,6 +848,22 @@ describe("AtlasView", () => {
 
     // e3 is outside e1's neighborhood — the mounted reducer already dims it.
     expect(instance.settings.nodeReducer("e3", attrs)).not.toEqual(plain);
+  });
+
+  it("renders a Back toolbar button only when onBack is passed, and clicking it fires the callback", async () => {
+    mockConnectedPairWithIsolate();
+
+    const { unmount } = renderWithQuery(<AtlasView />);
+    await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
+    expect(screen.queryByRole("button", { name: "Back" })).not.toBeInTheDocument();
+    unmount();
+    capturedSigmaInstances.length = 0;
+
+    const onBack = vi.fn();
+    renderWithQuery(<AtlasView onBack={onBack} />);
+    await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(onBack).toHaveBeenCalledTimes(1);
   });
 
   it("drags an isolate by direct manipulation, without restarting the sim", async () => {

@@ -32,9 +32,9 @@ import {
 import { useGraphPalette, colorForEntityType, nodeFillFor } from "../../lib/graph/palette";
 import type { GraphPalette } from "../../lib/graph/palette";
 
-// Same 5-slot legend as the old canvas graph (see ConstellationMap's
-// LEGEND_ITEMS note): place, event, and unknown types fold to neutral and
-// get no swatch; concept is labeled "Theme" to match the product copy.
+// Same 5-slot legend as the retired canvas graph (ConstellationMap): place,
+// event, and unknown types fold to neutral and get no swatch; concept is
+// labeled "Theme" to match the product copy.
 const LEGEND_ITEMS: { label: string; key: string }[] = [
   { label: "Project", key: "project" },
   { label: "Technology", key: "technology" },
@@ -49,6 +49,9 @@ interface AtlasViewProps {
   // (EntityDetail's overlay "Atlas" mode). Applied instantly on mount — a
   // starting frame, not a transition — so no camera animation.
   focusEntityId?: string;
+  // Main.tsx's Graph view passes navigateBack; renders a back button as the
+  // first toolbar item (a floating one would sit on the search box).
+  onBack?: () => void;
 }
 
 // jsdom has no matchMedia; treat its absence as "no preference" rather than
@@ -60,13 +63,11 @@ function prefersReducedMotion(): boolean {
 }
 
 /**
- * sigma-rendered whole-graph view. Consumes the same daemon queries and
- * GraphModel as ConstellationMap (see that file's query block) — the two
- * share a query cache and disagree only on renderer. ConstellationMap stays
- * the shipped view; this is Atlas round 1, preview-addressable only (no
- * Main.tsx wiring yet).
+ * sigma-rendered whole-graph view — the shipped Graph tab (Main.tsx) and the
+ * entity overlay's "Atlas" mode. Replaced the canvas ConstellationMap; the
+ * query keys keep the "constellation-" prefix so nothing else invalidates.
  */
-export default function AtlasView({ onNodeClick, focusEntityId }: AtlasViewProps) {
+export default function AtlasView({ onNodeClick, focusEntityId, onBack }: AtlasViewProps) {
   const { t } = useTranslation();
   const palette = useGraphPalette();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -642,6 +643,25 @@ export default function AtlasView({ onNodeClick, focusEntityId }: AtlasViewProps
           fontFamily: "var(--mem-font-body)",
         }}
       >
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            className="flex items-center gap-1.5 rounded-md transition-colors duration-150 hover:bg-[var(--mem-hover)]"
+            style={{
+              color: "var(--mem-text-secondary)",
+              fontSize: 12,
+              fontFamily: "var(--mem-font-body)",
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              padding: "6px 8px",
+            }}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            {t("main.back")}
+          </button>
+        )}
         <div style={{ position: "relative", flex: "0 1 300px", minWidth: 250 }}>
           <div
             style={{
