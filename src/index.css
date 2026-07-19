@@ -2961,3 +2961,119 @@ p.entity-error {
     transition: none;
   }
 }
+
+/* ── Page tabs + canvas (PageDetail.tsx, PageCanvas.tsx) ───────────── */
+
+.page-detail-tabs {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--mem-border);
+  border-radius: 8px;
+}
+
+.page-detail-tab {
+  padding: 5px 14px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--mem-text-tertiary);
+  cursor: pointer;
+  font-family: var(--mem-font-body);
+  font-size: 12.5px;
+  transition:
+    background-color 150ms,
+    color 150ms;
+}
+
+.page-detail-tab:hover {
+  color: var(--mem-text);
+}
+
+.page-detail-tab.is-active {
+  background-color: var(--mem-hover-strong);
+  color: var(--mem-text);
+}
+
+.page-detail-tab:focus-visible {
+  outline: 2px solid var(--mem-accent-page);
+  outline-offset: 2px;
+}
+
+/* Re-states .page-detail's own column gap so wrapping the reading column in a
+   tabpanel does not collapse the spacing it had as a direct flex child. */
+.page-detail-read-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.page-canvas {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.page-canvas-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.page-canvas-badge {
+  padding: 2px 6px;
+  border: 1px solid var(--mem-border);
+  border-radius: 5px;
+  color: var(--mem-text-tertiary);
+  font-family: var(--mem-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.page-canvas-notice {
+  color: var(--mem-accent-amber);
+  font-family: var(--mem-font-body);
+  font-size: 12px;
+}
+
+.page-canvas-banner {
+  margin: 0;
+  color: var(--mem-text-tertiary);
+  font-family: var(--mem-font-body);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.page-canvas-surface {
+  height: min(68vh, 620px);
+  overflow: hidden;
+  border: 1px solid var(--mem-border);
+  border-radius: 12px;
+  background-color: var(--mem-surface);
+}
+
+.page-canvas-message {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 48px 0;
+}
+
+.page-canvas-message-title {
+  margin: 0;
+  color: var(--mem-text);
+  font-family: var(--mem-font-heading);
+  font-size: 16px;
+}
+
+.page-canvas-message-body {
+  margin: 0;
+  max-width: 46ch;
+  color: var(--mem-text-tertiary);
+  font-family: var(--mem-font-body);
+  font-size: 13px;
+  line-height: 1.6;
+}
