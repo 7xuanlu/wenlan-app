@@ -80,7 +80,7 @@ describe("Windows native smoke workflow contract", () => {
     expect(text).toContain("TARGET_TRIPLE: x86_64-pc-windows-msvc");
     expect(text).toContain("WENLAN_DOWNLOAD_SIDECARS: \"1\"");
     expect(text).toContain(
-      "WENLAN_BACKEND_SMOKE_COMMIT: 0bb5acab6f428c8e8f25ea94026ebcfef0054f15",
+      "WENLAN_BACKEND_SMOKE_COMMIT: 79b25a3716f6e80cadbc5b66236179a4435dae15",
     );
     expect(text).toContain(
       '"WENLAN_BACKEND_COMMIT=$backendCommit" | Out-File',
