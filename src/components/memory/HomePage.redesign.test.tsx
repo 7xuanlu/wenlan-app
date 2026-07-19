@@ -604,11 +604,6 @@ describe("HomePage redesign", () => {
     expect(screen.queryByText(/Should not appear/)).toBeNull();
   });
 
-  it("does NOT render ConstellationMap on home", async () => {
-    renderHome();
-    expect(screen.queryByTestId("constellation-map")).toBeNull();
-  });
-
   it("does NOT render contradiction resolver on home", async () => {
     renderHome();
     await new Promise((r) => setTimeout(r, 100));

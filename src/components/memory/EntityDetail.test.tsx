@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { i18n } from "../../i18n";
@@ -17,6 +17,29 @@ vi.mock("../../lib/tauri", () => ({
   deleteEntity: vi.fn().mockResolvedValue(undefined),
   search: vi.fn(),
   FACET_COLORS: { fact: "facet-fact" },
+}));
+
+vi.mock("./FocusGraph", () => ({
+  default: (props: { onEntityClick?: (id: string) => void }) => (
+    <div data-testid="focus-graph">
+      <button type="button" onClick={() => props.onEntityClick?.("entity-babbage")}>
+        Focus node
+      </button>
+    </div>
+  ),
+}));
+
+vi.mock("./AtlasView", () => ({
+  default: (props: {
+    focusEntityId?: string;
+    onNodeClick?: (id: string) => void;
+  }) => (
+    <div data-focus-entity-id={props.focusEntityId ?? ""} data-testid="atlas-view">
+      <button type="button" onClick={() => props.onNodeClick?.("entity-hopper")}>
+        Atlas node
+      </button>
+    </div>
+  ),
 }));
 
 import {
@@ -136,11 +159,15 @@ describe("EntityDetail characterization", () => {
     expect(screen.getByText("0.87")).toBeInTheDocument();
     expect(screen.getByText("Wrote the first published algorithm")).toBeInTheDocument();
     expect(screen.getAllByText("Charles Babbage").length).toBeGreaterThan(0);
-    expect(await screen.findByText("Ada's notes described a general-purpose machine.")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Ada's notes described a general-purpose machine."),
+    ).toBeInTheDocument();
   });
 
   it("exposes back navigation and recovers from a load error", async () => {
-    vi.mocked(getEntityDetail).mockRejectedValueOnce(new Error("offline")).mockResolvedValue(detail);
+    vi.mocked(getEntityDetail)
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValue(detail);
     const { user } = renderEntity();
 
     await user.click(screen.getByRole("button", { name: "Back" }));
@@ -213,6 +240,36 @@ describe("EntityDetail characterization", () => {
     expect(defaultProps.onEntityClick).toHaveBeenNthCalledWith(1, "entity-babbage");
     expect(defaultProps.onEntityClick).toHaveBeenNthCalledWith(2, "entity-babbage");
     expect(defaultProps.onMemoryClick).toHaveBeenCalledWith("memory-ada");
+  });
+
+  it("opens the Focus graph overlay and closes it on Escape", async () => {
+    const { user } = renderEntity();
+    await screen.findByRole("heading", { name: "Ada Lovelace" });
+
+    await user.click(screen.getByRole("button", { name: "Full screen" }));
+
+    expect(screen.getByRole("dialog", { name: "Full screen" })).toBeInTheDocument();
+    expect(screen.getByTestId("focus-graph")).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "Full screen" })).not.toBeInTheDocument();
+  });
+
+  it("switches the overlay to Atlas with the current entity focused", async () => {
+    const { user } = renderEntity();
+    await screen.findByRole("heading", { name: "Ada Lovelace" });
+    await user.click(screen.getByRole("button", { name: "Full screen" }));
+    const dialog = screen.getByRole("dialog", { name: "Full screen" });
+
+    await user.click(within(dialog).getByRole("button", { name: "Atlas" }));
+    expect(await screen.findByTestId("atlas-view")).toHaveAttribute(
+      "data-focus-entity-id",
+      "entity-ada",
+    );
+
+    await user.click(within(dialog).getByRole("button", { name: "Atlas node" }));
+    expect(defaultProps.onEntityClick).toHaveBeenCalledWith("entity-hopper");
+    expect(screen.queryByRole("dialog", { name: "Full screen" })).not.toBeInTheDocument();
   });
 
   it("uses a two-step entity delete and returns after success", async () => {

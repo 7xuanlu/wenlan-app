@@ -12,6 +12,7 @@ type EntityConnectionsProps = {
   readonly name: string;
   readonly relations: readonly RelationWithEntity[];
   readonly onEntityClick: (entityId: string) => void;
+  readonly onExpand?: () => void;
 };
 
 type EntityGraphProps = {
@@ -130,7 +131,12 @@ function EntityGraph({ name, neighbors, hiddenCount, onEntityClick }: EntityGrap
   );
 }
 
-export function EntityConnections({ name, relations, onEntityClick }: EntityConnectionsProps) {
+export function EntityConnections({
+  name,
+  relations,
+  onEntityClick,
+  onExpand,
+}: EntityConnectionsProps) {
   const { t } = useTranslation();
   const neighbors = useMemo(() => {
     const byEntityAndDirection = new Map<string, GraphNeighbor>();
@@ -190,7 +196,30 @@ export function EntityConnections({ name, relations, onEntityClick }: EntityConn
         <h2 id="entity-connections-title" className="memory-detail-section-title">
           {t("entityDetail.connectionsTitle")}
         </h2>
-        {relations.length > 0 ? <span className="entity-count">{relations.length}</span> : null}
+        <div className="memory-detail-actions">
+          {relations.length > 0 ? <span className="entity-count">{relations.length}</span> : null}
+          {onExpand ? (
+            <button
+              type="button"
+              onClick={onExpand}
+              className="memory-detail-icon-button"
+              aria-label={t("entityDetail.expandGraph")}
+              title={t("entityDetail.expandGraph")}
+            >
+              <svg
+                aria-hidden="true"
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3" />
+              </svg>
+            </button>
+          ) : null}
+        </div>
       </div>
       <div className="memory-detail-card-body">
         {relations.length === 0 ? (

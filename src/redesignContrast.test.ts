@@ -194,11 +194,13 @@ describe("Spaces navigation redesign contrast", () => {
     for (const [source, selector] of [
       [spaceDetailCss, ".space-dossier-text-action"],
       [indexCss, ".entity-detail-seal"],
-      [indexCss, ".entity-graph-node-name"],
       [indexCss, ".entity-relation-name"],
     ] as const) {
       expect(ruleDeclaration(source, selector, "color")).toBe("var(--mem-accent-sage-text)");
     }
+    expect(ruleDeclaration(indexCss, ".entity-graph-node-name", "color")).toBe(
+      "var(--mem-text)",
+    );
     for (const [source, selector, property] of [
       [spacesCss, ".spaces-filter input", "border"],
       [spaceHeaderCss, ".space-dossier-title-input", "border-bottom"],

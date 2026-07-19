@@ -6403,9 +6403,9 @@ dependencies = [
 
 [[package]]
 name = "wenlan-types"
-version = "0.12.0"
+version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "472e086bbdff6a058cc266cc9fc79df06c4a91fec46343e6b93db51d33ba4e91"
+checksum = "826cc92bef3abd7a2b9d0b5b589d6e581e23d94c337b7f5f252d3f7ad7abbdf5"
 dependencies = [
  "anyhow",
  "serde",

@@ -22,6 +22,7 @@ export default defineConfig({
         'src/lib/tauri.ts',
         'src/lib/processingStore.ts',
         'src/lib/captureHeartbeat.ts',
+        'src/lib/graph/**',
         'src/hooks/useSearch.ts',
       ],
       exclude: [

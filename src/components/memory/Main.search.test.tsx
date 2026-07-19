@@ -55,8 +55,28 @@ vi.mock("../../lib/tauri", () => ({
 vi.mock("./ActivityFeed", () => ({ default: () => <div data-testid="activity-feed" /> }));
 vi.mock("./IdentityDetail", () => ({ default: () => <div /> }));
 vi.mock("./MemoryStream", () => ({ default: () => <div /> }));
-vi.mock("./HomePage", () => ({ default: () => <div data-testid="home-page" /> }));
-vi.mock("./ConstellationMap", () => ({ default: () => <div data-testid="graph-view" /> }));
+vi.mock("./HomePage", () => ({
+  default: (props: { onNavigateGraph?: () => void }) => (
+    <div data-testid="home-page">
+      <button type="button" onClick={() => props.onNavigateGraph?.()}>
+        Open graph view
+      </button>
+    </div>
+  ),
+}));
+vi.mock("./AtlasView", () => ({
+  default: (props: { onBack?: () => void; onNodeClick?: (id: string) => void }) => (
+    <div data-testid="atlas-view">
+      <button type="button" onClick={() => props.onBack?.()}>
+        Atlas back
+      </button>
+      <button type="button" onClick={() => props.onNodeClick?.("ent-1")}>
+        Atlas node
+      </button>
+    </div>
+  ),
+}));
+vi.mock("./EntityDetail", () => ({ default: () => <div data-testid="entity-detail" /> }));
 vi.mock("./MemoryStatusBar", () => ({ default: () => <div /> }));
 vi.mock("./MemorySearchResult", () => ({
   default: (props: { result: { content: string; source_id: string }; onClick?: (sourceId: string) => void }) => (
@@ -657,7 +677,7 @@ describe("Main search", () => {
     await user.click(screen.getByRole("button", { name: "Create standalone draft" }));
     await user.click(screen.getByRole("button", { name: "Open graph" }));
 
-    expect(await screen.findByTestId("graph-view")).toBeInTheDocument();
+    expect(await screen.findByTestId("atlas-view")).toBeInTheDocument();
     fireEvent.keyDown(window, { key: "Escape" });
 
     expect(await screen.findByTestId("page-draft-editor")).toHaveAttribute(
@@ -1016,6 +1036,21 @@ describe("Main search", () => {
 
     expect(searchAction).toHaveAttribute("aria-expanded", "true");
     expect(searchInput).toHaveFocus();
+  });
+
+  it("renders AtlasView as the Graph view — back returns home, node clicks open the entity", async () => {
+    const user = userEvent.setup();
+    renderMain();
+
+    await user.click(screen.getByRole("button", { name: "Open graph view" }));
+    expect(screen.getByTestId("atlas-view")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Atlas back" }));
+    expect(screen.getByTestId("home-page")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Open graph view" }));
+    await user.click(screen.getByRole("button", { name: "Atlas node" }));
+    expect(screen.getByTestId("entity-detail")).toBeInTheDocument();
   });
 
   it("opens memory detail when initialMemoryId arrives after mount", async () => {

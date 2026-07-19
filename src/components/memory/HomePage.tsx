@@ -635,7 +635,7 @@ function HomeContextRail({
   stats?: MemoryStats;
 }) {
   const { t } = useTranslation();
-  // Same cache key/shape as ConstellationMap's entity fetch — shared cache,
+  // Same cache key/shape as AtlasView's entity fetch — shared cache,
   // no double-fetch.
   const entitiesQuery = useQuery({
     queryKey: ["constellation-entities"],

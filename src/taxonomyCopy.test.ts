@@ -104,13 +104,14 @@ describe("taxonomy and product copy", () => {
     );
     expect(connections).toContain(` across \${${linkedLegacyName}.length} pages`);
 
-    const constellation = read("src/components/memory/ConstellationMap.tsx");
-    expect(constellation).not.toContain(
+    const atlas = read("src/components/memory/AtlasView.tsx");
+    expect(atlas).not.toContain(
       `{ label: "${legacyLabel}", key: "${legacyWireKey}" }`,
     );
-    expect(constellation).toContain(
+    expect(atlas).toContain(
       `{ label: "Theme", key: "${legacyWireKey}" }`,
     );
-    expect(constellation).toContain(legacyWireKey + ":");
+    // The wire key itself lives in the palette map, not the legend.
+    expect(read("src/lib/graph/palette.ts")).toContain(legacyWireKey + ":");
   });
 });
