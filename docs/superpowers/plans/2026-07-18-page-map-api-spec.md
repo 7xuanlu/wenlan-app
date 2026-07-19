@@ -9,21 +9,23 @@ notes). Resolves the 22 Codex gap-review items from
 mockup all approved there) into buildable decisions, grounded in a
 conventions recon of the daemon repo (`7xuanlu/wenlan`, file:line anchors
 below are into that repo). Implementation target: `crates/wenlan-server`
-(+ DTOs in `crates/wenlan-types`), migration 73.
+(+ DTOs in `crates/wenlan-types`), migration 75 (renumbered from 73:
+versions 73/74 were already claimed on live user DBs by the in-flight
+wiki-spaces branch, so a `< 73` guard silently skipped there).
 
 **Grounding invariant, restated:** every map node points at a real object.
 The daemon rejects refless creation; the map stores *presentation* (layout,
 labels, curation state), never a second copy of knowledge.
 
-## Data model (migration 73)
+## Data model (migration 75)
 
 Three tables. Hierarchy is a `parent_id` spine on nodes (the flextree input);
 the edges table holds only cross-links and suggested links — tree edges are
 derived, not stored, so they can never dangle or contradict the spine.
 
 ```sql
--- if version < 73, appended in run_migrations() (db.rs:2728ff), then
--- PRAGMA user_version = 73. All idempotent per house style.
+-- if version < 75, appended in run_migrations() (db.rs:2728ff), then
+-- PRAGMA user_version = 75. All idempotent per house style.
 CREATE TABLE IF NOT EXISTS page_maps (
   page_id     TEXT PRIMARY KEY REFERENCES pages(id),
   revision    INTEGER NOT NULL DEFAULT 0,   -- monotonic, bumps on EVERY write
@@ -295,7 +297,7 @@ only structurally missing/malformed fields are 400.
   handshake that doesn't exist; it degrades instead of corrupting.
 - Absent endpoints (older daemon) → 404/405 → the Map tab shows its
   "daemon too old" empty state. No global handshake invented here.
-- Storage migration is inline migration 73 per house style; SQLite file
+- Storage migration is inline migration 75 per house style; SQLite file
   backup-before-migrate and downgrade policy follow whatever the daemon
   does globally today (nothing map-specific — one feature does not get its
   own backup regime).
@@ -320,9 +322,23 @@ only structurally missing/malformed fields are 400.
 Frontend-side items (#18 UX matrix, #19 a11y, #20 scale budgets, #22 i18n
 beyond strings) are Map-tab work and land with the UI phase, not here.
 
+## Decided IA (2026-07-18, user call)
+
+- **User-facing name: "Canvas".** Code, API routes, and DTOs keep `map`;
+  only UI strings (x3 locales) say Canvas.
+- **Per-page model stands** — root node = the page, improve seeds from the
+  page's sources + wikilinks. No independent/free-floating canvases in v1;
+  if ever wanted they become maps rooted in a new empty page (small daemon
+  tweak), not a new data model.
+- **Two entry points**: (1) a Canvas tab in `PageDetail` (Read | Canvas |
+  Sources); (2) a top-level **Canvas** nav entry beside Pages — a gallery of
+  pages-with-maps that opens the same per-page canvas full-screen. The
+  gallery is presentation-only over `GET /api/pages` + a has-map flag; no
+  daemon changes.
+
 ## Implementation & test plan (daemon repo)
 
-1. Migration 73 + `db.rs` accessors (`get_page_map`, `upsert_layout`,
+1. Migration 75 + `db.rs` accessors (`get_page_map`, `upsert_layout`,
    `create/patch/delete node|edge`, `reset_map`) — unit tests against an
    in-memory DB: fingerprint dedup, tombstone re-proposal skip, revision
    bump on every write, root invariants, cycle rejection.
