@@ -146,6 +146,13 @@ describe("Windows native smoke workflow contract", () => {
     expect(verifyIndex).toBeGreaterThan(stageIndex);
   });
 
+  it("drives the guarded native quit route instead of bypassing persistence", () => {
+    const text = nativeHarness();
+
+    expect(text).toContain('internals.invoke("request_guarded_quit")');
+    expect(text).not.toContain('internals.invoke("quit_wenlan_full")');
+  });
+
   it("runs the native harness and always uploads its complete evidence", () => {
     const text = workflow();
 

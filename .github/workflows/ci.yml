@@ -31,7 +31,7 @@ jobs:
       !(github.event_name == 'workflow_dispatch' && inputs.windows_native_smoke)
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -42,12 +42,12 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       - name: Install Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 24
           cache: pnpm
 
       - name: Install frontend dependencies
@@ -83,11 +83,17 @@ jobs:
       - name: Run frontend tests
         run: pnpm test
 
+      - name: Build and verify fixture-only Review app
+        run: pnpm review:build && pnpm review:verify
+
       - name: Install Playwright Chromium
         run: pnpm exec playwright install chromium
 
       - name: Run frontend e2e tests
         run: pnpm test:e2e
+
+      - name: Run fixture-only Review e2e tests
+        run: pnpm test:e2e:review
 
   download-smoke:
     name: Download Smoke
@@ -101,7 +107,7 @@ jobs:
       !(github.event_name == 'workflow_dispatch' && inputs.windows_native_smoke)
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Download pinned daemon sidecars
         env:

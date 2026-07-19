@@ -16,6 +16,24 @@ describe("runtime product identity", () => {
     expect(tauri.app.windows[0].title).toBe("Wenlan");
   });
 
+  it("keeps the persistent native titlebar inset aligned in both app variants", () => {
+    const production = JSON.parse(
+      readFileSync(resolve(root, "app/tauri.conf.json"), "utf8"),
+    );
+    const review = JSON.parse(
+      readFileSync(resolve(root, "app/tauri.review.conf.json"), "utf8"),
+    );
+
+    expect(production.app.windows[0].trafficLightPosition).toEqual({
+      x: 16,
+      y: 28,
+    });
+    expect(review.app.windows[0].trafficLightPosition).toEqual({
+      x: 16,
+      y: 28,
+    });
+  });
+
   it("uses Wenlan release artifact names", () => {
     const pkg = JSON.parse(
       readFileSync(resolve(root, "package.json"), "utf8"),
@@ -95,6 +113,28 @@ describe("runtime product identity", () => {
     expect(lib).toContain("set_activation_policy(activation_policy_for_main_window_visible(false))");
     expect(lib).toContain("startup_reveal_fallback_delay");
     expect(lib).toContain("app-ready did not reveal the main window");
+    expect(lib).not.toContain("align_macos_traffic_lights");
+    expect(lib).not.toContain("setFrameOrigin(button");
+  });
+
+  it("routes native and tray quit requests through the frontend persistence gate", () => {
+    const lib = readFileSync(resolve(root, "app/src/lib.rs"), "utf8");
+
+    expect(lib).toContain('emit("quit-requested"');
+    expect(lib).toContain("RunEvent::ExitRequested");
+    expect(lib).toContain("code: None");
+    expect(lib).toContain("api.prevent_exit()");
+    expect(lib).toContain("lifecycle::is_quitting()");
+    expect(lib).toContain("fn cancel_guarded_quit_request()");
+    expect(lib).toContain("cancel_guarded_quit_request,");
+    expect(lib).toContain("fn request_guarded_quit(");
+    expect(lib).toContain("request_guarded_quit,");
+    expect(lib).not.toContain('handle.listen("quit-cancelled"');
+    const exitBranch = lib.slice(lib.indexOf("RunEvent::ExitRequested"));
+    expect(exitBranch.indexOf("request_full_quit(app)")).toBeLessThan(
+      exitBranch.indexOf("api.prevent_exit()"),
+    );
+    expect(lib).not.toContain('"quit" => {\n                            let h = handle_for_menu.clone();\n                            tauri::async_runtime::spawn');
   });
 
   it("prepares sidecar binaries before Tauri validates external bins", () => {

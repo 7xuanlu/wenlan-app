@@ -1013,6 +1013,10 @@ export interface Page {
   source_memory_ids: string[];
   version: number;
   status: string;
+  /** How this Page entered the inventory. Missing on older daemon versions. */
+  creation_kind?: string | null;
+  /** Trust state for an already-persisted Page; distinct from page candidates. */
+  review_status?: string | null;
   created_at: string;
   last_compiled: string;
   last_modified: string;
@@ -1021,6 +1025,117 @@ export interface Page {
   stale_reason?: string | null;
   user_edited?: boolean;
   citations?: PageCitation[];
+}
+
+export interface CreatePageInput {
+  title: string;
+  content: string;
+  space: string | null;
+}
+
+export interface CreatePageResponse {
+  id: string;
+  attached_to?: string | null;
+  warnings: string[];
+}
+
+export interface PageDraftSnapshotInput {
+  title: string;
+  content: string;
+  space: string | null;
+}
+
+export interface PageDraftWriteInput extends PageDraftSnapshotInput {
+  clientDraftId: string;
+}
+
+export interface UpdatePageDraftInput extends PageDraftSnapshotInput {
+  id: string;
+  expectedVersion: number;
+}
+
+export interface PageDraftVersionInput {
+  id: string;
+  expectedVersion: number;
+}
+
+export type PageDraftErrorCode =
+  | "draft_version_conflict"
+  | "page_title_conflict"
+  | "page_draft_not_found"
+  | "page_draft_id_conflict";
+
+type PageDraftErrorPayload = {
+  code: PageDraftErrorCode;
+  error?: string;
+  current_version?: number;
+  existing_page_id?: string;
+  existing_page_title?: string;
+};
+
+export class PageDraftApiError extends Error {
+  readonly name = "PageDraftApiError";
+
+  constructor(
+    message: string,
+    readonly code: PageDraftErrorCode,
+    readonly currentVersion?: number,
+    readonly existingPageId?: string,
+    readonly existingPageTitle?: string,
+  ) {
+    super(message);
+  }
+}
+
+function pageDraftErrorText(error: unknown): string {
+  if (typeof error === "string") return error;
+  if (
+    typeof error === "object"
+    && error !== null
+    && typeof Reflect.get(error, "message") === "string"
+  ) {
+    return Reflect.get(error, "message") as string;
+  }
+  return String(error);
+}
+
+function parsePageDraftError(error: unknown): PageDraftApiError | null {
+  const message = pageDraftErrorText(error);
+  const objectStart = message.indexOf("{");
+  if (objectStart < 0) return null;
+
+  let payload: PageDraftErrorPayload;
+  try {
+    payload = JSON.parse(message.slice(objectStart)) as PageDraftErrorPayload;
+  } catch {
+    return null;
+  }
+  if (
+    payload.code !== "draft_version_conflict"
+    && payload.code !== "page_title_conflict"
+    && payload.code !== "page_draft_not_found"
+    && payload.code !== "page_draft_id_conflict"
+  ) {
+    return null;
+  }
+  return new PageDraftApiError(
+    payload.error ?? message,
+    payload.code,
+    payload.current_version,
+    payload.existing_page_id,
+    payload.existing_page_title,
+  );
+}
+
+async function invokePageDraft<T>(
+  command: string,
+  args: Record<string, unknown>,
+): Promise<T> {
+  try {
+    return await invoke<T>(command, args);
+  } catch (error) {
+    throw parsePageDraftError(error) ?? error;
+  }
 }
 
 /** @deprecated Use {@link Page} instead. Kept for gradual migration. */
@@ -1545,6 +1660,52 @@ export async function dismissEntitySuggestion(id: string): Promise<RejectRefinem
 export async function getPage(id: string): Promise<Page | null> {
   const page = await invoke<Page | null>("get_page", { id });
   return page ? withDomain(page) : null;
+}
+
+export async function createPage(input: CreatePageInput): Promise<CreatePageResponse> {
+  const normalizedSpace = input.space?.trim() || null;
+  const result = await invoke<Omit<CreatePageResponse, "warnings"> & { warnings?: string[] }>("create_page", {
+    title: input.title.trim(),
+    content: input.content.trim(),
+    space: normalizedSpace,
+  });
+  return { ...result, warnings: result.warnings ?? [] };
+}
+
+export async function createPageDraft(input: PageDraftWriteInput): Promise<Page> {
+  const page = await invokePageDraft<Page>("create_page_draft", {
+    clientDraftId: input.clientDraftId,
+    title: input.title,
+    content: input.content,
+    space: input.space?.trim() || null,
+  });
+  return withDomain(page);
+}
+
+export async function updatePageDraft(input: UpdatePageDraftInput): Promise<Page> {
+  const page = await invokePageDraft<Page>("update_page_draft", {
+    id: input.id,
+    expectedVersion: input.expectedVersion,
+    title: input.title,
+    content: input.content,
+    space: input.space?.trim() || null,
+  });
+  return withDomain(page);
+}
+
+export async function publishPageDraft(input: PageDraftVersionInput): Promise<Page> {
+  const page = await invokePageDraft<Page>("publish_page_draft", {
+    id: input.id,
+    expectedVersion: input.expectedVersion,
+  });
+  return withDomain(page);
+}
+
+export async function discardPageDraft(input: PageDraftVersionInput): Promise<void> {
+  await invokePageDraft<void>("discard_page_draft", {
+    id: input.id,
+    expectedVersion: input.expectedVersion,
+  });
 }
 
 /** @deprecated Use {@link getPage} instead. */
@@ -2251,6 +2412,10 @@ export async function setRunAtLogin(enabled: boolean): Promise<void> {
 
 export async function quitWenlanFull(): Promise<void> {
   return invoke("quit_wenlan_full");
+}
+
+export async function cancelGuardedQuitRequest(): Promise<void> {
+  return invoke("cancel_guarded_quit_request");
 }
 
 /** @deprecated Use quitWenlanFull. Kept as a legacy Origin bridge alias. */

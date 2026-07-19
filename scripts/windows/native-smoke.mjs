@@ -260,16 +260,16 @@ async function driveZeroConfigurationOnboarding(browser, log) {
   await search.waitForDisplayed({ timeout: 30_000 });
 }
 
-async function invokeFullQuit(browser) {
+async function invokeGuardedQuit(browser) {
   return browser.execute(() => {
     const internals = globalThis.__TAURI_INTERNALS__;
     if (!internals || typeof internals.invoke !== "function") {
       throw new Error("Tauri invoke internals are unavailable");
     }
-    // Do not await: the command exits this WebView before its IPC promise can
-    // settle. The post-request app/backend process snapshot is the outcome
-    // proof; this flag records only that the product command was requested.
-    void internals.invoke("quit_wenlan_full");
+    // This enters the same Rust request_full_quit -> quit-requested ->
+    // frontend persistence guard used by tray and native exit requests. Do not
+    // await: successful teardown exits this WebView before IPC can settle.
+    void internals.invoke("request_guarded_quit");
     return true;
   });
 }
@@ -593,8 +593,8 @@ async function main() {
     evidence.lifecycle.fake_launch_agents_exists = existsSync(
       resolve(process.env.USERPROFILE || process.env.HOME || "", "Library", "LaunchAgents"),
     );
-    evidence.lifecycle.full_quit_requested = (await invokeFullQuit(browser)) === true;
-    log("requested registered quit_wenlan_full command");
+    evidence.lifecycle.full_quit_requested = (await invokeGuardedQuit(browser)) === true;
+    log("requested registered guarded quit command");
 
     const afterClose = await poll(
       "app and backend full quit",

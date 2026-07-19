@@ -31,7 +31,7 @@ describe("cross-platform Tauri launcher", () => {
     );
 
     expect(packageJson.scripts.tauri).toBe("node scripts/run-tauri.mjs");
-    expect(packageJson.devDependencies["@tauri-apps/cli"]).toBe("2.10.0");
+    expect(packageJson.devDependencies["@tauri-apps/cli"]).toBe("2.11.4");
     expect(JSON.stringify(packageJson)).not.toContain("TAURI_DIR=app tauri");
   });
 });

@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { useState, useEffect, useRef } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { useTranslation } from "react-i18next";
 import {
   listMemoriesRich,
+  listSpaces,
   getMemoryStats,
+  openFile,
   searchEntities,
   searchPages,
-  deleteFileChunks,
+  type Page,
   type SearchResult,
+  type Space,
 } from "../../lib/tauri";
 import ActivityFeed from "./ActivityFeed";
 import { useSearch } from "../../hooks/useSearch";
@@ -26,33 +29,77 @@ import DistillReviewPanel from "./DistillReviewPanel";
 import SettingsPage from "./SettingsPage";
 import { ImportView } from "./ImportView";
 import { SetupWizard } from "../SetupWizard";
-import ViewToggle from "../ViewToggle";
-import Sidebar, { SidebarToggleButton } from "./Sidebar";
-import SettingsSidebar, { type SettingsSection } from "./settings/SettingsSidebar";
+import Sidebar, { SidebarHeaderDivider, SidebarToggleButton } from "./Sidebar";
+import SettingsSidebar from "./settings/SettingsSidebar";
 import SpaceDetail from "./SpaceDetail";
+import { SpacesOverview } from "./spaces";
+import { PagesOverview } from "./pages/PagesOverview";
+import {
+  PageDraftEditor,
+  type PageDraftEditorHandle,
+} from "./pages/PageDraftEditor";
 import SourcesView from "./SourcesView";
 import DecisionLog from "./DecisionLog";
-import MemoryCard from "./MemoryCard";
+import { RecapsList } from "./RecapsList";
 import AboutWenlanDialog from "./AboutWenlanDialog";
 import { readPreference, writePreference } from "../../lib/preferenceStorage";
 import { searchResultTarget } from "../../lib/searchResultTarget";
+import { recordRecentPageVisit } from "../../lib/recentPages";
+import { deleteRecentSpace, recordRecentSpaceVisit, renameRecentSpace } from "../../lib/recentSpaces";
+import { createSpaceDetailCopy, createSpacesOverviewLabels } from "./navigation/copy";
+import { activeNavigationForView, type View } from "./navigation/viewState";
+import { ReviewEnvironmentBadge } from "./navigation/ReviewEnvironmentBadge";
+import { useResponsiveSidebar } from "./navigation/useResponsiveSidebar";
+import "./navigation/navigation-shell.css";
 
 interface MainProps {
   initialMemoryId?: string | null;
   initialPageId?: string | null;
   initialView?: "import" | null;
   onBackFromDetail?: () => void;
+  onRegisterQuitGuard?: (guard: (() => Promise<boolean>) | null) => void;
 }
-
-type View = { kind: "home" } | { kind: "stream" } | { kind: "activity" } | { kind: "recaps" } | { kind: "entity"; entityId: string } | { kind: "memory"; sourceId: string } | { kind: "settings"; section?: SettingsSection } | { kind: "import" } | { kind: "connect-agent" } | { kind: "space"; spaceName: string } | { kind: "graph" } | { kind: "page"; pageId: string } | { kind: "distill-review" } | { kind: "decisions" } | { kind: "sources" };
-
 const SIDEBAR_KEY = "wenlan-sidebar-collapsed";
 const LEGACY_SIDEBAR_KEY = "origin-sidebar-collapsed";
 
-export default function Main({ initialMemoryId, initialPageId, initialView, onBackFromDetail }: MainProps) {
+function scrollDestinationKey(view: View): string {
+  switch (view.kind) {
+    case "entity":
+      return `entity:${view.entityId}`;
+    case "memory":
+      return `memory:${view.sourceId}`;
+    case "page":
+      return `page:${view.pageId}`;
+    case "page-draft":
+      return `page-draft:${view.draftId ?? "new"}:${view.space ?? "none"}`;
+    case "settings":
+      return `settings:${view.section ?? "general"}`;
+    case "space":
+      return `space:${view.spaceId ?? view.spaceName}`;
+    default:
+      return view.kind;
+  }
+}
+
+export default function Main({
+  initialMemoryId,
+  initialPageId,
+  initialView,
+  onBackFromDetail,
+  onRegisterQuitGuard,
+}: MainProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const mainContentRef = useRef<HTMLElement>(null);
+  const pageDraftEditorRef = useRef<PageDraftEditorHandle>(null);
+  const pendingDraftNavigationRef = useRef<{
+    readonly action: (sourceView: View) => void;
+    readonly token: symbol;
+  } | null>(null);
+  const draftNavigationFlushRef = useRef<Promise<boolean> | null>(null);
+  const pendingDraftSearchCancelRef = useRef<(() => void) | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const sidebarToggleRef = useRef<HTMLButtonElement>(null);
   const externalMemoryIdRef = useRef<string | null>(initialMemoryId ?? null);
   const [view, setView] = useState<View>(
     initialMemoryId ? { kind: "memory", sourceId: initialMemoryId }
@@ -60,45 +107,134 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
     : initialView === "import" ? { kind: "import" }
     : { kind: "home" },
   );
+  const viewRef = useRef(view);
+  viewRef.current = view;
   const [viewHistory, setViewHistory] = useState<View[]>([]);
   const [activeTab, setActiveTab] = useState<"home" | "activity">("home");
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [recentPagesRevision, setRecentPagesRevision] = useState(0);
+  const [recentSpacesRevision, setRecentSpacesRevision] = useState(0);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const [pendingDraftSearchQuery, setPendingDraftSearchQuery] = useState<string | null>(null);
+  const viewScrollDestination = scrollDestinationKey(view);
 
-  // Respond to initialView prop changes after mount (e.g. resume banner click)
+  const prepareForQuit = useCallback(async (): Promise<boolean> => {
+    const editor = pageDraftEditorRef.current;
+    if (viewRef.current.kind !== "page-draft" || !editor) return true;
+    return editor.flush();
+  }, []);
+
+  useEffect(() => {
+    onRegisterQuitGuard?.(prepareForQuit);
+    return () => onRegisterQuitGuard?.(null);
+  }, [onRegisterQuitGuard, prepareForQuit]);
+
+  useLayoutEffect(() => {
+    if (!mainContentRef.current) return;
+    mainContentRef.current.scrollLeft = 0;
+    mainContentRef.current.scrollTop = 0;
+  }, [viewScrollDestination]);
+
+  const afterPageDraftFlush = (action: (sourceView: View) => void): (() => void) => {
+    const editor = pageDraftEditorRef.current;
+    if (view.kind !== "page-draft" || !editor) {
+      action(view);
+      return () => {};
+    }
+
+    const token = Symbol("draft-navigation");
+    pendingDraftNavigationRef.current = { action, token };
+    const cancel = () => {
+      if (pendingDraftNavigationRef.current?.token === token) {
+        pendingDraftNavigationRef.current = null;
+      }
+    };
+    if (draftNavigationFlushRef.current) return cancel;
+
+    const flush = editor.flush();
+    draftNavigationFlushRef.current = flush;
+    void flush.then(
+      (saved) => {
+        const pending = pendingDraftNavigationRef.current;
+        pendingDraftNavigationRef.current = null;
+        if (saved && pending) {
+          const identity = editor.getIdentity();
+          const sourceView: View = {
+            ...view,
+            draftId: identity.draftId ?? undefined,
+          };
+          if (sourceView !== view) setView(sourceView);
+          pending.action(sourceView);
+        }
+      },
+      () => {
+        pendingDraftNavigationRef.current = null;
+      },
+    ).finally(() => {
+      if (draftNavigationFlushRef.current === flush) {
+        draftNavigationFlushRef.current = null;
+      }
+    });
+    return cancel;
+  };
+
+  // Respond to externally requested destinations only after the current draft is durable.
   useEffect(() => {
     if (initialView === "import") {
-      setView({ kind: "import" });
+      return afterPageDraftFlush(() => setView({ kind: "import" }));
     }
   }, [initialView]);
 
   useEffect(() => {
     if (initialPageId) {
-      setView({ kind: "page", pageId: initialPageId });
+      return afterPageDraftFlush(() => setView({ kind: "page", pageId: initialPageId }));
     }
   }, [initialPageId]);
 
   useEffect(() => {
     if (initialMemoryId) {
-      externalMemoryIdRef.current = initialMemoryId;
-      setViewHistory([]);
-      setView({ kind: "memory", sourceId: initialMemoryId });
+      return afterPageDraftFlush(() => {
+        externalMemoryIdRef.current = initialMemoryId;
+        setViewHistory([]);
+        setView({ kind: "memory", sourceId: initialMemoryId });
+      });
     } else if (externalMemoryIdRef.current) {
-      externalMemoryIdRef.current = null;
-      setViewHistory([]);
-      setView({ kind: activeTab });
+      return afterPageDraftFlush(() => {
+        externalMemoryIdRef.current = null;
+        setViewHistory([]);
+        setView({ kind: activeTab });
+      });
     }
   }, [initialMemoryId, activeTab]);
 
   // Navigate forward — pushes current view onto history stack
   const navigateTo = (next: View) => {
-    setViewHistory((prev) => [...prev, view]);
-    setView(next);
+    afterPageDraftFlush((sourceView) => {
+      setViewHistory((prev) => [...prev, sourceView]);
+      setView(next);
+    });
   };
 
   const navigateHome = () => {
-    setView({ kind: "home" });
-    setActiveTab("home");
-    setViewHistory([]);
+    afterPageDraftFlush(() => {
+      setView({ kind: "home" });
+      setActiveTab("home");
+      setViewHistory([]);
+    });
+  };
+
+  const navigateSpaces = (create: boolean) => {
+    afterPageDraftFlush(() => {
+      setView(create ? { kind: "spaces", create: true } : { kind: "spaces" });
+      setViewHistory([]);
+    });
+  };
+
+  const navigatePages = () => {
+    afterPageDraftFlush(() => {
+      setView({ kind: "pages" });
+      setViewHistory([]);
+    });
   };
 
   // Navigate back — pops from history stack, falls back to activeTab
@@ -119,7 +255,34 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     return readPreference(SIDEBAR_KEY, LEGACY_SIDEBAR_KEY) === "true";
   });
-  const { query, setQuery, results } = useSearch("memory");
+  const { query, setQuery, results } = useSearch();
+  const handleSearchQueryChange = (nextQuery: string) => {
+    if (!query && nextQuery && view.kind === "page-draft") {
+      pendingDraftSearchCancelRef.current?.();
+      setPendingDraftSearchQuery(nextQuery);
+      pendingDraftSearchCancelRef.current = afterPageDraftFlush(() => {
+        pendingDraftSearchCancelRef.current = null;
+        setQuery(nextQuery);
+        setPendingDraftSearchQuery(null);
+      });
+      return;
+    }
+    pendingDraftSearchCancelRef.current?.();
+    pendingDraftSearchCancelRef.current = null;
+    setPendingDraftSearchQuery(null);
+    setQuery(nextQuery);
+  };
+  const displayedSearchQuery = pendingDraftSearchQuery ?? query;
+  const memoryResults = results.filter((result) => searchResultTarget(result).kind === "copy");
+  const sourceResults = results.filter((result) => searchResultTarget(result).kind === "file");
+
+  useEffect(() => {
+    if (mobileSearchOpen) searchInputRef.current?.focus();
+  }, [mobileSearchOpen]);
+
+  useEffect(() => {
+    if (view.kind !== "page-draft") setPendingDraftSearchQuery(null);
+  }, [view.kind]);
 
   const [debouncedEntityQuery, setDebouncedEntityQuery] = useState("");
   useEffect(() => {
@@ -146,6 +309,51 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
       return next;
     });
   };
+  const responsiveSidebar = useResponsiveSidebar(sidebarCollapsed, toggleSidebar, sidebarToggleRef);
+  const standardSidebarMounted = view.kind !== "settings" && view.kind !== "connect-agent";
+  const activeNavigation = activeNavigationForView(view);
+  const spacesOverviewLabels = createSpacesOverviewLabels(t);
+  const spaceDetailCopy = createSpaceDetailCopy(t);
+  const { data: spaces } = useQuery({ queryKey: ["spaces"], queryFn: listSpaces });
+
+  const refreshRecentSpaces = useCallback(() => {
+    setRecentSpacesRevision((revision) => revision + 1);
+  }, []);
+  const handlePageLoaded = useCallback((page: Pick<Page, "id" | "status" | "title">) => {
+    recordRecentPageVisit(page);
+    setRecentPagesRevision((revision) => revision + 1);
+  }, []);
+  const handleSpaceLoaded = useCallback((space: Space) => {
+    const runtime = spaces === undefined
+      ? undefined
+      : { spaces: [space, ...spaces.filter((current) => current.id !== space.id)] };
+    recordRecentSpaceVisit(space, runtime);
+    setView((current) => current.kind === "space" && current.spaceName === space.name
+      ? { ...current, spaceId: space.id }
+      : current);
+    refreshRecentSpaces();
+  }, [refreshRecentSpaces, spaces]);
+  const handleSpaceRenamed = useCallback((space: Pick<Space, "id" | "name">) => {
+    const runtime = spaces === undefined
+      ? undefined
+      : {
+          spaces: spaces.map((current) => current.id === space.id
+            ? { ...current, name: space.name }
+            : current),
+        };
+    renameRecentSpace(space, runtime);
+    setView((current) => current.kind === "space" && current.spaceId === space.id
+      ? { ...current, spaceName: space.name }
+      : current);
+    refreshRecentSpaces();
+  }, [refreshRecentSpaces, spaces]);
+  const handleSpaceDeleted = useCallback((spaceId: string) => {
+    const runtime = spaces === undefined
+      ? undefined
+      : { spaces: spaces.filter(({ id }) => id !== spaceId) };
+    deleteRecentSpace(spaceId, runtime);
+    refreshRecentSpaces();
+  }, [refreshRecentSpaces, spaces]);
 
   const { data: memories = [] } = useQuery({
     queryKey: ["memories"],
@@ -184,6 +392,7 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
   // Cmd+K global shortcut (fired from App.tsx) — focus the header search input.
   useEffect(() => {
     const unlisten = listen("focus-search", () => {
+      setMobileSearchOpen(true);
       searchInputRef.current?.focus();
       searchInputRef.current?.select();
     });
@@ -197,19 +406,26 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
         const active = document.activeElement;
         if (active?.tagName === "INPUT" || active?.tagName === "TEXTAREA") return;
         e.preventDefault();
+        setMobileSearchOpen(true);
         searchInputRef.current?.focus();
       }
       if (e.key === "Escape") {
+        if (responsiveSidebar.presentation === "overlay" && responsiveSidebar.open) return;
         if (query) {
           setQuery("");
-        } else if (view.kind === "entity" || view.kind === "memory" || view.kind === "settings" || view.kind === "import" || view.kind === "graph" || view.kind === "page" || view.kind === "distill-review" || view.kind === "decisions") {
+        } else if (mobileSearchOpen) {
+          setMobileSearchOpen(false);
+        } else if (view.kind === "page-draft") {
+          // PageDraftEditor owns Escape so it can await the same flush gate as Back.
+          return;
+        } else if (view.kind === "entity" || view.kind === "memory" || view.kind === "settings" || view.kind === "import" || view.kind === "graph" || view.kind === "page" || view.kind === "space" || view.kind === "distill-review" || view.kind === "decisions") {
           navigateBack();
         }
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [query, view]);
+  }, [mobileSearchOpen, query, responsiveSidebar.open, responsiveSidebar.presentation, view]);
 
   // Close dropdowns on outside click
   const handleEntityClick = (entityId: string) => {
@@ -224,11 +440,14 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
     }
   };
 
-  const openSearchResult = (result: SearchResult) => {
+  const openSearchResult = async (result: SearchResult) => {
     setQuery("");
+    setMobileSearchOpen(false);
     const target = searchResultTarget(result);
     if (target.kind === "page") {
       navigateTo({ kind: "page", pageId: target.pageId });
+    } else if (target.kind === "file") {
+      await openFile(target.url);
     } else {
       navigateTo({ kind: "memory", sourceId: result.source_id });
     }
@@ -236,7 +455,7 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
 
   return (
     <div
-      className="w-full h-screen flex flex-col"
+      className="memory-shell flex h-screen w-full flex-col"
       style={{ backgroundColor: "var(--mem-bg)", color: "var(--mem-text)" }}
     >
       {/* Full-width header */}
@@ -246,25 +465,51 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
           height: 52,
           paddingLeft: 82,
           paddingRight: 20,
-          background: sidebarCollapsed
-            ? "transparent"
-            : "linear-gradient(to right, var(--mem-sidebar) 240px, transparent 240px)",
+          background: responsiveSidebar.presentation === "desktop" && !responsiveSidebar.collapsed
+            ? "linear-gradient(to right, var(--mem-sidebar) 240px, transparent 240px)"
+            : "transparent",
         }}
         data-tauri-drag-region
       >
-        <SidebarToggleButton collapsed={sidebarCollapsed} onToggle={toggleSidebar} />
+        <SidebarHeaderDivider
+          visible={responsiveSidebar.presentation === "desktop" && !responsiveSidebar.collapsed}
+        />
+        <SidebarToggleButton collapsed={responsiveSidebar.collapsed} onToggle={responsiveSidebar.toggle} ref={sidebarToggleRef} />
+        {(!standardSidebarMounted || !responsiveSidebar.open) && <ReviewEnvironmentBadge compact />}
         <div className="flex-1" data-tauri-drag-region />
 
           {/* Right actions */}
           <div className="flex items-center gap-1.5 shrink-0">
-            <ViewToggle
-              active={view.kind === "activity" ? "activity" : "home"}
-              onSwitch={(v) => {
-                setActiveTab(v);
-                setView({ kind: v });
-                setViewHistory([]);
+            <button
+              aria-expanded={mobileSearchOpen}
+              aria-label={t("main.searchButton")}
+              className="lg:hidden rounded-md p-1.5 transition-colors duration-150 hover:bg-[var(--mem-hover-strong)]"
+              onClick={() => setMobileSearchOpen((open) => !open)}
+              style={{ color: "var(--mem-text-secondary)" }}
+              type="button"
+            >
+              <svg aria-hidden="true" fill="none" height="16" stroke="currentColor" viewBox="0 0 24 24" width="16">
+                <path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+              </svg>
+            </button>
+            <button
+              aria-current={view.kind === "activity" ? "page" : undefined}
+              className="flex items-center gap-2 rounded-md px-2 py-1.5 transition-colors duration-150 hover:bg-[var(--mem-hover-strong)]"
+              onClick={() => {
+                afterPageDraftFlush(() => {
+                  setActiveTab("activity");
+                  setView({ kind: "activity" });
+                  setViewHistory([]);
+                });
               }}
-            />
+              style={{ color: view.kind === "activity" ? "var(--mem-text)" : "var(--mem-text-secondary)", fontFamily: "var(--mem-font-body)", fontSize: "12px" }}
+              type="button"
+            >
+              <svg aria-hidden="true" fill="none" height="16" viewBox="0 0 24 24" width="16">
+                <path d="M3 12a9 9 0 109-9 9.75 9.75 0 00-6.74 2.74L3 8M3 3v5h5M12 7v5l3 2" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+              </svg>
+              <span>{t("main.activity")}</span>
+            </button>
             {/* Quick Capture */}
             <button
               onClick={async () => {
@@ -287,15 +532,13 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
 
           {/* Search — absolutely centered */}
           <div
-            className="absolute hidden lg:flex items-center"
-            style={{ left: "50%", transform: "translateX(-50%)" }}
+            className={`${mobileSearchOpen ? "flex" : "hidden"} absolute left-4 right-4 top-[56px] z-50 items-center lg:flex lg:left-1/2 lg:right-auto lg:top-auto lg:-translate-x-1/2`}
           >
             <div
-              className="flex items-center gap-2 rounded-md px-3 py-[6px]"
+              className="flex w-full items-center gap-2 rounded-md px-3 py-[6px] shadow-lg focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-[var(--mem-accent-page)] lg:w-[clamp(220px,40vw,480px)] lg:shadow-none"
               style={{
-                width: "clamp(220px, 40vw, 480px)",
                 backgroundColor: "var(--mem-sidebar)",
-                border: "1px solid var(--mem-border)",
+                border: "1px solid var(--mem-control-border)",
               }}
             >
             <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: "var(--mem-text-tertiary)" }}>
@@ -304,8 +547,8 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
             <input
               ref={searchInputRef}
               data-wenlan-search-input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              value={displayedSearchQuery}
+              onChange={(e) => handleSearchQueryChange(e.target.value)}
               placeholder={t("main.searchPlaceholder")}
               className="flex-1 bg-transparent outline-none"
               style={{
@@ -316,9 +559,14 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
               spellCheck={false}
               autoComplete="off"
             />
-            {query && (
+            {displayedSearchQuery && (
               <button
-                onClick={() => setQuery("")}
+                onClick={() => {
+                  pendingDraftSearchCancelRef.current?.();
+                  pendingDraftSearchCancelRef.current = null;
+                  setPendingDraftSearchQuery(null);
+                  setQuery("");
+                }}
                 className="shrink-0"
                 style={{ color: "var(--mem-text-tertiary)" }}
               >
@@ -340,31 +588,41 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
             onSelect={(section) => setView({ kind: "settings", section })}
             onNavigateHome={navigateHome}
           />
-        ) : (
+        ) : view.kind === "connect-agent" ? null : (
           <Sidebar
-            collapsed={sidebarCollapsed}
-            onSelectSpace={(name) => {
-              if (name) {
-                navigateTo({ kind: "space", spaceName: name });
-              } else {
-                navigateHome();
-              }
-            }}
+            activeNavigation={activeNavigation}
+            collapsed={responsiveSidebar.collapsed}
+            currentPageId={view.kind === "page" ? view.pageId : null}
+            currentSpaceId={view.kind === "space" ? view.spaceId : null}
             onEntityClick={handleEntityClick}
-            onNavigateLog={() => { setView({ kind: "stream" }); setViewHistory([]); }}
+            onNavigateLog={() => {
+              afterPageDraftFlush(() => {
+                setView({ kind: "stream" });
+                setViewHistory([]);
+              });
+            }}
+            onNavigatePages={navigatePages}
             onNavigateHome={navigateHome}
             onNavigateGraph={() => navigateTo({ kind: "graph" })}
             onNavigateSources={() => navigateTo({ kind: "sources" })}
+            onNavigateSpaces={navigateSpaces}
             onNavigateSettings={() => navigateTo({ kind: "settings", section: "general" })}
             onOpenAbout={() => setAboutOpen(true)}
+            onRequestClose={responsiveSidebar.close}
+            onSelectPage={(page) => navigateTo({ kind: "page", pageId: page.id })}
+            onSelectSpace={(space) => navigateTo({ kind: "space", spaceId: space.id, spaceName: space.name })}
+            open={responsiveSidebar.open}
+            presentation={responsiveSidebar.presentation}
+            recentPagesRevision={recentPagesRevision}
+            recentSpacesRevision={recentSpacesRevision}
           />
         )}
 
         {/* Main content */}
-        <main className={`flex-1 ${view.kind === "graph" || view.kind === "sources" ? "overflow-hidden p-0" : "overflow-y-auto pb-7"}`} style={view.kind === "graph" || view.kind === "sources" ? undefined : { paddingLeft: "72px", paddingRight: "72px", paddingTop: "56px" }}>
+        <main ref={mainContentRef} className={`flex-1 ${view.kind === "graph" || view.kind === "sources" ? "min-w-0 overflow-hidden p-0" : "memory-main-content overflow-y-auto"}`}>
           {/* Search results overlay */}
           {query ? (
-            (results.length > 0 || entityResults.length > 0 || conceptResults.length > 0) ? (
+            (memoryResults.length > 0 || sourceResults.length > 0 || entityResults.length > 0 || conceptResults.length > 0) ? (
               <div className="flex flex-col gap-2">
                 {conceptResults.length > 0 && (
                   <>
@@ -413,7 +671,7 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
                     ))}
                   </>
                 )}
-                {results.length > 0 && (
+                {memoryResults.length > 0 && (
                   <>
                     <p
                       style={{
@@ -423,10 +681,27 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
                         marginTop: conceptResults.length > 0 ? 12 : 0,
                       }}
                     >
-                      {t("main.search.memories", { count: results.length, query })}
+                      {t("main.search.memories", { count: memoryResults.length, query })}
                     </p>
-                    {results.map((r) => (
-                      <MemorySearchResult key={r.id} result={r} query={query} onClick={() => openSearchResult(r)} />
+                    {memoryResults.map((r) => (
+                      <MemorySearchResult key={r.id} result={r} query={query} onClick={() => void openSearchResult(r)} />
+                    ))}
+                  </>
+                )}
+                {sourceResults.length > 0 && (
+                  <>
+                    <p
+                      style={{
+                        fontFamily: "var(--mem-font-mono)",
+                        fontSize: "11px",
+                        color: "var(--mem-text-tertiary)",
+                        marginTop: (memoryResults.length > 0 || conceptResults.length > 0) ? 12 : 0,
+                      }}
+                    >
+                      {t("main.search.sources")}
+                    </p>
+                    {sourceResults.map((r) => (
+                      <MemorySearchResult key={r.id} result={r} query={query} onClick={() => void openSearchResult(r)} />
                     ))}
                   </>
                 )}
@@ -437,7 +712,7 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
                         fontFamily: "var(--mem-font-mono)",
                         fontSize: "11px",
                         color: "var(--mem-text-tertiary)",
-                        marginTop: (results.length > 0 || conceptResults.length > 0) ? 12 : 0,
+                        marginTop: (memoryResults.length > 0 || sourceResults.length > 0 || conceptResults.length > 0) ? 12 : 0,
                       }}
                     >
                       {t("main.search.entities")}
@@ -499,13 +774,39 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
               onSelectMemory={(sid) => navigateTo({ kind: "memory", sourceId: sid })}
               onSelectPage={(id) => navigateTo({ kind: "page", pageId: id })}
             />
+          ) : view.kind === "pages" ? (
+            <PagesOverview
+              onCreatePage={(space) => navigateTo({ kind: "page-draft", space })}
+              onSelectDraft={(draftId, space) => navigateTo({
+                kind: "page-draft",
+                draftId,
+                space,
+              })}
+              onSelectPage={(id) => navigateTo({ kind: "page", pageId: id })}
+              onSelectSpace={(spaceName) => navigateTo({ kind: "space", spaceId: null, spaceName })}
+            />
+          ) : view.kind === "spaces" ? (
+            <SpacesOverview
+              createIntent={view.create}
+              labels={spacesOverviewLabels}
+              onCreateIntentHandled={() => setView({ kind: "spaces" })}
+              onSelectSpace={(spaceName) => navigateTo({ kind: "space", spaceId: null, spaceName })}
+              onSpaceDeleted={handleSpaceDeleted}
+              onSpaceRenamed={handleSpaceRenamed}
+            />
           ) : view.kind === "space" ? (
             <SpaceDetail
+              copy={spaceDetailCopy}
               spaceName={view.spaceName}
-              onBack={navigateBack}
+              onBack={() => setView({ kind: "spaces" })}
+              onCreatePage={(space) => navigateTo({ kind: "page-draft", space })}
+              onReviewAll={() => navigateTo({ kind: "distill-review" })}
               onSelectMemory={(sid) => navigateTo({ kind: "memory", sourceId: sid })}
               onSelectPage={(id) => navigateTo({ kind: "page", pageId: id })}
               onEntityClick={handleEntityClick}
+              onSpaceDeleted={handleSpaceDeleted}
+              onSpaceLoaded={handleSpaceLoaded}
+              onSpaceRenamed={handleSpaceRenamed}
             />
           ) : view.kind === "memory" ? (
             <MemoryDetail
@@ -527,11 +828,39 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
               onEntityClick={handleEntityClick}
               onMemoryClick={(sid) => navigateTo({ kind: "memory", sourceId: sid })}
             />
+          ) : view.kind === "page-draft" ? (
+            <PageDraftEditor
+              draftId={view.draftId}
+              onBack={() => {
+                if (responsiveSidebar.presentation === "overlay" && responsiveSidebar.open) {
+                  responsiveSidebar.close();
+                  return;
+                }
+                navigateBack();
+              }}
+              onEscapeBeforeLeave={() => {
+                if (
+                  responsiveSidebar.presentation === "overlay"
+                  && responsiveSidebar.open
+                ) {
+                  responsiveSidebar.close();
+                  return true;
+                }
+                return false;
+              }}
+              onOpenExisting={(pageId) => {
+                afterPageDraftFlush(() => setView({ kind: "page", pageId }));
+              }}
+              onPublished={(pageId) => setView({ kind: "page", pageId })}
+              ref={pageDraftEditorRef}
+              space={view.space}
+            />
           ) : view.kind === "page" ? (
             <PageDetail
               pageId={view.pageId}
               onBack={navigateBack}
               onMemoryClick={(sid) => navigateTo({ kind: "memory", sourceId: sid })}
+              onPageLoaded={handlePageLoaded}
               onPageClick={(id) => navigateTo({ kind: "page", pageId: id })}
               onEntityClick={handleEntityClick}
             />
@@ -592,52 +921,6 @@ export default function Main({ initialMemoryId, initialPageId, initialView, onBa
 
       {/* Status bar */}
       <MemoryStatusBar message={statusMessage} />
-    </div>
-  );
-}
-
-function RecapsList({ onBack, onNavigateMemory }: { onBack: () => void; onNavigateMemory: (sid: string) => void }) {
-  const { t } = useTranslation();
-  const queryClient = useQueryClient();
-  const { data: recaps = [] } = useQuery({
-    queryKey: ["all-recaps"],
-    queryFn: async () => {
-      const all = await listMemoriesRich(undefined, undefined, undefined, 200);
-      return all.filter((m) => m.is_recap === true);
-    },
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: (sourceId: string) => deleteFileChunks("memory", sourceId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["all-recaps"] }),
-  });
-
-  return (
-    <div>
-      <button onClick={onBack} className="p-1.5 -ml-1.5 rounded-md transition-colors duration-150 hover:bg-[var(--mem-hover)] mb-3" style={{ color: "var(--mem-text-tertiary)", background: "none", border: "none", cursor: "pointer", lineHeight: 0 }}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
-      </button>
-      <h2 style={{ fontFamily: "var(--mem-font-heading)", fontSize: "20px", fontWeight: 400, color: "var(--mem-text)", margin: "0 0 16px 0" }}>{t("main.recaps")}</h2>
-      <h2
-        className="mb-4"
-        style={{ fontFamily: "var(--mem-font-mono)", fontSize: "12px", fontWeight: 600, letterSpacing: "0.05em", textTransform: "uppercase" as const, color: "var(--mem-accent-indigo)" }}
-      >
-        {t("main.allRecaps", { count: recaps.length })}
-      </h2>
-      <div className="flex flex-col">
-        {recaps.map((recap) => (
-          <MemoryCard
-            key={recap.source_id}
-            memory={recap}
-            onConfirm={() => {}}
-            onDelete={(sid) => deleteMutation.mutate(sid)}
-            expandedChain={false}
-            onToggleChain={() => {}}
-            versionChain={[]}
-            onClick={onNavigateMemory}
-          />
-        ))}
-      </div>
     </div>
   );
 }

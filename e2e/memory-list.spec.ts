@@ -107,9 +107,13 @@ test("opens a memory from the parent list and returns with Escape", async ({ pag
   await capture(page, "memory-list-tablet");
 
   await page.setViewportSize({ width: 375, height: 812 });
+  await expect(page.getByTitle("Show sidebar")).toBeVisible();
+  await page.getByTitle("Show sidebar").click();
+  await expect(page.getByTitle("Hide sidebar")).toBeVisible();
+  await expect(page.locator("aside")).toHaveAttribute("aria-hidden", "false");
   await page.getByTitle("Hide sidebar").click();
   await expect(page.getByTitle("Show sidebar")).toBeVisible();
-  await expect(page.locator("aside")).toHaveCSS("width", "0px");
+  await expect(page.locator("aside")).toHaveAttribute("aria-hidden", "true");
   await capture(page, "memory-list-mobile");
 
   await row.getByRole("button", { name: "Open memory" }).click();

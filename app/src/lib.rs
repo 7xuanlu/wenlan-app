@@ -3,6 +3,11 @@
 #[macro_use]
 extern crate objc;
 
+#[cfg(feature = "review-fixtures")]
+mod review;
+#[cfg(feature = "review-fixtures")]
+pub use review::run_review;
+
 // ── App-specific modules (Tauri, sensors, UI) ──
 pub mod activity;
 pub mod api;
@@ -58,11 +63,75 @@ fn app_log_file_name() -> &'static str {
     "wenlan.log"
 }
 
+static QUIT_GUARD_PENDING: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GuardedQuitAction {
+    RequestFrontendGuard,
+    IgnoreDuplicate,
+}
+
+fn guarded_quit_action(pending: &std::sync::atomic::AtomicBool) -> GuardedQuitAction {
+    if pending.swap(true, std::sync::atomic::Ordering::AcqRel) {
+        GuardedQuitAction::IgnoreDuplicate
+    } else {
+        GuardedQuitAction::RequestFrontendGuard
+    }
+}
+
+fn cancel_guarded_quit(pending: &std::sync::atomic::AtomicBool) {
+    pending.store(false, std::sync::atomic::Ordering::Release);
+}
+
+#[cfg(not(feature = "review-fixtures"))]
+#[tauri::command]
+fn cancel_guarded_quit_request() {
+    cancel_guarded_quit(&QUIT_GUARD_PENDING);
+}
+
+#[cfg(not(feature = "review-fixtures"))]
+fn force_full_quit(app: tauri::AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = crate::lifecycle::quit_origin(&app).await {
+            log::error!("[app] forced quit failed: {e}");
+            app.exit(1);
+        }
+    });
+}
+
+#[cfg(not(feature = "review-fixtures"))]
+fn request_full_quit(app: &tauri::AppHandle) -> Result<(), tauri::Error> {
+    use tauri::Emitter;
+    match guarded_quit_action(&QUIT_GUARD_PENDING) {
+        GuardedQuitAction::RequestFrontendGuard => {
+            if let Err(error) = app.emit("quit-requested", ()) {
+                cancel_guarded_quit(&QUIT_GUARD_PENDING);
+                return Err(error);
+            }
+        }
+        GuardedQuitAction::IgnoreDuplicate => {}
+    }
+    Ok(())
+}
+
+#[cfg(not(feature = "review-fixtures"))]
+#[tauri::command]
+fn request_guarded_quit(app: tauri::AppHandle) -> Result<(), String> {
+    request_full_quit(&app).map_err(|error| error.to_string())
+}
+
 #[cfg(target_os = "macos")]
 fn startup_reveal_fallback_delay() -> std::time::Duration {
     std::time::Duration::from_millis(1200)
 }
 
+#[cfg(target_os = "macos")]
+fn startup_reveal_fallback_needed(ready: bool, visible: bool) -> bool {
+    !ready || !visible
+}
+
+#[cfg(not(feature = "review-fixtures"))]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Log sinks: stderr (for terminal launches, `pnpm tauri dev`) AND a
@@ -235,6 +304,13 @@ pub fn run() {
                 use tauri::Manager;
 
                 if let Some(win) = app.get_webview_window("main") {
+                    // Size first because AppKit can recalculate titlebar control
+                    // frames while the window geometry changes.
+                    let _ = win.set_size(tauri::Size::Logical(tauri::LogicalSize::new(
+                        1100.0, 720.0,
+                    )));
+                    let _ = win.center();
+
                     if let Ok(raw_handle) = win.window_handle() {
                         if let raw_window_handle::RawWindowHandle::AppKit(appkit) =
                             raw_handle.as_raw()
@@ -256,8 +332,6 @@ pub fn run() {
                     // Size the window and keep app-ready as a focus/activation
                     // refinement. The main window is visible from config so launch
                     // cannot depend on a frontend event to appear.
-                    let _ = win.set_size(tauri::Size::Logical(tauri::LogicalSize::new(1100.0, 720.0)));
-                    let _ = win.center();
                     {
                         use tauri::Listener;
                         let app_ready = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -280,15 +354,15 @@ pub fn run() {
                             tokio::time::sleep(startup_reveal_fallback_delay()).await;
                             let ready = app_ready.load(std::sync::atomic::Ordering::SeqCst);
                             let visible = win_for_fallback.is_visible().unwrap_or(false);
-                            if !ready || !visible {
+                            if startup_reveal_fallback_needed(ready, visible) {
                                 log::warn!(
                                     "[startup] app-ready did not reveal the main window; showing fallback"
                                 );
+                                set_main_window_dock_visibility(&app_for_fallback, true);
+                                let _ = win_for_fallback.show();
+                                let _ = win_for_fallback.unminimize();
+                                let _ = win_for_fallback.set_focus();
                             }
-                            set_main_window_dock_visibility(&app_for_fallback, true);
-                            let _ = win_for_fallback.show();
-                            let _ = win_for_fallback.unminimize();
-                            let _ = win_for_fallback.set_focus();
                         });
                     }
                 }
@@ -578,13 +652,10 @@ pub fn run() {
                             }
                         }
                         "quit" => {
-                            let h = handle_for_menu.clone();
-                            tauri::async_runtime::spawn(async move {
-                                if let Err(e) = crate::lifecycle::quit_origin(&h).await {
-                                    log::error!("[tray] quit_origin failed: {e}");
-                                    h.exit(1);
-                                }
-                            });
+                            if let Err(e) = request_full_quit(&handle_for_menu) {
+                                log::error!("[tray] failed to request guarded quit: {e}");
+                                force_full_quit(handle_for_menu.clone());
+                            }
                         }
                         _ => {}
                     });
@@ -892,6 +963,11 @@ pub fn run() {
             search::get_rejection_log,
             // Page commands
             search::get_page,
+            search::create_page,
+            search::create_page_draft,
+            search::update_page_draft,
+            search::publish_page_draft,
+            search::discard_page_draft,
             search::get_page_sources,
             search::get_page_links,
             search::get_page_revisions,
@@ -936,28 +1012,40 @@ pub fn run() {
             search::set_run_at_login,
             search::quit_wenlan_full,
             search::quit_origin_full,
+            request_guarded_quit,
+            cancel_guarded_quit_request,
             daemon_start::start_daemon_sidecar,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|app, event| {
-            #[cfg(target_os = "macos")]
-            if let tauri::RunEvent::Reopen {
-                has_visible_windows,
+        .run(|app, event| match event {
+            tauri::RunEvent::ExitRequested {
+                code: None,
+                api,
                 ..
-            } = event
-            {
-                use tauri::Emitter;
-                use tauri::Manager;
-                if let Some(window) = app.get_webview_window("main") {
-                    if !has_visible_windows {
-                        let _ = app.emit("show-memory", ());
-                    }
-                    set_main_window_dock_visibility(app, true);
-                    let _ = window.show();
-                    let _ = window.set_focus();
+            } if !lifecycle::is_quitting() => {
+                match request_full_quit(app) {
+                    Ok(()) => api.prevent_exit(),
+                    Err(e) => log::error!("[app] failed to request guarded quit: {e}"),
                 }
             }
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Reopen {
+                has_visible_windows,
+                ..
+            } => {
+                    use tauri::Emitter;
+                    use tauri::Manager;
+                    if let Some(window) = app.get_webview_window("main") {
+                        if !has_visible_windows {
+                            let _ = app.emit("show-memory", ());
+                        }
+                        set_main_window_dock_visibility(app, true);
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                    }
+            }
+            _ => {}
         });
 }
 
@@ -1000,5 +1088,33 @@ mod tests {
 
         assert!(delay >= std::time::Duration::from_millis(500));
         assert!(delay <= std::time::Duration::from_secs(2));
+    }
+
+    #[test]
+    fn startup_fallback_only_reveals_when_ready_or_visibility_is_missing() {
+        assert!(!startup_reveal_fallback_needed(true, true));
+        assert!(startup_reveal_fallback_needed(false, true));
+        assert!(startup_reveal_fallback_needed(true, false));
+        assert!(startup_reveal_fallback_needed(false, false));
+    }
+
+    #[test]
+    fn repeated_guarded_quit_is_ignored_until_the_frontend_cancels() {
+        let pending = std::sync::atomic::AtomicBool::new(false);
+
+        assert_eq!(
+            guarded_quit_action(&pending),
+            GuardedQuitAction::RequestFrontendGuard
+        );
+        assert_eq!(
+            guarded_quit_action(&pending),
+            GuardedQuitAction::IgnoreDuplicate
+        );
+
+        cancel_guarded_quit(&pending);
+        assert_eq!(
+            guarded_quit_action(&pending),
+            GuardedQuitAction::RequestFrontendGuard
+        );
     }
 }

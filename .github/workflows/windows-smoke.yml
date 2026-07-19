@@ -25,10 +25,10 @@ jobs:
 
     steps:
       - name: Check out app
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Check out exact backend smoke commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: 7xuanlu/wenlan
           ref: ${{ env.WENLAN_BACKEND_SMOKE_COMMIT }}
@@ -63,12 +63,12 @@ jobs:
             ConvertTo-Json | Set-Content (Join-Path $evidence "staged-sidecars.json") -Encoding UTF8
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       - name: Install Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 24
           cache: pnpm
 
       - name: Install frontend dependencies
@@ -301,7 +301,7 @@ jobs:
 
       - name: Upload native evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: windows-native-smoke
           path: windows-native-smoke

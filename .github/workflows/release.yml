@@ -59,7 +59,7 @@ jobs:
 
     steps:
       - name: Checkout wenlan-app
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           path: wenlan-app
           ref: ${{ inputs.ref || github.ref_name }}
@@ -129,7 +129,7 @@ jobs:
             wenlan-app/app
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           # pnpm/action-setup reads packageManager from $GITHUB_WORKSPACE/package.json
           # by default; ours lives under wenlan-app/ because the checkout step above
@@ -137,9 +137,9 @@ jobs:
           package_json_file: wenlan-app/package.json
 
       - name: Install Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 24
           cache: pnpm
           cache-dependency-path: wenlan-app/pnpm-lock.yaml
 

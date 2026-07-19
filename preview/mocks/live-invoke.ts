@@ -19,8 +19,13 @@ async function http(method: string, path: string, body?: unknown): Promise<any> 
     headers: body !== undefined ? { "content-type": "application/json" } : undefined,
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) throw new HttpError(res.status, `${method} ${path} → ${res.status}`);
   const text = await res.text();
+  if (!res.ok) {
+    throw new HttpError(
+      res.status,
+      text || `${method} ${path} → ${res.status}`,
+    );
+  }
   return text ? JSON.parse(text) : null;
 }
 const get = (p: string) => http("GET", p);
@@ -61,6 +66,188 @@ let downloadingModelId: string | null = null;
 // (real) memory id the rest of the app might ask about.
 const PREVIEW_PROBES = new Map<string, unknown>();
 let previewProbeSeq = 0;
+const PREVIEW_AUTHORED_PAGES = new Map<string, Record<string, unknown>>();
+const PREVIEW_DELETED_PAGE_IDS = new Set<string>();
+const PREVIEW_SPACE_OVERRIDES = new Map<string, Record<string, unknown>>();
+const PREVIEW_REMOVED_SPACE_NAMES = new Set<string>();
+type PreviewPageDraftCreateRequest = {
+  readonly title: string;
+  readonly content: string;
+  readonly space: string | null;
+};
+const PREVIEW_PAGE_DRAFT_CREATE_REQUESTS =
+  new Map<string, PreviewPageDraftCreateRequest | null>();
+let previewAuthoredPageSeq = 0;
+const PAGE_BATCH_SIZE = 500;
+const CLIENT_PAGE_DRAFT_ID =
+  /^page_[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const SOURCES_BLOCK_START = "<!-- origin:sources:start -->";
+const SOURCES_BLOCK_END = "<!-- origin:sources:end -->";
+
+function canonicalizePageBody(body: string): string {
+  const start = body.indexOf(SOURCES_BLOCK_START);
+  if (start < 0) return body.trimEnd();
+  const afterStart = start + SOURCES_BLOCK_START.length;
+  const relativeEnd = body.slice(afterStart).indexOf(SOURCES_BLOCK_END);
+  if (relativeEnd < 0) return body.trimEnd();
+  const end = afterStart + relativeEnd + SOURCES_BLOCK_END.length;
+  const head = body.slice(0, start).trimEnd();
+  const tail = body.slice(end).trimStart();
+  return (tail ? `${head}\n\n${tail}` : head).trimEnd();
+}
+
+function sanitizeIngressContent(content: string): string {
+  return canonicalizePageBody(content)
+    .replaceAll(SOURCES_BLOCK_START, "")
+    .replaceAll(SOURCES_BLOCK_END, "")
+    .trimEnd();
+}
+
+function normalizedSpace(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : null;
+}
+
+function spaceRows(wire: any): Record<string, unknown>[] {
+  const rows = Array.isArray(wire)
+    ? wire
+    : Array.isArray(wire?.spaces)
+      ? wire.spaces
+      : [];
+  return rows.filter(
+    (candidate): candidate is Record<string, unknown> =>
+      candidate !== null && typeof candidate === "object",
+  );
+}
+
+async function listPreviewSpaces(): Promise<Record<string, unknown>[]> {
+  const remote = spaceRows(await get("/api/spaces")).filter((candidate) => {
+    const name = typeof candidate.name === "string" ? candidate.name : "";
+    return !PREVIEW_REMOVED_SPACE_NAMES.has(name)
+      && !PREVIEW_SPACE_OVERRIDES.has(name);
+  });
+  return [...remote, ...PREVIEW_SPACE_OVERRIDES.values()].map((space) => ({ ...space }));
+}
+
+async function registeredPreviewDraftSpace(value: unknown): Promise<string | null> {
+  const space = normalizedSpace(value);
+  if (!space) return null;
+  const spaces = await listPreviewSpaces();
+  const registered = spaces.some(
+    (candidate) =>
+      candidate
+      && typeof candidate === "object"
+      && Reflect.get(candidate, "name") === space,
+  );
+  if (!registered) {
+    throw new Error(`Space ${JSON.stringify(space)} is not registered`);
+  }
+  return space;
+}
+
+function nextPreviewTimestamp(previous: unknown): string {
+  const previousMs = typeof previous === "string" ? Date.parse(previous) : Number.NaN;
+  return new Date(Math.max(
+    Date.now(),
+    Number.isFinite(previousMs) ? previousMs + 1 : 0,
+  )).toISOString();
+}
+
+function previewPage(
+  id: string,
+  title: string,
+  content: string,
+  space: string | null,
+  status: "active" | "draft",
+): Record<string, unknown> {
+  const timestamp = new Date().toISOString();
+  return {
+    id,
+    title,
+    summary: null,
+    content,
+    entity_id: null,
+    domain: space,
+    space,
+    source_memory_ids: [],
+    version: 1,
+    status,
+    created_at: timestamp,
+    last_compiled: timestamp,
+    last_modified: timestamp,
+    creation_kind: "authored",
+    review_status: "unconfirmed",
+    user_edited: true,
+  };
+}
+
+function previewDraft(id: unknown): Record<string, unknown> {
+  const draft = PREVIEW_AUTHORED_PAGES.get(String(id));
+  if (!draft || draft.status !== "draft") {
+    throw new Error(JSON.stringify({
+      code: "page_draft_not_found",
+      error: "Page draft not found",
+    }));
+  }
+  return draft;
+}
+
+function assertPreviewDraftVersion(
+  draft: Record<string, unknown>,
+  expectedVersion: unknown,
+): void {
+  if (draft.version !== expectedVersion) {
+    throw new Error(JSON.stringify({
+      code: "draft_version_conflict",
+      error: "Page draft changed since it was loaded",
+      current_version: draft.version,
+    }));
+  }
+}
+
+function samePreviewPageScope(
+  page: Record<string, unknown>,
+  title: string,
+  space: string | null,
+): boolean {
+  const pageTitle = String(page.title ?? "").trim().toLowerCase();
+  return page.status === "active"
+    && pageTitle === title.trim().toLowerCase()
+    && normalizedSpace(page.space) === space;
+}
+
+async function listAllRemotePages(
+  status: string,
+  domain: string | null,
+): Promise<Record<string, unknown>[]> {
+  const pages: Record<string, unknown>[] = [];
+  const seenIds = new Set<string>();
+  let offset = 0;
+
+  while (true) {
+    const wire = await get(`/api/pages${qs({
+      status,
+      domain,
+      limit: PAGE_BATCH_SIZE,
+      offset,
+    })}`);
+    const batch = (Array.isArray(wire?.pages) ? wire.pages : wire) as unknown;
+    if (!Array.isArray(batch)) return pages;
+
+    let added = 0;
+    for (const page of batch) {
+      if (!page || typeof page !== "object") continue;
+      const id = String(Reflect.get(page, "id") ?? "");
+      if (!id || seenIds.has(id)) continue;
+      seenIds.add(id);
+      pages.push(page as Record<string, unknown>);
+      added += 1;
+    }
+    if (batch.length < PAGE_BATCH_SIZE || added === 0) return pages;
+    offset += batch.length;
+  }
+}
 
 function downloadComplete(): boolean {
   return downloadStartedAt !== null && Date.now() - downloadStartedAt >= MODEL_DOWNLOAD_DURATION_MS;
@@ -71,6 +258,10 @@ function downloadComplete(): boolean {
 export const HANDLERS: Record<string, (a: any) => Promise<unknown>> = {
   // --- pages (mirrors search.rs exactly) ---
   get_page: async (a) => {
+    const id = String(a.id);
+    const previewPage = PREVIEW_AUTHORED_PAGES.get(id);
+    if (previewPage) return previewPage;
+    if (PREVIEW_DELETED_PAGE_IDS.has(id)) return null;
     try {
       const wire = await get(`/api/pages/${enc(a.id)}`);
       return wire?.page ?? null;
@@ -79,10 +270,182 @@ export const HANDLERS: Record<string, (a: any) => Promise<unknown>> = {
       throw e;
     }
   },
-  list_pages: (a) =>
-    get(
-      `/api/pages${qs({ status: a?.status, domain: a?.domain, limit: a?.limit, offset: a?.offset })}`,
-    ).then((r) => r.pages ?? r),
+  create_page: (a) => {
+    const title = String(a?.title ?? "").trim();
+    const content = String(a?.content ?? "").trim();
+    const space = normalizedSpace(a?.space);
+    if (!title || !content) return Promise.reject(new Error("Title and content are required"));
+    const id = `preview-authored-page-${previewAuthoredPageSeq++}`;
+    PREVIEW_AUTHORED_PAGES.set(id, previewPage(id, title, content, space, "active"));
+    return Promise.resolve({ id, attached_to: null, warnings: [] });
+  },
+  create_page_draft: async (a) => {
+    const id = typeof a?.clientDraftId === "string" ? a.clientDraftId : "";
+    if (!CLIENT_PAGE_DRAFT_ID.test(id)) {
+      throw new Error(JSON.stringify({
+        error: "Page draft id must use the page_<uuid-v4> format",
+      }));
+    }
+    const title = String(a?.title ?? "");
+    const content = String(a?.content ?? "");
+    if (!title.trim() && !sanitizeIngressContent(content).trim()) {
+      throw new Error(JSON.stringify({
+        code: "invalid_page_draft",
+        error: "A Page draft needs a title or content",
+      }));
+    }
+    const requestedSpace = normalizedSpace(a?.space);
+    const existing = PREVIEW_AUTHORED_PAGES.get(id);
+    if (existing) {
+      const request = PREVIEW_PAGE_DRAFT_CREATE_REQUESTS.get(id);
+      if (
+        existing.status === "draft"
+        && request !== null
+        && request !== undefined
+        && request.title === title
+        && request.content === content
+        && request.space === requestedSpace
+      ) {
+        return { ...existing };
+      }
+      throw new Error(JSON.stringify({
+        code: "page_draft_id_conflict",
+        error: "Page draft id already belongs to another Page",
+      }));
+    }
+    if (PREVIEW_PAGE_DRAFT_CREATE_REQUESTS.has(id)) {
+      throw new Error(JSON.stringify({
+        code: "page_draft_id_conflict",
+        error: "Page draft id was already used",
+      }));
+    }
+    const space = await registeredPreviewDraftSpace(a?.space);
+    const draft = previewPage(
+      id,
+      title,
+      content,
+      space,
+      "draft",
+    );
+    PREVIEW_AUTHORED_PAGES.set(id, draft);
+    PREVIEW_PAGE_DRAFT_CREATE_REQUESTS.set(id, { title, content, space });
+    return { ...draft };
+  },
+  update_page_draft: async (a) => {
+    const draft = previewDraft(a?.id);
+    const title = String(a?.title ?? "");
+    const content = String(a?.content ?? "");
+    if (!title.trim() && !sanitizeIngressContent(content).trim()) {
+      throw new Error(JSON.stringify({
+        code: "invalid_page_draft",
+        error: "A Page draft needs a title or content",
+      }));
+    }
+    const requestedSpace = normalizedSpace(a?.space);
+    if (
+      typeof a?.expectedVersion === "number"
+      && draft.version === a.expectedVersion + 1
+      && draft.title === title
+      && draft.content === content
+      && draft.space === requestedSpace
+      && draft.domain === requestedSpace
+    ) {
+      return { ...draft };
+    }
+    assertPreviewDraftVersion(draft, a?.expectedVersion);
+    const space = await registeredPreviewDraftSpace(a?.space);
+    const updated = {
+      ...draft,
+      title,
+      content,
+      domain: space,
+      space,
+      version: Number(draft.version) + 1,
+      last_modified: new Date().toISOString(),
+    };
+    PREVIEW_AUTHORED_PAGES.set(String(a.id), updated);
+    return { ...updated };
+  },
+  publish_page_draft: async (a) => {
+    const id = String(a?.id);
+    const expectedVersion = a?.expectedVersion;
+    const publishedReplay = PREVIEW_AUTHORED_PAGES.get(id);
+    if (
+      publishedReplay?.status === "active"
+      && typeof expectedVersion === "number"
+      && publishedReplay.version === expectedVersion + 1
+    ) {
+      return { ...publishedReplay };
+    }
+    if (
+      publishedReplay
+      && publishedReplay.version !== expectedVersion
+    ) {
+      assertPreviewDraftVersion(publishedReplay, expectedVersion);
+    }
+    if (publishedReplay?.status === "active") {
+      throw new Error(`Page ${id} is not a draft`);
+    }
+    const draft = previewDraft(id);
+    assertPreviewDraftVersion(draft, expectedVersion);
+    const title = String(draft.title ?? "");
+    const content = sanitizeIngressContent(String(draft.content ?? ""));
+    if (!title.trim() || !content.trim()) {
+      return Promise.reject(new Error(JSON.stringify({
+        code: "invalid_page_draft",
+        error: "Title and content are required",
+      })));
+    }
+    const space = normalizedSpace(draft.space);
+    const remotePages = await listAllRemotePages("active", space);
+    const conflict = [...PREVIEW_AUTHORED_PAGES.values(), ...remotePages].find(
+      (page) => page.id !== draft.id && samePreviewPageScope(page, title, space),
+    );
+    if (conflict) {
+      return Promise.reject(new Error(JSON.stringify({
+        code: "page_title_conflict",
+        error: "A Page with this title already exists",
+        existing_page_id: conflict.id,
+        existing_page_title: conflict.title,
+      })));
+    }
+    const published = {
+      ...draft,
+      title: title.trim(),
+      content,
+      status: "active",
+      review_status: "unconfirmed",
+      version: Number(draft.version) + 1,
+      last_compiled: new Date().toISOString(),
+      last_modified: new Date().toISOString(),
+    };
+    PREVIEW_AUTHORED_PAGES.set(String(a.id), published);
+    return Promise.resolve({ ...published });
+  },
+  discard_page_draft: (a) => {
+    const draft = previewDraft(a?.id);
+    assertPreviewDraftVersion(draft, a?.expectedVersion);
+    const id = String(a.id);
+    PREVIEW_AUTHORED_PAGES.delete(id);
+    PREVIEW_DELETED_PAGE_IDS.add(id);
+    PREVIEW_PAGE_DRAFT_CREATE_REQUESTS.set(id, null);
+    return Promise.resolve(null);
+  },
+  list_pages: async (a) => {
+    const status = typeof a?.status === "string" ? a.status : "active";
+    const domain = normalizedSpace(a?.domain);
+    const remote = await listAllRemotePages(status, domain);
+    const local = [...PREVIEW_AUTHORED_PAGES.values()].filter((page) => {
+      const statusMatches = page.status === status;
+      const domainMatches = !domain || page.domain === domain || page.space === domain;
+      return statusMatches && domainMatches;
+    });
+    const localIds = new Set(local.map((page) => page.id));
+    const combined = [...local, ...remote.filter((page) => !localIds.has(page.id))];
+    const offset = typeof a?.offset === "number" ? a.offset : 0;
+    const limit = typeof a?.limit === "number" ? a.limit : undefined;
+    return combined.slice(offset, limit === undefined ? undefined : offset + limit);
+  },
   search_pages: (a) =>
     post("/api/pages/search", { query: a.query, limit: a.limit ?? null, page_type: null }).then(
       (r) => r.pages ?? r,
@@ -97,9 +460,38 @@ export const HANDLERS: Record<string, (a: any) => Promise<unknown>> = {
   get_page_links: (a) => get(`/api/pages/${enc(a.pageId)}/links`),
   get_page_revisions: (a) => get(`/api/pages/${enc(a.pageId)}/revisions`),
   redistill_page: (a) => post(`/api/distill/${enc(a.pageId)}`, {}),
-  update_page: (a) => post(`/api/memory/${enc(a.id)}/update-page`, { content: a.content }),
-  delete_page: (a) => post(`/api/pages/${enc(a.id)}/archive`),
-  archive_page: (a) => post(`/api/pages/${enc(a.id)}/archive`),
+  update_page: (a) => {
+    const id = String(a.id);
+    const local = PREVIEW_AUTHORED_PAGES.get(id);
+    if (local?.status === "active") {
+      PREVIEW_AUTHORED_PAGES.set(id, {
+        ...local,
+        content: String(a.content),
+        version: Number(local.version) + 1,
+        last_modified: new Date().toISOString(),
+      });
+      return Promise.resolve(null);
+    }
+    return post(`/api/memory/${enc(a.id)}/update-page`, { content: a.content });
+  },
+  delete_page: (a) => {
+    const id = String(a.id);
+    if (PREVIEW_AUTHORED_PAGES.has(id)) {
+      PREVIEW_AUTHORED_PAGES.delete(id);
+      PREVIEW_DELETED_PAGE_IDS.add(id);
+      return Promise.resolve(null);
+    }
+    return del(`/api/pages/${enc(id)}`);
+  },
+  archive_page: (a) => {
+    const id = String(a.id);
+    const local = PREVIEW_AUTHORED_PAGES.get(id);
+    if (local) {
+      PREVIEW_AUTHORED_PAGES.set(id, { ...local, status: "archived" });
+      return Promise.resolve(null);
+    }
+    return post(`/api/pages/${enc(id)}/archive`);
+  },
   list_orphan_links: (a) => get(`/api/pages/orphan-links${qs({ min_count: a?.minCount })}`),
 
   // --- memories ---
@@ -173,7 +565,45 @@ export const HANDLERS: Record<string, (a: any) => Promise<unknown>> = {
   get_briefing: () => get("/api/briefing"),
   get_profile: () => get("/api/profile"),
   get_profile_narrative: () => get("/api/profile/narrative"),
-  list_spaces: () => get("/api/spaces"),
+  list_spaces: () => listPreviewSpaces(),
+  update_space: async (a) => {
+    const name = normalizedSpace(a?.name);
+    const newName = normalizedSpace(a?.newName);
+    if (!name || !newName) throw new Error("A Space name is required");
+    const spaces = await listPreviewSpaces();
+    const current = spaces.find((space) => space.name === name);
+    if (!current) throw new Error(`Space ${JSON.stringify(name)} is not registered`);
+    if (name !== newName && spaces.some((space) => space.name === newName)) {
+      throw new Error(`Space ${JSON.stringify(newName)} already exists`);
+    }
+
+    const updated = {
+      ...current,
+      name: newName,
+      description: typeof a?.description === "string"
+        ? a.description
+        : null,
+    };
+    if (name !== newName) {
+      PREVIEW_REMOVED_SPACE_NAMES.add(name);
+      PREVIEW_SPACE_OVERRIDES.delete(name);
+      for (const [id, page] of PREVIEW_AUTHORED_PAGES) {
+        if (page.space !== name && page.domain !== name) continue;
+        const draft = page.status === "draft";
+        PREVIEW_AUTHORED_PAGES.set(id, {
+          ...page,
+          space: page.space === name ? newName : page.space,
+          domain: page.domain === name ? newName : page.domain,
+          version: draft ? Number(page.version) + 1 : page.version,
+          last_modified: draft
+            ? nextPreviewTimestamp(page.last_modified)
+            : page.last_modified,
+        });
+      }
+    }
+    PREVIEW_SPACE_OVERRIDES.set(newName, updated);
+    return { ...updated };
+  },
   get_capture_stats: () => get("/api/capture-stats").then((r) => r.stats ?? r),
   // TagData shape: the UI reads both r.tags and r.document_tags — no unwrap.
   list_all_tags: () => get("/api/tags"),
@@ -399,6 +829,7 @@ export const DEFAULTS: Record<string, unknown> = {
   get_skip_apps: [],
   get_skip_title_patterns: [],
   suggest_tags: [],
+  cancel_guarded_quit_request: null,
   quit_wenlan_full: null,
   quit_origin_full: null,
   // Preview's daemon is reachable (wire_state above), so a Start would find it up.

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { cloneElement } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
@@ -7,7 +8,7 @@ vi.mock("../../lib/tauri", () => ({
   getSpace: vi.fn(),
   listMemoriesRich: vi.fn(),
   listEntities: vi.fn(),
-  listConcepts: vi.fn().mockResolvedValue([]),
+  listPages: vi.fn().mockResolvedValue([]),
   getNurtureCards: vi.fn().mockResolvedValue([]),
   setStability: vi.fn(),
   updateSpace: vi.fn(),
@@ -31,19 +32,23 @@ import {
   getSpace,
   listMemoriesRich,
   listEntities,
+  updateSpace,
 } from "../../lib/tauri";
-import SpaceDetail from "./SpaceDetail";
+import SpaceDetail, { type SpaceDetailProps } from "./SpaceDetail";
+import { SPACE_DETAIL_TEST_COPY } from "./space-detail/testTranslation";
 
 const mockGetSpace = vi.mocked(getSpace);
 const mockListMemoriesRich = vi.mocked(listMemoriesRich);
 const mockListEntities = vi.mocked(listEntities);
 const mockDeleteSpace = vi.mocked(deleteSpace);
+const mockUpdateSpace = vi.mocked(updateSpace);
 
-function renderWithQuery(ui: React.ReactElement) {
+function renderWithQuery(ui: React.ReactElement<SpaceDetailProps>) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
-  return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>);
+  const detail = cloneElement(ui, { copy: SPACE_DETAIL_TEST_COPY });
+  return render(<QueryClientProvider client={qc}>{detail}</QueryClientProvider>);
 }
 
 const baseSpace = {
@@ -102,6 +107,7 @@ describe("SpaceDetail context header", () => {
     mockGetSpace.mockResolvedValue(baseSpace);
     mockListMemoriesRich.mockResolvedValue(confirmedMemories);
     mockListEntities.mockResolvedValue([]);
+    mockUpdateSpace.mockResolvedValue(baseSpace);
   });
 
   it("does not render context section", async () => {
@@ -116,12 +122,12 @@ describe("SpaceDetail context header", () => {
     );
 
     // Wait for component to load
-    await screen.findByText("47 memories");
+    await screen.findByText("Memories");
     // Context section should not exist
     expect(screen.queryByText("Context")).not.toBeInTheDocument();
   });
 
-  it("groups edit and delete buttons together", async () => {
+  it("saves the Space name and description through one daemon mutation", async () => {
     renderWithQuery(
       <SpaceDetail
         spaceName="Origin"
@@ -132,10 +138,21 @@ describe("SpaceDetail context header", () => {
       />,
     );
 
-    const editBtn = await screen.findByTitle("Edit description");
-    const deleteBtn = screen.getByTitle("Delete space");
-    // Both buttons share the same parent container
-    expect(editBtn.parentElement).toBe(deleteBtn.parentElement);
+    fireEvent.click(await screen.findByRole("button", { name: "Edit space" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Origin" }), {
+      target: { value: "Origin research" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "Edit description" }), {
+      target: { value: "Unified context" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(mockUpdateSpace).toHaveBeenCalledWith(
+      "Origin",
+      "Origin research",
+      "Unified context",
+    ));
+    expect(mockUpdateSpace).toHaveBeenCalledTimes(1);
   });
 
   it("shows memory count", async () => {
@@ -150,7 +167,7 @@ describe("SpaceDetail context header", () => {
     );
 
     expect(
-      await screen.findByText("47 memories"),
+      await screen.findByText("Memories"),
     ).toBeInTheDocument();
   });
 
@@ -166,7 +183,7 @@ describe("SpaceDetail context header", () => {
     );
 
     expect(
-      await screen.findByText("12 entities"),
+      await screen.findByText("Entities"),
     ).toBeInTheDocument();
   });
 
@@ -181,7 +198,7 @@ describe("SpaceDetail context header", () => {
       />,
     );
 
-    fireEvent.click(await screen.findByRole("button", { name: "Memories (47)" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Raw memories (47)" }));
 
     expect(await screen.findByText("Prefers TDD workflow")).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Memory list" })).not.toBeInTheDocument();
@@ -199,7 +216,8 @@ describe("SpaceDetail context header", () => {
       />,
     );
 
-    fireEvent.click(await screen.findByTitle("Delete space"));
+    fireEvent.click(await screen.findByRole("button", { name: "Actions for Origin" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete space" }));
 
     expect(screen.queryByText("Delete")).not.toBeInTheDocument();
     expect(screen.queryByText(/Keep 47 memories/)).not.toBeInTheDocument();

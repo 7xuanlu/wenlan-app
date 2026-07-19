@@ -7,12 +7,12 @@ import {
   getEntitySuggestions,
   getMemoryStats,
   listEntities,
-  listPages,
   listRecentChanges,
   listRecentRetrievals,
   type MemoryStats,
   type Page,
 } from "../../lib/tauri";
+import { listAllActivePages } from "./pages/listAllPages";
 import { Greeting } from "./Greeting";
 import { useReviewQueue, reviewItemId, type ReviewItem } from "./useReviewQueue";
 import ReviewDialog, {
@@ -78,7 +78,7 @@ export default function HomePage({
 
   const { data: recentConcepts = [], isLoading: recentConceptsLoading } = useQuery({
     queryKey: ["recent-concepts"],
-    queryFn: () => listPages("active", undefined, 1000),
+    queryFn: listAllActivePages,
     refetchInterval: 10_000,
   });
 
@@ -443,11 +443,15 @@ function SectionHeading({
   title,
   action,
   size = "default",
+  level = 2,
 }: {
   title: string;
   action?: React.ReactNode;
-  size?: "default" | "compact";
+  size?: "default" | "compact" | "page";
+  level?: 1 | 2;
 }) {
+  const Heading = level === 1 ? "h1" : "h2";
+  const pageHeading = size === "page";
   return (
     <div
       style={{
@@ -455,22 +459,22 @@ function SectionHeading({
         alignItems: "baseline",
         justifyContent: "space-between",
         gap: 12,
-        marginBottom: 12,
+        marginBottom: pageHeading ? 16 : 12,
       }}
     >
-      <h2
+      <Heading
         style={{
           fontFamily: "var(--mem-font-heading)",
-          fontSize: size === "compact" ? 14 : 18,
+          fontSize: size === "compact" ? 14 : pageHeading ? "var(--mem-destination-title-size)" : 18,
           fontWeight: 500,
           color: "var(--mem-text)",
-          letterSpacing: 0,
-          lineHeight: 1.2,
+          letterSpacing: pageHeading ? "-0.03em" : 0,
+          lineHeight: pageHeading ? 1.12 : 1.2,
           margin: 0,
         }}
       >
         {title}
-      </h2>
+      </Heading>
       {action}
     </div>
   );
@@ -482,6 +486,8 @@ function TodayHeader({ pages }: { pages: Page[] }) {
     <section data-testid="wiki-today-heading" className="wiki-today-heading">
       <SectionHeading
         title={t("home.todayInWenlan")}
+        level={1}
+        size="page"
         action={
           <span
             data-testid="wiki-context-latest"
@@ -652,7 +658,7 @@ function HomeContextRail({
       <section
         data-testid="wiki-index-summary"
         className="wiki-index-bar"
-        aria-label={t("home.index")}
+        aria-label={t("home.overview")}
       >
         <div
           data-testid="wiki-index-strip"

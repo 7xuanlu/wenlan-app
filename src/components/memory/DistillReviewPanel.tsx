@@ -5,7 +5,6 @@ import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import {
   distillReview,
-  type DistillPendingCluster,
   type DistillReviewResponse,
 } from "../../lib/tauri";
 import ReviewDialog, {
@@ -33,6 +32,10 @@ import {
   type ReviewItem,
   type ReviewSection,
 } from "./useReviewQueue";
+import {
+  cacheDistillReviewSession,
+  pageCandidateItems,
+} from "./pages/pageReviewSignals";
 
 interface DistillReviewPanelProps {
   onBack: () => void;
@@ -45,29 +48,6 @@ function truncateText(value: string, max: number): string {
   if (value.length <= max) return value;
   if (max <= 3) return ".".repeat(max);
   return `${value.slice(0, max - 3).trimEnd()}...`;
-}
-
-function firstNonEmpty(values: Array<string | null | undefined>): string | null {
-  for (const value of values) {
-    const trimmed = value?.trim();
-    if (trimmed) return trimmed;
-  }
-  return null;
-}
-
-function pendingLabel(cluster: DistillPendingCluster): string | null {
-  const fromContent = firstNonEmpty(cluster.contents);
-  // Content fallback: strip a leading markdown heading marker and collapse
-  // newlines so raw memory text reads as a title.
-  const contentTitle = fromContent
-    ? truncateText(fromContent.replace(/^#+\s*/, "").replace(/\s+/g, " "), 72)
-    : null;
-  return firstNonEmpty([
-    cluster.existing_page_title,
-    cluster.entity_name,
-    cluster.space,
-    contentTitle,
-  ]);
 }
 
 // Captures never reach this panel (they surface on the home rail instead), so
@@ -540,6 +520,7 @@ export default function DistillReviewPanel({
     retry: false,
     onSuccess: (result) => {
       setLastResult(result);
+      cacheDistillReviewSession(queryClient, result);
       setResolvedStaleIds(new Set());
     },
   });
@@ -585,17 +566,10 @@ export default function DistillReviewPanel({
 
   // Distill discovery rendered through the same card + dialog pattern as the
   // actionable queue, read-only until the daemon grows verbs for them.
-  const candidateItems = (lastResult?.pending ?? [])
-    .map(
-      (cluster, clusterIndex): ReviewItem => ({
-        kind: "page_candidate",
-        id: cluster.source_ids.join("-") || `cluster-${clusterIndex}`,
-        title: pendingLabel(cluster) ?? t("review.untitledCluster"),
-        cluster,
-        timestampMs: null,
-      }),
-    )
-    .filter((item) => !isHiddenItem(item));
+  const candidateItems = pageCandidateItems(
+    lastResult ?? undefined,
+    t("review.untitledCluster"),
+  ).filter((item) => !isHiddenItem(item));
   const topicItems = (lastResult?.orphan_topics ?? [])
     .map(
       (topic): ReviewItem => ({
