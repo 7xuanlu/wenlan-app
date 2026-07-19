@@ -10,6 +10,7 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   GH_TOKEN: ${{ github.token }}
+  RUST_LOG: "warn,wenlan_lib::lifecycle=info"
   TARGET_TRIPLE: x86_64-pc-windows-msvc
   WENLAN_DOWNLOAD_SIDECARS: "1"
   WENLAN_BACKEND_SMOKE_COMMIT: 0bb5acab6f428c8e8f25ea94026ebcfef0054f15
@@ -50,10 +51,12 @@ jobs:
           $initial | ConvertTo-Json -Depth 4 | Set-Content (Join-Path $evidence "result.json") -Encoding UTF8
           @{ ok = $false; error = "health was not captured" } |
             ConvertTo-Json | Set-Content (Join-Path $evidence "health.json") -Encoding UTF8
-          foreach ($name in @("processes-before.json", "processes-after-launch.json", "processes-after-close.json")) {
+          foreach ($name in @("processes-before.json", "processes-after-launch.json", "processes-after-workload.json", "processes-after-close.json")) {
             @{ app = @(); backend = @(); error = "process evidence was not captured" } |
               ConvertTo-Json | Set-Content (Join-Path $evidence $name) -Encoding UTF8
           }
+          @{ error = "semantic search was not captured" } |
+            ConvertTo-Json | Set-Content (Join-Path $evidence "semantic-search.json") -Encoding UTF8
           "native harness did not start" | Set-Content (Join-Path $evidence "webdriver.log")
           "app did not start" | Set-Content (Join-Path $evidence "app.log")
           @{ error = "sidecars were not staged" } |

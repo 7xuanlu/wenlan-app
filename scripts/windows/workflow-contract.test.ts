@@ -15,6 +15,12 @@ const CI_WORKFLOW_PATH = resolve(
   "ci.yml",
 );
 const APP_CARGO_PATH = resolve(process.cwd(), "app", "Cargo.toml");
+const NATIVE_HARNESS_PATH = resolve(
+  process.cwd(),
+  "scripts",
+  "windows",
+  "native-smoke.mjs",
+);
 
 function workflow(): string {
   return readFileSync(WORKFLOW_PATH, "utf8");
@@ -26,6 +32,10 @@ function ciWorkflow(): string {
 
 function appCargo(): string {
   return readFileSync(APP_CARGO_PATH, "utf8");
+}
+
+function nativeHarness(): string {
+  return readFileSync(NATIVE_HARNESS_PATH, "utf8");
 }
 
 describe("Windows native smoke workflow contract", () => {
@@ -94,6 +104,9 @@ describe("Windows native smoke workflow contract", () => {
     );
     expect(text).toContain("WENLAN_DATA_DIR=");
     expect(text).toContain("WENLAN_SIDECAR_MANIFEST=");
+    expect(text).toContain(
+      'RUST_LOG: "warn,wenlan_lib::lifecycle=info"',
+    );
     const extractionProof =
       "pnpm exec vitest run scripts/download-sidecars.test.ts --maxWorkers=1";
     const backendBuild = "cargo build --locked --release";
@@ -120,12 +133,27 @@ describe("Windows native smoke workflow contract", () => {
     );
   });
 
+  it("captures real staging failures inside the harness evidence boundary", () => {
+    const text = nativeHarness();
+    const mainStateIndex = text.indexOf("let lastWorkloadSnapshot");
+    const tryIndex = text.indexOf("try {", mainStateIndex);
+    const stageIndex = text.lastIndexOf("stageRuntimeSidecars(args.app)");
+    const verifyIndex = text.lastIndexOf("verifySourceBuiltBackend(runtime)");
+
+    expect(mainStateIndex).toBeGreaterThanOrEqual(0);
+    expect(tryIndex).toBeGreaterThanOrEqual(0);
+    expect(stageIndex).toBeGreaterThan(tryIndex);
+    expect(verifyIndex).toBeGreaterThan(stageIndex);
+  });
+
   it("runs the native harness and always uploads its complete evidence", () => {
     const text = workflow();
 
     expect(text).toContain("pnpm test:native:windows `");
     expect(text).not.toContain("pnpm test:native:windows --");
     expect(text).toContain("--evidence-dir windows-native-smoke");
+    expect(text).toContain('"semantic-search.json"');
+    expect(text).toContain('"processes-after-workload.json"');
     expect(text).toContain("if: always()");
     expect(text).toContain("name: windows-native-smoke");
     expect(text).toContain("path: windows-native-smoke");

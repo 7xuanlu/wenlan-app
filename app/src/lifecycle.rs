@@ -23,6 +23,7 @@ pub const LEGACY_SERVER_PLIST_LABEL: &str = "com.origin.server";
 pub const APP_PLIST_LABEL: &str = "com.wenlan.desktop";
 pub const LEGACY_APP_PLIST_LABEL: &str = "com.origin.desktop";
 pub(crate) const RUN_AT_LOGIN_UNSUPPORTED: &str = "Run at Login is not supported on this platform";
+pub(crate) const FULL_QUIT_BREADCRUMB: &str = "[quit] full quit command accepted";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct QuitPlan {
@@ -621,6 +622,7 @@ pub async fn quit_origin(app_handle: &AppHandle) -> Result<()> {
     if QUITTING.swap(true, Ordering::AcqRel) {
         return Ok(());
     }
+    log::info!("{FULL_QUIT_BREADCRUMB}");
 
     let quit_plan = quit_plan_for_target_os(std::env::consts::OS);
 
@@ -1199,6 +1201,11 @@ mod tests {
             run_at_login_capability("linux"),
             Err("Run at Login is not supported on this platform")
         );
+    }
+
+    #[test]
+    fn full_quit_breadcrumb_is_stable_for_native_smoke_evidence() {
+        assert_eq!(FULL_QUIT_BREADCRUMB, "[quit] full quit command accepted");
     }
 
     #[test]

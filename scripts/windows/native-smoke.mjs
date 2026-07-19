@@ -25,6 +25,8 @@ import {
 const CLAIM = "Windows Server 2022 native compatibility smoke";
 const SOURCE_AGENT = "windows-native-smoke";
 const TARGET_TRIPLE = "x86_64-pc-windows-msvc";
+const FULL_QUIT_BREADCRUMB = "[quit] full quit command accepted";
+const SEMANTIC_QUERY = "blue lamp adjusts ocean timepieces";
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(SCRIPT_DIR, "..", "..");
 const CLEANUP_SCRIPT = resolve(SCRIPT_DIR, "cleanup-processes.ps1");
@@ -310,6 +312,10 @@ async function main() {
   const lock = readSidecarLock();
   const resultPath = resolve(args.evidenceDir, "result.json");
   const healthPath = resolve(args.evidenceDir, "health.json");
+  const semanticSearchPath = resolve(
+    args.evidenceDir,
+    "semantic-search.json",
+  );
   const beforePath = resolve(args.evidenceDir, "processes-before.json");
   const launchPath = resolve(
     args.evidenceDir,
@@ -326,8 +332,15 @@ async function main() {
     args.evidenceDir,
     "03-memory-visible.png",
   );
-  const runtime = stageRuntimeSidecars(args.app);
-  const backendProof = verifySourceBuiltBackend(runtime);
+  const runtime = {
+    backendExecutable: resolve(dirname(args.app), "wenlan-server.exe"),
+    onnxruntimeDll: resolve(dirname(args.app), "onnxruntime.dll"),
+  };
+  let backendProof = {
+    commit: "",
+    serverSha256: "",
+    source: "",
+  };
   const marker = `WINDOWS_SMOKE_${process.env.GITHUB_RUN_ID || Date.now()}_${process.env.GITHUB_RUN_ATTEMPT || 1}`;
 
   const evidence = {
@@ -335,9 +348,9 @@ async function main() {
     status: "running",
     metadata: {
       app_commit: process.env.GITHUB_SHA || "",
-      backend_commit: backendProof.commit,
-      backend_source: backendProof.source,
-      backend_server_sha256: backendProof.serverSha256,
+      backend_commit: "",
+      backend_source: "",
+      backend_server_sha256: "",
       backend_tag: lock.backend_tag,
       backend_release_baseline_sha256: lock.backend_windows_x64_sha256,
       cloudflared_version: lock.cloudflared_version,
@@ -353,12 +366,17 @@ async function main() {
     health: { ok: false, response: {} },
     lifecycle: {
       fake_launch_agents_exists: false,
+      full_quit_log: "",
       full_quit_requested: false,
     },
     marker: {
       expected: marker,
       stored_source_id: "",
+      stored_chunks_created: 0,
       backend_content: "",
+      semantic_query: SEMANTIC_QUERY,
+      semantic_source_id: "",
+      semantic_backend_content: "",
       ui_text: "",
     },
     processes: {
@@ -396,6 +414,14 @@ async function main() {
   let workloadPollState = "not-started";
   let lastWorkloadSnapshot = null;
   try {
+    Object.assign(runtime, stageRuntimeSidecars(args.app));
+    backendProof = verifySourceBuiltBackend(runtime);
+    Object.assign(evidence.metadata, {
+      backend_commit: backendProof.commit,
+      backend_source: backendProof.source,
+      backend_server_sha256: backendProof.serverSha256,
+    });
+
     const portOccupied = await isPortOpen(7878);
     evidence.processes.before.port_7878_in_use = portOccupied;
     const before = collectProcessEvidence(
@@ -460,7 +486,7 @@ async function main() {
     evidence.screenshots.app_ready.exists = existsSync(appReadyPath);
     log("captured native app-ready shell after visible onboarding");
 
-    const content = `Windows native sidecar and WebView2 smoke proof. Unique marker: ${marker}`;
+    const content = `Windows native sidecar and WebView2 smoke proof. Unique marker: ${marker}. A cobalt lantern calibrates tidal clocks during winter.`;
     const stored = await fetchJson("http://127.0.0.1:7878/api/memory/store", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -475,6 +501,7 @@ async function main() {
       throw new Error(`store response omitted source_id: ${JSON.stringify(stored)}`);
     }
     evidence.marker.stored_source_id = stored.source_id;
+    evidence.marker.stored_chunks_created = stored.chunks_created;
 
     const detail = await poll(
       "stored marker detail",
@@ -487,6 +514,32 @@ async function main() {
       30_000,
     );
     evidence.marker.backend_content = detail.memory.content;
+
+    const semanticSearch = await fetchJson(
+      "http://127.0.0.1:7878/api/memory/search",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          query: SEMANTIC_QUERY,
+          limit: 3,
+        }),
+      },
+    );
+    writeJson(semanticSearchPath, semanticSearch);
+    const semanticHit = semanticSearch?.results?.find(
+      (result) =>
+        result?.source_id === stored.source_id &&
+        result?.content?.includes(marker),
+    );
+    if (!semanticHit) {
+      throw new Error(
+        `vector-only semantic search did not return source ${stored.source_id}: ${JSON.stringify(semanticSearch)}`,
+      );
+    }
+    evidence.marker.semantic_source_id = semanticHit.source_id;
+    evidence.marker.semantic_backend_content = semanticHit.content;
+    log("confirmed vector-only backend search returned the stored marker");
 
     const search = await browser.$("[data-wenlan-search-input]");
     await search.setValue(marker);
@@ -568,14 +621,22 @@ async function main() {
       app_alive: afterClose.app.length > 0,
       backend_alive: afterClose.backend.length > 0,
     };
+    copyAppLog(args.evidenceDir);
+    const appLog = readFileSync(resolve(args.evidenceDir, "app.log"), "utf8");
+    evidence.lifecycle.full_quit_log =
+      appLog
+        .split(/\r?\n/)
+        .find((line) => line.includes(FULL_QUIT_BREADCRUMB)) || "";
 
     const validation = validateNativeSmokeEvidence(evidence, {
       appExecutable: args.app,
       backendCommit: backendProof.commit,
       backendExecutable: runtime.backendExecutable,
       backendServerSha256: backendProof.serverSha256,
+      fullQuitBreadcrumb: FULL_QUIT_BREADCRUMB,
       onnxruntimeDll: runtime.onnxruntimeDll,
       marker,
+      semanticQuery: SEMANTIC_QUERY,
       sourceAgent: SOURCE_AGENT,
     });
     evidence.assertions = validation.assertions;
@@ -593,8 +654,10 @@ async function main() {
           backendCommit: backendProof.commit,
           backendExecutable: runtime.backendExecutable,
           backendServerSha256: backendProof.serverSha256,
+          fullQuitBreadcrumb: FULL_QUIT_BREADCRUMB,
           onnxruntimeDll: runtime.onnxruntimeDll,
           marker,
+          semanticQuery: SEMANTIC_QUERY,
           sourceAgent: SOURCE_AGENT,
         });
       } catch (validationError) {
@@ -611,6 +674,9 @@ async function main() {
   } finally {
     copyAppLog(args.evidenceDir);
     writeJsonIfMissing(healthPath, evidence.health);
+    writeJsonIfMissing(semanticSearchPath, {
+      error: evidence.error || "semantic search was not captured before failure",
+    });
     writeJsonIfMissing(beforePath, {
       app: [],
       backend: [],

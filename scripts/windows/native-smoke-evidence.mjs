@@ -152,6 +152,34 @@ export function validateNativeSmokeEvidence(evidence, expected) {
     `backend content did not contain ${describeValue(marker)}`,
   );
   check(
+    "stored-embedded-chunks",
+    Number.isInteger(evidence?.marker?.stored_chunks_created) &&
+      evidence.marker.stored_chunks_created > 0,
+    `store created ${describeValue(evidence?.marker?.stored_chunks_created)} embedded chunks`,
+  );
+  check(
+    "semantic-query-contract",
+    typeof expected?.semanticQuery === "string" &&
+      expected.semanticQuery.length > 0 &&
+      evidence?.marker?.semantic_query === expected.semanticQuery &&
+      !expected.semanticQuery.includes(marker),
+    `expected vector-only query ${describeValue(expected?.semanticQuery)}, got ${describeValue(evidence?.marker?.semantic_query)}`,
+  );
+  check(
+    "semantic-backend-source",
+    typeof evidence?.marker?.stored_source_id === "string" &&
+      evidence.marker.stored_source_id.length > 0 &&
+      evidence?.marker?.semantic_source_id ===
+        evidence.marker.stored_source_id,
+    `expected semantic search source ${describeValue(evidence?.marker?.stored_source_id)}, got ${describeValue(evidence?.marker?.semantic_source_id)}`,
+  );
+  check(
+    "semantic-backend-marker",
+    typeof evidence?.marker?.semantic_backend_content === "string" &&
+      evidence.marker.semantic_backend_content.includes(marker),
+    `semantic backend result did not contain ${describeValue(marker)}`,
+  );
+  check(
     "ui-marker",
     typeof evidence?.marker?.ui_text === "string" &&
       evidence.marker.ui_text.includes(marker),
@@ -184,7 +212,17 @@ export function validateNativeSmokeEvidence(evidence, expected) {
   check(
     "full-quit-requested",
     evidence?.lifecycle?.full_quit_requested === true,
-    "the registered full-quit command was not requested",
+    "the WebView did not dispatch the registered full-quit command",
+  );
+  check(
+    "full-quit-command-accepted",
+    typeof expected?.fullQuitBreadcrumb === "string" &&
+      expected.fullQuitBreadcrumb.length > 0 &&
+      typeof evidence?.lifecycle?.full_quit_log === "string" &&
+      evidence.lifecycle.full_quit_log.includes(
+        expected.fullQuitBreadcrumb,
+      ),
+    `app log did not contain ${describeValue(expected?.fullQuitBreadcrumb)}`,
   );
   check(
     "no-fake-launchagents",

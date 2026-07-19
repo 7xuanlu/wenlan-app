@@ -10,11 +10,16 @@ type Evidence = {
   };
   lifecycle: {
     fake_launch_agents_exists: boolean;
+    full_quit_log: string;
     full_quit_requested: boolean;
   };
   marker: {
     backend_content: string;
     expected: string;
+    semantic_backend_content: string;
+    semantic_query: string;
+    semantic_source_id: string;
+    stored_chunks_created: number;
     stored_source_id: string;
     ui_text: string;
   };
@@ -51,8 +56,10 @@ type ExpectedEvidence = {
   backendCommit: string;
   backendExecutable: string;
   backendServerSha256: string;
+  fullQuitBreadcrumb: string;
   marker: string;
   onnxruntimeDll: string;
+  semanticQuery: string;
   sourceAgent: string;
 };
 
@@ -75,6 +82,8 @@ const BACKEND_EXE =
 const ONNX_DLL = "C:\\actions\\wenlan\\target\\release\\onnxruntime.dll";
 const BACKEND_COMMIT = "b".repeat(40);
 const BACKEND_SHA256 = "a".repeat(64);
+const FULL_QUIT_BREADCRUMB = "[quit] full quit command accepted";
+const SEMANTIC_QUERY = "blue lamp adjusts ocean timepieces";
 
 function completeEvidence(): Evidence {
   return {
@@ -87,11 +96,16 @@ function completeEvidence(): Evidence {
     },
     lifecycle: {
       fake_launch_agents_exists: false,
+      full_quit_log: `2026-07-19 INFO ${FULL_QUIT_BREADCRUMB}`,
       full_quit_requested: true,
     },
     marker: {
       backend_content: `A native proof containing ${MARKER}`,
       expected: MARKER,
+      semantic_backend_content: `A native proof containing ${MARKER}`,
+      semantic_query: SEMANTIC_QUERY,
+      semantic_source_id: "windows-smoke-source",
+      stored_chunks_created: 1,
       stored_source_id: "windows-smoke-source",
       ui_text: `A native proof containing ${MARKER}\nwindows-native-smoke`,
     },
@@ -136,8 +150,10 @@ const expected: ExpectedEvidence = {
   backendCommit: BACKEND_COMMIT,
   backendExecutable: BACKEND_EXE,
   backendServerSha256: BACKEND_SHA256,
+  fullQuitBreadcrumb: FULL_QUIT_BREADCRUMB,
   marker: MARKER,
   onnxruntimeDll: ONNX_DLL,
+  semanticQuery: SEMANTIC_QUERY,
   sourceAgent: "windows-native-smoke",
 };
 
@@ -222,6 +238,34 @@ describe("Windows native smoke evidence validator", () => {
       },
     },
     {
+      name: "store created no embedded chunks",
+      assertion: "stored-embedded-chunks",
+      mutate: (evidence: Evidence) => {
+        evidence.marker.stored_chunks_created = 0;
+      },
+    },
+    {
+      name: "wrong semantic query",
+      assertion: "semantic-query-contract",
+      mutate: (evidence: Evidence) => {
+        evidence.marker.semantic_query = MARKER;
+      },
+    },
+    {
+      name: "semantic search returned another memory",
+      assertion: "semantic-backend-source",
+      mutate: (evidence: Evidence) => {
+        evidence.marker.semantic_source_id = "some-other-source";
+      },
+    },
+    {
+      name: "semantic search response omitted the marker",
+      assertion: "semantic-backend-marker",
+      mutate: (evidence: Evidence) => {
+        evidence.marker.semantic_backend_content = "some other memory";
+      },
+    },
+    {
       name: "wrong UI marker",
       assertion: "ui-marker",
       mutate: (evidence: Evidence) => {
@@ -254,6 +298,13 @@ describe("Windows native smoke evidence validator", () => {
       assertion: "full-quit-requested",
       mutate: (evidence: Evidence) => {
         evidence.lifecycle.full_quit_requested = false;
+      },
+    },
+    {
+      name: "full quit command left no Rust breadcrumb",
+      assertion: "full-quit-command-accepted",
+      mutate: (evidence: Evidence) => {
+        evidence.lifecycle.full_quit_log = "";
       },
     },
     {
