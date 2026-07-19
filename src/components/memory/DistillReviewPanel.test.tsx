@@ -4,6 +4,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import DistillReviewPanel from "./DistillReviewPanel";
+import { DISTILL_REVIEW_SESSION_QUERY_KEY } from "./pages/pageReviewSignals";
 import {
   EXAMPLE_REVIEW_ITEMS,
   exampleReviewLabel,
@@ -69,7 +70,7 @@ function renderPanel(props: Partial<React.ComponentProps<typeof DistillReviewPan
       <DistillReviewPanel onBack={onBack} onPageClick={onPageClick} onMemoryClick={onMemoryClick} />
     </QueryClientProvider>,
   );
-  return { user, onBack, onPageClick, onMemoryClick };
+  return { user, client, onBack, onPageClick, onMemoryClick };
 }
 
 function truncateForTest(value: string, max: number): string {
@@ -201,10 +202,15 @@ beforeEach(() => {
 
 describe("DistillReviewPanel", () => {
   it("loads the page review once on mount", async () => {
-    renderPanel();
+    const { client } = renderPanel();
 
     await waitFor(() => {
       expect(distillReview).toHaveBeenCalledTimes(1);
+    });
+    expect(client.getQueryData(DISTILL_REVIEW_SESSION_QUERY_KEY)).toEqual(reviewPayload);
+    expect(client.getQueryDefaults(DISTILL_REVIEW_SESSION_QUERY_KEY)).toMatchObject({
+      gcTime: Infinity,
+      staleTime: Infinity,
     });
     expect(await screen.findByRole("heading", { name: "Review" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^refresh$/i })).toBeInTheDocument();

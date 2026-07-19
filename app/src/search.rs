@@ -2891,6 +2891,375 @@ mod get_page_tests {
     }
 }
 
+fn authored_page_request(
+    title: String,
+    content: String,
+    space: Option<String>,
+) -> requests::CreateConceptRequest {
+    requests::CreateConceptRequest {
+        title: title.trim().to_string(),
+        content: content.trim().to_string(),
+        summary: None,
+        entity_id: None,
+        space: space.and_then(|value| {
+            let normalized = value.trim();
+            (!normalized.is_empty()).then(|| normalized.to_string())
+        }),
+        source_memory_ids: Vec::new(),
+        creation_kind: Some("authored".to_string()),
+        workspace: None,
+    }
+}
+
+#[tauri::command]
+pub async fn create_page(
+    state: tauri::State<'_, State>,
+    title: String,
+    content: String,
+    space: Option<String>,
+) -> Result<responses::CreatePageResponse, String> {
+    let client = state.read().await.client.clone();
+    let request = authored_page_request(title, content, space);
+    client.post_json("/api/pages", &request).await
+}
+
+#[derive(Debug, Serialize)]
+struct DraftWriteRequest {
+    draft_id: String,
+    title: String,
+    content: String,
+    space: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct DraftUpdateRequest {
+    expected_version: i64,
+    title: String,
+    content: String,
+    space: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct DraftVersionRequest {
+    expected_version: i64,
+}
+
+#[derive(Debug, Deserialize)]
+struct DraftPageResponse {
+    page: serde_json::Value,
+}
+
+#[derive(Debug, Deserialize)]
+struct DraftDiscardResponse {
+    status: String,
+}
+
+fn normalize_draft_space(space: Option<String>) -> Option<String> {
+    space.and_then(|value| {
+        let normalized = value.trim();
+        (!normalized.is_empty()).then(|| normalized.to_string())
+    })
+}
+
+async fn create_page_draft_response(
+    client: &crate::api::WenlanClient,
+    request: DraftWriteRequest,
+) -> Result<serde_json::Value, String> {
+    let response: DraftPageResponse = client.post_json("/api/pages/drafts", &request).await?;
+    Ok(response.page)
+}
+
+async fn update_page_draft_response(
+    client: &crate::api::WenlanClient,
+    id: &str,
+    request: DraftUpdateRequest,
+) -> Result<serde_json::Value, String> {
+    let response: DraftPageResponse = client
+        .put_json(&format!("/api/pages/drafts/{id}"), &request)
+        .await?;
+    Ok(response.page)
+}
+
+async fn publish_page_draft_response(
+    client: &crate::api::WenlanClient,
+    id: &str,
+    request: DraftVersionRequest,
+) -> Result<serde_json::Value, String> {
+    let response: DraftPageResponse = client
+        .post_json(&format!("/api/pages/drafts/{id}/publish"), &request)
+        .await?;
+    Ok(response.page)
+}
+
+async fn discard_page_draft_response(
+    client: &crate::api::WenlanClient,
+    id: &str,
+    request: DraftVersionRequest,
+) -> Result<(), String> {
+    let response: DraftDiscardResponse = client
+        .delete_json(&format!("/api/pages/drafts/{id}"), &request)
+        .await?;
+    if response.status == "deleted" {
+        Ok(())
+    } else {
+        Err(format!(
+            "discard_page_draft returned unexpected status: {}",
+            response.status
+        ))
+    }
+}
+
+#[tauri::command]
+pub async fn create_page_draft(
+    state: tauri::State<'_, State>,
+    client_draft_id: String,
+    title: String,
+    content: String,
+    space: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let client = state.read().await.client.clone();
+    create_page_draft_response(
+        &client,
+        DraftWriteRequest {
+            draft_id: client_draft_id,
+            title,
+            content,
+            space: normalize_draft_space(space),
+        },
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn update_page_draft(
+    state: tauri::State<'_, State>,
+    id: String,
+    expected_version: i64,
+    title: String,
+    content: String,
+    space: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let client = state.read().await.client.clone();
+    update_page_draft_response(
+        &client,
+        &id,
+        DraftUpdateRequest {
+            expected_version,
+            title,
+            content,
+            space: normalize_draft_space(space),
+        },
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn publish_page_draft(
+    state: tauri::State<'_, State>,
+    id: String,
+    expected_version: i64,
+) -> Result<serde_json::Value, String> {
+    let client = state.read().await.client.clone();
+    publish_page_draft_response(&client, &id, DraftVersionRequest { expected_version }).await
+}
+
+#[tauri::command]
+pub async fn discard_page_draft(
+    state: tauri::State<'_, State>,
+    id: String,
+    expected_version: i64,
+) -> Result<(), String> {
+    let client = state.read().await.client.clone();
+    discard_page_draft_response(&client, &id, DraftVersionRequest { expected_version }).await
+}
+
+#[cfg(test)]
+mod create_page_command_tests {
+    use super::*;
+
+    #[test]
+    fn authored_page_request_normalizes_the_optional_space_and_sets_the_contract() {
+        let request = authored_page_request(
+            "  Durable note  ".to_string(),
+            "  Source-backed body  ".to_string(),
+            Some("  Wenlan  ".to_string()),
+        );
+        let value = serde_json::to_value(request).unwrap();
+
+        assert_eq!(value["title"], "Durable note");
+        assert_eq!(value["content"], "Source-backed body");
+        assert_eq!(value["space"], "Wenlan");
+        assert_eq!(value["creation_kind"], "authored");
+        assert_eq!(value["source_memory_ids"], serde_json::json!([]));
+        assert!(value["summary"].is_null());
+        assert!(value["entity_id"].is_null());
+        assert!(value["workspace"].is_null());
+    }
+
+    #[test]
+    fn authored_page_request_maps_a_blank_space_to_none() {
+        let request = authored_page_request(
+            "Title".to_string(),
+            "Body".to_string(),
+            Some("   ".to_string()),
+        );
+        let value = serde_json::to_value(request).unwrap();
+
+        assert!(value["space"].is_null());
+    }
+}
+
+#[cfg(test)]
+mod page_draft_command_tests {
+    use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    async fn serve_once(
+        response_body: &'static str,
+    ) -> (crate::api::WenlanClient, tokio::task::JoinHandle<String>) {
+        serve_status_once("200 OK", response_body).await
+    }
+
+    async fn serve_status_once(
+        status: &'static str,
+        response_body: &'static str,
+    ) -> (crate::api::WenlanClient, tokio::task::JoinHandle<String>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let handle = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut bytes = vec![0_u8; 8192];
+            let size = stream.read(&mut bytes).await.unwrap();
+            let request = String::from_utf8_lossy(&bytes[..size]).to_string();
+            let response = format!(
+                "HTTP/1.1 {status}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                response_body.len(),
+                response_body,
+            );
+            stream.write_all(response.as_bytes()).await.unwrap();
+            request
+        });
+        (
+            crate::api::WenlanClient::with_base_url(format!("http://{address}")),
+            handle,
+        )
+    }
+
+    #[test]
+    fn draft_space_normalization_maps_blank_to_none_without_touching_meaningful_names() {
+        assert_eq!(normalize_draft_space(Some("   ".to_string())), None);
+        assert_eq!(
+            normalize_draft_space(Some("  Wenlan  ".to_string())),
+            Some("Wenlan".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn create_draft_preserves_whitespace_and_uses_the_drafts_collection() {
+        let (client, request) =
+            serve_once(r#"{"page":{"id":"draft-1","version":1,"status":"draft"}}"#).await;
+        let page = create_page_draft_response(
+            &client,
+            DraftWriteRequest {
+                draft_id: "page_client-1".to_string(),
+                title: "  title  ".to_string(),
+                content: "  body  \n".to_string(),
+                space: None,
+            },
+        )
+        .await
+        .unwrap();
+        let request = request.await.unwrap();
+
+        assert_eq!(page["id"], "draft-1");
+        assert!(request.starts_with("POST /api/pages/drafts HTTP/1.1\r\n"));
+        assert!(request.contains(r#""draft_id":"page_client-1""#));
+        assert!(request.contains(r#""title":"  title  ""#));
+        assert!(request.contains(r#""content":"  body  \n""#));
+        assert!(request.contains(r#""space":null"#));
+    }
+
+    #[tokio::test]
+    async fn update_draft_uses_put_and_snake_case_version_payload() {
+        let (client, request) =
+            serve_once(r#"{"page":{"id":"draft-1","version":4,"status":"draft"}}"#).await;
+        let page = update_page_draft_response(
+            &client,
+            "draft-1",
+            DraftUpdateRequest {
+                expected_version: 3,
+                title: "Title".to_string(),
+                content: "Body".to_string(),
+                space: Some("Wenlan".to_string()),
+            },
+        )
+        .await
+        .unwrap();
+        let request = request.await.unwrap();
+
+        assert_eq!(page["version"], 4);
+        assert!(request.starts_with("PUT /api/pages/drafts/draft-1 HTTP/1.1\r\n"));
+        assert!(request.contains(r#""expected_version":3"#));
+        assert!(request.contains(r#""space":"Wenlan""#));
+    }
+
+    #[tokio::test]
+    async fn publish_draft_posts_the_version_and_unwraps_the_page() {
+        let (client, request) =
+            serve_once(r#"{"page":{"id":"draft-1","version":4,"status":"active"}}"#).await;
+        let page = publish_page_draft_response(
+            &client,
+            "draft-1",
+            DraftVersionRequest {
+                expected_version: 3,
+            },
+        )
+        .await
+        .unwrap();
+        let request = request.await.unwrap();
+
+        assert_eq!(page["status"], "active");
+        assert!(request.starts_with("POST /api/pages/drafts/draft-1/publish HTTP/1.1\r\n"));
+        assert!(request.contains(r#""expected_version":3"#));
+    }
+
+    #[tokio::test]
+    async fn discard_draft_sends_a_versioned_delete_body() {
+        let (client, request) = serve_once(r#"{"status":"deleted"}"#).await;
+        discard_page_draft_response(
+            &client,
+            "draft-1",
+            DraftVersionRequest {
+                expected_version: 4,
+            },
+        )
+        .await
+        .unwrap();
+        let request = request.await.unwrap();
+
+        assert!(request.starts_with("DELETE /api/pages/drafts/draft-1 HTTP/1.1\r\n"));
+        assert!(request.contains(r#""expected_version":4"#));
+    }
+
+    #[tokio::test]
+    async fn structured_daemon_conflict_json_survives_the_tauri_string_boundary() {
+        let body = r#"{"code":"page_title_conflict","error":"exists","existing_page_id":"page-9","existing_page_title":"Existing"}"#;
+        let (client, request) = serve_status_once("409 Conflict", body).await;
+        let error = publish_page_draft_response(
+            &client,
+            "draft-1",
+            DraftVersionRequest {
+                expected_version: 3,
+            },
+        )
+        .await
+        .unwrap_err();
+        request.await.unwrap();
+
+        assert!(error.contains(body));
+    }
+}
+
 #[tauri::command]
 pub async fn update_page(
     state: tauri::State<'_, State>,
@@ -2947,6 +3316,32 @@ async fn delete_page_response(
 #[cfg(test)]
 mod page_status_command_type_tests {
     use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    async fn serve_status_once(
+        status: &'static str,
+        response_body: &'static str,
+    ) -> (crate::api::WenlanClient, tokio::task::JoinHandle<String>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let handle = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut bytes = vec![0_u8; 8192];
+            let size = stream.read(&mut bytes).await.unwrap();
+            let request = String::from_utf8_lossy(&bytes[..size]).to_string();
+            let response = format!(
+                "HTTP/1.1 {status}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                response_body.len(),
+                response_body,
+            );
+            stream.write_all(response.as_bytes()).await.unwrap();
+            request
+        });
+        (
+            crate::api::WenlanClient::with_base_url(format!("http://{address}")),
+            handle,
+        )
+    }
 
     #[allow(dead_code)]
     async fn archive_page_response_uses_typed_status_envelope(client: crate::api::WenlanClient) {
@@ -2977,6 +3372,33 @@ mod page_status_command_type_tests {
         }))
         .unwrap();
         assert_eq!(deleted.status, "deleted");
+    }
+
+    #[tokio::test]
+    async fn delete_page_uses_the_permanent_delete_route() {
+        let (client, request) = serve_status_once("200 OK", r#"{"status":"deleted"}"#).await;
+
+        let response = delete_page_response(&client, "page-delete-me")
+            .await
+            .unwrap();
+        let request = request.await.unwrap();
+
+        assert_eq!(response.status, "deleted");
+        assert!(request.starts_with("DELETE /api/pages/page-delete-me HTTP/1.1\r\n"));
+    }
+
+    #[tokio::test]
+    async fn delete_page_forwards_daemon_failures() {
+        let (client, request) =
+            serve_status_once("503 Service Unavailable", r#"{"error":"offline"}"#).await;
+
+        let error = delete_page_response(&client, "page-delete-me")
+            .await
+            .unwrap_err();
+        let request = request.await.unwrap();
+
+        assert!(request.starts_with("DELETE /api/pages/page-delete-me HTTP/1.1\r\n"));
+        assert!(error.contains("HTTP DELETE /api/pages/page-delete-me returned 503"));
     }
 }
 

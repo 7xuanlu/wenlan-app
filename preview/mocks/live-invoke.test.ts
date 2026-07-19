@@ -44,6 +44,297 @@ describe("liveInvoke list_all_tags", () => {
   });
 });
 
+describe("liveInvoke authored Page preview", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("creates and reads a synthetic Page without writing to the live daemon", async () => {
+    const fetch = vi.fn(() => Promise.reject(new Error("preview creation must stay local")));
+    vi.stubGlobal("fetch", fetch);
+
+    const created = (await liveInvoke("create_page", {
+      title: "Preview-only Page",
+      content: "A fixture-safe draft.",
+      space: null,
+    })) as { id: string; attached_to: string | null; warnings: string[] };
+    const page = (await liveInvoke("get_page", { id: created.id })) as {
+      id: string;
+      title: string;
+      creation_kind: string;
+    };
+
+    expect(created.attached_to).toBeNull();
+    expect(page).toMatchObject({
+      id: created.id,
+      title: "Preview-only Page",
+      creation_kind: "authored",
+    });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("deletes a synthetic Page locally without mutating the live daemon", async () => {
+    const fetch = vi.fn(() => Promise.reject(new Error("synthetic deletion must stay local")));
+    vi.stubGlobal("fetch", fetch);
+    const created = await liveInvoke("create_page", {
+      title: "Delete locally",
+      content: "Preview-only content.",
+      space: null,
+    }) as { id: string };
+
+    await expect(liveInvoke("delete_page", { id: created.id })).resolves.toBeNull();
+    await expect(liveInvoke("get_page", { id: created.id })).resolves.toBeNull();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("maps daemon-backed Page deletion to DELETE rather than Archive", async () => {
+    const fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ status: "deleted" }), { status: 200 })
+    );
+    vi.stubGlobal("fetch", fetch);
+
+    await liveInvoke("delete_page", { id: "remote-page" });
+
+    expect(fetch).toHaveBeenCalledWith(
+      "/daemon/api/pages/remote-page",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+  });
+
+  it("models partial draft snapshots, CAS updates, publish, discard, and title conflicts in memory", async () => {
+    const fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ pages: [] }), { status: 200 })
+    );
+    vi.stubGlobal("fetch", fetch);
+
+    const draft = (await liveInvoke("create_page_draft", {
+      clientDraftId: "page_00000000-0000-4000-8000-000000000011",
+      title: "",
+      content: "  partial body  \n",
+      space: " Wenlan ",
+    })) as { id: string; version: number; status: string; content: string; space: string };
+    expect(draft).toMatchObject({
+      version: 1,
+      status: "draft",
+      content: "  partial body  \n",
+      space: "Wenlan",
+    });
+
+    await expect(liveInvoke("update_page_draft", {
+      id: draft.id,
+      expectedVersion: 1,
+      title: " ",
+      content: "\n",
+      space: "Wenlan",
+    })).rejects.toThrow('"code":"invalid_page_draft"');
+
+    await expect(liveInvoke("update_page_draft", {
+      id: draft.id,
+      expectedVersion: 0,
+      title: "Wrong version",
+      content: "Body",
+      space: null,
+    })).rejects.toThrow('"code":"draft_version_conflict"');
+
+    const updated = (await liveInvoke("update_page_draft", {
+      id: draft.id,
+      expectedVersion: 1,
+      title: "Preview draft",
+      content: "  publish body  ",
+      space: null,
+    })) as { id: string; version: number; status: string };
+    expect(updated).toMatchObject({ id: draft.id, version: 2, status: "draft" });
+
+    const published = (await liveInvoke("publish_page_draft", {
+      id: draft.id,
+      expectedVersion: 2,
+    })) as { id: string; version: number; status: string; review_status: string };
+    expect(published).toMatchObject({
+      id: draft.id,
+      version: 3,
+      status: "active",
+      review_status: "unconfirmed",
+    });
+
+    const disposable = (await liveInvoke("create_page_draft", {
+      clientDraftId: "page_00000000-0000-4000-8000-000000000012",
+      title: "Discard me",
+      content: "",
+      space: null,
+    })) as { id: string; version: number };
+    await expect(liveInvoke("discard_page_draft", {
+      id: disposable.id,
+      expectedVersion: disposable.version,
+    })).resolves.toBeNull();
+    await expect(liveInvoke("get_page", { id: disposable.id })).resolves.toBeNull();
+
+    await liveInvoke("create_page", {
+      title: "Collision title",
+      content: "Existing active body",
+      space: null,
+    });
+    const collision = (await liveInvoke("create_page_draft", {
+      clientDraftId: "page_00000000-0000-4000-8000-000000000013",
+      title: " Collision title ",
+      content: "Draft body",
+      space: null,
+    })) as { id: string; version: number };
+    await expect(liveInvoke("publish_page_draft", {
+      id: collision.id,
+      expectedVersion: collision.version,
+    })).rejects.toThrow('"code":"page_title_conflict"');
+
+    expect(fetch).toHaveBeenCalled();
+    for (const [, init] of fetch.mock.calls) {
+      expect(init).toMatchObject({ method: "GET" });
+    }
+  });
+
+  it("deduplicates an ambiguous create retry by its client-generated draft id", async () => {
+    const input = {
+      clientDraftId: "page_22222222-2222-4222-8222-222222222222",
+      title: "Preview retry",
+      content: "The response may have been lost.",
+      space: null,
+    };
+
+    const first = await liveInvoke("create_page_draft", input);
+    const retried = await liveInvoke("create_page_draft", input);
+
+    expect(retried).toEqual(first);
+    expect(retried).toMatchObject({ id: input.clientDraftId, version: 1 });
+  });
+
+  it("rejects a Space-only empty draft instead of creating an impossible local row", async () => {
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+
+    await expect(liveInvoke("create_page_draft", {
+      clientDraftId: "page_00000000-0000-4000-8000-000000000014",
+      title: "   ",
+      content: "\n ",
+      space: "Wenlan",
+    })).rejects.toThrow('"code":"invalid_page_draft"');
+
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("checks daemon-backed active Pages before publishing a synthetic draft", async () => {
+    const remotePage = {
+      id: "remote-existing",
+      title: "Remote collision",
+      content: "Existing body",
+      space: "Remote scope",
+      domain: "Remote scope",
+      status: "active",
+      version: 1,
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(JSON.stringify({ pages: [remotePage] }), { status: 200 })
+      ),
+    );
+
+    const draft = (await liveInvoke("create_page_draft", {
+      clientDraftId: "page_00000000-0000-4000-8000-000000000015",
+      title: " remote COLLISION ",
+      content: "Synthetic body",
+      space: "Remote scope",
+    })) as { id: string; version: number };
+
+    await expect(liveInvoke("publish_page_draft", {
+      id: draft.id,
+      expectedVersion: draft.version,
+    })).rejects.toThrow(
+      '"existing_page_id":"remote-existing"',
+    );
+  });
+
+  it("matches backend Unicode lowercase independently of the host locale", async () => {
+    const nativeLocaleLowercase = String.prototype.toLocaleLowerCase;
+    const localeLowercase = vi
+      .spyOn(String.prototype, "toLocaleLowerCase")
+      .mockImplementation(function (this: string) {
+        return nativeLocaleLowercase.call(this, "tr");
+      });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(JSON.stringify({ pages: [] }), { status: 200 })
+      ),
+    );
+
+    try {
+      await liveInvoke("create_page", {
+        title: "I ΣΧΕΔΙΟ ПРОЕКТ",
+        content: "Existing locale-sensitive title.",
+        space: "Preview locale parity",
+      });
+      const draft = await liveInvoke("create_page_draft", {
+        clientDraftId: "page_00000000-0000-4000-8000-000000000016",
+        title: "i σχεδιο проект",
+        content: "Draft body",
+        space: "Preview locale parity",
+      }) as { id: string; version: number };
+
+      await expect(liveInvoke("publish_page_draft", {
+        id: draft.id,
+        expectedVersion: draft.version,
+      })).rejects.toThrow('"code":"page_title_conflict"');
+    } finally {
+      localeLowercase.mockRestore();
+    }
+  });
+
+  it("paginates the merged synthetic and daemon inventory without skipping the boundary row", async () => {
+    const remotePages = Array.from({ length: 501 }, (_, index) => ({
+      id: `remote-page-${index}`,
+      title: `Remote ${index}`,
+      content: "",
+      space: "Pagination scope",
+      domain: "Pagination scope",
+      status: "active",
+      version: 1,
+    }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        const url = new URL(String(input), "http://preview.test");
+        const offset = Number(url.searchParams.get("offset") ?? 0);
+        const limit = Number(url.searchParams.get("limit") ?? 500);
+        return new Response(
+          JSON.stringify({ pages: remotePages.slice(offset, offset + limit) }),
+          { status: 200 },
+        );
+      }),
+    );
+    await liveInvoke("create_page", {
+      title: "Local boundary Page",
+      content: "Synthetic body",
+      space: "Pagination scope",
+    });
+
+    const first = (await liveInvoke("list_pages", {
+      status: "active",
+      domain: "Pagination scope",
+      limit: 500,
+      offset: 0,
+    })) as Array<{ id: string }>;
+    const second = (await liveInvoke("list_pages", {
+      status: "active",
+      domain: "Pagination scope",
+      limit: 500,
+      offset: 500,
+    })) as Array<{ id: string }>;
+
+    expect(first).toHaveLength(500);
+    expect(first[0]?.id).toMatch(/^preview-authored-page-/);
+    expect(first.at(-1)?.id).toBe("remote-page-498");
+    expect(second.map(({ id }) => id)).toEqual(["remote-page-499", "remote-page-500"]);
+  });
+});
+
 // The app-local DEFAULTS stand in for Rust commands that never return null. A
 // stub that returns null (or the wrong keys) where the real command returns a
 // struct does not render an empty panel — it white-screens the whole step,

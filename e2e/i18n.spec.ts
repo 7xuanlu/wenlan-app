@@ -12,6 +12,7 @@ const rawActions = [
 
 const localeCases: Record<Exclude<AppLocale, "en">, {
   home: string;
+  navigation: string;
   activity: string;
   action: string;
   spaces: string;
@@ -19,6 +20,7 @@ const localeCases: Record<Exclude<AppLocale, "en">, {
 }> = {
   "zh-Hans": {
     home: "首页",
+    navigation: "主导航",
     activity: "活动",
     action: "动作",
     spaces: "空间",
@@ -31,6 +33,7 @@ const localeCases: Record<Exclude<AppLocale, "en">, {
   },
   "zh-Hant": {
     home: "首頁",
+    navigation: "主要導覽",
     activity: "活動",
     action: "動作",
     spaces: "空間",
@@ -59,7 +62,10 @@ test.describe("Chinese interface localization", () => {
       await page.goto("/");
 
       const header = page.getByRole("banner");
-      await expect(header.getByRole("button", { name: labels.home })).toBeVisible();
+      const primaryNavigation = page.getByRole("navigation", { name: labels.navigation });
+      await expect(primaryNavigation.getByRole("button", { name: labels.home, exact: true })).toBeVisible();
+      await expect(primaryNavigation.getByRole("button", { name: "Wiki", exact: true })).toBeVisible();
+      await expect(header.getByRole("button", { name: labels.home })).toHaveCount(0);
       await expect(header.getByRole("button", { name: labels.activity })).toBeVisible();
       await expect(page.getByText(labels.spaces, { exact: true })).toBeVisible();
       await expect(page.getByText("Wenlan 文瀾", { exact: true })).toHaveCount(0);

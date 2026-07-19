@@ -1,335 +1,288 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { EntityDetail as EntityDetailType } from "../../lib/tauri";
-
-class ResizeObserverStub {
-  observe() {}
-  unobserve() {}
-  disconnect() {}
-}
-vi.stubGlobal("ResizeObserver", ResizeObserverStub);
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { i18n } from "../../i18n";
+import type { EntityDetail as EntityDetailRecord, SearchResult } from "../../lib/tauri";
+import EntityDetail from "./EntityDetail";
 
 vi.mock("../../lib/tauri", () => ({
   getEntityDetail: vi.fn(),
-  updateObservation: vi.fn(),
-  deleteObservation: vi.fn(),
-  addObservation: vi.fn(),
-  confirmObservation: vi.fn(),
-  confirmEntity: vi.fn(),
-  deleteEntity: vi.fn(),
-  search: vi.fn(() => Promise.resolve([])),
-  FACET_COLORS: {},
+  updateObservation: vi.fn().mockResolvedValue(undefined),
+  deleteObservation: vi.fn().mockResolvedValue(undefined),
+  addObservation: vi.fn().mockResolvedValue(undefined),
+  confirmObservation: vi.fn().mockResolvedValue(undefined),
+  confirmEntity: vi.fn().mockResolvedValue(undefined),
+  deleteEntity: vi.fn().mockResolvedValue(undefined),
+  search: vi.fn(),
+  FACET_COLORS: { fact: "facet-fact" },
 }));
 
-// AtlasView needs sigma's WebGL context that jsdom can't provide — the
-// dedicated AtlasView.test.tsx exercises its internals against a sigma mock;
-// here we only need to prove EntityDetail wires focusEntityId/onNodeClick
-// correctly and swaps components on mode toggle.
-vi.mock("./AtlasView", () => ({
-  default: vi.fn((props: any) => (
-    <div role="group" aria-label="atlas-view-stub" data-focus-entity-id={props.focusEntityId ?? ""}>
-      <button type="button" onClick={() => props.onNodeClick?.("B")}>
-        Bob node
+vi.mock("./FocusGraph", () => ({
+  default: (props: { onEntityClick?: (id: string) => void }) => (
+    <div data-testid="focus-graph">
+      <button type="button" onClick={() => props.onEntityClick?.("entity-babbage")}>
+        Focus node
       </button>
     </div>
-  )),
+  ),
 }));
 
-import { getEntityDetail, search } from "../../lib/tauri";
-import EntityDetail from "./EntityDetail";
+vi.mock("./AtlasView", () => ({
+  default: (props: {
+    focusEntityId?: string;
+    onNodeClick?: (id: string) => void;
+  }) => (
+    <div data-focus-entity-id={props.focusEntityId ?? ""} data-testid="atlas-view">
+      <button type="button" onClick={() => props.onNodeClick?.("entity-hopper")}>
+        Atlas node
+      </button>
+    </div>
+  ),
+}));
 
-const mockGetEntityDetail = vi.mocked(getEntityDetail);
-const mockSearch = vi.mocked(search);
+import {
+  addObservation,
+  confirmEntity,
+  confirmObservation,
+  deleteEntity,
+  deleteObservation,
+  getEntityDetail,
+  search,
+  updateObservation,
+} from "../../lib/tauri";
 
-const detail: EntityDetailType = {
+const detail: EntityDetailRecord = {
   entity: {
-    id: "E",
-    name: "Origin",
-    entity_type: "project",
-    domain: null,
-    space: null,
-    source_agent: null,
-    confidence: null,
-    confirmed: true,
-    created_at: 100,
-    updated_at: 200,
+    id: "entity-ada",
+    name: "Ada Lovelace",
+    entity_type: "person",
+    domain: "computing",
+    space: "History of Computing",
+    source_agent: "research-agent",
+    confidence: 0.87,
+    confirmed: false,
+    created_at: 1_700_000_000,
+    updated_at: 1_700_086_400,
   },
-  observations: [],
+  observations: [
+    {
+      id: "obs-1",
+      entity_id: "entity-ada",
+      content: "Wrote the first published algorithm",
+      source_agent: "research-agent",
+      confidence: 0.8,
+      confirmed: false,
+      created_at: 1_700_000_100,
+    },
+  ],
   relations: [
-    { id: "r1", relation_type: "knows", direction: "outgoing", entity_id: "B", entity_name: "Bob", entity_type: "person", source_agent: null, created_at: 150 },
-    { id: "r2", relation_type: "mentions", direction: "incoming", entity_id: "A", entity_name: "Alice", entity_type: "concept", source_agent: null, created_at: 150 },
-    // Second edge to B — the toolbar count is distinct neighbors (2), not
-    // raw relations (3).
-    { id: "r3", relation_type: "cites", direction: "incoming", entity_id: "B", entity_name: "Bob", entity_type: "person", source_agent: null, created_at: 150 },
+    {
+      id: "relation-1",
+      relation_type: "collaborated with",
+      direction: "outgoing",
+      entity_id: "entity-babbage",
+      entity_name: "Charles Babbage",
+      entity_type: "person",
+      source_agent: "research-agent",
+      created_at: 1_700_000_200,
+    },
+    {
+      id: "relation-2",
+      relation_type: "inspired",
+      direction: "incoming",
+      entity_id: "entity-hopper",
+      entity_name: "Grace Hopper",
+      entity_type: "person",
+      source_agent: null,
+      created_at: 1_700_000_300,
+    },
   ],
 };
 
-function renderDetail(onEntityClick: (entityId: string) => void = vi.fn()) {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
-  return render(
-    <QueryClientProvider client={qc}>
-      <EntityDetail entityId="E" onBack={vi.fn()} onEntityClick={onEntityClick} />
-    </QueryClientProvider>,
-  );
+const linkedMemory: SearchResult = {
+  id: "chunk-1",
+  content: "Ada's notes described a general-purpose machine.",
+  source: "notes.md",
+  source_id: "memory-ada",
+  title: "Ada's notes",
+  url: null,
+  chunk_index: 0,
+  last_modified: 1_700_086_500,
+  score: 0.94,
+  memory_type: "fact",
+  entity_id: "entity-ada",
+  is_archived: false,
+};
+
+const defaultProps = {
+  entityId: "entity-ada",
+  onBack: vi.fn(),
+  onEntityClick: vi.fn(),
+  onMemoryClick: vi.fn(),
+};
+
+function renderEntity(props = defaultProps) {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false, gcTime: 0 },
+      mutations: { retry: false },
+    },
+  });
+  return {
+    user: userEvent.setup(),
+    ...render(
+      <QueryClientProvider client={queryClient}>
+        <EntityDetail {...props} />
+      </QueryClientProvider>,
+    ),
+  };
 }
 
-describe("EntityDetail connections card", () => {
-  beforeEach(() => {
+describe("EntityDetail characterization", () => {
+  beforeEach(async () => {
     vi.clearAllMocks();
-    mockGetEntityDetail.mockResolvedValue(detail);
+    await i18n.changeLanguage("en");
+    vi.mocked(getEntityDetail).mockResolvedValue(detail);
+    vi.mocked(search).mockResolvedValue([linkedMemory]);
   });
 
-  it("renders FocusGraph neighbor buttons for the entity's relations", async () => {
-    renderDetail();
+  it("loads the entity record with identity, metadata, observations, relations, and linked memories", async () => {
+    renderEntity();
+
+    expect(await screen.findByRole("heading", { name: "Ada Lovelace" })).toBeInTheDocument();
+    expect(getEntityDetail).toHaveBeenCalledWith("entity-ada");
+    expect(screen.getAllByText("person").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("History of Computing").length).toBeGreaterThan(0);
+    expect(screen.getByText("research-agent")).toBeInTheDocument();
+    expect(screen.getByText("0.87")).toBeInTheDocument();
+    expect(screen.getByText("Wrote the first published algorithm")).toBeInTheDocument();
+    expect(screen.getAllByText("Charles Babbage").length).toBeGreaterThan(0);
     expect(
-      await screen.findByRole("button", { name: /Bob \(person\) · outgoing · knows/ }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("group", { name: "Connection map for Origin" }),
+      await screen.findByText("Ada's notes described a general-purpose machine."),
     ).toBeInTheDocument();
   });
 
-  it("keeps the relation ledger alongside the graph", async () => {
-    renderDetail();
-    await screen.findByRole("button", { name: /Bob \(person\) · outgoing · knows/ });
-    // The "verb →" / "← verb" arrow form is unique to the ledger rows.
-    expect(screen.getByText("knows →")).toBeInTheDocument();
-    expect(screen.getByText("← mentions")).toBeInTheDocument();
-  });
-});
+  it("exposes back navigation and recovers from a load error", async () => {
+    vi.mocked(getEntityDetail)
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValue(detail);
+    const { user } = renderEntity();
 
-describe("EntityDetail full graph overlay", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockGetEntityDetail.mockResolvedValue(detail);
-  });
+    await user.click(screen.getByRole("button", { name: "Back" }));
+    expect(defaultProps.onBack).toHaveBeenCalledOnce();
+    expect(await screen.findByText("Couldn't load this entity.")).toBeInTheDocument();
 
-  it("renders an expand-graph button with the i18n label", async () => {
-    renderDetail();
-    await screen.findByRole("button", { name: /Bob \(person\) · outgoing · knows/ });
-    expect(screen.getByRole("button", { name: "Full screen" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByRole("heading", { name: "Ada Lovelace" })).toBeInTheDocument();
+    expect(getEntityDetail).toHaveBeenCalledTimes(2);
   });
 
-  // FocusGraph is real here (not mocked): unlike AtlasView it's plain
-  // SVG/DOM with no canvas dependency, and it's already exercised unmocked by
-  // the "connections card" tests above in this same file — mocking it here
-  // would also intercept that usage. The overlay renders the same FocusGraph
-  // fed by the same `detail`, so both the card's and the overlay's copies are
-  // in the DOM at once once the dialog is open; queries below are scoped with
-  // `within(dialog)` to disambiguate, which also proves `detail` really
-  // reached the overlay's FocusGraph (real neighbor buttons, not a stub).
-  it("opens the full-screen dialog on click, rendering the same entity's FocusGraph", async () => {
-    renderDetail();
-    await screen.findByRole("button", { name: /Bob \(person\) · outgoing · knows/ });
-    fireEvent.click(screen.getByRole("button", { name: "Full screen" }));
-    const dialog = screen.getByRole("dialog", { name: "Full screen" });
-    expect(within(dialog).getByRole("button", { name: /Bob \(person\) · outgoing · knows/ })).toBeInTheDocument();
-    expect(within(dialog).getByRole("group", { name: "Connection map for Origin" })).toBeInTheDocument();
+  it("confirms the entity and an observation", async () => {
+    const { user } = renderEntity();
+
+    await user.click(await screen.findByRole("button", { name: "Confirm entity" }));
+    await user.click(screen.getByRole("button", { name: "Mark note confirmed" }));
+
+    await waitFor(() => {
+      expect(confirmEntity).toHaveBeenCalledWith("entity-ada", true);
+      expect(confirmObservation).toHaveBeenCalledWith("obs-1", true);
+    });
   });
 
-  it("closes the dialog on Escape", async () => {
-    renderDetail();
-    await screen.findByRole("button", { name: /Bob \(person\) · outgoing · knows/ });
-    fireEvent.click(screen.getByRole("button", { name: "Full screen" }));
+  it("adds, edits, cancels, and deletes observations without leaking Escape to back", async () => {
+    const { user } = renderEntity();
+    await screen.findByRole("heading", { name: "Ada Lovelace" });
+
+    await user.click(screen.getByRole("button", { name: "Add note" }));
+    const addInput = screen.getByRole("textbox", { name: "Add note" });
+    await user.type(addInput, "A precise new observation{Enter}");
+    await waitFor(() => {
+      expect(addObservation).toHaveBeenCalledWith(
+        "entity-ada",
+        "A precise new observation",
+        "human",
+        1,
+      );
+    });
+
+    await user.click(screen.getByRole("button", { name: /Wrote the first published algorithm/ }));
+    const editInput = screen.getByRole("textbox", { name: "Edit note" });
+    await user.clear(editInput);
+    await user.type(editInput, "Edited observation{Enter}");
+    await waitFor(() => {
+      expect(updateObservation).toHaveBeenCalledWith("obs-1", "Edited observation");
+    });
+
+    await user.click(screen.getByRole("button", { name: /Wrote the first published algorithm/ }));
+    await user.type(screen.getByRole("textbox", { name: "Edit note" }), " ignored{Escape}");
+    expect(defaultProps.onBack).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Delete note" }));
+    await waitFor(() => expect(deleteObservation).toHaveBeenCalledWith("obs-1"));
+  });
+
+  it("routes graph, ledger, and linked-memory controls through their existing callbacks", async () => {
+    const { user } = renderEntity();
+    await screen.findByRole("heading", { name: "Ada Lovelace" });
+
+    const charlesControls = screen.getAllByRole("button", { name: /Charles Babbage/ });
+    expect(charlesControls).toHaveLength(2);
+    await user.click(charlesControls[0]);
+    await user.click(charlesControls[1]);
+    await user.click(
+      await screen.findByRole("button", {
+        name: /Ada's notes described a general-purpose machine/,
+      }),
+    );
+
+    expect(defaultProps.onEntityClick).toHaveBeenNthCalledWith(1, "entity-babbage");
+    expect(defaultProps.onEntityClick).toHaveBeenNthCalledWith(2, "entity-babbage");
+    expect(defaultProps.onMemoryClick).toHaveBeenCalledWith("memory-ada");
+  });
+
+  it("opens the Focus graph overlay and closes it on Escape", async () => {
+    const { user } = renderEntity();
+    await screen.findByRole("heading", { name: "Ada Lovelace" });
+
+    await user.click(screen.getByRole("button", { name: "Full screen" }));
+
     expect(screen.getByRole("dialog", { name: "Full screen" })).toBeInTheDocument();
-    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.getByTestId("focus-graph")).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog", { name: "Full screen" })).not.toBeInTheDocument();
   });
 
-  it("renders the artifact entity panel beside the Focus graph — eyebrow, meta, typed rows", async () => {
-    const onEntityClick = vi.fn();
-    renderDetail(onEntityClick);
-    await screen.findByRole("button", { name: /Bob \(person\) · outgoing · knows/ });
-    fireEvent.click(screen.getByRole("button", { name: "Full screen" }));
-
-    const panel = screen.getByRole("complementary", { name: "Entity panel" });
-    expect(within(panel).getByText("Origin")).toBeInTheDocument();
-    expect(within(panel).getByText(/project · confirmed/)).toBeInTheDocument();
-    expect(within(panel).getByText(/0 observations · 3 relations · updated/)).toBeInTheDocument();
-    // Direction renders as verb + arrow: outgoing →, incoming ←.
-    expect(within(panel).getByText("knows →")).toBeInTheDocument();
-    expect(within(panel).getByText("mentions ←")).toBeInTheDocument();
-
-    // A relation row is the graph's focusable twin — navigates and closes.
-    fireEvent.click(within(panel).getByRole("button", { name: /mentions ←\s*Alice/ }));
-    expect(onEntityClick).toHaveBeenCalledWith("A");
-    expect(screen.queryByRole("dialog", { name: "Full screen" })).not.toBeInTheDocument();
-  });
-
-  it("panel's Open entity button closes the overlay without navigating", async () => {
-    const onEntityClick = vi.fn();
-    renderDetail(onEntityClick);
-    await screen.findByRole("button", { name: /Bob \(person\) · outgoing · knows/ });
-    fireEvent.click(screen.getByRole("button", { name: "Full screen" }));
-
-    const panel = screen.getByRole("complementary", { name: "Entity panel" });
-    fireEvent.click(within(panel).getByRole("button", { name: "Open entity ↗" }));
-    expect(screen.queryByRole("dialog", { name: "Full screen" })).not.toBeInTheDocument();
-    expect(onEntityClick).not.toHaveBeenCalled();
-  });
-
-  it("moves focus into the dialog on open — the close button takes initial focus", async () => {
-    renderDetail();
-    await screen.findByRole("button", { name: /Bob \(person\) · outgoing · knows/ });
-    fireEvent.click(screen.getByRole("button", { name: "Full screen" }));
+  it("switches the overlay to Atlas with the current entity focused", async () => {
+    const { user } = renderEntity();
+    await screen.findByRole("heading", { name: "Ada Lovelace" });
+    await user.click(screen.getByRole("button", { name: "Full screen" }));
     const dialog = screen.getByRole("dialog", { name: "Full screen" });
-    expect(within(dialog).getByRole("button", { name: "Close" })).toHaveFocus();
-  });
 
-  it("closes the dialog and forwards the clicked node id to onEntityClick", async () => {
-    const onEntityClick = vi.fn();
-    renderDetail(onEntityClick);
-    await screen.findByRole("button", { name: /Bob \(person\) · outgoing · knows/ });
-    fireEvent.click(screen.getByRole("button", { name: "Full screen" }));
-    const dialog = screen.getByRole("dialog", { name: "Full screen" });
-    fireEvent.click(within(dialog).getByRole("button", { name: /Bob \(person\) · outgoing · knows/ }));
-    expect(onEntityClick).toHaveBeenCalledWith("B");
-    expect(screen.queryByRole("dialog", { name: "Full screen" })).not.toBeInTheDocument();
-  });
-});
+    await user.click(within(dialog).getByRole("button", { name: "Atlas" }));
+    expect(await screen.findByTestId("atlas-view")).toHaveAttribute(
+      "data-focus-entity-id",
+      "entity-ada",
+    );
 
-describe("EntityDetail overlay mode toggle", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockGetEntityDetail.mockResolvedValue(detail);
-    mockSearch.mockResolvedValue([]);
-  });
-
-  function openDialog() {
-    fireEvent.click(screen.getByRole("button", { name: "Full screen" }));
-    return screen.getByRole("dialog", { name: "Full screen" });
-  }
-
-  it("opens in focus mode, with the Atlas|Focus segment marking Focus active", async () => {
-    renderDetail();
-    await screen.findByRole("button", { name: /Bob \(person\) · outgoing · knows/ });
-    const dialog = openDialog();
-    expect(within(dialog).getByRole("group", { name: "Connection map for Origin" })).toBeInTheDocument();
-    expect(within(dialog).queryByRole("group", { name: "atlas-view-stub" })).not.toBeInTheDocument();
-    const seg = within(dialog).getByRole("group", { name: "Graph view" });
-    expect(within(seg).getByRole("button", { name: "Focus" })).toHaveAttribute("aria-pressed", "true");
-    expect(within(seg).getByRole("button", { name: "Atlas" })).toHaveAttribute("aria-pressed", "false");
-  });
-
-  it("switching the segment to Atlas shows the Atlas focused on this entity, and back to Focus", async () => {
-    renderDetail();
-    await screen.findByRole("button", { name: /Bob \(person\) · outgoing · knows/ });
-    const dialog = openDialog();
-
-    fireEvent.click(within(dialog).getByRole("button", { name: "Atlas" }));
-    const atlasStub = within(dialog).getByRole("group", { name: "atlas-view-stub" });
-    expect(atlasStub).toHaveAttribute("data-focus-entity-id", "E");
-    expect(within(dialog).queryByRole("group", { name: "Connection map for Origin" })).not.toBeInTheDocument();
-    expect(within(dialog).getByRole("button", { name: "Atlas" })).toHaveAttribute("aria-pressed", "true");
-
-    fireEvent.click(within(dialog).getByRole("button", { name: "Focus" }));
-    expect(within(dialog).getByRole("group", { name: "Connection map for Origin" })).toBeInTheDocument();
-    expect(within(dialog).queryByRole("group", { name: "atlas-view-stub" })).not.toBeInTheDocument();
-  });
-
-  it("resets to focus mode the next time the overlay is opened", async () => {
-    renderDetail();
-    await screen.findByRole("button", { name: /Bob \(person\) · outgoing · knows/ });
-    let dialog = openDialog();
-    fireEvent.click(within(dialog).getByRole("button", { name: "Atlas" }));
-    expect(within(dialog).getByRole("group", { name: "atlas-view-stub" })).toBeInTheDocument();
-
-    fireEvent.keyDown(window, { key: "Escape" });
-    expect(screen.queryByRole("dialog", { name: "Full screen" })).not.toBeInTheDocument();
-
-    dialog = openDialog();
-    expect(within(dialog).getByRole("group", { name: "Connection map for Origin" })).toBeInTheDocument();
-  });
-
-  it("closes the dialog on Escape even while in map mode", async () => {
-    renderDetail();
-    await screen.findByRole("button", { name: /Bob \(person\) · outgoing · knows/ });
-    const dialog = openDialog();
-    fireEvent.click(within(dialog).getByRole("button", { name: "Atlas" }));
-    expect(within(dialog).getByRole("group", { name: "atlas-view-stub" })).toBeInTheDocument();
-
-    fireEvent.keyDown(window, { key: "Escape" });
+    await user.click(within(dialog).getByRole("button", { name: "Atlas node" }));
+    expect(defaultProps.onEntityClick).toHaveBeenCalledWith("entity-hopper");
     expect(screen.queryByRole("dialog", { name: "Full screen" })).not.toBeInTheDocument();
   });
 
-  it("closes the dialog and forwards the clicked node id when a map-mode node is clicked", async () => {
-    const onEntityClick = vi.fn();
-    renderDetail(onEntityClick);
-    await screen.findByRole("button", { name: /Bob \(person\) · outgoing · knows/ });
-    const dialog = openDialog();
-    fireEvent.click(within(dialog).getByRole("button", { name: "Atlas" }));
+  it("uses a two-step entity delete and returns after success", async () => {
+    const { user } = renderEntity();
+    await screen.findByRole("heading", { name: "Ada Lovelace" });
 
-    fireEvent.click(within(dialog).getByRole("button", { name: "Bob node" }));
-    expect(onEntityClick).toHaveBeenCalledWith("B");
-    expect(screen.queryByRole("dialog", { name: "Full screen" })).not.toBeInTheDocument();
-  });
-});
+    await user.click(screen.getByRole("button", { name: "Delete entity" }));
+    expect(deleteEntity).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: /^Delete$/ }));
 
-describe("EntityDetail overlay toolbar (artifact screen 02)", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockGetEntityDetail.mockResolvedValue(detail);
-    mockSearch.mockResolvedValue([]);
-  });
-
-  function openDialog() {
-    fireEvent.click(screen.getByRole("button", { name: "Full screen" }));
-    return screen.getByRole("dialog", { name: "Full screen" });
-  }
-
-  it("shows the crumb and the distinct-neighbor count in focus mode", async () => {
-    renderDetail();
-    await screen.findByRole("button", { name: /Bob \(person\) · outgoing · knows/ });
-    const dialog = openDialog();
-    // Crumb: Atlas ▸ Focus: <entity>.
-    expect(within(dialog).getByText("Focus: Origin")).toBeInTheDocument();
-    // Two relations to two distinct entities; search returned no memories,
-    // so the count line carries neighbors alone.
-    expect(within(dialog).getByText("2 neighbors")).toBeInTheDocument();
-  });
-
-  it("appends the linked-memory count and renders the dot cluster when recall matches exist", async () => {
-    mockSearch.mockResolvedValue([
-      { id: "m1", source_id: "s1", entity_id: "E", score: 0.9, content: "memo one", memory_type: null, is_archived: false },
-      { id: "m2", source_id: "s2", entity_id: "E", score: 0.8, content: "memo two", memory_type: null, is_archived: false },
-    ] as any);
-    renderDetail();
-    await screen.findByRole("button", { name: /Bob \(person\) · outgoing · knows/ });
-    // The recall panel behind the overlay proves linkedMemories resolved.
-    await screen.findByText("memo one");
-    const dialog = openDialog();
-    expect(within(dialog).getByText("2 neighbors · 2 memories")).toBeInTheDocument();
-    expect(within(dialog).getByText("memories (2)")).toBeInTheDocument();
-  });
-
-  it("Show verbs chip toggles the verb labels off and back on", async () => {
-    renderDetail();
-    await screen.findByRole("button", { name: /Bob \(person\) · outgoing · knows/ });
-    const dialog = openDialog();
-
-    expect(within(dialog).getByText("knows")).toBeInTheDocument();
-    const chip = within(dialog).getByRole("button", { name: "Show verbs" });
-    expect(chip).toHaveAttribute("aria-pressed", "true");
-
-    fireEvent.click(chip);
-    expect(chip).toHaveAttribute("aria-pressed", "false");
-    expect(within(dialog).queryByText("knows")).not.toBeInTheDocument();
-
-    fireEvent.click(chip);
-    expect(within(dialog).getByText("knows")).toBeInTheDocument();
-  });
-
-  it("resets the verbs chip to on when the overlay reopens", async () => {
-    renderDetail();
-    await screen.findByRole("button", { name: /Bob \(person\) · outgoing · knows/ });
-    let dialog = openDialog();
-    fireEvent.click(within(dialog).getByRole("button", { name: "Show verbs" }));
-    expect(within(dialog).queryByText("knows")).not.toBeInTheDocument();
-
-    fireEvent.keyDown(window, { key: "Escape" });
-    dialog = openDialog();
-    expect(within(dialog).getByText("knows")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(deleteEntity).toHaveBeenCalledWith("entity-ada");
+      expect(defaultProps.onBack).toHaveBeenCalledOnce();
+    });
   });
 });

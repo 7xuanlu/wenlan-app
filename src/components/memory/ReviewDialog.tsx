@@ -47,11 +47,30 @@ export function reviewReadOnly(item: ReviewItem): boolean {
   return item.kind === "page_candidate" || item.kind === "topic";
 }
 
+function pageKeepOrArchiveId(item: ReviewItem | null): string | null {
+  if (
+    item?.kind !== "refinement" ||
+    item.action !== "page_keep_or_archive" ||
+    item.payload?.action !== "page_keep_or_archive"
+  ) {
+    return null;
+  }
+  const pageId = item.payload.page_id.trim();
+  return pageId.length > 0 ? pageId : null;
+}
+
 /** Actions the daemon rejects with 422 on accept — the dialog offers only
  * dismiss for these (suggest_entity/dedup_merge have no accept path;
  * cross_space_discovery needs a pick-space verb the app doesn't plumb yet). */
 export function reviewApproveBlocked(item: ReviewItem): boolean {
   if (isExampleReviewItem(item)) return true;
+  if (
+    item.kind === "refinement" &&
+    item.action === "page_keep_or_archive" &&
+    pageKeepOrArchiveId(item) === null
+  ) {
+    return true;
+  }
   return (
     reviewReadOnly(item) ||
     (item.kind === "refinement" &&
@@ -147,8 +166,12 @@ function reviewLookupRefs(item: ReviewItem | null): {
         aId: item.sourceIds[0] ?? null,
         bId: item.sourceIds[1] ?? null,
       };
-    case "page_keep_or_archive":
-      return { lookup: "page", aId: item.sourceIds[0] ?? null, bId: null };
+    case "page_keep_or_archive": {
+      const pageId = pageKeepOrArchiveId(item);
+      return pageId !== null
+        ? { lookup: "page", aId: pageId, bId: null }
+        : { lookup: null, aId: null, bId: null };
+    }
     case "entity_merge":
       return item.payload?.action === "entity_merge"
         ? {
@@ -501,13 +524,18 @@ export default function ReviewDialog({
   const [showDone, setShowDone] = useState(false);
   const [sideBySide, setSideBySide] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
+  const [resolveError, setResolveError] = useState(false);
+  const [resolvingLocally, setResolvingLocally] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const navigationVersionRef = useRef(0);
+  const resolveRequestRef = useRef(0);
 
   const open = openId != null;
   const foundIndex = items.findIndex((entry) => reviewItemId(entry) === openId);
   const index = foundIndex >= 0 ? foundIndex : items.length > 0 ? 0 : -1;
   const item = showDone ? null : index >= 0 ? items[index] : null;
   const done = open && (showDone || items.length === 0);
+  const resolving = isResolving || resolvingLocally;
   const summary = useReviewItemSummary(item);
 
   const detailSourceId =
@@ -544,10 +572,7 @@ export default function ReviewDialog({
     enabled: memoryPaneIds.length > 1,
   });
 
-  const archivePageId =
-    item?.kind === "refinement" && item.action === "page_keep_or_archive"
-      ? (item.sourceIds[0] ?? null)
-      : null;
+  const archivePageId = pageKeepOrArchiveId(item);
   const archivePage = useQuery({
     queryKey: ["page", archivePageId],
     queryFn: () => getPage(archivePageId as string),
@@ -592,11 +617,24 @@ export default function ReviewDialog({
   );
 
   useEffect(() => {
-    if (open) dialogRef.current?.focus();
-  }, [open, openId]);
+    if (!open) return;
+    const previouslyFocused =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    dialogRef.current?.focus();
+    return () => {
+      if (previouslyFocused?.isConnected) previouslyFocused.focus();
+    };
+  }, [open]);
+
+  useEffect(() => {
+    navigationVersionRef.current += 1;
+    setResolveError(false);
+  }, [openId]);
 
   const resolveCurrent = async (approve: boolean) => {
-    if (!item || isResolving) return;
+    if (!item || resolving) return;
     // reviewApproveBlocked already folds in reviewReadOnly — read-only kinds
     // (topic/page_candidate) can still dismiss (hide) even though they can't
     // approve.
@@ -610,7 +648,31 @@ export default function ReviewDialog({
       item.kind === "page_candidate" ||
       item.kind === "stale_page";
     const next = items[index + 1] ?? (index > 0 ? items[index - 1] : null);
-    await onResolve({ item, approve });
+    const navigationVersion = navigationVersionRef.current;
+    const requestId = ++resolveRequestRef.current;
+    setResolveError(false);
+    setResolvingLocally(true);
+    try {
+      await onResolve({ item, approve });
+    } catch {
+      if (
+        resolveRequestRef.current === requestId &&
+        navigationVersionRef.current === navigationVersion
+      ) {
+        setResolveError(true);
+      }
+      return;
+    } finally {
+      if (resolveRequestRef.current === requestId) {
+        setResolvingLocally(false);
+      }
+    }
+    if (
+      resolveRequestRef.current !== requestId ||
+      navigationVersionRef.current !== navigationVersion
+    ) {
+      return;
+    }
     setFlash(
       approve
         ? t(
@@ -636,12 +698,14 @@ export default function ReviewDialog({
   };
 
   const goTo = (offset: number) => {
-    if (items.length === 0) return;
+    if (items.length < 2) return;
     const nextIndex = (index + offset + items.length) % items.length;
+    navigationVersionRef.current += 1;
     onOpenChange(reviewItemId(items[nextIndex]));
   };
 
   const close = () => {
+    navigationVersionRef.current += 1;
     setShowDone(false);
     onOpenChange(null);
   };
@@ -650,13 +714,45 @@ export default function ReviewDialog({
     if (!open) return;
     const onKeyDown = (event: KeyboardEvent) => {
       const el = event.target as HTMLElement | null;
-      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+      if (event.key === "Tab") {
+        const container = dialogRef.current;
+        if (!container) return;
+        const focusable = Array.from(
+          container.querySelectorAll<HTMLElement>(
+            'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+          ),
+        );
+        if (focusable.length === 0) {
+          event.preventDefault();
+          container.focus();
+          return;
+        }
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        const active = document.activeElement;
+        const activeIsFocusable = active instanceof HTMLElement && focusable.includes(active);
+        if (event.shiftKey && (!activeIsFocusable || active === first)) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && (!activeIsFocusable || active === last)) {
+          event.preventDefault();
+          first.focus();
+        }
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        close();
+        return;
+      }
+      if (
+        el?.closest(
+          'a[href], button, input, select, textarea, [contenteditable="true"], [role="button"]',
+        )
+      ) {
         return;
       }
       switch (event.key) {
-        case "Escape":
-          close();
-          break;
         case "Enter":
           event.preventDefault();
           void resolveCurrent(true);
@@ -1228,7 +1324,9 @@ export default function ReviewDialog({
                   <div style={{ display: "grid", gap: 12 }}>
                     <div>
                       <p style={paneLabelStyle}>
-                        {archivePage.data?.title ?? item.sourceIds[0]}
+                        {archivePage.data?.title ??
+                          archivePageId ??
+                          t("review.kindPageArchive")}
                       </p>
                       <div style={paneStyle}>
                         {archivePage.isLoading
@@ -1321,6 +1419,23 @@ export default function ReviewDialog({
               </p>
             )}
 
+            {resolveError && (
+              <p
+                role="alert"
+                style={{
+                  background: "var(--mem-status-danger-bg)",
+                  border: "1px solid var(--mem-status-danger-border)",
+                  borderRadius: 8,
+                  color: "var(--mem-status-danger-text)",
+                  font: "12px/1.5 var(--mem-font-body)",
+                  margin: "4px 20px 0",
+                  padding: "9px 11px",
+                }}
+              >
+                {t("review.actionError")}
+              </p>
+            )}
+
             <div
               style={{
                 display: "flex",
@@ -1334,7 +1449,7 @@ export default function ReviewDialog({
               {!reviewDismissBlocked(item) && (
                 <button
                   type="button"
-                  disabled={isResolving}
+                  disabled={resolving}
                   onClick={() => void resolveCurrent(false)}
                   style={{
                     ...actionButtonStyle,
@@ -1410,7 +1525,7 @@ export default function ReviewDialog({
               {!reviewApproveBlocked(item) && (
                 <button
                   type="button"
-                  disabled={isResolving}
+                  disabled={resolving}
                   onClick={() => void resolveCurrent(true)}
                   style={{
                     ...actionButtonStyle,

@@ -814,6 +814,133 @@ describe('page domain compatibility', () => {
     });
     expect(pages[0].domain).toBe('work');
   });
+
+  it('creates an authored Page with normalized content and optional Space', async () => {
+    mockInvoke.mockResolvedValue({ id: 'page-new', attached_to: null });
+
+    const result = await tauri.createPage({
+      title: '  A durable note  ',
+      content: '  Source-backed body  ',
+      space: '   ',
+    });
+
+    expect(mockInvoke).toHaveBeenCalledWith('create_page', {
+      title: 'A durable note',
+      content: 'Source-backed body',
+      space: null,
+    });
+    expect(result).toEqual({ id: 'page-new', attached_to: null, warnings: [] });
+  });
+
+  it('deletes a Page through the exact desktop command contract', async () => {
+    await tauri.deletePage('page-delete-me');
+
+    expect(mockInvoke).toHaveBeenCalledWith('delete_page', { id: 'page-delete-me' });
+  });
+});
+
+describe('Page draft lifecycle wrappers', () => {
+  const draftPage: tauri.Page = {
+    id: 'draft-1',
+    title: '  Working title  ',
+    summary: null,
+    content: '  body whitespace stays  \n',
+    entity_id: null,
+    domain: null,
+    space: null,
+    source_memory_ids: [],
+    version: 3,
+    status: 'draft',
+    created_at: '2026-07-16T00:00:00Z',
+    last_compiled: '2026-07-16T00:00:00Z',
+    last_modified: '2026-07-16T00:00:00Z',
+  };
+
+  it('creates a partial draft without trimming title or body and normalizes blank Space', async () => {
+    mockInvoke.mockResolvedValue(draftPage);
+
+    await expect(tauri.createPageDraft({
+      clientDraftId: 'page_client-1',
+      title: '  Working title  ',
+      content: '  body whitespace stays  \n',
+      space: '   ',
+    })).resolves.toMatchObject({ id: 'draft-1', domain: null });
+
+    expect(mockInvoke).toHaveBeenCalledWith('create_page_draft', {
+      clientDraftId: 'page_client-1',
+      title: '  Working title  ',
+      content: '  body whitespace stays  \n',
+      space: null,
+    });
+  });
+
+  it('updates through Tauri camelCase args while preserving draft whitespace', async () => {
+    mockInvoke.mockResolvedValue({ ...draftPage, version: 4, space: 'Wenlan' });
+
+    await tauri.updatePageDraft({
+      id: 'draft-1',
+      expectedVersion: 3,
+      title: '  revised  ',
+      content: '\n  revised body  \n',
+      space: '  Wenlan  ',
+    });
+
+    expect(mockInvoke).toHaveBeenCalledWith('update_page_draft', {
+      id: 'draft-1',
+      expectedVersion: 3,
+      title: '  revised  ',
+      content: '\n  revised body  \n',
+      space: 'Wenlan',
+    });
+  });
+
+  it('publishes and discards through versioned camelCase args', async () => {
+    mockInvoke.mockResolvedValueOnce({ ...draftPage, version: 4, status: 'active' });
+    await expect(tauri.publishPageDraft({ id: 'draft-1', expectedVersion: 3 }))
+      .resolves.toMatchObject({ id: 'draft-1', status: 'active' });
+    expect(mockInvoke).toHaveBeenLastCalledWith('publish_page_draft', {
+      id: 'draft-1',
+      expectedVersion: 3,
+    });
+
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await expect(tauri.discardPageDraft({ id: 'draft-1', expectedVersion: 4 }))
+      .resolves.toBeUndefined();
+    expect(mockInvoke).toHaveBeenLastCalledWith('discard_page_draft', {
+      id: 'draft-1',
+      expectedVersion: 4,
+    });
+  });
+
+  it.each([
+    [
+      '{"code":"draft_version_conflict","error":"stale","current_version":7}',
+      { code: 'draft_version_conflict', currentVersion: 7 },
+    ],
+    [
+      new Error('HTTP POST /api/pages/drafts/draft-1/publish returned 409 Conflict: {"code":"page_title_conflict","error":"exists","existing_page_id":"page-9","existing_page_title":"Existing"}'),
+      {
+        code: 'page_title_conflict',
+        existingPageId: 'page-9',
+        existingPageTitle: 'Existing',
+      },
+    ],
+    [
+      '{"code":"page_draft_not_found","error":"gone"}',
+      { code: 'page_draft_not_found' },
+    ],
+    [
+      '{"code":"page_draft_id_conflict","error":"collision"}',
+      { code: 'page_draft_id_conflict' },
+    ],
+  ])('preserves structured daemon conflicts from a string/Error.message boundary', async (rejection, expected) => {
+    mockInvoke.mockRejectedValue(rejection);
+
+    const promise = tauri.publishPageDraft({ id: 'draft-1', expectedVersion: 3 });
+
+    await expect(promise).rejects.toBeInstanceOf(tauri.PageDraftApiError);
+    await expect(promise).rejects.toMatchObject(expected);
+  });
 });
 
 describe('page links wrappers', () => {
