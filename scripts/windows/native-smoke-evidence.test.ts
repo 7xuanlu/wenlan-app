@@ -3,6 +3,11 @@ import { describe, expect, it } from "vitest";
 type Evidence = {
   claim: string;
   health: { ok: boolean; response: Record<string, unknown> };
+  metadata: {
+    backend_commit: string;
+    backend_server_sha256: string;
+    backend_source: string;
+  };
   lifecycle: {
     fake_launch_agents_exists: boolean;
     full_quit_requested: boolean;
@@ -43,7 +48,9 @@ type Evidence = {
 
 type ExpectedEvidence = {
   appExecutable: string;
+  backendCommit: string;
   backendExecutable: string;
+  backendServerSha256: string;
   marker: string;
   onnxruntimeDll: string;
   sourceAgent: string;
@@ -66,11 +73,18 @@ const APP_EXE = "C:\\actions\\wenlan\\target\\release\\wenlan-app.exe";
 const BACKEND_EXE =
   "C:\\actions\\wenlan\\target\\release\\wenlan-server.exe";
 const ONNX_DLL = "C:\\actions\\wenlan\\target\\release\\onnxruntime.dll";
+const BACKEND_COMMIT = "b".repeat(40);
+const BACKEND_SHA256 = "a".repeat(64);
 
 function completeEvidence(): Evidence {
   return {
     claim: "Windows Server 2022 native compatibility smoke",
     health: { ok: true, response: { status: "ok" } },
+    metadata: {
+      backend_commit: BACKEND_COMMIT,
+      backend_server_sha256: BACKEND_SHA256,
+      backend_source: "source-build",
+    },
     lifecycle: {
       fake_launch_agents_exists: false,
       full_quit_requested: true,
@@ -116,7 +130,9 @@ function completeEvidence(): Evidence {
 
 const expected: ExpectedEvidence = {
   appExecutable: APP_EXE,
+  backendCommit: BACKEND_COMMIT,
   backendExecutable: BACKEND_EXE,
+  backendServerSha256: BACKEND_SHA256,
   marker: MARKER,
   onnxruntimeDll: ONNX_DLL,
   sourceAgent: "windows-native-smoke",
@@ -143,6 +159,20 @@ describe("Windows native smoke evidence validator", () => {
   });
 
   it.each([
+    {
+      name: "unpinned backend commit",
+      assertion: "backend-commit-pinned",
+      mutate: (evidence: Evidence) => {
+        evidence.metadata.backend_commit = "c".repeat(40);
+      },
+    },
+    {
+      name: "wrong backend binary hash",
+      assertion: "backend-binary-hash",
+      mutate: (evidence: Evidence) => {
+        evidence.metadata.backend_server_sha256 = "d".repeat(64);
+      },
+    },
     {
       name: "occupied port before launch",
       assertion: "port-7878-unused",

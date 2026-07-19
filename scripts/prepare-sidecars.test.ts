@@ -704,6 +704,37 @@ describe("prepare-sidecars --download mode", () => {
     expect(existsSync(resolve(appRoot, "app/binaries/onnxruntime.dll"))).toBe(true);
   });
 
+  it("fails closed if a source-build manifest survives but its prestaged flag is lost", () => {
+    const base = makeTempRoot();
+    const appRoot = resolve(base, "wenlan-app");
+    writeAppScripts(appRoot);
+    const manifestPath = resolve(base, "staged-sidecars.json");
+    writeFileSync(
+      manifestPath,
+      JSON.stringify({
+        target_triple: "x86_64-pc-windows-msvc",
+        backend: {
+          source: "source-build",
+          commit: "b".repeat(40),
+        },
+      }),
+    );
+
+    const result = spawnSync("bash", ["scripts/prepare-tauri-build-sidecars.sh"], {
+      cwd: appRoot,
+      encoding: "utf8",
+      env: childEnv({
+        WENLAN_DOWNLOAD_SIDECARS: "1",
+        WENLAN_SIDECAR_MANIFEST: manifestPath,
+      }),
+    });
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain(
+      "source-built sidecar manifest requires WENLAN_PRESTAGED_SIDECARS=1",
+    );
+  });
+
   it("strips quarantine via xattr -cr on each installed Darwin sidecar", () => {
     const base = makeTempRoot();
     const appRoot = resolve(base, "wenlan-app");

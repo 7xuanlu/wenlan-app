@@ -12,16 +12,26 @@ env:
   GH_TOKEN: ${{ github.token }}
   TARGET_TRIPLE: x86_64-pc-windows-msvc
   WENLAN_DOWNLOAD_SIDECARS: "1"
+  WENLAN_BACKEND_SMOKE_COMMIT: 0bb5acab6f428c8e8f25ea94026ebcfef0054f15
+  WENLAN_PRESTAGED_SIDECARS: "1"
+  WENLAN_WINDOWS_BACKEND_BUILD_DIR: windows-smoke-backend
 
 jobs:
   native-smoke:
     name: Windows Server 2022 native compatibility smoke
     runs-on: windows-2022
-    timeout-minutes: 60
+    timeout-minutes: 90
 
     steps:
       - name: Check out app
         uses: actions/checkout@v4
+
+      - name: Check out exact backend smoke commit
+        uses: actions/checkout@v4
+        with:
+          repository: 7xuanlu/wenlan
+          ref: ${{ env.WENLAN_BACKEND_SMOKE_COMMIT }}
+          path: windows-smoke-backend
 
       - name: Initialize always-uploaded evidence
         shell: pwsh
@@ -64,10 +74,27 @@ jobs:
       - name: Prove Windows ZIP extraction
         run: pnpm exec vitest run scripts/download-sidecars.test.ts --maxWorkers=1
 
-      - name: Install Rust stable
+      - name: Install Rust 1.95.0
         uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: 1.95.0
           targets: x86_64-pc-windows-msvc
+
+      - name: Install sqlite3 for backend linking
+        shell: pwsh
+        run: |
+          vcpkg install sqlite3:x64-windows-static-md
+          "LIB=$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows-static-md\lib;$env:LIB" |
+            Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Cache Rust build inputs
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: windows-native-smoke
+          cache-all-crates: "true"
+          workspaces: |
+            . -> target
+            windows-smoke-backend -> target
 
       - name: Install pinned native WebDriver tools
         shell: pwsh
@@ -132,10 +159,10 @@ jobs:
           $os = Get-CimInstance Win32_OperatingSystem
           $windowsBuild = "$($os.Caption) $($os.Version) build $($os.BuildNumber)"
           $backendTag = (node scripts/sidecar-lock.mjs get backend_tag).Trim()
-          $backendCommit = (gh api "repos/7xuanlu/wenlan/commits/$backendTag" --jq .sha).Trim()
-          if ($LASTEXITCODE -ne 0 -or -not $backendCommit) {
-            throw "could not resolve backend commit for $backendTag"
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($backendTag)) {
+            throw "backend release baseline lookup failed"
           }
+          $backendCommit = $env:WENLAN_BACKEND_SMOKE_COMMIT
 
           "WINDOWS_BUILD=$windowsBuild" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "WEBVIEW2_VERSION=$webviewVersion" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
@@ -148,6 +175,7 @@ jobs:
             app_commit = $env:GITHUB_SHA
             backend_tag = $backendTag
             backend_commit = $backendCommit
+            backend_source = "source-build"
             windows = [ordered]@{
               caption = [string]$os.Caption
               version = [string]$os.Version
@@ -164,6 +192,38 @@ jobs:
           }
           $metadata | ConvertTo-Json -Depth 6 |
             Set-Content (Join-Path $evidence "toolchain.json") -Encoding UTF8
+
+      - name: Build exact backend commit and stage verified sidecars
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          node scripts/download-sidecars.mjs
+          if ($LASTEXITCODE -ne 0) {
+            throw "sidecar download failed with exit code $LASTEXITCODE"
+          }
+          Push-Location windows-smoke-backend
+          try {
+            cargo build --locked --release --target x86_64-pc-windows-msvc `
+              -p wenlan -p wenlan-server -p wenlan-mcp
+            if ($LASTEXITCODE -ne 0) {
+              throw "backend release build failed with exit code $LASTEXITCODE"
+            }
+            & scripts/stage-onnxruntime-windows.ps1 `
+              -DestinationDirectory "target\x86_64-pc-windows-msvc\release"
+            if (-not $?) {
+              throw "ONNX Runtime staging failed"
+            }
+          }
+          finally {
+            Pop-Location
+          }
+          node scripts/windows/stage-backend-build.mjs `
+            --backend-dir windows-smoke-backend `
+            --commit $env:WENLAN_BACKEND_SMOKE_COMMIT `
+            --manifest $env:WENLAN_SIDECAR_MANIFEST
+          if ($LASTEXITCODE -ne 0) {
+            throw "backend sidecar staging failed with exit code $LASTEXITCODE"
+          }
 
       - name: Build release-profile native Tauri executable
         run: pnpm tauri build --no-bundle --target x86_64-pc-windows-msvc

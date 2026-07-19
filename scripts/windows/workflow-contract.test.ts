@@ -69,10 +69,34 @@ describe("Windows native smoke workflow contract", () => {
 
     expect(text).toContain("TARGET_TRIPLE: x86_64-pc-windows-msvc");
     expect(text).toContain("WENLAN_DOWNLOAD_SIDECARS: \"1\"");
+    expect(text).toContain(
+      "WENLAN_BACKEND_SMOKE_COMMIT: 0bb5acab6f428c8e8f25ea94026ebcfef0054f15",
+    );
+    expect(text).toContain(
+      '"WENLAN_BACKEND_COMMIT=$backendCommit" | Out-File',
+    );
+    expect(text).toContain("WENLAN_PRESTAGED_SIDECARS: \"1\"");
+    expect(text).toContain("repository: 7xuanlu/wenlan");
+    expect(text).toContain("ref: ${{ env.WENLAN_BACKEND_SMOKE_COMMIT }}");
+    expect(text).toContain("path: windows-smoke-backend");
+    expect(text).toContain(
+      "cargo build --locked --release --target x86_64-pc-windows-msvc",
+    );
+    expect(text).toContain("-p wenlan -p wenlan-server -p wenlan-mcp");
+    expect(text).toContain("scripts/stage-onnxruntime-windows.ps1");
+    expect(text).toContain("node scripts/windows/stage-backend-build.mjs");
+    const buildHook = readFileSync(
+      resolve(process.cwd(), "scripts", "prepare-tauri-build-sidecars.sh"),
+      "utf8",
+    );
+    expect(buildHook).toContain(
+      'exec node "$SCRIPT_DIR/windows/stage-backend-build.mjs" --verify-only',
+    );
     expect(text).toContain("WENLAN_DATA_DIR=");
     expect(text).toContain("WENLAN_SIDECAR_MANIFEST=");
     const extractionProof =
       "pnpm exec vitest run scripts/download-sidecars.test.ts --maxWorkers=1";
+    const backendBuild = "cargo build --locked --release";
     const nativeBuild =
       "pnpm tauri build --no-bundle --target x86_64-pc-windows-msvc";
     expect(text).toContain(extractionProof);
@@ -80,7 +104,20 @@ describe("Windows native smoke workflow contract", () => {
     expect(text.indexOf(extractionProof)).toBeLessThan(
       text.indexOf(nativeBuild),
     );
+    expect(text.indexOf(backendBuild)).toBeLessThan(text.indexOf(nativeBuild));
     expect(text).toContain("target/x86_64-pc-windows-msvc/release/wenlan-app.exe");
+    expect(text).toMatch(
+      /node scripts\/download-sidecars\.mjs\s+if \(\$LASTEXITCODE -ne 0\) \{\s+throw "sidecar download failed with exit code \$LASTEXITCODE"/,
+    );
+    expect(text).toMatch(
+      /& scripts\/stage-onnxruntime-windows\.ps1[\s\S]*?if \(-not \$\?\) \{\s+throw "ONNX Runtime staging failed"/,
+    );
+    expect(text).toMatch(
+      /node scripts\/windows\/stage-backend-build\.mjs[\s\S]*?--manifest \$env:WENLAN_SIDECAR_MANIFEST\s+if \(\$LASTEXITCODE -ne 0\) \{\s+throw "backend sidecar staging failed with exit code \$LASTEXITCODE"/,
+    );
+    expect(text).not.toContain(
+      'gh api "repos/7xuanlu/wenlan/commits/$backendTag"',
+    );
   });
 
   it("runs the native harness and always uploads its complete evidence", () => {

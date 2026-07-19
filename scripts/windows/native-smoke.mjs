@@ -6,6 +6,7 @@ import {
   readFileSync,
   writeFileSync,
 } from "node:fs";
+import { createHash } from "node:crypto";
 import { connect } from "node:net";
 import { dirname, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -66,6 +67,10 @@ function readJson(path) {
   return JSON.parse(readFileSync(path, "utf8").replace(/^\uFEFF/, ""));
 }
 
+function fileSha256(path) {
+  return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
 function sleep(milliseconds) {
   return new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds));
 }
@@ -119,6 +124,54 @@ function stageRuntimeSidecars(appExecutable) {
   return {
     backendExecutable: resolve(runtimeDir, "wenlan-server.exe"),
     onnxruntimeDll: resolve(runtimeDir, "onnxruntime.dll"),
+  };
+}
+
+function verifySourceBuiltBackend(runtime) {
+  const manifestPath = process.env.WENLAN_SIDECAR_MANIFEST;
+  const expectedCommit = process.env.WENLAN_BACKEND_COMMIT || "";
+  if (!manifestPath) {
+    throw new Error("WENLAN_SIDECAR_MANIFEST is required for native smoke");
+  }
+  if (!/^[0-9a-f]{40}$/.test(expectedCommit)) {
+    throw new Error("WENLAN_BACKEND_COMMIT must be an exact lowercase commit SHA");
+  }
+  const manifest = readJson(manifestPath);
+  if (
+    manifest?.backend?.source !== "source-build" ||
+    manifest.backend.commit !== expectedCommit
+  ) {
+    throw new Error(
+      `sidecar manifest backend does not prove source-built commit ${expectedCommit}`,
+    );
+  }
+  const serverName = `wenlan-server-${TARGET_TRIPLE}.exe`;
+  const stagedServer = manifest?.staged?.find(
+    (entry) => entry?.name === serverName,
+  );
+  if (!stagedServer || !/^[0-9a-f]{64}$/.test(stagedServer.sha256 || "")) {
+    throw new Error(`sidecar manifest omitted the ${serverName} hash`);
+  }
+  const sourceServer = resolve(
+    REPO_ROOT,
+    "app",
+    "binaries",
+    serverName,
+  );
+  const stagedHash = fileSha256(sourceServer);
+  const runtimeHash = fileSha256(runtime.backendExecutable);
+  if (
+    stagedHash !== stagedServer.sha256 ||
+    runtimeHash !== stagedServer.sha256
+  ) {
+    throw new Error(
+      `runtime backend hash diverged from staged manifest ${stagedServer.sha256}`,
+    );
+  }
+  return {
+    commit: expectedCommit,
+    serverSha256: stagedServer.sha256,
+    source: manifest.backend.source,
   };
 }
 
@@ -274,6 +327,7 @@ async function main() {
     "03-memory-visible.png",
   );
   const runtime = stageRuntimeSidecars(args.app);
+  const backendProof = verifySourceBuiltBackend(runtime);
   const marker = `WINDOWS_SMOKE_${process.env.GITHUB_RUN_ID || Date.now()}_${process.env.GITHUB_RUN_ATTEMPT || 1}`;
 
   const evidence = {
@@ -281,9 +335,11 @@ async function main() {
     status: "running",
     metadata: {
       app_commit: process.env.GITHUB_SHA || "",
-      backend_commit: process.env.WENLAN_BACKEND_COMMIT || "",
+      backend_commit: backendProof.commit,
+      backend_source: backendProof.source,
+      backend_server_sha256: backendProof.serverSha256,
       backend_tag: lock.backend_tag,
-      backend_windows_sha256: lock.backend_windows_x64_sha256,
+      backend_release_baseline_sha256: lock.backend_windows_x64_sha256,
       cloudflared_version: lock.cloudflared_version,
       cloudflared_windows_sha256: lock.cloudflared_windows_x64_sha256,
       cargo_profile: "release",
@@ -515,7 +571,9 @@ async function main() {
 
     const validation = validateNativeSmokeEvidence(evidence, {
       appExecutable: args.app,
+      backendCommit: backendProof.commit,
       backendExecutable: runtime.backendExecutable,
+      backendServerSha256: backendProof.serverSha256,
       onnxruntimeDll: runtime.onnxruntimeDll,
       marker,
       sourceAgent: SOURCE_AGENT,
@@ -532,7 +590,9 @@ async function main() {
       try {
         validateNativeSmokeEvidence(evidence, {
           appExecutable: args.app,
+          backendCommit: backendProof.commit,
           backendExecutable: runtime.backendExecutable,
+          backendServerSha256: backendProof.serverSha256,
           onnxruntimeDll: runtime.onnxruntimeDll,
           marker,
           sourceAgent: SOURCE_AGENT,

@@ -52,6 +52,22 @@ export function validateNativeSmokeEvidence(evidence, expected) {
     `expected ${describeValue(CLAIM)}, got ${describeValue(evidence?.claim)}`,
   );
   check(
+    "backend-commit-pinned",
+    evidence?.metadata?.backend_source === "source-build" &&
+      typeof expected?.backendCommit === "string" &&
+      /^[0-9a-f]{40}$/.test(expected.backendCommit) &&
+      evidence?.metadata?.backend_commit === expected.backendCommit,
+    `expected source-built backend commit ${describeValue(expected?.backendCommit)}, got ${describeValue(evidence?.metadata)}`,
+  );
+  check(
+    "backend-binary-hash",
+    typeof expected?.backendServerSha256 === "string" &&
+      /^[0-9a-f]{64}$/.test(expected.backendServerSha256) &&
+      evidence?.metadata?.backend_server_sha256 ===
+        expected.backendServerSha256,
+    `expected backend sha256 ${describeValue(expected?.backendServerSha256)}, got ${describeValue(evidence?.metadata?.backend_server_sha256)}`,
+  );
+  check(
     "port-7878-unused",
     evidence?.processes?.before?.port_7878_in_use === false,
     "127.0.0.1:7878 was occupied before the Tauri application launched",
