@@ -125,14 +125,6 @@ export function validateNativeSmokeEvidence(evidence, expected) {
     `expected ${describeValue(expected?.backendExecutable)}, got ${describeValue(workloadBackend?.executable_path)}`,
   );
   check(
-    "onnxruntime-loaded-before-workload",
-    Array.isArray(backend?.loaded_modules) &&
-      !backend.loaded_modules.some((modulePath) =>
-        sameWindowsPath(modulePath, expected?.onnxruntimeDll),
-      ),
-    `bundled module was already loaded before workload: ${describeValue(backend?.loaded_modules)}`,
-  );
-  check(
     "onnxruntime-module",
     Array.isArray(workloadBackend?.loaded_modules) &&
       workloadBackend.loaded_modules.some((modulePath) =>

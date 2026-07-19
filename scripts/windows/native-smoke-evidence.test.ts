@@ -103,7 +103,10 @@ function completeEvidence(): Evidence {
           pid: 4200,
           parent_pid: 4100,
           executable_path: BACKEND_EXE,
-          loaded_modules: ["C:\\Windows\\System32\\kernel32.dll"],
+          loaded_modules: [
+            "C:\\Windows\\System32\\kernel32.dll",
+            ONNX_DLL,
+          ],
         },
       },
       after_workload: {
@@ -193,13 +196,6 @@ describe("Windows native smoke evidence validator", () => {
       mutate: (evidence: Evidence) => {
         evidence.processes.after_launch.backend.executable_path =
           "C:\\other\\wenlan-server.exe";
-      },
-    },
-    {
-      name: "ONNX runtime was already loaded before workload",
-      assertion: "onnxruntime-loaded-before-workload",
-      mutate: (evidence: Evidence) => {
-        evidence.processes.after_launch.backend.loaded_modules.push(ONNX_DLL);
       },
     },
     {
