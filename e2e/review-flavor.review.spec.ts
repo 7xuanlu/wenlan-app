@@ -47,7 +47,8 @@ test("keeps every enabled primary destination inside the Review command contract
   await expect(page.getByRole("heading", { level: 1, name: "Spaces" })).toBeVisible();
 
   await navigation.getByRole("button", { name: "Graph", exact: true }).click();
-  await expect(page.getByTestId("constellation-map")).toContainText("7 entities");
+  await expect(page.getByTestId("atlas-view")).toBeVisible();
+  await expect(page.getByText(/^7 entities(?: · \d+ regions?)?$/)).toBeVisible();
 
   await navigation.getByRole("button", { name: "Memories", exact: true }).click();
   await expect(page.getByRole("region", { name: "Memory list" })).toBeVisible();

@@ -24,11 +24,11 @@ test("renders Graph as a structured canvas instead of a flat orange field", asyn
     .getByRole("button", { name: "Graph", exact: true })
     .click();
 
-  const graph = page.getByTestId("constellation-map");
+  const graph = page.getByTestId("atlas-view");
   await expect(graph).toBeVisible();
-  await expect(graph).toContainText("7 entities");
+  await expect(page.getByText(/^7 entities(?: · \d+ regions?)?$/)).toBeVisible();
 
-  const canvas = graph.locator("canvas");
+  const canvas = graph.locator('canvas[data-testid="atlas-cartography"]');
   await expect(canvas).toHaveCount(1);
   await expect(canvas).toBeVisible();
   await expect(canvas).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
