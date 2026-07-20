@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { memo } from "react";
+import { memo, useRef } from "react";
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import { useTranslation } from "react-i18next";
 import {
@@ -29,9 +29,18 @@ export interface CanvasNodeData extends Record<string, unknown> {
   palette: GraphPalette;
   width: number;
   height: number;
+  /**
+   * Show the name field instead of the label. True for the box being renamed
+   * and for the unsaved draft box.
+   */
+  editing: boolean;
+  /** Prompt for the name field; the draft box has no label to show yet. */
+  placeholder?: string;
   onOpen: () => void;
   onAccept: () => void;
   onDismiss: () => void;
+  onCommit: (label: string) => void;
+  onCancel: () => void;
 }
 
 export type CanvasNodeType = Node<CanvasNodeData, "pageMapNode">;
@@ -47,7 +56,7 @@ const CENTER_HANDLE = {
   pointerEvents: "none",
 } as const;
 
-function CanvasNode({ data }: NodeProps<CanvasNodeType>) {
+function CanvasNode({ data, selected }: NodeProps<CanvasNodeType>) {
   const { t } = useTranslation();
   const {
     label,
@@ -59,11 +68,13 @@ function CanvasNode({ data }: NodeProps<CanvasNodeType>) {
     palette,
     width,
     height,
+    editing,
+    placeholder,
   } = data;
 
   const slotColor = palette[SLOT_BY_REF_KIND[refKind]];
   const suggested = status === "suggested";
-  const showControls = suggested && !isRoot && !readOnly;
+  const showControls = suggested && !isRoot && !readOnly && !editing;
 
   return (
     <div
@@ -83,6 +94,10 @@ function CanvasNode({ data }: NodeProps<CanvasNodeType>) {
           isRoot ? 0.22 : 0.1,
         ),
         opacity: dangling ? 0.45 : suggested ? 0.75 : 1,
+        // Selection has to be visible or the keyboard shortcuts have no
+        // referent — "Delete removes the selected box" is meaningless if
+        // nothing on screen says which box that is.
+        boxShadow: selected ? `0 0 0 2px ${slotColor}` : undefined,
       }}
     >
       <Handle
@@ -91,32 +106,42 @@ function CanvasNode({ data }: NodeProps<CanvasNodeType>) {
         isConnectable={false}
         style={CENTER_HANDLE}
       />
-      <button
-        type="button"
-        onClick={data.onOpen}
-        title={dangling ? t("pageCanvas.dangling") : label}
-        aria-label={
-          dangling ? t("pageCanvas.danglingNode", { label }) : label
-        }
-        style={{
-          flex: 1,
-          minWidth: 0,
-          textAlign: "left",
-          background: "none",
-          border: "none",
-          padding: 0,
-          cursor: "pointer",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-          color: dangling ? palette.labelMuted : palette.label,
-          fontFamily: "var(--mem-font-body)",
-          fontSize: 12,
-          fontWeight: isRoot ? 600 : 400,
-        }}
-      >
-        {label}
-      </button>
+      {editing ? (
+        <NodeNameInput
+          value={label}
+          placeholder={placeholder}
+          color={palette.label}
+          onCommit={data.onCommit}
+          onCancel={data.onCancel}
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={data.onOpen}
+          title={dangling ? t("pageCanvas.dangling") : label}
+          aria-label={
+            dangling ? t("pageCanvas.danglingNode", { label }) : label
+          }
+          style={{
+            flex: 1,
+            minWidth: 0,
+            textAlign: "left",
+            background: "none",
+            border: "none",
+            padding: 0,
+            cursor: "pointer",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            color: dangling ? palette.labelMuted : palette.label,
+            fontFamily: "var(--mem-font-body)",
+            fontSize: 12,
+            fontWeight: isRoot ? 600 : 400,
+          }}
+        >
+          {label}
+        </button>
+      )}
       {showControls && (
         <>
           <button
@@ -156,6 +181,68 @@ function CanvasNode({ data }: NodeProps<CanvasNodeType>) {
         style={CENTER_HANDLE}
       />
     </div>
+  );
+}
+
+/**
+ * The name field, mounted only while a box is being named.
+ *
+ * Blur is the single commit path — Enter and clicking away both route through
+ * it — so one name can never fire two creates. Escape records the intent, then
+ * blurs. Because the field mounts fresh for each edit, `cancelled` starts false
+ * on its own and nothing has to remember to reset it.
+ */
+function NodeNameInput({
+  value,
+  placeholder,
+  color,
+  onCommit,
+  onCancel,
+}: {
+  value: string;
+  placeholder?: string;
+  color: string;
+  onCommit: (label: string) => void;
+  onCancel: () => void;
+}) {
+  const { t } = useTranslation();
+  const cancelled = useRef(false);
+  return (
+    <input
+      // Without these, React Flow drags the box and pans the canvas while the
+      // user is trying to type into it.
+      className="nodrag nopan nowheel"
+      autoFocus
+      defaultValue={value}
+      placeholder={placeholder}
+      aria-label={t("pageCanvas.nameSectionLabel")}
+      onKeyDown={(e) => {
+        // Canvas shortcuts must not fire while a name is being typed.
+        e.stopPropagation();
+        if (e.key === "Enter") {
+          e.preventDefault();
+          e.currentTarget.blur();
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          cancelled.current = true;
+          e.currentTarget.blur();
+        }
+      }}
+      onBlur={(e) =>
+        cancelled.current ? onCancel() : onCommit(e.currentTarget.value)
+      }
+      style={{
+        flex: 1,
+        minWidth: 0,
+        background: "none",
+        border: "none",
+        outline: "none",
+        padding: 0,
+        color,
+        fontFamily: "var(--mem-font-body)",
+        fontSize: 12,
+      }}
+    />
   );
 }
 

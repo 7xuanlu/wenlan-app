@@ -6,22 +6,32 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import PageDetail from "./PageDetail";
 
 // Same reasoning as PageCanvas.test.tsx: React Flow needs real dimensions.
-vi.mock("@xyflow/react", () => ({
-  ReactFlow: ({ nodes, nodeTypes }: any) => (
-    <div data-testid="react-flow">
-      {nodes.map((n: any) => {
-        const NodeComponent = nodeTypes[n.type];
-        return <NodeComponent key={n.id} id={n.id} data={n.data} />;
-      })}
-    </div>
-  ),
-  ReactFlowProvider: ({ children }: any) => <>{children}</>,
-  Background: () => null,
-  Controls: () => null,
-  Handle: () => null,
-  Position: { Top: "top", Bottom: "bottom", Left: "left", Right: "right" },
-  useReactFlow: () => ({ getViewport: () => ({ x: 0, y: 0, zoom: 1 }) }),
-}));
+// These tests only care that the canvas tab mounts, so the node state hook is
+// stubbed down to plain useState — selection and dragging are exercised in
+// PageCanvas.test.tsx, not here.
+vi.mock("@xyflow/react", async () => {
+  const React = await import("react");
+  return {
+    ReactFlow: ({ nodes, nodeTypes }: any) => (
+      <div data-testid="react-flow">
+        {nodes.map((n: any) => {
+          const NodeComponent = nodeTypes[n.type];
+          return <NodeComponent key={n.id} id={n.id} data={n.data} />;
+        })}
+      </div>
+    ),
+    ReactFlowProvider: ({ children }: any) => <>{children}</>,
+    Background: () => null,
+    Controls: () => null,
+    Handle: () => null,
+    Position: { Top: "top", Bottom: "bottom", Left: "left", Right: "right" },
+    useReactFlow: () => ({ getViewport: () => ({ x: 0, y: 0, zoom: 1 }) }),
+    useNodesState: (initial: any) => {
+      const [ns, setNs] = React.useState(initial);
+      return [ns, setNs, () => {}];
+    },
+  };
+});
 
 vi.mock("../../lib/tauri", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/tauri")>()),
