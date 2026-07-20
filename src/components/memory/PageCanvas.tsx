@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -72,12 +73,35 @@ const DRAFT_OFFSET = { x: 150, y: 64 };
 // hardcoded strings.
 // `as const` is load-bearing: i18n keys are a literal union here, and a
 // `string` annotation would widen them past the point where t() type-checks.
+// How far an arrow key moves the selection, and how far with Shift held.
+const NUDGE_STEP = 8;
+const NUDGE_STEP_COARSE = 40;
+
+// The hint bar. Gestures lead because they are what someone tries in the first
+// ten seconds; the key caps behind them are the same actions, faster.
+// `as const` is load-bearing: i18n keys are a literal union here, and a
+// `string` annotation would widen them past the point where t() type-checks.
 const SHORTCUTS = [
+  { cap: "Double-click", key: "pageCanvas.hintCreate" },
+  { cap: "Right-click", key: "pageCanvas.hintMenu" },
+  { cap: "Drag", key: "pageCanvas.hintMarquee" },
   { cap: "Tab", key: "pageCanvas.hintAddChild" },
   { cap: "Enter", key: "pageCanvas.hintAddSibling" },
   { cap: "F2", key: "pageCanvas.hintRename" },
   { cap: "Delete", key: "pageCanvas.hintDelete" },
 ] as const;
+
+/** An open right-click menu, positioned in surface-local pixels. */
+type CanvasMenu =
+  | { kind: "pane"; x: number; y: number; clientX: number; clientY: number }
+  | { kind: "node"; x: number; y: number; nodeId: string };
+
+interface MenuItem {
+  key: string;
+  label: string;
+  run: () => void;
+  danger?: boolean;
+}
 
 const nodeTypes: NodeTypes = { pageMapNode: CanvasNode as NodeTypes[string] };
 
@@ -101,8 +125,10 @@ function PageCanvasInner({
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const palette = useGraphPalette();
-  const { getViewport } = useReactFlow();
+  const { getViewport, screenToFlowPosition, fitView } = useReactFlow();
   const [notice, setNotice] = useState<string | null>(null);
+  const [menu, setMenu] = useState<CanvasMenu | null>(null);
+  const surfaceRef = useRef<HTMLDivElement | null>(null);
   // Node state is local and React Flow owns it during a drag. This is what
   // makes dragging cheap: a pointer move rewrites one node's position instead
   // of re-deriving the whole tree, and every other node keeps its identity so
@@ -149,6 +175,7 @@ function PageCanvasInner({
     setDraft(null);
     setEditingId(null);
     setNotice(null);
+    setMenu(null);
   }, [pageId]);
 
   const untitled = t("pageCanvas.untitled");
@@ -220,9 +247,46 @@ function PageCanvasInner({
     onError: handleMutationError,
   });
 
+  // The daemon's DELETE tombstones exactly one node — no cascade, no reparent —
+  // and `buildSpine` drops any box whose parent is gone. Tombstoning a parent on
+  // its own would therefore make its live children permanently invisible, so the
+  // subtree comes down with it, deepest first.
+  //
+  // ponytail: sequential, because each tombstone bumps the map revision and the
+  // DELETE response does not carry the new one. A leaf still costs exactly one
+  // call; only a real subtree pays for the re-reads. Cascading daemon-side would
+  // collapse this to a single request.
+  const removeSubtree = useCallback(
+    async (roots: string[]) => {
+      const childrenOf = new Map<string, string[]>();
+      for (const v of views) {
+        const parent = v.node.parent_id;
+        if (!parent) continue;
+        const kids = childrenOf.get(parent);
+        if (kids) kids.push(v.node.id);
+        else childrenOf.set(parent, [v.node.id]);
+      }
+      const ordered: string[] = [];
+      const seen = new Set<string>();
+      const walk = (id: string) => {
+        if (seen.has(id)) return;
+        seen.add(id);
+        for (const kid of childrenOf.get(id) ?? []) walk(kid);
+        ordered.push(id); // post-order: every child precedes its parent
+      };
+      for (const id of roots) walk(id);
+
+      let revision = revisionRef.current;
+      for (let i = 0; i < ordered.length; i += 1) {
+        await deletePageMapNode(pageId, ordered[i], { base_revision: revision });
+        if (i + 1 < ordered.length) revision = (await getPageMap(pageId)).revision;
+      }
+    },
+    [views, pageId],
+  );
+
   const removeMutation = useMutation({
-    mutationFn: (nodeId: string) =>
-      deletePageMapNode(pageId, nodeId, { base_revision: revisionRef.current }),
+    mutationFn: removeSubtree,
     onSuccess: onMutated,
     onError: handleMutationError,
   });
@@ -318,12 +382,14 @@ function PageCanvasInner({
     void invalidate();
   }, [getViewport, pageId, refetch, invalidate, t]);
 
-  // One PUT per burst: every drop restarts the timer, so dragging five nodes
-  // in a row sends one request carrying all five.
-  const handleNodeDragStop = useCallback(
-    (_event: unknown, node: Node) => {
-      dragSeq.current += 1;
-      dirtyRef.current.set(node.id, dragSeq.current);
+  // One PUT per burst: every move restarts the timer, so dragging five nodes in
+  // a row — or holding an arrow key down — sends one request carrying them all.
+  const markMoved = useCallback(
+    (ids: string[]) => {
+      for (const id of ids) {
+        dragSeq.current += 1;
+        dirtyRef.current.set(id, dragSeq.current);
+      }
       if (layoutTimer.current) clearTimeout(layoutTimer.current);
       layoutTimer.current = setTimeout(() => {
         layoutTimer.current = null;
@@ -331,6 +397,11 @@ function PageCanvasInner({
       }, LAYOUT_DEBOUNCE_MS);
     },
     [flushLayout],
+  );
+
+  const handleNodeDragStop = useCallback(
+    (_event: unknown, node: Node) => markMoved([node.id]),
+    [markMoved],
   );
 
   const openNode = useCallback(
@@ -452,9 +523,19 @@ function PageCanvasInner({
     };
   }, [draft, palette, commitDraft, t]);
 
+  const rootId = useMemo(
+    () => views.find((v) => v.node.parent_id === null)?.node.id ?? null,
+    [views],
+  );
+
+  const startDraftAt = useCallback((parentId: string, x: number, y: number) => {
+    setEditingId(null);
+    setMenu(null);
+    setDraft({ parentId, x, y });
+  }, []);
+
   const startDraft = useCallback(
     (mode: "child" | "sibling") => {
-      const rootId = views.find((v) => v.node.parent_id === null)?.node.id;
       if (!rootId) return;
       const selected = nodesRef.current.find((n) => n.selected);
       const anchorId = selected?.id ?? rootId;
@@ -464,23 +545,246 @@ function PageCanvasInner({
           : (views.find((v) => v.node.id === anchorId)?.node.parent_id ?? rootId);
       const base =
         nodesRef.current.find((n) => n.id === anchorId)?.position ?? { x: 0, y: 0 };
-      setEditingId(null);
-      setDraft({
-        parentId,
-        x: base.x + DRAFT_OFFSET.x,
-        y: base.y + DRAFT_OFFSET.y,
+      startDraftAt(parentId, base.x + DRAFT_OFFSET.x, base.y + DRAFT_OFFSET.y);
+    },
+    [views, rootId, startDraftAt],
+  );
+
+  // A box drawn on empty canvas still has to join the tree — every node here
+  // carries a parent — so it hangs off whatever is selected, or off the page
+  // itself. It lands centered on the pointer, where the user aimed.
+  const addBoxAt = useCallback(
+    (clientX: number, clientY: number) => {
+      if (readOnly || !rootId) return;
+      const point = screenToFlowPosition({ x: clientX, y: clientY });
+      const selected = nodesRef.current.find((n) => n.selected && n.id !== DRAFT_ID);
+      startDraftAt(
+        selected?.id ?? rootId,
+        point.x - DRAFT_SIZE.width / 2,
+        point.y - DRAFT_SIZE.height / 2,
+      );
+    },
+    [readOnly, rootId, screenToFlowPosition, startDraftAt],
+  );
+
+  const selectAll = useCallback(() => {
+    setNodes((ns) =>
+      ns.map((n) => (n.id === DRAFT_ID ? n : { ...n, selected: true })),
+    );
+  }, [setNodes]);
+
+  const clearSelection = useCallback(() => {
+    setNodes((ns) => ns.map((n) => (n.selected ? { ...n, selected: false } : n)));
+  }, [setNodes]);
+
+  const nudge = useCallback(
+    (dx: number, dy: number) => {
+      const ids = nodesRef.current
+        .filter((n) => n.selected && n.id !== DRAFT_ID)
+        .map((n) => n.id);
+      if (ids.length === 0) return;
+      const moving = new Set(ids);
+      setNodes((ns) =>
+        ns.map((n) =>
+          moving.has(n.id)
+            ? { ...n, position: { x: n.position.x + dx, y: n.position.y + dy } }
+            : n,
+        ),
+      );
+      markMoved(ids);
+    },
+    [setNodes, markMoved],
+  );
+
+  const deleteSelection = useCallback(() => {
+    const selected = nodesRef.current
+      .filter((n) => n.selected && n.id !== DRAFT_ID)
+      .map((n) => n.id);
+    if (selected.length === 0) return;
+    const roots = new Set(
+      views.filter((v) => v.node.parent_id === null).map((v) => v.node.id),
+    );
+    const deletable = selected.filter((id) => !roots.has(id));
+    // Selecting everything and hitting Delete should still clear the map around
+    // the center box, so this only complains when the center box was the *whole*
+    // selection.
+    if (deletable.length === 0) {
+      setNotice(t("pageCanvas.rootUndeletable"));
+      return;
+    }
+    setMenu(null);
+    mutateRemove(deletable);
+  }, [views, mutateRemove, t]);
+
+  const localPoint = useCallback((clientX: number, clientY: number) => {
+    const box = surfaceRef.current?.getBoundingClientRect();
+    return { x: clientX - (box?.left ?? 0), y: clientY - (box?.top ?? 0) };
+  }, []);
+
+  const handlePaneContextMenu = useCallback(
+    (event: ReactMouseEvent | MouseEvent) => {
+      event.preventDefault(); // the browser's own menu has nothing to offer here
+      const point = localPoint(event.clientX, event.clientY);
+      setMenu({
+        kind: "pane",
+        x: point.x,
+        y: point.y,
+        clientX: event.clientX,
+        clientY: event.clientY,
       });
     },
-    [views],
+    [localPoint],
   );
+
+  const handleNodeContextMenu = useCallback(
+    (event: ReactMouseEvent, node: Node) => {
+      event.preventDefault();
+      if (node.id === DRAFT_ID) return;
+      const point = localPoint(event.clientX, event.clientY);
+      setMenu({ kind: "node", x: point.x, y: point.y, nodeId: node.id });
+      // Right-clicking inside an existing multi-selection keeps it — that is the
+      // whole point of "delete these four". Right-clicking outside one moves the
+      // selection to the box under the pointer, so the menu's verbs have an
+      // obvious referent.
+      setNodes((ns) =>
+        ns.some((n) => n.id === node.id && n.selected)
+          ? ns
+          : ns.map((n) => ({ ...n, selected: n.id === node.id })),
+      );
+    },
+    [localPoint, setNodes],
+  );
+
+  // Double-click on empty canvas draws a box; on a box it renames. React Flow
+  // has no pane-doubleclick callback, so the surface listens and defers to the
+  // node handler when the pointer was over one.
+  const handleDoubleClick = useCallback(
+    (event: ReactMouseEvent<HTMLDivElement>) => {
+      if ((event.target as HTMLElement).closest(".react-flow__node")) return;
+      addBoxAt(event.clientX, event.clientY);
+    },
+    [addBoxAt],
+  );
+
+  const handleNodeDoubleClick = useCallback(
+    (_event: ReactMouseEvent, node: Node) => {
+      if (readOnly || node.id === DRAFT_ID) return;
+      setMenu(null);
+      setEditingId(node.id);
+    },
+    [readOnly],
+  );
+
+  const menuItems = useMemo<MenuItem[]>(() => {
+    if (!menu) return [];
+    if (menu.kind === "pane") {
+      const items: MenuItem[] = [];
+      if (!readOnly) {
+        items.push({
+          key: "add",
+          label: t("pageCanvas.menuAddHere"),
+          run: () => addBoxAt(menu.clientX, menu.clientY),
+        });
+      }
+      items.push(
+        { key: "all", label: t("pageCanvas.menuSelectAll"), run: selectAll },
+        {
+          key: "fit",
+          label: t("pageCanvas.menuFitView"),
+          run: () => void fitView({ duration: 200 }),
+        },
+      );
+      return items;
+    }
+    const view = views.find((v) => v.node.id === menu.nodeId);
+    if (!view) return [];
+    const items: MenuItem[] = [];
+    // A section is a heading in the page body — there is nothing behind it to
+    // open, so the verb is omitted rather than shown doing nothing.
+    if (view.node.ref_kind !== "section") {
+      items.push({
+        key: "open",
+        label: t("pageCanvas.menuOpen"),
+        run: () => openNode(view.node),
+      });
+    }
+    if (readOnly) return items;
+    const anchor = nodesRef.current.find((n) => n.id === menu.nodeId)?.position;
+    items.push(
+      {
+        key: "child",
+        label: t("pageCanvas.menuAddChild"),
+        run: () =>
+          startDraftAt(
+            menu.nodeId,
+            (anchor?.x ?? 0) + DRAFT_OFFSET.x,
+            (anchor?.y ?? 0) + DRAFT_OFFSET.y,
+          ),
+      },
+      {
+        key: "rename",
+        label: t("pageCanvas.menuRename"),
+        run: () => {
+          setMenu(null);
+          setEditingId(menu.nodeId);
+        },
+      },
+    );
+    if (view.node.parent_id !== null) {
+      const kids = views.some((v) => v.node.parent_id === menu.nodeId);
+      items.push({
+        key: "delete",
+        // Naming the cascade is the only warning the user gets — the boxes
+        // underneath go too, and there is no undo yet.
+        label: kids
+          ? t("pageCanvas.menuDeleteSubtree")
+          : t("pageCanvas.menuDelete"),
+        run: deleteSelection,
+        danger: true,
+      });
+    }
+    return items;
+  }, [
+    menu,
+    views,
+    readOnly,
+    t,
+    addBoxAt,
+    selectAll,
+    fitView,
+    openNode,
+    startDraftAt,
+    deleteSelection,
+  ]);
 
   const handleKeyDown = useCallback(
     (e: ReactKeyboardEvent<HTMLDivElement>) => {
-      if (readOnly) return;
       const target = e.target as HTMLElement | null;
       // Typing a box's name is not a canvas shortcut.
       if (target && (target.tagName === "INPUT" || target.isContentEditable)) return;
+
+      // Escape and select-all stay available on a read-only map: neither writes.
+      if (e.key === "Escape") {
+        e.preventDefault();
+        if (menu) setMenu(null);
+        else if (draft || editingId) {
+          setDraft(null);
+          setEditingId(null);
+        } else clearSelection();
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && (e.key === "a" || e.key === "A")) {
+        e.preventDefault();
+        selectAll();
+        return;
+      }
+      if (readOnly) return;
+      // Every shortcut below moves, renames or removes something the open menu
+      // is pointing at, so the menu stops being about anything.
+      if (menu) setMenu(null);
+
       const selected = nodesRef.current.find((n) => n.selected);
+      const step = e.shiftKey ? NUDGE_STEP_COARSE : NUDGE_STEP;
       switch (e.key) {
         case "Tab":
           e.preventDefault();
@@ -495,26 +799,41 @@ function PageCanvasInner({
           if (selected) setEditingId(selected.id);
           break;
         case "Delete":
-        case "Backspace": {
+        case "Backspace":
           e.preventDefault();
-          if (!selected) break;
-          const view = views.find((v) => v.node.id === selected.id);
-          if (view?.node.parent_id === null) {
-            setNotice(t("pageCanvas.rootUndeletable"));
-            break;
-          }
-          mutateRemove(selected.id);
+          deleteSelection();
           break;
-        }
-        case "Escape":
-          setDraft(null);
-          setEditingId(null);
+        case "ArrowUp":
+          e.preventDefault();
+          nudge(0, -step);
+          break;
+        case "ArrowDown":
+          e.preventDefault();
+          nudge(0, step);
+          break;
+        case "ArrowLeft":
+          e.preventDefault();
+          nudge(-step, 0);
+          break;
+        case "ArrowRight":
+          e.preventDefault();
+          nudge(step, 0);
           break;
         default:
           break;
       }
     },
-    [readOnly, startDraft, views, mutateRemove, t],
+    [
+      readOnly,
+      startDraft,
+      deleteSelection,
+      nudge,
+      selectAll,
+      clearSelection,
+      menu,
+      draft,
+      editingId,
+    ],
   );
 
   // The array React Flow actually renders. In the common case — including
@@ -651,10 +970,15 @@ function PageCanvasInner({
         </p>
       )}
       <div
+        ref={surfaceRef}
         className="page-canvas-surface"
         role="region"
+        // Focusable, or the shortcuts below only fire once a box has been
+        // clicked — press Tab on a fresh canvas and nothing happens.
+        tabIndex={0}
         aria-label={t("pageCanvas.regionLabel", { title: pageTitle })}
         onKeyDown={handleKeyDown}
+        onDoubleClick={handleDoubleClick}
       >
         <ReactFlow
           nodes={displayNodes}
@@ -662,9 +986,24 @@ function PageCanvasInner({
           nodeTypes={nodeTypes}
           onNodesChange={onNodesChange}
           onNodeDragStop={handleNodeDragStop}
+          onNodeDoubleClick={handleNodeDoubleClick}
+          onNodeContextMenu={handleNodeContextMenu}
+          onPaneContextMenu={handlePaneContextMenu}
+          onPaneClick={() => setMenu(null)}
+          onNodeClick={() => setMenu(null)}
+          onMoveStart={() => setMenu(null)}
           nodesDraggable={!readOnly}
           nodesConnectable={false}
           edgesFocusable={false}
+          // The Obsidian/Figma pointer model: drag empty canvas to rubber-band
+          // a selection, two-finger scroll to pan, middle-drag to pan, and
+          // pinch (or Cmd-scroll) to zoom.
+          selectionOnDrag
+          panOnDrag={[1]}
+          panOnScroll
+          // Double-click is how a box gets drawn here, so it must not also be
+          // how the canvas zooms.
+          zoomOnDoubleClick={false}
           // Delete is handled above, against the map's revision. Left to React
           // Flow it would drop the box from the canvas locally and leave the
           // daemon's copy untouched.
@@ -675,9 +1014,61 @@ function PageCanvasInner({
           <Background color={palette.graticule} gap={24} />
           <Controls showInteractive={false} />
         </ReactFlow>
+        {menu && menuItems.length > 0 && (
+          <ContextMenu
+            x={menu.x}
+            y={menu.y}
+            items={menuItems}
+            onClose={() => setMenu(null)}
+          />
+        )}
       </div>
       {!readOnly && <CanvasHints />}
     </div>
+  );
+}
+
+function ContextMenu({
+  x,
+  y,
+  items,
+  onClose,
+}: {
+  x: number;
+  y: number;
+  items: MenuItem[];
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <ul
+      className="page-canvas-menu"
+      role="menu"
+      aria-label={t("pageCanvas.menuLabel")}
+      style={{ left: x, top: y }}
+      // The menu sits inside the canvas surface, so a click on it would
+      // otherwise reach the pane underneath and fire the very handlers that
+      // close it.
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      {items.map((item) => (
+        <li key={item.key} role="none">
+          <button
+            type="button"
+            role="menuitem"
+            className={
+              item.danger ? "page-canvas-menu-item is-danger" : "page-canvas-menu-item"
+            }
+            onClick={() => {
+              item.run();
+              onClose();
+            }}
+          >
+            {item.label}
+          </button>
+        </li>
+      ))}
+    </ul>
   );
 }
 

@@ -27,21 +27,60 @@ vi.mock("@xyflow/react", async () => {
       nodesDraggable,
       onNodesChange,
       onNodeDragStop,
+      onNodeDoubleClick,
+      onNodeContextMenu,
+      onPaneContextMenu,
+      selectionOnDrag,
+      zoomOnDoubleClick,
+      panOnScroll,
     }: any) => (
       <div
         data-testid="react-flow"
         data-edge-ids={edges.map((e: any) => e.id).join(",")}
         data-nodes-draggable={String(nodesDraggable)}
+        // The pointer model is a set of props, so the props are what a test can
+        // check. Whether the rubber band actually draws is React Flow's job.
+        data-selection-on-drag={String(!!selectionOnDrag)}
+        data-zoom-on-double-click={String(!!zoomOnDoubleClick)}
+        data-pan-on-scroll={String(!!panOnScroll)}
       >
+        <button
+          aria-label="pane contextmenu"
+          onClick={() =>
+            onPaneContextMenu?.({
+              preventDefault() {},
+              clientX: 40,
+              clientY: 50,
+            })
+          }
+        />
         {nodes.map((n: any) => {
           const NodeComponent = nodeTypes[n.type];
           return (
             <div
               key={n.id}
+              // The real class name, because PageCanvas's own double-click
+              // handler uses `closest(".react-flow__node")` to tell a box from
+              // the empty canvas behind it.
+              className="react-flow__node"
               data-testid="rf-node"
               data-node-id={n.id}
               data-x={n.position?.x}
+              data-y={n.position?.y}
             >
+              <button
+                aria-label={`contextmenu ${n.id}`}
+                onClick={() =>
+                  onNodeContextMenu?.(
+                    { preventDefault() {}, clientX: 10, clientY: 20 },
+                    n,
+                  )
+                }
+              />
+              <button
+                aria-label={`doubleclick ${n.id}`}
+                onClick={() => onNodeDoubleClick?.({}, n)}
+              />
               <button
                 aria-label={`drag ${n.id}`}
                 onClick={() => {
@@ -81,7 +120,13 @@ vi.mock("@xyflow/react", async () => {
     Controls: () => null,
     Handle: () => null,
     Position: { Top: "top", Bottom: "bottom", Left: "left", Right: "right" },
-    useReactFlow: () => ({ getViewport: () => ({ x: 0, y: 0, zoom: 1 }) }),
+    useReactFlow: () => ({
+      getViewport: () => ({ x: 0, y: 0, zoom: 1 }),
+      // Identity is the right stub: the mapping is React Flow's, and the code
+      // under test only cares that the click point comes back as flow coords.
+      screenToFlowPosition: (p: { x: number; y: number }) => p,
+      fitView: vi.fn(),
+    }),
     useNodesState: (initial: any) => {
       const [ns, setNs] = React.useState(initial);
       const onNodesChange = React.useCallback((changes: any[]) => {
@@ -536,5 +581,171 @@ describe("PageCanvas", () => {
     );
     expect(createPageMapNode).not.toHaveBeenCalled();
     expect(updatePage).not.toHaveBeenCalled();
+  });
+});
+
+describe("PageCanvas direct manipulation", () => {
+  // root -> branch -> leaf, so a delete has something to cascade through.
+  function nestedMap(): PageMap {
+    return makeMap({
+      nodes: [
+        node({ id: "n_root", ref_kind: "page", ref_id: "p1" }),
+        node({
+          id: "n_branch",
+          parent_id: "n_root",
+          ref_kind: "section",
+          ref_id: "p1#branch",
+          label: "Branch",
+        }),
+        node({
+          id: "n_leaf",
+          parent_id: "n_branch",
+          ref_kind: "section",
+          ref_id: "p1#leaf",
+          label: "Leaf",
+        }),
+      ],
+      edges: [],
+    });
+  }
+
+  function menuItems() {
+    return screen
+      .getAllByRole("menuitem")
+      .map((b) => b.textContent);
+  }
+
+  it("draws a box where the canvas was double-clicked", async () => {
+    const { getPageMap } = await tauri();
+    (getPageMap as ReturnType<typeof vi.fn>).mockResolvedValue(makeMap());
+    const { user } = renderCanvas();
+    await screen.findByTestId("react-flow");
+
+    expect(screen.queryByLabelText("Section name")).toBeNull();
+    await user.dblClick(screen.getByRole("region", { name: /Canvas for/ }));
+
+    // The draft box is local until it is named — nothing has been created yet.
+    expect(await screen.findByLabelText("Section name")).toBeTruthy();
+    const { createPageMapNode } = await tauri();
+    expect(createPageMapNode).not.toHaveBeenCalled();
+  });
+
+  it("renames rather than drawing when the double-click lands on a box", async () => {
+    const { getPageMap } = await tauri();
+    (getPageMap as ReturnType<typeof vi.fn>).mockResolvedValue(nestedMap());
+    const { user } = renderCanvas();
+    await screen.findByTestId("react-flow");
+
+    await user.click(screen.getByLabelText("doubleclick n_leaf"));
+    const field = await screen.findByLabelText("Section name");
+    expect((field as HTMLInputElement).value).toBe("Leaf");
+  });
+
+  it("offers open/rename/delete on a box and only safe verbs on the canvas", async () => {
+    const { getPageMap } = await tauri();
+    (getPageMap as ReturnType<typeof vi.fn>).mockResolvedValue(nestedMap());
+    const { user } = renderCanvas();
+    await screen.findByTestId("react-flow");
+
+    await user.click(screen.getByLabelText("contextmenu n_leaf"));
+    expect(menuItems()).toEqual(["Add box inside", "Rename", "Delete"]);
+
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+
+    await user.click(screen.getByLabelText("pane contextmenu"));
+    expect(menuItems()).toEqual(["New box here", "Select all", "Fit to view"]);
+  });
+
+  it("says so in the menu when deleting takes the boxes underneath too", async () => {
+    const { getPageMap } = await tauri();
+    (getPageMap as ReturnType<typeof vi.fn>).mockResolvedValue(nestedMap());
+    const { user } = renderCanvas();
+    await screen.findByTestId("react-flow");
+
+    await user.click(screen.getByLabelText("contextmenu n_branch"));
+    expect(menuItems()).toContain("Delete, with everything inside");
+  });
+
+  it("never offers to delete the box that is the page itself", async () => {
+    const { getPageMap } = await tauri();
+    (getPageMap as ReturnType<typeof vi.fn>).mockResolvedValue(nestedMap());
+    const { user } = renderCanvas();
+    await screen.findByTestId("react-flow");
+
+    await user.click(screen.getByLabelText("contextmenu n_root"));
+    const items = menuItems();
+    expect(items.some((label) => label?.startsWith("Delete"))).toBe(false);
+  });
+
+  it("tombstones a subtree leaf-first, so no live box is left without a parent", async () => {
+    const { getPageMap, deletePageMapNode } = await tauri();
+    (getPageMap as ReturnType<typeof vi.fn>).mockResolvedValue(nestedMap());
+    (deletePageMapNode as ReturnType<typeof vi.fn>).mockResolvedValue(
+      node({ id: "n_leaf", status: "dismissed" }),
+    );
+    const { user } = renderCanvas();
+    await screen.findByTestId("react-flow");
+
+    await user.click(screen.getByLabelText("contextmenu n_branch"));
+    await user.click(
+      screen.getByRole("menuitem", { name: "Delete, with everything inside" }),
+    );
+
+    await waitFor(() =>
+      expect(deletePageMapNode).toHaveBeenCalledTimes(2),
+    );
+    const order = (
+      deletePageMapNode as ReturnType<typeof vi.fn>
+    ).mock.calls.map((c: unknown[]) => c[1]);
+    // The child has to go first: the daemon does not cascade, and a live box
+    // whose parent is a tombstone never renders again.
+    expect(order).toEqual(["n_leaf", "n_branch"]);
+  });
+
+  it("keeps double-click for drawing and hands panning to scroll", async () => {
+    const { getPageMap } = await tauri();
+    (getPageMap as ReturnType<typeof vi.fn>).mockResolvedValue(makeMap());
+    renderCanvas();
+    const flow = await screen.findByTestId("react-flow");
+
+    expect(flow.getAttribute("data-selection-on-drag")).toBe("true");
+    expect(flow.getAttribute("data-pan-on-scroll")).toBe("true");
+    // Otherwise the canvas zooms out from under the box being drawn.
+    expect(flow.getAttribute("data-zoom-on-double-click")).toBe("false");
+  });
+
+  it("nudges the selected box with the arrow keys", async () => {
+    const { getPageMap } = await tauri();
+    (getPageMap as ReturnType<typeof vi.fn>).mockResolvedValue(nestedMap());
+    const { user } = renderCanvas();
+    await screen.findByTestId("react-flow");
+
+    await user.click(screen.getByLabelText("select n_leaf"));
+    const before = Number(
+      screen
+        .getByTestId("react-flow")
+        .querySelector('[data-node-id="n_leaf"]')
+        ?.getAttribute("data-x"),
+    );
+
+    // Nudging with a menu open has to close it: it is anchored to a box that
+    // is about to move out from under it.
+    await user.click(screen.getByLabelText("contextmenu n_leaf"));
+    expect(screen.getByRole("menu")).toBeTruthy();
+    fireEvent.keyDown(screen.getByRole("region", { name: /Canvas for/ }), {
+      key: "ArrowRight",
+    });
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+
+    await waitFor(() => {
+      const after = Number(
+        screen
+          .getByTestId("react-flow")
+          .querySelector('[data-node-id="n_leaf"]')
+          ?.getAttribute("data-x"),
+      );
+      expect(after).toBe(before + 8);
+    });
   });
 });

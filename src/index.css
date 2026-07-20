@@ -3047,11 +3047,117 @@ p.entity-error {
 }
 
 .page-canvas-surface {
+  position: relative;
   height: min(68vh, 620px);
   overflow: hidden;
   border: 1px solid var(--mem-border);
   border-radius: 12px;
   background-color: var(--mem-surface);
+}
+
+/* The surface takes focus so its shortcuts fire on a fresh canvas, but a ring
+   around the whole 620px box on every click is noise. Keyboard focus still
+   shows. */
+.page-canvas-surface:focus {
+  outline: none;
+}
+
+.page-canvas-surface:focus-visible {
+  outline: 2px solid var(--mem-accent-page, var(--mem-text-secondary));
+  outline-offset: -2px;
+}
+
+/* Right-click menu. Anchored to the surface, so it is clipped by the canvas
+   rather than escaping over the page around it. */
+.page-canvas-menu {
+  position: absolute;
+  z-index: 5;
+  min-width: 168px;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  border: 1px solid var(--mem-border);
+  border-radius: 8px;
+  background-color: var(--mem-surface);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 22%);
+}
+
+.page-canvas-menu-item {
+  display: block;
+  width: 100%;
+  padding: 5px 9px;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--mem-text-secondary);
+  font-family: var(--mem-font-body);
+  font-size: 12px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.page-canvas-menu-item:hover,
+.page-canvas-menu-item:focus-visible {
+  background-color: var(--mem-hover);
+  color: var(--mem-text);
+  outline: none;
+}
+
+/* Deleting a box takes the boxes under it too and there is no undo, so the
+   one destructive verb does not look like the others. */
+.page-canvas-menu-item.is-danger {
+  color: var(--mem-danger, #d4645f);
+}
+
+.page-canvas-menu-item.is-danger:hover,
+.page-canvas-menu-item.is-danger:focus-visible {
+  background-color: var(--mem-danger, #d4645f);
+  color: var(--mem-surface);
+}
+
+/* React Flow's stylesheet ships a light-only control bar — on the dark canvas
+   it renders as a white block with near-invisible icons. Restyle it from the
+   app's own tokens so it follows whichever theme is active instead of
+   fighting it. Scoped to .page-canvas-surface so Atlas keeps its own look. */
+.page-canvas-surface .react-flow__controls {
+  border: 1px solid var(--mem-border);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: none;
+  background-color: var(--mem-surface);
+}
+
+.page-canvas-surface .react-flow__controls-button {
+  width: 26px;
+  height: 26px;
+  padding: 6px;
+  border: none;
+  border-bottom: 1px solid var(--mem-border);
+  background-color: var(--mem-surface);
+  color: var(--mem-text-secondary);
+}
+
+.page-canvas-surface .react-flow__controls-button:last-child {
+  border-bottom: none;
+}
+
+.page-canvas-surface .react-flow__controls-button:hover {
+  background-color: var(--mem-hover);
+  color: var(--mem-text);
+}
+
+.page-canvas-surface .react-flow__controls-button:focus-visible {
+  outline: 2px solid var(--mem-accent-page, currentColor);
+  outline-offset: -2px;
+}
+
+/* The default rule is `fill: #fff` on the glyph, which is why the icons
+   vanish once the button background follows the theme. */
+.page-canvas-surface .react-flow__controls-button svg {
+  max-width: 12px;
+  max-height: 12px;
+  fill: currentColor;
 }
 
 .page-canvas-message {
