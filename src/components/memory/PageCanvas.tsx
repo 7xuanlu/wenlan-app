@@ -19,6 +19,7 @@ import {
   useNodesState,
   useReactFlow,
   type Edge,
+  type FinalConnectionState,
   type Node,
   type NodeTypes,
 } from "@xyflow/react";
@@ -554,17 +555,34 @@ function PageCanvasInner({
   // carries a parent — so it hangs off whatever is selected, or off the page
   // itself. It lands centered on the pointer, where the user aimed.
   const addBoxAt = useCallback(
-    (clientX: number, clientY: number) => {
+    (clientX: number, clientY: number, parentId?: string) => {
       if (readOnly || !rootId) return;
       const point = screenToFlowPosition({ x: clientX, y: clientY });
       const selected = nodesRef.current.find((n) => n.selected && n.id !== DRAFT_ID);
       startDraftAt(
-        selected?.id ?? rootId,
+        parentId ?? selected?.id ?? rootId,
         point.x - DRAFT_SIZE.width / 2,
         point.y - DRAFT_SIZE.height / 2,
       );
     },
     [readOnly, rootId, screenToFlowPosition, startDraftAt],
+  );
+
+  // Drag a box's connector into empty space and let go: the new box is already
+  // a child of the one you dragged from. Dropping onto another box does nothing
+  // — re-parenting by drag is a separate feature.
+  const handleConnectEnd = useCallback(
+    (event: MouseEvent | TouchEvent, state: FinalConnectionState) => {
+      if (state.isValid) return;
+      const from = state.fromNode?.id;
+      if (!from || from === DRAFT_ID) return;
+      // React Flow hands over the raw DOM event, which is the only thing here
+      // carrying where the pointer was released.
+      const point = "changedTouches" in event ? event.changedTouches[0] : event;
+      if (!point) return;
+      addBoxAt(point.clientX, point.clientY, from);
+    },
+    [addBoxAt],
   );
 
   const selectAll = useCallback(() => {
@@ -864,6 +882,7 @@ function PageCanvasInner({
       edges.push({
         id: `tree-${v.node.id}`,
         source: parent,
+        sourceHandle: "anchor",
         target: v.node.id,
         style: { stroke: palette.edge, strokeWidth: 1.2 },
       });
@@ -874,6 +893,7 @@ function PageCanvasInner({
       edges.push({
         id: e.id,
         source: e.from_node,
+        sourceHandle: "anchor",
         target: e.to_node,
         label: e.label ?? undefined,
         style: {
@@ -992,8 +1012,9 @@ function PageCanvasInner({
           onPaneClick={() => setMenu(null)}
           onNodeClick={() => setMenu(null)}
           onMoveStart={() => setMenu(null)}
+          onConnectEnd={handleConnectEnd}
           nodesDraggable={!readOnly}
-          nodesConnectable={false}
+          nodesConnectable={!readOnly}
           edgesFocusable={false}
           // The Obsidian/Figma pointer model: drag empty canvas to rubber-band
           // a selection, two-finger scroll to pan, middle-drag to pan, and

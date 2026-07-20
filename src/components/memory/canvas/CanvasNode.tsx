@@ -56,7 +56,11 @@ const CENTER_HANDLE = {
   pointerEvents: "none",
 } as const;
 
-function CanvasNode({ data, selected }: NodeProps<CanvasNodeType>) {
+function CanvasNode({
+  data,
+  selected,
+  isConnectable,
+}: NodeProps<CanvasNodeType>) {
   const { t } = useTranslation();
   const {
     label,
@@ -175,10 +179,20 @@ function CanvasNode({ data, selected }: NodeProps<CanvasNodeType>) {
         </>
       )}
       <Handle
+        id="anchor"
         type="source"
         position={Position.Bottom}
         isConnectable={false}
         style={CENTER_HANDLE}
+      />
+      {/* The dot people actually grab, kept separate from the centered anchor
+          above so edges keep routing center-to-center across the spine. */}
+      <Handle
+        id="grow"
+        type="source"
+        position={Position.Bottom}
+        className="page-canvas-grow"
+        isConnectable={isConnectable}
       />
     </div>
   );

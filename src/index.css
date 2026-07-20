@@ -3069,6 +3069,26 @@ p.entity-error {
 
 /* Right-click menu. Anchored to the surface, so it is clipped by the canvas
    rather than escaping over the page around it. */
+.page-canvas-surface .react-flow__handle.page-canvas-grow {
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid var(--mem-surface);
+  background-color: var(--mem-text-secondary);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.page-canvas-surface .react-flow__node:hover .page-canvas-grow,
+.page-canvas-surface .react-flow__node.selected .page-canvas-grow {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-canvas-surface .react-flow__handle.page-canvas-grow {
+    transition: none;
+  }
+}
+
 .page-canvas-menu {
   position: absolute;
   z-index: 5;

@@ -30,6 +30,7 @@ vi.mock("@xyflow/react", async () => {
       onNodeDoubleClick,
       onNodeContextMenu,
       onPaneContextMenu,
+      onConnectEnd,
       selectionOnDrag,
       zoomOnDoubleClick,
       panOnScroll,
@@ -80,6 +81,26 @@ vi.mock("@xyflow/react", async () => {
               <button
                 aria-label={`doubleclick ${n.id}`}
                 onClick={() => onNodeDoubleClick?.({}, n)}
+              />
+              {/* Releasing a connector: once over empty canvas (React Flow
+                  reports the attempt as invalid), once onto another box. */}
+              <button
+                aria-label={`connectend empty ${n.id}`}
+                onClick={() =>
+                  onConnectEnd?.(
+                    { clientX: 300, clientY: 400 },
+                    { isValid: false, fromNode: { id: n.id } },
+                  )
+                }
+              />
+              <button
+                aria-label={`connectend onto box ${n.id}`}
+                onClick={() =>
+                  onConnectEnd?.(
+                    { clientX: 300, clientY: 400 },
+                    { isValid: true, fromNode: { id: n.id } },
+                  )
+                }
               />
               <button
                 aria-label={`drag ${n.id}`}
@@ -713,6 +734,45 @@ describe("PageCanvas direct manipulation", () => {
     expect(flow.getAttribute("data-pan-on-scroll")).toBe("true");
     // Otherwise the canvas zooms out from under the box being drawn.
     expect(flow.getAttribute("data-zoom-on-double-click")).toBe("false");
+  });
+
+
+  it("grows a child where the connector was let go on empty canvas", async () => {
+    const { getPageMap, getPage, updatePage, createPageMapNode } = await tauri();
+    (getPageMap as ReturnType<typeof vi.fn>).mockResolvedValue(nestedMap());
+    (getPage as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: "p1",
+      content: "# Page One\n\nBody.",
+    });
+    (updatePage as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+    (createPageMapNode as ReturnType<typeof vi.fn>).mockResolvedValue({});
+    const { user } = renderCanvas();
+    await screen.findByTestId("react-flow");
+
+    await user.click(screen.getByLabelText("connectend empty n_branch"));
+    const field = await screen.findByRole("textbox", { name: "Section name" });
+    await user.type(field, "Offshoot{Enter}");
+
+    // The box hangs off the one the drag started from, not off the selection
+    // and not off the page root.
+    await waitFor(() =>
+      expect(createPageMapNode).toHaveBeenCalledWith(
+        "p1",
+        expect.objectContaining({ parent_id: "n_branch", label: "Offshoot" }),
+      ),
+    );
+  });
+
+  it("does nothing when the connector is dropped onto another box", async () => {
+    const { getPageMap } = await tauri();
+    (getPageMap as ReturnType<typeof vi.fn>).mockResolvedValue(nestedMap());
+    const { user } = renderCanvas();
+    await screen.findByTestId("react-flow");
+
+    // Re-parenting by drag is deliberately not a thing yet, so a landed
+    // connection must not quietly draw a box on top of the target either.
+    await user.click(screen.getByLabelText("connectend onto box n_branch"));
+    expect(screen.queryByRole("textbox", { name: "Section name" })).toBeNull();
   });
 
   it("nudges the selected box with the arrow keys", async () => {
