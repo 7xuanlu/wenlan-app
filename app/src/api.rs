@@ -947,6 +947,9 @@ fn empty_update() -> wenlan_types::requests::UpdateConfigRequest {
         synthesis_model: None,
         external_llm_endpoint: None,
         external_llm_model: None,
+        everyday_source: None,
+        synthesis_source: None,
+        page_map_auto_suggest: None,
         // Tri-state (Option<Option<_>>): outer None = omit from JSON =
         // preserve the stored key. Note sparse_update_config strips nulls,
         // so a future caller passing Some(None) to clear the key must bypass
