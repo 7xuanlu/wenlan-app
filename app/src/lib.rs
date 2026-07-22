@@ -63,6 +63,10 @@ fn app_log_file_name() -> &'static str {
     "wenlan.log"
 }
 
+fn launch_agent_startup_enabled() -> bool {
+    cfg!(target_os = "macos")
+}
+
 static QUIT_GUARD_PENDING: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
@@ -249,7 +253,8 @@ pub fn run() {
             // Repair a stale server plist before daemon selection. The full
             // first-run install can stay async, but an already-running daemon
             // with the wrong data root must not win the port before repair.
-            let daemon_startup_preflight_ok = {
+            let launch_agent_startup = launch_agent_startup_enabled();
+            let daemon_startup_preflight_ok = if launch_agent_startup {
                 use tauri::Emitter;
                 let launchctl = crate::lifecycle::SystemLaunchctl;
                 match crate::lifecycle::prepare_server_plist_for_startup(&launchctl) {
@@ -260,6 +265,9 @@ pub fn run() {
                         false
                     }
                 }
+            } else {
+                log::info!("[startup] LaunchAgent preflight is not applicable on this platform");
+                true
             };
             // Carry the outcome to the on-demand "Start Wenlan" command, which
             // must not re-run the mutating preflight from a user click.
@@ -267,7 +275,7 @@ pub fn run() {
 
             // First-run silent install — H6: run on a blocking task so we
             // don't block setup() (which delays Tauri start by hundreds of ms).
-            {
+            if launch_agent_startup {
                 use tauri::Emitter;
                 let install_handle = handle.clone();
                 tauri::async_runtime::spawn(async move {
@@ -675,8 +683,8 @@ pub fn run() {
                     "[init] skipping daemon sidecar because server plist preflight failed"
                 );
             } else {
-                let launchd_managed =
-                    crate::lifecycle::current_server_plist_matches_selected_data_dir();
+                let launchd_managed = launch_agent_startup
+                    && crate::lifecycle::current_server_plist_matches_selected_data_dir();
                 if launchd_managed {
                     log::info!(
                         "[init] launchd-managed daemon detected, skipping sidecar spawn"
@@ -1047,6 +1055,16 @@ pub fn run() {
             }
             _ => {}
         });
+}
+
+#[cfg(test)]
+mod platform_tests {
+    use super::*;
+
+    #[test]
+    fn launch_agent_startup_is_macos_only() {
+        assert_eq!(launch_agent_startup_enabled(), cfg!(target_os = "macos"));
+    }
 }
 
 #[cfg(all(test, target_os = "macos"))]
