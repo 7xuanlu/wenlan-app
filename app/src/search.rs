@@ -3270,6 +3270,13 @@ pub async fn update_page(
     let req = requests::UpdatePageRequest {
         content,
         source_memory_ids: Vec::new(),
+        // Legacy-client path: the server guards on the version it loaded, so
+        // the ownership decision and the write describe the same row.
+        expected_version: None,
+        // No retry identity yet — an unreplayed write behaves as it did
+        // before the M0 gate. Sending a real pair would make retries no-ops.
+        caller_id: None,
+        operation_id: None,
     };
     let _resp: responses::SuccessResponse = s
         .client
@@ -3525,6 +3532,7 @@ pub async fn search_pages(
         query,
         limit,
         page_type: None,
+        space: None,
     };
     let resp: responses::SearchPagesResponse = client.post_json("/api/pages/search", &req).await?;
     Ok(resp.pages)

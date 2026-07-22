@@ -243,3 +243,30 @@ jobs:
           gh release edit "$RELEASE_TAG" --notes-file release-body.md
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # tauri-action bakes the `releaseBody` input ('Building...') into
+      # latest.json's notes field and uploads the asset before the step above
+      # runs. `gh release edit` rewrites only the GitHub release body, never the
+      # uploaded asset — so without this, every in-app updater shows the literal
+      # string "Building..." as the release notes. Caught by the v0.14.0 draft
+      # dry run (workflow_dispatch 29717367885).
+      - name: Sync updater notes with changelog
+        run: |
+          gh release download "$RELEASE_TAG" --pattern latest.json --clobber -O latest.json
+          node -e '
+            const fs = require("fs");
+            const j = JSON.parse(fs.readFileSync("latest.json", "utf8"));
+            j.notes = fs.readFileSync("release-body.md", "utf8").trim();
+            fs.writeFileSync("latest.json", JSON.stringify(j, null, 2));
+          '
+          gh release upload "$RELEASE_TAG" latest.json --clobber
+          node -e '
+            const n = JSON.parse(require("fs").readFileSync("latest.json", "utf8")).notes;
+            if (/^Building\.\.\.$/.test(n.trim()) || n.trim() === "") {
+              console.error("ERROR: latest.json notes still a placeholder after sync");
+              process.exit(1);
+            }
+            console.log("latest.json notes synced (" + n.length + " chars)");
+          '
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

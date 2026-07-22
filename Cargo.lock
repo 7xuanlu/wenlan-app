@@ -6352,7 +6352,7 @@ checksum = "a28ac98ddc8b9274cb41bb4d9d4d5c425b6020c50c46f25559911905610b4a88"
 
 [[package]]
 name = "wenlan-app"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6403,9 +6403,9 @@ dependencies = [
 
 [[package]]
 name = "wenlan-types"
-version = "0.13.2"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "826cc92bef3abd7a2b9d0b5b589d6e581e23d94c337b7f5f252d3f7ad7abbdf5"
+checksum = "924872761929d8170e19450b0342745ec3ba28796c98b7fa494cb169d5006f5e"
 dependencies = [
  "anyhow",
  "serde",
