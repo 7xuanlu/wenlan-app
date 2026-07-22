@@ -1,14 +1,15 @@
 # Windows Native Smoke Design
 
-**Status:** design for review
+**Status:** implemented source-build proof; release-payload proof pending
 **Date:** 2026-07-18
 **Repositories:** `7xuanlu/wenlan-app` and `7xuanlu/wenlan`
 
 ## Outcome
 
 Prove on a clean GitHub-hosted Windows VM that the native Wenlan Tauri app can
-start its pinned Wenlan backend, exchange real data with it, render that data in
-the native WebView2 UI, and leave inspectable visual and machine evidence.
+start an exact source-built Wenlan backend commit, exchange real data with it,
+render that data in the native WebView2 UI, and leave inspectable visual and
+machine evidence.
 
 The first proof is a manual GitHub Actions workflow. It is intentionally lighter
 than maintaining a local Windows VM on an Apple Silicon Mac, but it must test
@@ -47,9 +48,11 @@ browser preview harness.
 
 The initial workflow proves:
 
-1. A clean `windows-2022` runner can fetch and verify the exact backend release
-   and exact cloudflared release selected by one sidecar lock contract.
-2. The real backend executables, `onnxruntime.dll`, and the Windows
+1. A clean `windows-2022` runner can build one exact backend commit and record
+   hashes for every staged executable. The sidecar lock's backend release is
+   downloaded and verified only as a distribution baseline; its backend payload
+   is replaced before runtime. The exact locked cloudflared release remains in use.
+2. The source-built backend executables, `onnxruntime.dll`, and the Windows
    `cloudflared.exe` sidecar are staged with Tauri's required target-triple
    names.
 3. The native Tauri executable builds and launches.
@@ -65,11 +68,14 @@ The initial workflow proves:
 7. A screenshot is taken by native WebDriver before and after the memory is
    visible, and the DOM assertion checks the same unique text.
 
-This is basic native compatibility proof on the exact Windows Server 2022 build
-recorded in the artifact. It is not client-Windows or release readiness:
-installer behavior, Windows 10/11 coverage, signing, updater metadata,
-run-at-login behavior, clean uninstall, and long-running lifecycle remain
-separate gates.
+This is basic native app plus source-built backend compatibility proof on the
+exact Windows Server 2022 build recorded in the artifact. It does not prove the
+backend ZIP pinned in `.wenlan-backend-version`, client Windows, or release
+readiness. A backend release containing the tested commit must be published,
+pin-bumped, and exercised without source replacement before Windows
+distribution. Installer behavior, Windows 10/11 coverage, signing, updater
+metadata, run-at-login behavior, clean uninstall, and long-running lifecycle
+remain separate gates.
 
 ## Selected approach
 
@@ -181,8 +187,9 @@ of retrying an opaque session-creation failure.
 1. Assert that no process is listening on `127.0.0.1:7878`.
 2. Record the Windows Server build, WebView2 version, and matching Edge driver
    version.
-3. Stage verified backend sidecars, `onnxruntime.dll`, and `cloudflared.exe`
-   from the single lock contract.
+3. Download the locked release baseline and cloudflared payload, then replace
+   the backend executables and `onnxruntime.dll` with verified artifacts built
+   from the exact recorded backend commit.
 4. Build the release-profile Tauri executable with no smoke-only features.
 5. Start `tauri-driver` with the matching `msedgedriver.exe`; `tauri-driver`
    owns that native-driver child, then open a WebDriver session for the built
@@ -230,11 +237,12 @@ windows-native-smoke/
   staged-sidecars.json
 ```
 
-`result.json` records commit SHAs for both repositories, the backend tag and
-verified archive hash, cloudflared version/hash, Windows Server edition/build and
-runner image, WebView2 and driver versions, Cargo profile/features, assertion
-results, and artifact paths. Screenshots are evidence only when paired with
-exact assertions and process/health records.
+`result.json` records commit SHAs for both repositories, `backend_source` as
+`source-build`, the runtime backend hash, the release-baseline tag/archive hash,
+cloudflared version/hash, Windows Server edition/build and runner image,
+WebView2 and driver versions, Cargo profile/features, assertion results, and
+artifact paths. Screenshots are evidence only when paired with exact assertions
+and process/health records.
 
 ## CI rollout
 
@@ -243,11 +251,13 @@ exact assertions and process/health records.
    complete evidence artifacts.
 3. Then add the native smoke as a pull-request gate for changes to Tauri
    runtime, sidecar preparation, lifecycle, and Windows workflow/test paths.
-4. Add a separate installed-NSIS smoke that installs into a clean location,
+4. After a backend release contains the tested commit, add a release-payload
+   variant that launches the locked Windows ZIP without source replacement.
+5. Add a separate installed-NSIS smoke that installs into a clean location,
    launches the installed app, repeats the health/UI marker proof, and
    uninstalls. Only that later gate supports a claim that the Windows package is
    installable.
-5. Add Windows release assets, signing, updater metadata, and Windows 11
+6. Add Windows release assets, signing, updater metadata, and Windows 11
    validation only after the installed smoke is green.
 
 ## Acceptance criteria
@@ -273,8 +283,8 @@ exact assertions and process/health records.
   step. Checksum/payload controls are script tests; process/marker controls are
   validator-level fixture tests against recorded evidence, not repeated native
   builds.
-- The workflow description and result explicitly say
-  "Windows Server 2022 native compatibility smoke", not "Windows release
+- The workflow description and result explicitly say "Windows Server 2022
+  native app with source-built backend smoke", not "pinned Windows release
   supported" or "Windows 11 supported".
 
 ## Explicit non-goals for the first proof

@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       windows_native_smoke:
-        description: Run only the Windows Server 2022 native compatibility smoke
+        description: Run only the Windows native app with source-built backend smoke
         required: false
         default: false
         type: boolean

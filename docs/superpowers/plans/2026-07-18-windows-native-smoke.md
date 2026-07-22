@@ -2,9 +2,9 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Prove in a manual GitHub Actions `windows-2022` run that the release-profile native Wenlan Tauri executable starts the exact pinned Windows backend sidecar, completes visible zero-configuration onboarding, renders a uniquely stored backend memory in WebView2, and shuts down without an orphaned backend.
+**Goal:** Prove in a manual GitHub Actions `windows-2022` run that the release-profile native Wenlan Tauri executable starts an exact source-built Windows backend commit, completes visible zero-configuration onboarding, renders a uniquely stored backend memory in WebView2, and shuts down without an orphaned backend. The pinned backend release payload remains a separate pre-distribution gate.
 
-**Architecture:** Keep one strict key/value sidecar lock and make the existing download seam target-aware. A small Node downloader handles platform mapping, checksum verification, extraction, and a staged manifest while the existing Bash entrypoint remains the Tauri hook. A standalone WebdriverIO client drives `tauri-driver`; PowerShell gathers Windows process/module evidence; a pure Node validator owns machine-checkable positive controls. Product code changes stay limited to honest non-macOS lifecycle behavior revealed by the native build.
+**Architecture:** Keep one strict key/value sidecar lock and make the existing download seam target-aware. A small Node downloader handles platform mapping, checksum verification, extraction, and a staged manifest while the existing Bash entrypoint remains the Tauri hook. The native smoke records that locked payload as a release baseline, then deliberately replaces the backend files with binaries built from an exact post-release commit; its claim and validator must say `source-build`. A standalone WebdriverIO client drives `tauri-driver`; PowerShell gathers Windows process/module evidence; a pure Node validator owns machine-checkable positive controls. Product code changes stay limited to honest non-macOS lifecycle behavior revealed by the native build.
 
 **Tech Stack:** Tauri 2, Rust stable, Node 20, pnpm 10.28.2, Vitest 4, WebdriverIO 9.29.1 standalone client, PowerShell/CIM, `tauri-driver` 2.0.6, `msedgedriver-tool` at commit `8c4b34f51b45f5cf08013366d703de464ab871d1`.
 
@@ -387,7 +387,7 @@ The workflow:
 The workflow and `result.json` call the claim exactly:
 
 ```text
-Windows Server 2022 native compatibility smoke
+Windows Server 2022 native app with source-built backend smoke
 ```
 
 - [ ] **Step 3: Run the workflow contract and YAML sanity checks**

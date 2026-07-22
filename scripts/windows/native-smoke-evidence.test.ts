@@ -87,7 +87,7 @@ const SEMANTIC_QUERY = "blue lamp adjusts ocean timepieces";
 
 function completeEvidence(): Evidence {
   return {
-    claim: "Windows Server 2022 native compatibility smoke",
+    claim: "Windows Server 2022 native app with source-built backend smoke",
     health: { ok: true, response: { status: "ok" } },
     metadata: {
       backend_commit: BACKEND_COMMIT,

@@ -42,6 +42,37 @@ describe("sidecar lock workflow consumers", () => {
     expect(workflow).not.toContain("printf '%s\\n%s\\n'");
   });
 
+  it("runs the candidate Windows release through its backend smoke before opening a pin PR", () => {
+    const workflow = read(".github/workflows/backend-pin-bump.yml");
+
+    expect(workflow).toContain("validate_windows_candidate:");
+    expect(workflow).toContain("runs-on: windows-2022");
+    expect(workflow).toContain("needs: validate_windows_candidate");
+    expect(workflow).toContain(".\\wenlan.exe --help");
+    expect(workflow).toContain(".\\wenlan-server.exe --help");
+    expect(workflow).toContain(".\\wenlan-mcp.exe --help");
+    expect(workflow).toContain("Test-Path .\\onnxruntime.dll -PathType Leaf");
+    expect(workflow).toContain("path: backend-smoke-contract");
+    expect(workflow).toContain(
+      "ref: c66f9d8e3e2edc991a540a89d3c5f60e2c109a99",
+    );
+    expect(workflow).toContain("scripts\\smoke-windows.ps1");
+    expect(workflow).toContain("-ExePath $candidateServer");
+    expect(workflow).toContain("LATEST_TAG: ${{ steps.latest.outputs.tag }}");
+    expect(workflow).not.toContain(
+      'gh release download "${{ steps.latest.outputs.tag }}"',
+    );
+    expect(workflow).not.toMatch(
+      /LATEST="\$\{\{ (?:steps\.latest|needs\.validate_windows_candidate)\./,
+    );
+    expect(workflow).toMatch(
+      /validate_windows_candidate:[\s\S]*?permissions:\s+contents: read[\s\S]*?check:/,
+    );
+    expect(workflow).toMatch(
+      /check:[\s\S]*?permissions:\s+contents: write\s+pull-requests: write/,
+    );
+  });
+
   it("documents the six-key format at the script ownership boundary", () => {
     const instructions = read("scripts/AGENTS.md");
 

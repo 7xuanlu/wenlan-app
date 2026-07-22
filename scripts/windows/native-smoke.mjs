@@ -22,7 +22,7 @@ import {
   cleanupProcessInvocation,
 } from "./process-control.mjs";
 
-const CLAIM = "Windows Server 2022 native compatibility smoke";
+const CLAIM = "Windows Server 2022 native app with source-built backend smoke";
 const SOURCE_AGENT = "windows-native-smoke";
 const TARGET_TRIPLE = "x86_64-pc-windows-msvc";
 const FULL_QUIT_BREADCRUMB = "[quit] full quit command accepted";

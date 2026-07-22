@@ -1,8 +1,8 @@
 name: Backend pin bump
 
 # Polls the sibling daemon repo (7xuanlu/wenlan) for a newer release. When a
-# newer release's Darwin and Windows assets download and checksum, and the
-# Darwin payload extracts and runs clean, this opens a PR bumping the one
+# newer release's Darwin and Windows assets download and checksum, and both
+# platform payloads extract and run clean, this opens a PR bumping the one
 # backend tag plus both platform hashes AND the app's own release version to
 # match. A human reviews and merges that PR.
 #
@@ -12,7 +12,7 @@ name: Backend pin bump
 # every time -- and because of the GITHUB_TOKEN rule below, this PR's own CI
 # never runs to catch it. That is exactly how v0.13.0 broke main (PR #85).
 #
-# Why the download+sha+extract+--help smoke lives HERE instead of relying on
+# Why the download+sha+extract+runtime smoke lives HERE instead of relying on
 # ci.yml: GitHub does NOT fire `pull_request` workflows for PRs opened by
 # GITHUB_TOKEN, so ci.yml's download-smoke will NOT run on the bump PR this
 # workflow opens. That's exactly why step "Smoke test extracted daemon
@@ -26,13 +26,116 @@ on:
     - cron: '17 9 * * *'
   workflow_dispatch:
 
-permissions:
-  contents: write
-  pull-requests: write
-
 jobs:
+  validate_windows_candidate:
+    name: Execute candidate Windows release binaries
+    permissions:
+      contents: read
+    runs-on: windows-2022
+    outputs:
+      latest_tag: ${{ steps.latest.outputs.tag }}
+      windows_sha256: ${{ steps.windows_smoke.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Read pinned tag
+        id: pinned
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $pinned = (node scripts/sidecar-lock.mjs get backend_tag).Trim()
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($pinned)) {
+            throw ".wenlan-backend-version has no backend_tag"
+          }
+          "tag=$pinned" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Get latest daemon release tag
+        id: latest
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $latest = (gh release view --repo 7xuanlu/wenlan --json tagName -q .tagName).Trim()
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($latest)) {
+            throw "could not resolve latest release tag for 7xuanlu/wenlan"
+          }
+          "tag=$latest" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Check out pinned backend Windows smoke contract
+        if: steps.latest.outputs.tag != steps.pinned.outputs.tag
+        uses: actions/checkout@v6
+        with:
+          repository: 7xuanlu/wenlan
+          ref: c66f9d8e3e2edc991a540a89d3c5f60e2c109a99
+          path: backend-smoke-contract
+
+      - name: Smoke candidate Windows release payload
+        id: windows_smoke
+        if: steps.latest.outputs.tag != steps.pinned.outputs.tag
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LATEST_TAG: ${{ steps.latest.outputs.tag }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $pinDir = Join-Path $env:RUNNER_TEMP "pin"
+          $extractDir = Join-Path $pinDir "x"
+          New-Item -ItemType Directory -Path $extractDir -Force | Out-Null
+          gh release download "$env:LATEST_TAG" `
+            --repo 7xuanlu/wenlan `
+            --pattern "wenlan-windows-x64.zip" `
+            --dir $pinDir `
+            --clobber
+          if ($LASTEXITCODE -ne 0) {
+            throw "failed to download candidate Windows release asset"
+          }
+          $archive = Join-Path $pinDir "wenlan-windows-x64.zip"
+          $sha256 = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          "sha256=$sha256" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Expand-Archive -LiteralPath $archive -DestinationPath $extractDir -Force
+          Push-Location $extractDir
+          try {
+            foreach ($payload in @("wenlan.exe", "wenlan-server.exe", "wenlan-mcp.exe")) {
+              if (-not (Test-Path ".\$payload" -PathType Leaf)) {
+                throw "Windows candidate is missing $payload"
+              }
+            }
+            if (-not (Test-Path .\onnxruntime.dll -PathType Leaf)) {
+              throw "Windows candidate is missing onnxruntime.dll"
+            }
+            & .\wenlan.exe --help
+            if ($LASTEXITCODE -ne 0) { throw "wenlan.exe --help failed" }
+            & .\wenlan-server.exe --help
+            if ($LASTEXITCODE -ne 0) { throw "wenlan-server.exe --help failed" }
+            & .\wenlan-mcp.exe --help
+            if ($LASTEXITCODE -ne 0) { throw "wenlan-mcp.exe --help failed" }
+          }
+          finally {
+            Pop-Location
+          }
+
+          # Reuse the already-reviewed backend smoke at one immutable commit.
+          # Only the harness comes from source; the executable and DLL remain
+          # the untouched candidate release payload.
+          $candidateServer = Join-Path $extractDir "wenlan-server.exe"
+          $smokeScript = Join-Path $env:GITHUB_WORKSPACE "backend-smoke-contract\scripts\smoke-windows.ps1"
+          & $smokeScript -ExePath $candidateServer
+          if (-not $?) {
+            throw "candidate Windows health/store/semantic smoke failed"
+          }
+
   check:
     name: Check daemon release and bump pin
+    permissions:
+      contents: write
+      pull-requests: write
+    needs: validate_windows_candidate
     # macos-14 (Apple Silicon / arm64) is REQUIRED here, not a style choice:
     # the "Smoke test extracted daemon binaries" step below actually
     # executes the downloaded darwin-arm64 wenlan-server/wenlan binaries via
@@ -62,16 +165,11 @@ jobs:
       - name: Get latest daemon release tag
         id: latest
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LATEST_TAG: ${{ needs.validate_windows_candidate.outputs.latest_tag }}
         run: |
-          # Cross-repo read of the PUBLIC 7xuanlu/wenlan repo, authenticated
-          # by this workflow's own GITHUB_TOKEN. This works only because
-          # that repo is public; if it ever goes private this 404s and
-          # fails loud here (no silent continue-on-error), same contract as
-          # scripts/prepare-sidecars.sh's --download mode.
-          LATEST="$(gh release view --repo 7xuanlu/wenlan --json tagName -q .tagName)"
+          LATEST="$LATEST_TAG"
           if [ -z "$LATEST" ]; then
-            echo "error: could not resolve latest release tag for 7xuanlu/wenlan" >&2
+            echo "error: Windows candidate gate did not resolve a release tag" >&2
             exit 1
           fi
           echo "tag=$LATEST" >> "$GITHUB_OUTPUT"
@@ -79,9 +177,12 @@ jobs:
 
       - name: Compare versions
         id: compare
+        env:
+          LATEST_TAG: ${{ steps.latest.outputs.tag }}
+          PINNED_TAG: ${{ steps.pinned.outputs.tag }}
         run: |
-          PINNED="${{ steps.pinned.outputs.tag }}"
-          LATEST="${{ steps.latest.outputs.tag }}"
+          PINNED="$PINNED_TAG"
+          LATEST="$LATEST_TAG"
           if [ "$LATEST" = "$PINNED" ]; then
             echo "up_to_date=true" >> "$GITHUB_OUTPUT"
             echo "up to date: pinned $PINNED already matches latest $LATEST"
@@ -99,8 +200,9 @@ jobs:
         if: steps.compare.outputs.up_to_date != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LATEST_TAG: ${{ steps.latest.outputs.tag }}
         run: |
-          LATEST="${{ steps.latest.outputs.tag }}"
+          LATEST="$LATEST_TAG"
           mkdir -p "$RUNNER_TEMP/pin"
           if ! gh release download "$LATEST" --repo 7xuanlu/wenlan \
               --pattern 'wenlan-darwin-arm64.tar.gz' \
@@ -121,6 +223,10 @@ jobs:
         run: |
           DARWIN_SHA="$(shasum -a 256 "$RUNNER_TEMP/pin/wenlan-darwin-arm64.tar.gz" | awk '{print $1}')"
           WINDOWS_SHA="$(shasum -a 256 "$RUNNER_TEMP/pin/wenlan-windows-x64.zip" | awk '{print $1}')"
+          if [ "$WINDOWS_SHA" != "${{ needs.validate_windows_candidate.outputs.windows_sha256 }}" ]; then
+            echo "error: Windows asset changed after the candidate executable gate" >&2
+            exit 1
+          fi
           echo "darwin_sha256=$DARWIN_SHA" >> "$GITHUB_OUTPUT"
           echo "windows_sha256=$WINDOWS_SHA" >> "$GITHUB_OUTPUT"
           echo "darwin sha256: $DARWIN_SHA"
@@ -156,8 +262,9 @@ jobs:
         id: idempotency
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LATEST_TAG: ${{ steps.latest.outputs.tag }}
         run: |
-          LATEST="${{ steps.latest.outputs.tag }}"
+          LATEST="$LATEST_TAG"
           BRANCH="backend-pin/$LATEST"
           EXISTING="$(gh pr list --head "$BRANCH" --state open --json number -q '.[0].number')"
           if [ -n "$EXISTING" ]; then
@@ -171,8 +278,9 @@ jobs:
         if: steps.compare.outputs.up_to_date != 'true' && steps.idempotency.outputs.pr_exists != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LATEST_TAG: ${{ steps.latest.outputs.tag }}
         run: |
-          LATEST="${{ steps.latest.outputs.tag }}"
+          LATEST="$LATEST_TAG"
           DARWIN_SHA="${{ steps.sha.outputs.darwin_sha256 }}"
           WINDOWS_SHA="${{ steps.sha.outputs.windows_sha256 }}"
           VERSION="${LATEST#v}"
@@ -225,7 +333,7 @@ jobs:
             --title "chore: adopt Wenlan $LATEST" \
             --body "Bumps \`.wenlan-backend-version\` to \`$LATEST\` (Darwin sha256 \`$DARWIN_SHA\`, Windows sha256 \`$WINDOWS_SHA\`), and the app's own release version to \`$VERSION\` to match.
 
-          This workflow already downloaded both pinned backend assets from the \`$LATEST\` release, verified their independent sha256 values and required payloads, then ran the Darwin \`wenlan-server --help\` and \`wenlan --help\` successfully on an arm64 runner before opening this PR (see the run that opened this PR). It preserved all cloudflared lock fields and re-read all four app version files from disk.
+          This workflow already downloaded both pinned backend assets from the \`$LATEST\` release, verified their independent sha256 values and required payloads, ran all three Windows executables plus the release tag's Windows health/store/semantic smoke on a Windows Server 2022 runner, and ran the Darwin \`wenlan-server --help\` and \`wenlan --help\` successfully on an arm64 runner before opening this PR (see the run that opened this PR). It preserved all cloudflared lock fields and re-read all four app version files from disk.
 
           The app version files ship together with the pin because \`scripts/release-version-sync.test.ts\` requires it. Note: GitHub does not run \`pull_request\` workflows for PRs opened by \`GITHUB_TOKEN\`, so ci.yml will not run here -- the in-workflow smoke and the lockstep assertion above are the gate for this change." \
             --head "$BRANCH" \

@@ -1,4 +1,4 @@
-const CLAIM = "Windows Server 2022 native compatibility smoke";
+const CLAIM = "Windows Server 2022 native app with source-built backend smoke";
 
 export class NativeSmokeEvidenceError extends Error {
   constructor(message, assertions) {

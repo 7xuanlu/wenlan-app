@@ -715,8 +715,28 @@ pub(crate) fn reset_quitting_flag_for_test() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
     use std::os::unix::process::ExitStatusExt;
+    #[cfg(windows)]
+    use std::os::windows::process::ExitStatusExt;
     use std::sync::Mutex;
+
+    fn exit_status(code: u32) -> std::process::ExitStatus {
+        #[cfg(unix)]
+        {
+            std::process::ExitStatus::from_raw((code as i32) << 8)
+        }
+        #[cfg(windows)]
+        {
+            std::process::ExitStatus::from_raw(code)
+        }
+    }
+
+    #[test]
+    fn synthetic_exit_status_preserves_success_semantics() {
+        assert!(exit_status(0).success());
+        assert!(!exit_status(1).success());
+    }
 
     struct EnvGuard {
         home: Option<std::ffi::OsString>,
@@ -755,9 +775,9 @@ mod tests {
     struct MockLaunchctl {
         calls: Mutex<Vec<Vec<String>>>,
         /// Status code to return for load/start subcommands. Default 0 = ok.
-        load_status: Mutex<i32>,
+        load_status: Mutex<u32>,
         /// Status code to return for unload subcommands. Default 0 = ok.
-        unload_status: Mutex<i32>,
+        unload_status: Mutex<u32>,
     }
     impl LaunchctlExec for MockLaunchctl {
         fn run(&self, args: &[&str]) -> io::Result<Output> {
@@ -772,7 +792,7 @@ mod tests {
                 _ => 0,
             };
             Ok(Output {
-                status: std::process::ExitStatus::from_raw(status_code),
+                status: exit_status(status_code),
                 stdout: vec![],
                 stderr: vec![],
             })
@@ -1052,8 +1072,7 @@ mod tests {
         std::env::set_var("HOME", tmp.path());
 
         let mock = MockLaunchctl {
-            // ExitStatus::from_raw(256) => exit code 1 (not success).
-            load_status: Mutex::new(256),
+            load_status: Mutex::new(1),
             ..Default::default()
         };
         let err = install_app_plist(&mock).expect_err("install should fail when load fails");
@@ -1152,7 +1171,7 @@ mod tests {
         impl LaunchctlExec for MockListed {
             fn run(&self, _args: &[&str]) -> io::Result<Output> {
                 Ok(Output {
-                    status: std::process::ExitStatus::from_raw(0),
+                    status: exit_status(0),
                     stdout: self.0.as_bytes().to_vec(),
                     stderr: vec![],
                 })
@@ -1172,7 +1191,7 @@ mod tests {
         impl LaunchctlExec for MockListed {
             fn run(&self, _args: &[&str]) -> io::Result<Output> {
                 Ok(Output {
-                    status: std::process::ExitStatus::from_raw(0),
+                    status: exit_status(0),
                     stdout: self.0.as_bytes().to_vec(),
                     stderr: vec![],
                 })
@@ -1191,7 +1210,7 @@ mod tests {
         impl LaunchctlExec for MockListed {
             fn run(&self, _args: &[&str]) -> io::Result<Output> {
                 Ok(Output {
-                    status: std::process::ExitStatus::from_raw(0),
+                    status: exit_status(0),
                     stdout: self.0.as_bytes().to_vec(),
                     stderr: vec![],
                 })
@@ -1346,7 +1365,7 @@ mod tests {
         std::fs::write(&plist, owned_legacy_app_plist()).unwrap();
 
         let mock = MockLaunchctl {
-            unload_status: Mutex::new(256),
+            unload_status: Mutex::new(1),
             ..Default::default()
         };
         cleanup_legacy_app_plist(&mock).unwrap();
@@ -1367,7 +1386,7 @@ mod tests {
         std::fs::write(&plist, owned_legacy_server_plist()).unwrap();
 
         let mock = MockLaunchctl {
-            unload_status: Mutex::new(256),
+            unload_status: Mutex::new(1),
             ..Default::default()
         };
         cleanup_legacy_server_plist(&mock).unwrap();
@@ -1755,7 +1774,7 @@ mod tests {
         std::fs::write(&plist, &original).unwrap();
 
         let mock = MockLaunchctl {
-            load_status: Mutex::new(256),
+            load_status: Mutex::new(1),
             ..Default::default()
         };
         let err = prepare_server_plist_for_startup(&mock)
@@ -1840,7 +1859,7 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(50));
             self.in_flight.fetch_sub(1, AcqRel);
             Ok(Output {
-                status: std::process::ExitStatus::from_raw(0),
+                status: exit_status(0),
                 stdout: vec![],
                 stderr: vec![],
             })

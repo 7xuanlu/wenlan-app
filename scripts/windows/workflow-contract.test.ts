@@ -45,7 +45,9 @@ describe("Windows native smoke workflow contract", () => {
     expect(text).toContain("workflow_dispatch:");
     expect(text).toContain("runs-on: windows-2022");
     expect(text).toContain("contents: read");
-    expect(text).toContain("Windows Server 2022 native compatibility smoke");
+    expect(text).toContain(
+      "Windows Server 2022 native app with source-built backend smoke",
+    );
     expect(text).not.toMatch(/\b(push|pull_request|schedule):/);
   });
 
@@ -74,7 +76,7 @@ describe("Windows native smoke workflow contract", () => {
     expect(text).toContain("--native-driver");
   });
 
-  it("builds the release-profile native target with exact pinned sidecars", () => {
+  it("builds the release-profile native target with an exact source-built backend", () => {
     const text = workflow();
 
     expect(text).toContain("TARGET_TRIPLE: x86_64-pc-windows-msvc");
@@ -95,6 +97,7 @@ describe("Windows native smoke workflow contract", () => {
     expect(text).toContain("-p wenlan -p wenlan-server -p wenlan-mcp");
     expect(text).toContain("scripts/stage-onnxruntime-windows.ps1");
     expect(text).toContain("node scripts/windows/stage-backend-build.mjs");
+    expect(text).toContain("cargo test -p wenlan-app --lib");
     const buildHook = readFileSync(
       resolve(process.cwd(), "scripts", "prepare-tauri-build-sidecars.sh"),
       "utf8",

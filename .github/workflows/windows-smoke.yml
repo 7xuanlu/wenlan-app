@@ -1,4 +1,4 @@
-name: Windows Server 2022 native compatibility smoke
+name: Windows Server 2022 native app with source-built backend smoke
 
 on:
   workflow_call:
@@ -19,7 +19,7 @@ env:
 
 jobs:
   native-smoke:
-    name: Windows Server 2022 native compatibility smoke
+    name: Windows Server 2022 native app with source-built backend smoke
     runs-on: windows-2022
     timeout-minutes: 90
 
@@ -44,7 +44,7 @@ jobs:
           "WENLAN_SIDECAR_MANIFEST=$(Join-Path $evidence "staged-sidecars.json")" |
             Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           $initial = [ordered]@{
-            claim = "Windows Server 2022 native compatibility smoke"
+            claim = "Windows Server 2022 native app with source-built backend smoke"
             status = "workflow_initializing"
             error = "native harness did not complete"
           }
@@ -174,7 +174,7 @@ jobs:
           "WENLAN_BACKEND_COMMIT=$backendCommit" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
           $metadata = [ordered]@{
-            claim = "Windows Server 2022 native compatibility smoke"
+            claim = "Windows Server 2022 native app with source-built backend smoke"
             app_commit = $env:GITHUB_SHA
             backend_tag = $backendTag
             backend_commit = $backendCommit
@@ -227,6 +227,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             throw "backend sidecar staging failed with exit code $LASTEXITCODE"
           }
+
+      - name: Run Windows Rust library tests
+        run: cargo test -p wenlan-app --lib
 
       - name: Build release-profile native Tauri executable
         run: pnpm tauri build --no-bundle --target x86_64-pc-windows-msvc
