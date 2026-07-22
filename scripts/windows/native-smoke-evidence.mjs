@@ -225,6 +225,11 @@ export function validateNativeSmokeEvidence(evidence, expected) {
     `app log did not contain ${describeValue(expected?.fullQuitBreadcrumb)}`,
   );
   check(
+    "no-preexisting-fake-launchagents",
+    evidence?.lifecycle?.fake_launch_agents_before_app_exists === false,
+    "a fake Library/LaunchAgents path existed before the Windows app launched",
+  );
+  check(
     "no-fake-launchagents",
     evidence?.lifecycle?.fake_launch_agents_exists === false,
     "a Windows run created a fake Library/LaunchAgents path",

@@ -9,6 +9,7 @@ type Evidence = {
     backend_source: string;
   };
   lifecycle: {
+    fake_launch_agents_before_app_exists: boolean;
     fake_launch_agents_exists: boolean;
     full_quit_log: string;
     full_quit_requested: boolean;
@@ -95,6 +96,7 @@ function completeEvidence(): Evidence {
       backend_source: "source-build",
     },
     lifecycle: {
+      fake_launch_agents_before_app_exists: false,
       fake_launch_agents_exists: false,
       full_quit_log: `2026-07-19 INFO ${FULL_QUIT_BREADCRUMB}`,
       full_quit_requested: true,
@@ -305,6 +307,13 @@ describe("Windows native smoke evidence validator", () => {
       assertion: "full-quit-command-accepted",
       mutate: (evidence: Evidence) => {
         evidence.lifecycle.full_quit_log = "";
+      },
+    },
+    {
+      name: "fake LaunchAgents directory before app launch",
+      assertion: "no-preexisting-fake-launchagents",
+      mutate: (evidence: Evidence) => {
+        evidence.lifecycle.fake_launch_agents_before_app_exists = true;
       },
     },
     {

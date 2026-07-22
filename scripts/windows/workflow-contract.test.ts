@@ -102,6 +102,24 @@ describe("Windows native smoke workflow contract", () => {
       "Run Windows Rust library tests except verified platform-assumption cases",
     );
     expect(text).toContain("cargo test -p wenlan-app --lib --");
+    expect(text).toContain(
+      '$launchAgentsPath = Join-Path $env:USERPROFILE "Library\\LaunchAgents"',
+    );
+    expect(text).toContain(
+      "Windows Rust test precondition failed: fake LaunchAgents path already exists",
+    );
+    expect(text).toContain('"rust-test-launchagents.json"');
+    expect(text).toContain("Get-ChildItem -LiteralPath $launchAgentsPath -Recurse");
+    expect(text).toContain("if ($unexpected.Count -gt 0)");
+    expect(text).toContain(
+      "Remove-Item -LiteralPath $launchAgentsPath -Recurse -Force",
+    );
+    expect(text).toContain(
+      "$report.cleanup_completed = -not (Test-Path -LiteralPath $launchAgentsPath)",
+    );
+    expect(text).toContain(
+      "Windows Rust test cleanup failed: fake LaunchAgents path remains",
+    );
     const platformAssumptionTests = [
       "config::tests::config_knowledge_path_default_uses_legacy_when_only_legacy_exists",
       "config::tests::config_knowledge_path_default_uses_wenlan_when_no_legacy_exists",
@@ -176,6 +194,27 @@ describe("Windows native smoke workflow contract", () => {
     expect(tryIndex).toBeGreaterThanOrEqual(0);
     expect(stageIndex).toBeGreaterThan(tryIndex);
     expect(verifyIndex).toBeGreaterThan(stageIndex);
+  });
+
+  it("proves the runner profile is clean before app launch and remains clean", () => {
+    const text = nativeHarness();
+    const beforeIndex = text.indexOf(
+      "evidence.lifecycle.fake_launch_agents_before_app_exists = existsSync(",
+    );
+    const launchIndex = text.indexOf("browser = await remote(");
+    const afterCloseIndex = text.indexOf(
+      "evidence.processes.after_close = {",
+      launchIndex,
+    );
+    const afterIndex = text.indexOf(
+      "evidence.lifecycle.fake_launch_agents_exists = existsSync(",
+      launchIndex,
+    );
+
+    expect(beforeIndex).toBeGreaterThanOrEqual(0);
+    expect(beforeIndex).toBeLessThan(launchIndex);
+    expect(afterCloseIndex).toBeGreaterThan(launchIndex);
+    expect(afterIndex).toBeGreaterThan(afterCloseIndex);
   });
 
   it("drives the guarded native quit route instead of bypassing persistence", () => {

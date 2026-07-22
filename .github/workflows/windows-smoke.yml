@@ -236,27 +236,93 @@ jobs:
         run: cargo test -p wenlan-app --lib --no-run
 
       - name: Run Windows Rust library tests except verified platform-assumption cases
-        run: >-
-          cargo test -p wenlan-app --lib --
-          --skip config::tests::config_knowledge_path_default_uses_legacy_when_only_legacy_exists
-          --skip config::tests::config_knowledge_path_default_uses_wenlan_when_no_legacy_exists
-          --skip lifecycle::tests::app_plist_path_uses_wenlan_label
-          --skip lifecycle::tests::install_app_plist_writes_file_and_calls_launchctl_load
-          --skip lifecycle::tests::install_app_plist_writes_wenlan_log_paths
-          --skip lifecycle::tests::legacy_app_plist_ownership_accepts_owned_origin_app_path
-          --skip lifecycle::tests::legacy_app_plist_path_uses_origin_label
-          --skip lifecycle::tests::legacy_server_plist_does_not_count_as_current_wenlan_service
-          --skip lifecycle::tests::legacy_server_plist_ownership_accepts_owned_origin_server_path
-          --skip lifecycle::tests::opt_out_flag_round_trip
-          --skip lifecycle::tests::service_management_uses_wenlan_cli_next_to_app_binary
-          --skip lifecycle::tests::set_run_at_login_false_cleans_legacy_app_and_server_plists
-          --skip lifecycle::tests::stable_launch_agent_target_accepts_user_wenlan_app_bundle
-          --skip lifecycle::tests::uninstall_app_plist_removes_file
-          --skip mcp_config::tests::test_client_config_path_codex_cli
-          --skip mcp_config::tests::test_client_config_path_gemini_cli
-          --skip remote_access::tests::test_token_generate_args_include_wenlan_output_path
-          --skip search::avatar_path_tests::avatar_storage_dir_uses_legacy_default_when_current_empty_and_legacy_has_avatars
-          --skip sources::obsidian::discover_vaults_tests::vault_path_no_longer_on_disk_is_filtered_out
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          # dirs::home_dir() uses FOLDERID_Profile on Windows, so macOS plist
+          # fixtures can leave this directory behind even when they set HOME.
+          # Record and remove only known test plist output before native-app proof.
+          $evidence = Join-Path $env:GITHUB_WORKSPACE "windows-native-smoke"
+          $launchAgentsPath = Join-Path $env:USERPROFILE "Library\LaunchAgents"
+          $contaminationPath = Join-Path $evidence "rust-test-launchagents.json"
+          if (Test-Path -LiteralPath $launchAgentsPath) {
+            throw "Windows Rust test precondition failed: fake LaunchAgents path already exists"
+          }
+
+          $testExitCode = 0
+          try {
+            cargo test -p wenlan-app --lib -- `
+              --skip config::tests::config_knowledge_path_default_uses_legacy_when_only_legacy_exists `
+              --skip config::tests::config_knowledge_path_default_uses_wenlan_when_no_legacy_exists `
+              --skip lifecycle::tests::app_plist_path_uses_wenlan_label `
+              --skip lifecycle::tests::install_app_plist_writes_file_and_calls_launchctl_load `
+              --skip lifecycle::tests::install_app_plist_writes_wenlan_log_paths `
+              --skip lifecycle::tests::legacy_app_plist_ownership_accepts_owned_origin_app_path `
+              --skip lifecycle::tests::legacy_app_plist_path_uses_origin_label `
+              --skip lifecycle::tests::legacy_server_plist_does_not_count_as_current_wenlan_service `
+              --skip lifecycle::tests::legacy_server_plist_ownership_accepts_owned_origin_server_path `
+              --skip lifecycle::tests::opt_out_flag_round_trip `
+              --skip lifecycle::tests::service_management_uses_wenlan_cli_next_to_app_binary `
+              --skip lifecycle::tests::set_run_at_login_false_cleans_legacy_app_and_server_plists `
+              --skip lifecycle::tests::stable_launch_agent_target_accepts_user_wenlan_app_bundle `
+              --skip lifecycle::tests::uninstall_app_plist_removes_file `
+              --skip mcp_config::tests::test_client_config_path_codex_cli `
+              --skip mcp_config::tests::test_client_config_path_gemini_cli `
+              --skip remote_access::tests::test_token_generate_args_include_wenlan_output_path `
+              --skip search::avatar_path_tests::avatar_storage_dir_uses_legacy_default_when_current_empty_and_legacy_has_avatars `
+              --skip sources::obsidian::discover_vaults_tests::vault_path_no_longer_on_disk_is_filtered_out
+            $testExitCode = $LASTEXITCODE
+          }
+          finally {
+            $items = @()
+            if (Test-Path -LiteralPath $launchAgentsPath) {
+              $items = @(
+                Get-ChildItem -LiteralPath $launchAgentsPath -Recurse -Force |
+                  ForEach-Object {
+                    [ordered]@{
+                      relative_path = [System.IO.Path]::GetRelativePath($launchAgentsPath, $_.FullName)
+                      kind = if ($_.PSIsContainer) { "directory" } else { "file" }
+                    }
+                  }
+              )
+            }
+            $allowedFiles = @(
+              "com.wenlan.desktop.plist",
+              "com.wenlan.server.plist",
+              "com.origin.desktop.plist",
+              "com.origin.server.plist"
+            )
+            $unexpected = @(
+              $items | Where-Object {
+                $_.kind -ne "file" -or $_.relative_path -notin $allowedFiles
+              }
+            )
+            $report = [ordered]@{
+              path = $launchAgentsPath
+              absent_before_tests = $true
+              existed_after_tests = (Test-Path -LiteralPath $launchAgentsPath)
+              entries_after_tests = $items
+              unexpected_entries = $unexpected
+              cleanup_completed = $false
+            }
+            $report | ConvertTo-Json -Depth 6 |
+              Set-Content -LiteralPath $contaminationPath -Encoding UTF8
+            if ($unexpected.Count -gt 0) {
+              throw "Windows Rust tests created unexpected LaunchAgents entries; see $contaminationPath"
+            }
+            if (Test-Path -LiteralPath $launchAgentsPath) {
+              Remove-Item -LiteralPath $launchAgentsPath -Recurse -Force
+            }
+            $report.cleanup_completed = -not (Test-Path -LiteralPath $launchAgentsPath)
+            $report | ConvertTo-Json -Depth 6 |
+              Set-Content -LiteralPath $contaminationPath -Encoding UTF8
+            if (-not $report.cleanup_completed) {
+              throw "Windows Rust test cleanup failed: fake LaunchAgents path remains"
+            }
+          }
+          if ($testExitCode -ne 0) {
+            throw "Windows Rust library tests failed with exit code $testExitCode"
+          }
 
       - name: Build release-profile native Tauri executable
         run: pnpm tauri build --no-bundle --target x86_64-pc-windows-msvc

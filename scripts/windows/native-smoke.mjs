@@ -332,6 +332,11 @@ async function main() {
     args.evidenceDir,
     "03-memory-visible.png",
   );
+  const fakeLaunchAgentsPath = resolve(
+    process.env.USERPROFILE || process.env.HOME || "",
+    "Library",
+    "LaunchAgents",
+  );
   const runtime = {
     backendExecutable: resolve(dirname(args.app), "wenlan-server.exe"),
     onnxruntimeDll: resolve(dirname(args.app), "onnxruntime.dll"),
@@ -365,6 +370,7 @@ async function main() {
     },
     health: { ok: false, response: {} },
     lifecycle: {
+      fake_launch_agents_before_app_exists: false,
       fake_launch_agents_exists: false,
       full_quit_log: "",
       full_quit_requested: false,
@@ -435,6 +441,15 @@ async function main() {
       );
     }
     log("clean-run process and port precondition passed");
+    evidence.lifecycle.fake_launch_agents_before_app_exists = existsSync(
+      fakeLaunchAgentsPath,
+    );
+    if (evidence.lifecycle.fake_launch_agents_before_app_exists) {
+      throw new Error(
+        `clean-run precondition failed: fake LaunchAgents path already existed at ${fakeLaunchAgentsPath}`,
+      );
+    }
+    log("clean-run fake LaunchAgents precondition passed");
 
     browser = await remote({
       hostname: "127.0.0.1",
@@ -590,9 +605,6 @@ async function main() {
     workloadPollState = "captured";
     log("confirmed the exercised backend loaded the bundled onnxruntime.dll");
 
-    evidence.lifecycle.fake_launch_agents_exists = existsSync(
-      resolve(process.env.USERPROFILE || process.env.HOME || "", "Library", "LaunchAgents"),
-    );
     evidence.lifecycle.full_quit_requested = (await invokeGuardedQuit(browser)) === true;
     log("requested registered guarded quit command");
 
@@ -621,6 +633,9 @@ async function main() {
       app_alive: afterClose.app.length > 0,
       backend_alive: afterClose.backend.length > 0,
     };
+    evidence.lifecycle.fake_launch_agents_exists = existsSync(
+      fakeLaunchAgentsPath,
+    );
     copyAppLog(args.evidenceDir);
     const appLog = readFileSync(resolve(args.evidenceDir, "app.log"), "utf8");
     evidence.lifecycle.full_quit_log =
