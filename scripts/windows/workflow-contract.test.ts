@@ -97,7 +97,36 @@ describe("Windows native smoke workflow contract", () => {
     expect(text).toContain("-p wenlan -p wenlan-server -p wenlan-mcp");
     expect(text).toContain("scripts/stage-onnxruntime-windows.ps1");
     expect(text).toContain("node scripts/windows/stage-backend-build.mjs");
-    expect(text).toContain("cargo test -p wenlan-app --lib");
+    expect(text).toContain("cargo test -p wenlan-app --lib --no-run");
+    expect(text).toContain(
+      "Run Windows Rust library tests except verified platform-assumption cases",
+    );
+    expect(text).toContain("cargo test -p wenlan-app --lib --");
+    const platformAssumptionTests = [
+      "config::tests::config_knowledge_path_default_uses_legacy_when_only_legacy_exists",
+      "config::tests::config_knowledge_path_default_uses_wenlan_when_no_legacy_exists",
+      "lifecycle::tests::app_plist_path_uses_wenlan_label",
+      "lifecycle::tests::install_app_plist_writes_file_and_calls_launchctl_load",
+      "lifecycle::tests::install_app_plist_writes_wenlan_log_paths",
+      "lifecycle::tests::legacy_app_plist_ownership_accepts_owned_origin_app_path",
+      "lifecycle::tests::legacy_app_plist_path_uses_origin_label",
+      "lifecycle::tests::legacy_server_plist_does_not_count_as_current_wenlan_service",
+      "lifecycle::tests::legacy_server_plist_ownership_accepts_owned_origin_server_path",
+      "lifecycle::tests::opt_out_flag_round_trip",
+      "lifecycle::tests::service_management_uses_wenlan_cli_next_to_app_binary",
+      "lifecycle::tests::set_run_at_login_false_cleans_legacy_app_and_server_plists",
+      "lifecycle::tests::stable_launch_agent_target_accepts_user_wenlan_app_bundle",
+      "lifecycle::tests::uninstall_app_plist_removes_file",
+      "mcp_config::tests::test_client_config_path_codex_cli",
+      "mcp_config::tests::test_client_config_path_gemini_cli",
+      "remote_access::tests::test_token_generate_args_include_wenlan_output_path",
+      "search::avatar_path_tests::avatar_storage_dir_uses_legacy_default_when_current_empty_and_legacy_has_avatars",
+      "sources::obsidian::discover_vaults_tests::vault_path_no_longer_on_disk_is_filtered_out",
+    ];
+    for (const testName of platformAssumptionTests) {
+      expect(text).toContain(`--skip ${testName}`);
+    }
+    expect(text.match(/--skip /g)).toHaveLength(platformAssumptionTests.length);
     const buildHook = readFileSync(
       resolve(process.cwd(), "scripts", "prepare-tauri-build-sidecars.sh"),
       "utf8",

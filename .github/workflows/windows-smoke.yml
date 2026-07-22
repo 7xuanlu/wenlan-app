@@ -228,8 +228,35 @@ jobs:
             throw "backend sidecar staging failed with exit code $LASTEXITCODE"
           }
 
-      - name: Run Windows Rust library tests
-        run: cargo test -p wenlan-app --lib
+      # Compile every unit-test target on Windows, then run the full suite except
+      # the exact historical cases whose fixtures assume macOS HOME, separators,
+      # or LaunchAgent paths. Keep this list explicit so Windows coverage cannot
+      # silently collapse to a few filtered tests.
+      - name: Compile Windows Rust library tests
+        run: cargo test -p wenlan-app --lib --no-run
+
+      - name: Run Windows Rust library tests except verified platform-assumption cases
+        run: >-
+          cargo test -p wenlan-app --lib --
+          --skip config::tests::config_knowledge_path_default_uses_legacy_when_only_legacy_exists
+          --skip config::tests::config_knowledge_path_default_uses_wenlan_when_no_legacy_exists
+          --skip lifecycle::tests::app_plist_path_uses_wenlan_label
+          --skip lifecycle::tests::install_app_plist_writes_file_and_calls_launchctl_load
+          --skip lifecycle::tests::install_app_plist_writes_wenlan_log_paths
+          --skip lifecycle::tests::legacy_app_plist_ownership_accepts_owned_origin_app_path
+          --skip lifecycle::tests::legacy_app_plist_path_uses_origin_label
+          --skip lifecycle::tests::legacy_server_plist_does_not_count_as_current_wenlan_service
+          --skip lifecycle::tests::legacy_server_plist_ownership_accepts_owned_origin_server_path
+          --skip lifecycle::tests::opt_out_flag_round_trip
+          --skip lifecycle::tests::service_management_uses_wenlan_cli_next_to_app_binary
+          --skip lifecycle::tests::set_run_at_login_false_cleans_legacy_app_and_server_plists
+          --skip lifecycle::tests::stable_launch_agent_target_accepts_user_wenlan_app_bundle
+          --skip lifecycle::tests::uninstall_app_plist_removes_file
+          --skip mcp_config::tests::test_client_config_path_codex_cli
+          --skip mcp_config::tests::test_client_config_path_gemini_cli
+          --skip remote_access::tests::test_token_generate_args_include_wenlan_output_path
+          --skip search::avatar_path_tests::avatar_storage_dir_uses_legacy_default_when_current_empty_and_legacy_has_avatars
+          --skip sources::obsidian::discover_vaults_tests::vault_path_no_longer_on_disk_is_filtered_out
 
       - name: Build release-profile native Tauri executable
         run: pnpm tauri build --no-bundle --target x86_64-pc-windows-msvc
