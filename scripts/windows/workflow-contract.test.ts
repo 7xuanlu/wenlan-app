@@ -210,6 +210,13 @@ describe("Windows native smoke workflow contract", () => {
       resolve(process.cwd(), "scripts", "windows", "native-smoke.mjs"),
       "utf8",
     );
+    const healthIndex = text.indexOf('poll(\n      "backend health"');
+    const hotLoadIndex = text.indexOf(
+      '"http://127.0.0.1:7878/api/on-device-model/download"',
+    );
+    const inferencePollIndex = text.indexOf(
+      'poll("expected on-device inference backend"',
+    );
 
     expect(text).toContain(
       'poll("expected on-device inference backend"',
@@ -217,6 +224,9 @@ describe("Windows native smoke workflow contract", () => {
     expect(text).toContain(
       "WENLAN_NATIVE_EXPECT_INFERENCE_DEVICE_CONTAINS",
     );
+    expect(text).toContain("WENLAN_NATIVE_ON_DEVICE_MODEL");
+    expect(hotLoadIndex).toBeGreaterThan(healthIndex);
+    expect(inferencePollIndex).toBeGreaterThan(hotLoadIndex);
   });
 
   it("selects the main WebView instead of relying on Tauri window creation order", () => {

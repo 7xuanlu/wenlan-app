@@ -16,6 +16,7 @@ const COMMIT = "b".repeat(40);
 type StageOptions = {
   appBinDir: string;
   backendDir: string;
+  cargoTargetDir?: string;
   commit: string;
   manifestPath: string;
   resolveCheckoutCommit?: (backendDir: string) => string;
@@ -166,6 +167,37 @@ describe("Windows source-built backend staging", () => {
     expect(verified.backendServerSha256).toBe(
       sha256(resolve(setup.appBinDir, `wenlan-server-${TARGET}.exe`)),
     );
+  });
+
+  it("stages from an explicit short Cargo target directory", async () => {
+    const { stageSourceBuiltBackend } = await loadStageModule();
+    const setup = fixture();
+    const cargoTargetDir = resolve(setup.backendDir, "..", "wl-target");
+    const releaseDir = resolve(cargoTargetDir, TARGET, "release");
+    mkdirSync(releaseDir, { recursive: true });
+    for (const [name, content] of Object.entries({
+      "wenlan.exe": "short target cli",
+      "wenlan-server.exe": "short target server",
+      "wenlan-mcp.exe": "short target mcp",
+      "onnxruntime.dll": "short target ort",
+    })) {
+      writeFileSync(resolve(releaseDir, name), content);
+    }
+
+    stageSourceBuiltBackend({
+      ...setup,
+      cargoTargetDir,
+      commit: COMMIT,
+      targetTriple: TARGET,
+      resolveCheckoutCommit: () => COMMIT,
+    });
+
+    expect(
+      readFileSync(
+        resolve(setup.appBinDir, `wenlan-server-${TARGET}.exe`),
+        "utf8",
+      ),
+    ).toBe("short target server");
   });
 
   it("resolves a hook-relative backend checkout from the repository root", async () => {

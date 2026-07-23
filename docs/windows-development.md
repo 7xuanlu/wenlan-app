@@ -11,11 +11,13 @@ The native smoke proves that one release-profile `wenlan-app.exe`:
 
 1. starts the exact source-built `wenlan-server.exe` as its child process;
 2. reaches `/api/health` with an initialized database;
-3. loads the staged `onnxruntime.dll`;
-4. completes visible first-run onboarding in WebView2;
-5. stores a unique memory and retrieves it with a vector-only semantic query;
-6. renders that same marker in the native UI; and
-7. accepts the full-quit command without leaving the app, backend, or test
+3. records `/api/status` and, when requested, verifies the expected inference
+   backend and physical device;
+4. loads the staged `onnxruntime.dll`;
+5. completes visible first-run onboarding in WebView2;
+6. stores a unique memory and retrieves it with a vector-only semantic query;
+7. renders that same marker in the native UI; and
+8. accepts the full-quit command without leaving the app, backend, or test
    ports alive.
 
 It does **not** prove installer behavior, code signing, updater metadata,
@@ -49,41 +51,56 @@ healthy `0.14.1+gc66f9d8e` backend, three native screenshots, and clean app and
 backend exits. The built `wenlan-app.exe` SHA-256 was
 `20A352D2039AA48120E83933D21D4E3820468A702CFC3A9B162BF48DAA67256A`.
 
+The final 2026-07-23 Vulkan follow-up used app code revision
+`e26209bc3cfe31c8450026608214f2a1ca5c3fc6`, backend revision
+`f3edbfe4b51ac3406597463dbfd9ad3632fad141`, and the same Windows 11 /
+mixed-GPU hardware. Its native run passed 35/35 assertions and recorded
+`vulkan`, device index `1`, `NVIDIA GeForce RTX 3060 Laptop GPU`, and
+`gpu_layers=99` from the app-owned daemon. The tested `wenlan-app.exe` had
+SHA-256
+`CC946B72D1C7ACDBD15EA7778AFD6C9897548B3E6237D188F94DA186EBA4F23F`;
+the source-built `wenlan-server.exe` had SHA-256
+`9FE6DA49395C5222CE655312D8F0237DB7CFB90390674C3D62DE3E76A861996E`.
+
 ## Current Windows GPU status
 
-Windows can use a GPU in principle, but the current Wenlan v1 backend does not
-compile one into the default Windows build.
+The PR #96 baseline above deliberately used backend revision `c66f9d8e`, which
+compiled Qwen for CPU/OpenMP on Windows. The focused probe took about 11.2
+seconds even though the machine had an RTX 3060. That historical result remains
+useful evidence for PR #96; it is not the current backend direction.
 
-The controlling source lives in the sibling repo:
-
-- `../wenlan/crates/wenlan-core/Cargo.toml` selects Metal only for macOS and
-  the sampler-only dependency for non-macOS targets;
-- `../wenlan/crates/wenlan-core/src/engine.rs` converts missing GPU offload
-  support into the CPU plan and `gpu_layers=0`; and
-- `../wenlan/scripts/stage-onnxruntime-windows.ps1` pins the CPU Windows ONNX
-  Runtime archive.
+Backend [PR #382](https://github.com/7xuanlu/wenlan/pull/382) compiles
+llama.cpp with Vulkan and keeps CPU/OpenMP as an observable fallback. Its
+canonical setup, device policy, CI/release contract, and three physical smoke
+commands live in `../wenlan/docs/windows-vulkan.md`. The app repo must not
+duplicate or bypass that backend policy.
 
 There are two relevant inference stacks:
 
-- The on-device Qwen model uses `llama-cpp-2`. In the sibling `wenlan` repo,
-  macOS enables `["metal", "sampler"]`, while every non-macOS target enables
-  only `["sampler"]`. Without a CUDA or Vulkan backend,
-  `supports_gpu_offload()` is false, the runtime selects `gpu_layers=0`, and
-  Windows runs Qwen on `CPU (OpenMP)`.
+- The on-device Qwen model uses `llama-cpp-2`. macOS keeps Metal, Windows
+  x86_64 uses Vulkan, and stock Linux remains CPU/OpenMP. `WENLAN_LLM_DEVICE`
+  accepts `auto`, `cpu`, or a llama.cpp device index. Auto prefers a discrete
+  GPU over an integrated GPU or accelerator; model-load and context-allocation
+  failures perform a real CPU model reload.
 - Embeddings use FastEmbed through ONNX Runtime. The Windows staging script
   deliberately downloads `onnxruntime-win-x64-1.23.2`, the CPU package, rather
   than a CUDA or DirectML package. Loading `onnxruntime.dll` proves the bundled
   runtime is used; it does not prove GPU execution.
 
-The RTX 3060 machine therefore used CPU/OpenMP even though an NVIDIA GPU was
-present. The Qwen hardware probe passed twice, with inference taking about
-11.2 seconds in that focused probe.
+The physical follow-up on the same mixed-GPU Windows 11 machine proved:
 
-Adding Windows GPU support belongs in `7xuanlu/wenlan`, not the Tauri shell. A
-safe follow-up needs opt-in CUDA and/or Vulkan Cargo features, corresponding
-llama.cpp build prerequisites, distributable runtime libraries, CI compile
-coverage, and physical-device probes with an explicit CPU fallback. Merely
-changing `gpu_layers` would request a backend that was never compiled.
+| Leg | Result |
+| --- | --- |
+| Vulkan auto | Selected device `1`, `NVIDIA GeForce RTX 3060 Laptop GPU`; offloaded `37/37` layers; valid classification |
+| Forced CPU | All KV layers ran on CPU; Vulkan1 device allocation was `0.0000 MiB`; valid classification in about 11.45 seconds |
+| Invalid device `99` | Visible `requested GPU device index 99 is unavailable` reason followed by true CPU-only execution and a valid classification in about 11.28 seconds |
+| Warm Vulkan | Valid classification in about 1.10 seconds; an earlier cold run took about 20.56 seconds while creating shader/pipeline state |
+| App-owned backend status | Native Tauri smoke captured `/api/status`: `vulkan`, device `1`, RTX 3060, `gpu_layers=99`; 35/35 assertions passed |
+
+The Vulkan-enabled executable imports `vulkan-1.dll` at process start. A
+current vendor GPU driver or Vulkan runtime is therefore required even for the
+explicit CPU selector; a missing loader fails before Rust can apply fallback.
+The Vulkan SDK itself is only a build prerequisite.
 
 ## Prerequisites
 
@@ -94,11 +111,13 @@ Install the following before building:
 - Rust 1.95.0 with the `x86_64-pc-windows-msvc` target;
 - Visual Studio Build Tools with the C++ desktop workload and Windows SDK;
 - CMake and Ninja;
-- PowerShell 7 (`pwsh`);
+- Windows PowerShell 5.1 or PowerShell 7;
 - vcpkg with `sqlite3:x64-windows-static-md`;
 - LLVM/libclang;
 - a full Strawberry Perl distribution; and
-- the Evergreen WebView2 Runtime.
+- the Evergreen WebView2 Runtime;
+- a current vendor GPU driver/Vulkan runtime; and
+- LunarG Vulkan SDK 1.4.350.0 for backend builds.
 
 The backend source build reached OpenSSL's Perl scripts. Git for Windows'
 minimal Perl is insufficient because it lacks modules such as
@@ -135,7 +154,23 @@ $env:LIB = "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows-static-md\lib;$en
 
 # Point this at the directory containing libclang.dll.
 $env:LIBCLANG_PATH = "C:\path\to\LLVM\bin"
+
+# From the sibling backend repo. This verifies the official installer hash and
+# uses LunarG's non-admin copy_only mode.
+& .\scripts\setup-vulkan-sdk-windows.ps1
+
+# Keep nested llama.cpp shader paths short and serialize MSVC PDB writers.
+$env:CARGO_TARGET_DIR = "C:\wl-target"
+$env:CARGO_BUILD_JOBS = "1"
+
+# Required with Visual Studio 2019 Build Tools. The VS 16 CMake generator
+# rejects llama.cpp's Vulkan shader DEPFILE rules.
+$env:CMAKE_GENERATOR = "Ninja"
 ```
+
+Codex workspace “full access” removes Codex approval prompts; it does not
+bypass Windows UAC. Prefer the SDK's verified `copy_only=1` setup and portable
+LLVM/Perl distributions when elevation is unavailable.
 
 ## Checkouts and shell behavior
 
@@ -163,8 +198,10 @@ working tree. Do not run a destructive normalization command in a dirty
 checkout.
 
 Windows also ships `C:\Windows\System32\bash.exe`, which is the WSL launcher,
-not Git Bash. Put Git Bash first and verify it before running any pnpm script
-that invokes `bash`:
+not Git Bash. `scripts/run-tauri.mjs` now finds Git for Windows, prepends its
+`bin` and `usr\bin` directories, and collapses Windows' case-insensitive
+`Path`/`PATH` aliases before running Tauri. For direct Bash commands, still put
+Git Bash first and verify it:
 
 ```powershell
 $env:Path = "C:\Program Files\Git\bin;$env:Path"
@@ -172,17 +209,15 @@ $env:Path = "C:\Program Files\Git\bin;$env:Path"
 # Expected: C:\Program Files\Git\bin\bash.exe
 ```
 
-Pin the checkouts used by PR #96:
+Record the exact checkouts used for evidence:
 
 ```powershell
-git -C .\wenlan-app switch pr-96
 git -C .\wenlan-app rev-parse HEAD
-# e655fd28f70c6e253744cc2f1fbfc90185480fd9
-
-git -C .\wenlan checkout c66f9d8e3e2edc991a540a89d3c5f60e2c109a99
 git -C .\wenlan rev-parse HEAD
-# c66f9d8e3e2edc991a540a89d3c5f60e2c109a99
 ```
+
+Do not substitute a branch name for a 40-character commit in the staged
+sidecar manifest.
 
 ## Build the source backend and app
 
@@ -192,7 +227,7 @@ From `wenlan-app`, define explicit paths and isolated runtime data:
 $AppRepo = (Resolve-Path .).Path
 $BackendRepo = (Resolve-Path ..\wenlan).Path
 $Target = "x86_64-pc-windows-msvc"
-$BackendCommit = "c66f9d8e3e2edc991a540a89d3c5f60e2c109a99"
+$BackendCommit = (git -C $BackendRepo rev-parse HEAD).Trim()
 $Evidence = Join-Path $AppRepo "target\windows-native-smoke\physical-run"
 $Data = Join-Path $Evidence "data"
 $FastEmbedCache = Join-Path $Evidence "fastembed-cache"
@@ -200,21 +235,53 @@ $FastEmbedCache = Join-Path $Evidence "fastembed-cache"
 New-Item -ItemType Directory -Force -Path $Evidence, $Data, $FastEmbedCache |
   Out-Null
 
-# Prevent the smoke from creating the default %USERPROFILE%\.wenlan\pages.
-@{ knowledge_path = (Join-Path $Data "pages") } |
-  ConvertTo-Json |
-  Set-Content -LiteralPath (Join-Path $Data "config.json") -Encoding utf8
+# Prevent the smoke from creating the default profile data. Windows
+# PowerShell 5.1's `-Encoding utf8` writes a BOM; use explicit no-BOM UTF-8
+# because the daemon's JSON loader does not accept that BOM.
+$ConfigJson = @{
+  knowledge_path = (Join-Path $Data "pages")
+  setup_completed = $false
+} | ConvertTo-Json
+$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllText(
+  (Join-Path $Data "config.json"),
+  $ConfigJson,
+  $Utf8NoBom
+)
 
 $env:TARGET_TRIPLE = $Target
 $env:WENLAN_BACKEND_DIR = $BackendRepo
+$env:WENLAN_WINDOWS_BACKEND_BUILD_DIR = $BackendRepo
+$BackendCargoTarget = "C:\wl-target"
+$env:CARGO_TARGET_DIR = $BackendCargoTarget
+$env:WENLAN_WINDOWS_BACKEND_CARGO_TARGET_DIR = $BackendCargoTarget
 $env:WENLAN_BACKEND_COMMIT = $BackendCommit
 $env:WENLAN_DATA_DIR = $Data
 $env:WENLAN_TEST_FASTEMBED_CACHE = $FastEmbedCache
 $env:WENLAN_DOWNLOAD_SIDECARS = "1"
 $env:WENLAN_PRESTAGED_SIDECARS = "1"
 $env:WENLAN_SIDECAR_MANIFEST = Join-Path $Evidence "staged-sidecars.json"
+$env:WENLAN_NATIVE_PROFILE_ROOT = Join-Path $Evidence "profile-check"
 $env:RUST_LOG = "warn,wenlan_lib::lifecycle=info"
 ```
+
+`WENLAN_NATIVE_PROFILE_ROOT` changes only the harness's fake
+`Library\LaunchAgents` pollution check. Do not change `USERPROFILE` just to
+isolate that check: Windows known-folder APIs and the Hugging Face model cache
+do not consistently follow a temporary `USERPROFILE`.
+
+For a physical Vulkan run, also set:
+
+```powershell
+$env:WENLAN_LLM_DEVICE = "auto"
+$env:WENLAN_NATIVE_EXPECT_INFERENCE_BACKEND = "vulkan"
+$env:WENLAN_NATIVE_EXPECT_INFERENCE_DEVICE_CONTAINS = "RTX 3060"
+$env:WENLAN_NATIVE_ON_DEVICE_MODEL = "qwen3-4b"
+```
+
+Omit the two `WENLAN_NATIVE_EXPECT_*` values when the machine has no supported
+GPU. The harness still saves `status.json`; it only makes backend/device
+matching mandatory when the expectations are present.
 
 Install frontend dependencies and stage the locked release baseline:
 
@@ -233,10 +300,10 @@ Build the exact backend revision and its CPU ONNX Runtime:
 Push-Location $BackendRepo
 try {
   cargo build --locked --release --target $Target `
-    -p wenlan -p wenlan-server -p wenlan-mcp
+    --jobs 1 -p wenlan -p wenlan-server -p wenlan-mcp
 
   & .\scripts\stage-onnxruntime-windows.ps1 `
-    -DestinationDirectory "target\$Target\release"
+    -DestinationDirectory (Join-Path $BackendCargoTarget "$Target\release")
 }
 finally {
   Pop-Location
@@ -244,6 +311,7 @@ finally {
 
 node scripts/windows/stage-backend-build.mjs `
   --backend-dir $BackendRepo `
+  --cargo-target-dir $BackendCargoTarget `
   --commit $BackendCommit `
   --manifest $env:WENLAN_SIDECAR_MANIFEST
 ```
@@ -251,6 +319,9 @@ node scripts/windows/stage-backend-build.mjs `
 Build the release-profile native executable:
 
 ```powershell
+# Keep the backend location for the Tauri hook, but return the app build to its
+# normal repository-local target directory.
+Remove-Item Env:CARGO_TARGET_DIR
 pnpm build
 pnpm tauri build --no-bundle --target $Target
 ```
@@ -268,7 +339,7 @@ The first daemon start downloads the BGE ONNX model. Prewarm it before the UI
 smoke so a network failure is not confused with an app/runtime failure:
 
 ```powershell
-$BackendExe = Join-Path $BackendRepo "target\$Target\release\wenlan-server.exe"
+$BackendExe = Join-Path $BackendCargoTarget "$Target\release\wenlan-server.exe"
 $PrewarmStdout = Join-Path $Evidence "prewarm.stdout.log"
 $PrewarmStderr = Join-Path $Evidence "prewarm.stderr.log"
 $prewarm = Start-Process -WindowStyle Hidden -FilePath $BackendExe `
@@ -291,6 +362,28 @@ try {
   if ($health.status -ne "ok") {
     throw "backend prewarm did not become healthy; inspect the prewarm logs"
   }
+
+  # Select, cache, and hot-load the on-device model through the same API used
+  # by Settings. This persists `on_device_model` in the isolated no-BOM config.
+  Invoke-RestMethod -Method Post `
+    -Uri "http://127.0.0.1:7878/api/on-device-model/download" `
+    -ContentType "application/json" `
+    -Body '{"model_id":"qwen3-4b"}'
+
+  if ($env:WENLAN_NATIVE_EXPECT_INFERENCE_BACKEND) {
+    $deadline = [DateTime]::UtcNow.AddMinutes(3)
+    do {
+      Start-Sleep -Seconds 1
+      $inference = (Invoke-RestMethod `
+        "http://127.0.0.1:7878/api/status").on_device_inference
+    } until (
+      $inference.backend -eq $env:WENLAN_NATIVE_EXPECT_INFERENCE_BACKEND -or
+      [DateTime]::UtcNow -ge $deadline
+    )
+    if ($inference.backend -ne $env:WENLAN_NATIVE_EXPECT_INFERENCE_BACKEND) {
+      throw "expected inference backend did not become ready"
+    }
+  }
 }
 finally {
   if ($prewarm -and -not $prewarm.HasExited) {
@@ -298,6 +391,13 @@ finally {
   }
 }
 ```
+
+When an expected inference backend is configured, the native harness repeats
+the model selection/load request after the app-owned daemon reaches health and
+then polls `/api/status`. This is intentional: the standalone prewarm proves
+the cache and backend, while the second request proves the exact daemon child
+started by Tauri. Do not replace it with a fixed sleep for the background
+startup scheduler.
 
 On the verified machine, `hf-hub 0.4.3` left a complete
 `model_optimized.onnx.part`, retried with a range beginning exactly at EOF,
@@ -374,6 +474,12 @@ try {
   if (-not $ready) {
     throw "tauri-driver did not listen on port 4444"
   }
+  $edgeDriverPid = Get-CimInstance Win32_Process |
+    Where-Object {
+      $_.ParentProcessId -eq $driver.Id -and
+      $_.Name -eq "msedgedriver.exe"
+    } |
+    Select-Object -ExpandProperty ProcessId -First 1
 
   pnpm test:native:windows `
     --app "target\$Target\release\wenlan-app.exe" `
@@ -383,17 +489,19 @@ try {
   }
 }
 finally {
+  if ($edgeDriverPid) {
+    Stop-Process -Id $edgeDriverPid -Force -ErrorAction SilentlyContinue
+  }
   if ($driver -and -not $driver.HasExited) {
     Stop-Process -Id $driver.Id -Force -ErrorAction SilentlyContinue
   }
-  Get-Process msedgedriver -ErrorAction SilentlyContinue |
-    Stop-Process -Force -ErrorAction SilentlyContinue
 }
 ```
 
 Do not call an already-exited driver process's `.Kill()` method without first
 checking `HasExited`; that cleanup race can turn a successful harness into an
-outer PowerShell exit failure.
+outer PowerShell exit failure. Do not kill every process named
+`msedgedriver.exe`; stop only the child PID owned by this driver.
 
 ## Reading the evidence
 
@@ -402,6 +510,8 @@ Treat the run as passed only when all of the following hold:
 - `result.json` has `status: "passed"` and `error: null`;
 - every entry in `assertions` has `ok: true`;
 - `health.json` reports `status: "ok"` and `db_initialized: true`;
+- `status.json` records the on-device backend; a physical GPU run must match
+  the explicit backend and device expectations;
 - the backend PID is a child of the recorded app PID;
 - the backend executable is the staged source-built binary;
 - loaded modules include the adjacent staged `onnxruntime.dll`;
@@ -417,6 +527,15 @@ reported `0.14.1+gc66f9d8e` while the PR app still reported `0.14.0`. That is
 expected for this deliberate post-release source-build smoke, but it is not
 acceptable evidence for a version-matched packaged release.
 
+The final Vulkan evidence is
+`target/windows-native-smoke/physical-win11-vulkan-final2`. It passed all 35
+assertions with marker `WINDOWS_SMOKE_1784808706114_1`, backend commit
+`f3edbfe4b51ac3406597463dbfd9ad3632fad141`, and backend binary SHA-256
+`9fe6da49395c5222ce655312d8f0237db7cfb90390674c3d62de3e76a861996e`.
+The app PID was `5232`; the only backend PID was `20252`, whose parent was the
+app. Both exited cleanly. The three screenshots were visually inspected rather
+than accepted by file existence alone.
+
 ## Test results and remaining Windows gaps
 
 The following commands were run, not inferred:
@@ -424,13 +543,13 @@ The following commands were run, not inferred:
 | Command or gate | Physical Windows result |
 | --- | --- |
 | `pnpm build` | Passed; TypeScript and Vite production build completed |
-| Full `pnpm test` | Passed after portability fixes: `152` files passed, `1620` tests passed, `2` skipped, `0` failed |
+| Full `pnpm test` | Passed after portability fixes: `152` files passed, `1628` tests passed, `2` skipped, `0` failed |
 | `cargo test -p wenlan-app --lib --no-run` | Passed |
-| Rust library suite with Windows platform-assumption skips | `327 passed`, `0 failed`, `1 ignored`, `24 filtered` |
+| Rust library suite with Windows platform-assumption skips | `332 passed`, `0 failed`, `1 ignored`, `19 filtered` |
 | Exact backend source build | Passed for all three binaries |
 | `pnpm tauri build --no-bundle --target x86_64-pc-windows-msvc` | Passed |
-| Qwen hardware/inference probe | Passed twice on CPU/OpenMP |
-| Native Tauri/WebView2 smoke | Passed, 33/33 assertions |
+| Qwen hardware/inference probe | PR #96 baseline passed twice on CPU/OpenMP; backend Vulkan follow-up passed auto/discrete, forced CPU, and invalid-device fallback |
+| Native Tauri/WebView2 smoke | Historical CPU run passed 33/33; Vulkan app-owned backend run passed 35/35 |
 
 The first physical run found 22 Windows portability failures. They are now
 resolved, and the Windows workflow runs the complete frontend suite before it
@@ -457,26 +576,45 @@ maintenance rules:
   called does not prove the async state transition has settled.
 - Give subprocess-heavy integration suites a timeout sized for full-suite
   contention; do not infer stability from an isolated single-worker run.
+- On Windows, invoke inbox `powershell.exe` instead of assuming PowerShell 7's
+  `pwsh` exists. Non-Windows script contract tests may continue to use `pwsh`.
+- Tauri creates main, toast, and quick-capture WebViews. Native automation must
+  select the handle whose URL has neither `#toast` nor `#quick-capture`; window
+  creation order is not a stable selector.
+- When a PowerShell-generated JSON file is consumed by Rust, write explicit
+  UTF-8 without BOM. Windows PowerShell 5.1's `-Encoding utf8` is not no-BOM.
+- Treat WebDriver `POST /session` as non-idempotent for Tauri. Keep
+  WebdriverIO `connectionRetryCount: 0`; an automatic retry can launch a second
+  app and orphan the first app-owned daemon.
+- A physical inference expectation must use the Settings
+  `/api/on-device-model/download` route after app-owned backend health, then
+  poll `/api/status`. Background startup admission is deliberately delayed and
+  is not a reliable GPU-readiness trigger for a bounded smoke.
+- Keep `WENLAN_NATIVE_PROFILE_ROOT` separate from `USERPROFILE`: the former
+  isolates only the macOS-path pollution assertion, while the latter controls
+  Windows identity paths and model caches.
+- `CARGO_TARGET_DIR` is a valid backend build location. Pass it as
+  `--cargo-target-dir` or
+  `WENLAN_WINDOWS_BACKEND_CARGO_TARGET_DIR` when staging; never silently stage
+  stale payloads from `<backend>\target`.
+- `Start-Process -ArgumentList` joins arguments into a Windows command line.
+  Prefer direct invocation when an individual argument contains spaces, or
+  quote that argument explicitly and verify the child command line.
 
 The verified post-fix command was plain `pnpm test`, not a filtered invocation:
-all 152 test files passed with 1620 passing tests and two intentional
+all 152 test files passed with 1628 passing tests and two intentional
 platform-specific skips.
 
-The PR workflow's Rust skip list also misses five `identity_paths` tests whose
-fixtures set `HOME`. Windows `dirs::data_local_dir()` and `dirs::home_dir()`
-use profile APIs instead, so those tests touch the real user profile and can
-poison their shared mutex after the first failure. The five affected tests are:
+Five `identity_paths` tests originally set `HOME` and therefore touched the real
+Windows profile because `dirs::data_local_dir()` uses the Windows known-folder
+API. They now exercise the same selection logic through an explicit temporary
+base directory. The Windows suite runs all five; do not add them to the skip
+list or reintroduce process-global profile mutation.
 
-- `app_data_dir_uses_legacy_default_when_current_absent_and_legacy_has_config`;
-- `app_data_dir_uses_legacy_default_when_current_empty_and_legacy_has_config`;
-- `app_data_dir_uses_legacy_default_when_current_empty_and_legacy_has_activities`;
-- `app_data_dir_uses_wenlan_default_when_current_has_app_state`; and
-- `app_data_dir_uses_wenlan_default_when_neither_exists`.
-
-Until their fixtures use an injectable Windows profile root, skip those exact
-tests in addition to the workflow list and inspect `%LOCALAPPDATA%\wenlan`,
-`%LOCALAPPDATA%\origin`, and `%USERPROFILE%\Library\LaunchAgents` before and
-after the suite. Remove only entries proven to have been created by the test.
+The remaining 19 filtered Rust cases exercise macOS plist, LaunchAgent, or
+Unix-path assumptions and stay enumerated by full test name in
+`.github/workflows/windows-smoke.yml`. The workflow audits and removes only its
+known test-created profile artifacts around that suite.
 
 ## Cleanup
 

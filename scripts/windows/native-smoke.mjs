@@ -210,10 +210,10 @@ function collectProcessEvidence(
   return readJson(outputPath);
 }
 
-async function fetchJson(url, options = {}) {
+async function fetchJson(url, options = {}, timeoutMs = 5_000) {
   const response = await fetch(url, {
     ...options,
-    signal: AbortSignal.timeout(5_000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   const text = await response.text();
   let body;
@@ -380,6 +380,8 @@ async function main() {
       process.env.WENLAN_NATIVE_EXPECT_INFERENCE_BACKEND?.trim() || "",
     inferenceDeviceContains:
       process.env.WENLAN_NATIVE_EXPECT_INFERENCE_DEVICE_CONTAINS?.trim() || "",
+    onDeviceModel:
+      process.env.WENLAN_NATIVE_ON_DEVICE_MODEL?.trim() || "qwen3-4b",
   };
 
   const evidence = {
@@ -522,6 +524,22 @@ async function main() {
     );
     evidence.health = { ok: true, response: health };
     writeJson(healthPath, health);
+    if (inferenceExpectation.inferenceBackend) {
+      await fetchJson(
+        "http://127.0.0.1:7878/api/on-device-model/download",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            model_id: inferenceExpectation.onDeviceModel,
+          }),
+        },
+        180_000,
+      );
+      log(
+        `requested on-device model ${inferenceExpectation.onDeviceModel} through the app-owned backend`,
+      );
+    }
     const fetchInferenceStatus = async () => {
       const candidate = await fetchJson("http://127.0.0.1:7878/api/status");
       if (!inferenceExpectation.inferenceBackend) return candidate;

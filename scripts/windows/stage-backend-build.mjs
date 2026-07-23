@@ -57,8 +57,17 @@ export function resolveBackendDirectory(input, repoRoot = REPO_ROOT) {
   return resolve(isAbsolute(input) ? input : resolve(repoRoot, input));
 }
 
+function resolveCargoTargetDirectory(input, backendDir) {
+  if (!input) return resolve(backendDir, "target");
+  return resolve(isAbsolute(input) ? input : resolve(backendDir, input));
+}
+
 export function stageSourceBuiltBackend(options) {
   const backendDir = resolveBackendDirectory(options.backendDir);
+  const cargoTargetDir = resolveCargoTargetDirectory(
+    options.cargoTargetDir,
+    backendDir,
+  );
   const appBinDir = resolve(
     options.appBinDir || resolve(REPO_ROOT, "app", "binaries"),
   );
@@ -117,8 +126,7 @@ export function stageSourceBuiltBackend(options) {
   }
 
   const sourceDir = resolve(
-    backendDir,
-    "target",
+    cargoTargetDir,
     targetTriple,
     PROFILE,
   );
@@ -239,6 +247,8 @@ function parseArgs(argv) {
   const parsed = {
     appBinDir: "",
     backendDir: process.env.WENLAN_WINDOWS_BACKEND_BUILD_DIR || "",
+    cargoTargetDir:
+      process.env.WENLAN_WINDOWS_BACKEND_CARGO_TARGET_DIR || "",
     commit:
       process.env.WENLAN_BACKEND_SMOKE_COMMIT ||
       process.env.WENLAN_BACKEND_COMMIT ||
@@ -255,13 +265,15 @@ function parseArgs(argv) {
       continue;
     }
     if (arg === "--backend-dir" && next) parsed.backendDir = next;
-    else if (arg === "--commit" && next) parsed.commit = next;
+    else if (arg === "--cargo-target-dir" && next) {
+      parsed.cargoTargetDir = next;
+    } else if (arg === "--commit" && next) parsed.commit = next;
     else if (arg === "--manifest" && next) parsed.manifestPath = next;
     else if (arg === "--app-bin-dir" && next) parsed.appBinDir = next;
     else if (arg === "--target" && next) parsed.targetTriple = next;
     else {
       throw new Error(
-        "usage: node scripts/windows/stage-backend-build.mjs --backend-dir <path> --commit <sha> --manifest <path> [--app-bin-dir <path>] [--target <triple>] [--verify-only]",
+        "usage: node scripts/windows/stage-backend-build.mjs --backend-dir <path> --commit <sha> --manifest <path> [--cargo-target-dir <path>] [--app-bin-dir <path>] [--target <triple>] [--verify-only]",
       );
     }
     index += 1;
