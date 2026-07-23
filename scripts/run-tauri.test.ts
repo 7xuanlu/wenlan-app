@@ -7,6 +7,14 @@ type LauncherModule = {
     args: string[],
     repoRoot?: string,
   ): { appPath: string; args: string[] };
+  createTauriEnvironment(
+    environment?: Record<string, string | undefined>,
+    options?: {
+      platform?: NodeJS.Platform;
+      gitBashDirectories?: string[];
+      pathExists?: (path: string) => boolean;
+    },
+  ): Record<string, string>;
 };
 
 describe("cross-platform Tauri launcher", () => {
@@ -33,5 +41,29 @@ describe("cross-platform Tauri launcher", () => {
     expect(packageJson.scripts.tauri).toBe("node scripts/run-tauri.mjs");
     expect(packageJson.devDependencies["@tauri-apps/cli"]).toBe("2.11.4");
     expect(JSON.stringify(packageJson)).not.toContain("TAURI_DIR=app tauri");
+  });
+
+  it("puts native Git Bash before the WSL launcher for Tauri hooks", async () => {
+    const loaded = await import("./run-tauri.mjs") as LauncherModule;
+    const gitBashDirectory = String.raw`C:\Program Files\Git\bin`;
+    const environment = loaded.createTauriEnvironment(
+      {
+        Path: String.raw`C:\Windows\System32;C:\Tools`,
+        ProgramFiles: String.raw`C:\Program Files`,
+      },
+      {
+        platform: "win32",
+        gitBashDirectories: [gitBashDirectory],
+        pathExists: () => true,
+      },
+    );
+
+    expect(environment.PATH.split(";")).toEqual([
+      gitBashDirectory,
+      resolve(gitBashDirectory, "..", "usr", "bin"),
+      String.raw`C:\Windows\System32`,
+      String.raw`C:\Tools`,
+    ]);
+    expect(environment).not.toHaveProperty("Path");
   });
 });
