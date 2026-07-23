@@ -13,6 +13,12 @@ pnpm tauri dev   # prepares sidecars, then launches the Tauri app
 
 If you want a fresh daemon plus app sequence, use `pnpm dev:all`.
 
+## Development documentation
+
+- [Windows development and native smoke testing](docs/windows-development.md)
+  covers the physical Windows setup, sibling backend build, WebView2 live
+  smoke, GPU status, and known test gaps.
+
 ## License
 
 AGPL-3.0-only. See [LICENSE](LICENSE).
