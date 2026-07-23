@@ -24,6 +24,7 @@ import PageInfo from "./page/PageInfo";
 import { RailPanelTitle } from "./MemoryDetailPrimitives";
 import { processCitations, stripCitationLinks } from "../../lib/pageCitations";
 import CitationChip from "./page/CitationChip";
+import PageCanvas from "./PageCanvas";
 
 interface PageDetailProps {
   pageId: string;
@@ -76,6 +77,8 @@ function folderName(path: string): string {
 }
 
 const PAGE_LINK_ANCHOR_PREFIX = "#concept:";
+const PAGE_TABS = ["read", "canvas"] as const;
+type PageTab = (typeof PAGE_TABS)[number];
 type MenuInitialFocus = "first" | "last";
 
 function enabledMenuItems(menu: HTMLDivElement | null): HTMLElement[] {
@@ -157,6 +160,24 @@ export default function PageDetail({
     message: string;
   } | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [tab, setTab] = useState<PageTab>("read");
+  const tabRefs = useRef<Record<PageTab, HTMLButtonElement | null>>({
+    read: null,
+    canvas: null,
+  });
+  // Editing happens in the Read panel's textarea, so edit mode pins the tab:
+  // nobody gets to type into a page they cannot see.
+  const activeTab: PageTab = editing ? "read" : tab;
+
+  const handleTabKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    e.preventDefault();
+    const step = e.key === "ArrowRight" ? 1 : PAGE_TABS.length - 1;
+    const next =
+      PAGE_TABS[(PAGE_TABS.indexOf(activeTab) + step) % PAGE_TABS.length];
+    setTab(next);
+    tabRefs.current[next]?.focus();
+  };
   const exportMenuTriggerRef = useRef<HTMLButtonElement>(null);
   const exportMenuRef = useRef<HTMLDivElement>(null);
   const exportMenuInitialFocusRef = useRef<MenuInitialFocus>("first");
@@ -249,6 +270,35 @@ export default function PageDetail({
   const pageEntities = entityQueries
     .map((q) => q.data?.entity)
     .filter((e): e is Entity => !!e);
+
+  // Canvas nodes arrive with label: null for memory/entity/page refs — the
+  // daemon stores the reference, the client renders the backing object. Every
+  // name below comes from a query this component already runs; the canvas
+  // must not fetch anything of its own.
+  const entitySignature = pageEntities
+    .map((e) => `${e.id}\u0000${e.name}`)
+    .join("|");
+  const labelOverrides = useMemo(() => {
+    const overrides = new Map<string, string>();
+    if (page?.title) overrides.set(`page:${pageId}`, page.title);
+    for (const cs of pageSources ?? []) {
+      const memory = cs.memory;
+      if (!memory) continue;
+      const text = (memory.title || memory.summary || memory.content || "").trim();
+      if (!text) continue;
+      overrides.set(
+        `memory:${memory.source_id}`,
+        text.length > 64 ? `${text.slice(0, 64).trimEnd()}\u2026` : text,
+      );
+    }
+    for (const entity of pageEntities) {
+      overrides.set(`entity:${entity.id}`, entity.name);
+    }
+    return overrides;
+    // pageEntities is rebuilt every render by useQueries; entitySignature is
+    // the stable stand-in that actually tracks its content.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageId, page?.title, pageSources, entitySignature]);
 
   useEffect(() => {
     setRedistillNotice(null);
@@ -944,107 +994,161 @@ export default function PageDetail({
         </div>
       )}
 
-      {/* Content — edit mode or rendered */}
-      {editing ? (
-        <div className="flex flex-col gap-2">
-          <textarea
-            ref={textareaRef}
-            disabled={updateMutation.isPending}
-            value={editContent}
-            onChange={(e) => setEditContent(e.target.value)}
-            onKeyDown={handleKeyDown}
-            className="w-full rounded-lg p-4 resize-y outline-none"
-            style={{
-              minHeight: "300px",
-              backgroundColor: "var(--mem-surface)",
-              border: "1px solid var(--mem-border)",
-              color: "var(--mem-text)",
-              fontFamily: "var(--mem-font-mono)",
-              fontSize: "13px",
-              lineHeight: "1.6",
-            }}
-          />
-          <div className="flex items-center gap-2">
+      {!editing && (
+        <div
+          role="tablist"
+          aria-label={t("pageCanvas.tabsLabel")}
+          className="page-detail-tabs"
+          onKeyDown={handleTabKeyDown}
+        >
+          {PAGE_TABS.map((key) => (
             <button
-              onClick={handleSave}
-              disabled={updateMutation.isPending}
-              className="text-[11px] font-medium px-3 py-1.5 rounded-md transition-all"
-              style={{ backgroundColor: "rgba(99, 102, 241, 0.15)", color: "var(--mem-accent-page)" }}
-            >
-              {updateMutation.isPending ? "Saving..." : "Save (Cmd+Enter)"}
-            </button>
-            <button
-              onClick={() => setEditing(false)}
-              className="text-[11px] font-medium px-3 py-1.5 rounded-md transition-all hover:bg-[var(--mem-hover-strong)]"
-              style={{ color: "var(--mem-text-tertiary)" }}
-            >
-              Cancel (Esc)
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className={hasRail ? "page-detail-grid" : undefined}>
-          <div className="page-detail-prose" onClickCapture={handleContentClick}>
-            {(page.summary || tldr) && (
-              <div className="page-detail-lede">
-                <p>{page.summary || tldr}</p>
-              </div>
-            )}
-            <ContentRenderer
-              content={displayContent}
-              variant="detail"
-              renderCitation={(k) => {
-                const c = processed.byOccurrence.get(k);
-                if (!c) return null;
-                return (
-                  <CitationChip
-                    occurrence={k}
-                    citation={c}
-                    sourceMemory={sourceMemoryByLocator.get(c.locator) ?? null}
-                    sourcesLoading={pageSources === undefined}
-                    onOpenMemory={onMemoryClick}
-                  />
-                );
+              key={key}
+              type="button"
+              role="tab"
+              id={`page-detail-tab-${key}`}
+              aria-selected={activeTab === key}
+              aria-controls={`page-detail-panel-${key}`}
+              tabIndex={activeTab === key ? 0 : -1}
+              ref={(el) => {
+                tabRefs.current[key] = el;
               }}
-            />
-          </div>
-          {hasRail && (
-            <aside className="memory-detail-rail page-detail-rail">
-              {pageEntities.length > 0 && (
-                <section className="memory-detail-rail-section">
-                  <RailPanelTitle>{t("pageDetail.entities")}</RailPanelTitle>
-                  <div className="memory-detail-entity-chip-list">
-                    {pageEntities.map((e) => (
-                      <button
-                        key={e.id}
-                        type="button"
-                        onClick={() => onEntityClick?.(e.id)}
-                        className="memory-detail-entity-chip"
-                      >
-                        <span className="memory-detail-entity-name">{e.name}</span>
-                        <span className="memory-detail-entity-type">{e.entity_type}</span>
-                      </button>
-                    ))}
-                  </div>
-                </section>
-              )}
-              <RelatedPages outbound={outboundLinks} onPageClick={onPageClick} />
-            </aside>
-          )}
+              onClick={() => setTab(key)}
+              className={`page-detail-tab${activeTab === key ? " is-active" : ""}`}
+            >
+              {key === "read"
+                ? t("pageCanvas.tabRead")
+                : t("pageCanvas.tabCanvas")}
+            </button>
+          ))}
         </div>
       )}
 
-      {!editing && (
-        <PageInfo
-          sourceCount={sourceCount}
-          sources={pageSources}
-          inbound={inboundLinks}
-          revisions={pageRevisionEntries}
-          citations={page.citations}
-          citationState={processed.state}
-          onMemoryClick={onMemoryClick}
-          onPageClick={onPageClick}
-        />
+      {activeTab === "canvas" ? (
+        <div
+          role="tabpanel"
+          id="page-detail-panel-canvas"
+          aria-labelledby="page-detail-tab-canvas"
+        >
+          <PageCanvas
+            pageId={pageId}
+            pageTitle={page.title}
+            labelOverrides={labelOverrides}
+            onMemoryClick={onMemoryClick}
+            onPageClick={onPageClick}
+            onEntityClick={onEntityClick}
+          />
+        </div>
+      ) : (
+        <div
+          role="tabpanel"
+          id="page-detail-panel-read"
+          aria-labelledby="page-detail-tab-read"
+          className="page-detail-read-panel"
+        >
+          {/* Content — edit mode or rendered */}
+          {editing ? (
+            <div className="flex flex-col gap-2">
+              <textarea
+                ref={textareaRef}
+                disabled={updateMutation.isPending}
+                value={editContent}
+                onChange={(e) => setEditContent(e.target.value)}
+                onKeyDown={handleKeyDown}
+                className="w-full rounded-lg p-4 resize-y outline-none"
+                style={{
+                  minHeight: "300px",
+                  backgroundColor: "var(--mem-surface)",
+                  border: "1px solid var(--mem-border)",
+                  color: "var(--mem-text)",
+                  fontFamily: "var(--mem-font-mono)",
+                  fontSize: "13px",
+                  lineHeight: "1.6",
+                }}
+              />
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleSave}
+                  disabled={updateMutation.isPending}
+                  className="text-[11px] font-medium px-3 py-1.5 rounded-md transition-all"
+                  style={{ backgroundColor: "rgba(99, 102, 241, 0.15)", color: "var(--mem-accent-page)" }}
+                >
+                  {updateMutation.isPending ? "Saving..." : "Save (Cmd+Enter)"}
+                </button>
+                <button
+                  onClick={() => setEditing(false)}
+                  className="text-[11px] font-medium px-3 py-1.5 rounded-md transition-all hover:bg-[var(--mem-hover-strong)]"
+                  style={{ color: "var(--mem-text-tertiary)" }}
+                >
+                  Cancel (Esc)
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className={hasRail ? "page-detail-grid" : undefined}>
+              <div className="page-detail-prose" onClickCapture={handleContentClick}>
+                {(page.summary || tldr) && (
+                  <div className="page-detail-lede">
+                    <p>{page.summary || tldr}</p>
+                  </div>
+                )}
+                <ContentRenderer
+                  content={displayContent}
+                  variant="detail"
+                  renderCitation={(k) => {
+                    const c = processed.byOccurrence.get(k);
+                    if (!c) return null;
+                    return (
+                      <CitationChip
+                        occurrence={k}
+                        citation={c}
+                        sourceMemory={sourceMemoryByLocator.get(c.locator) ?? null}
+                        sourcesLoading={pageSources === undefined}
+                        onOpenMemory={onMemoryClick}
+                      />
+                    );
+                  }}
+                />
+              </div>
+              {hasRail && (
+                <aside className="memory-detail-rail page-detail-rail">
+                  {pageEntities.length > 0 && (
+                    <section className="memory-detail-rail-section">
+                      <RailPanelTitle>{t("pageDetail.entities")}</RailPanelTitle>
+                      <div className="memory-detail-entity-chip-list">
+                        {pageEntities.map((e) => (
+                          <button
+                            key={e.id}
+                            type="button"
+                            onClick={() => onEntityClick?.(e.id)}
+                            className="memory-detail-entity-chip"
+                          >
+                            <span className="memory-detail-entity-name">{e.name}</span>
+                            <span className="memory-detail-entity-type">{e.entity_type}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </section>
+                  )}
+                  <RelatedPages outbound={outboundLinks} onPageClick={onPageClick} />
+                </aside>
+              )}
+            </div>
+          )}
+
+          {!editing && (
+            <PageInfo
+              sourceCount={sourceCount}
+              sources={pageSources}
+              inbound={inboundLinks}
+              revisions={pageRevisionEntries}
+              citations={page.citations}
+              citationState={processed.state}
+              onMemoryClick={onMemoryClick}
+              onPageClick={onPageClick}
+            />
+          )}
+        </div>
       )}
     </div>
   );
