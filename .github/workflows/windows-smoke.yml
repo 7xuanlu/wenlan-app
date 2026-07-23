@@ -74,6 +74,9 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Run full frontend test suite on Windows
+        run: pnpm test
+
       - name: Prove Windows ZIP extraction
         run: pnpm exec vitest run scripts/download-sidecars.test.ts --maxWorkers=1
 

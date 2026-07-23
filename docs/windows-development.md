@@ -417,14 +417,14 @@ reported `0.14.1+gc66f9d8e` while the PR app still reported `0.14.0`. That is
 expected for this deliberate post-release source-build smoke, but it is not
 acceptable evidence for a version-matched packaged release.
 
-## Test results and known Windows gaps
+## Test results and remaining Windows gaps
 
 The following commands were run, not inferred:
 
 | Command or gate | Physical Windows result |
 | --- | --- |
 | `pnpm build` | Passed; TypeScript and Vite production build completed |
-| Full `pnpm test` | `1587 passed`, `22 failed`, `1 skipped`; not green |
+| Full `pnpm test` | Passed after portability fixes: `152` files passed, `1620` tests passed, `2` skipped, `0` failed |
 | `cargo test -p wenlan-app --lib --no-run` | Passed |
 | Rust library suite with Windows platform-assumption skips | `327 passed`, `0 failed`, `1 ignored`, `24 filtered` |
 | Exact backend source build | Passed for all three binaries |
@@ -432,23 +432,35 @@ The following commands were run, not inferred:
 | Qwen hardware/inference probe | Passed twice on CPU/OpenMP |
 | Native Tauri/WebView2 smoke | Passed, 33/33 assertions |
 
-The 22 Vitest failures are reproducible cross-platform test debt:
+The first physical run found 22 Windows portability failures. They are now
+resolved, and the Windows workflow runs the complete frontend suite before it
+installs Rust or starts the expensive native smoke. The fixes establish these
+maintenance rules:
 
-| Count | Root cause |
-| ---: | --- |
-| 9 | `prepare-sidecars.test.ts` compares Git Bash `/tmp/...` output with Node's native `C:\...` temp path without normalizing both representations |
-| 1 | A fixture constructs `PATH` with POSIX `:` separators on Windows, so `spawnSync("bash", ...)` returns `ENOENT` and `status: null` |
-| 8 | ZIP fixtures call the Unix `zip` executable directly; stock Windows does not provide it |
-| 1 | `cssTokenGuard.test.ts` builds a Windows backslash path, but its known-exception key uses forward slashes |
-| 1 | `hardcodedCopyGuard.test.ts` compares Windows backslash paths against a forward-slash TSV baseline, producing 278 false-positive baseline differences inside one failed assertion |
-| 1 | `reviewFlavor.test.ts` looks for an exact LF-only multiline Rust string in a CRLF working tree |
-| 1 | `wikiSpaceTypography.test.ts` embeds an LF-only multiline selector that does not match the CRLF CSS file |
+- Read source fixtures through `src/test/sourceText.ts` when exact multiline
+  text matters. It normalizes CRLF and lone CR to LF.
+- Persist repository-relative keys with forward slashes. Do not compare a
+  `node:path.relative` result directly with a checked-in POSIX-style baseline.
+- Shell integration tests must use `scripts/test-platform.ts`. On Windows it
+  deliberately selects Git for Windows Bash instead of the WSL launcher,
+  canonicalizes Bash-visible paths, uses `node:path.delimiter`, and collapses
+  the `Path`/`PATH` alias only on Windows.
+- Build ZIP fixtures with the pinned pure-JavaScript `fflate` dependency. Do
+  not assume a host `zip` executable exists.
+- Use the native Windows `tar.exe` for tar archives when a Windows test covers
+  a cross-target asset.
+- Gate OS-specific assertions with `it.runIf` or an explicit platform check.
+  Unix executable mode bits and macOS `xattr` behavior are not Windows
+  contracts.
+- Await observable UI state such as a checked checkbox or a re-enabled
+  mutation control. Merely seeing an element or observing that a mock was
+  called does not prove the async state transition has settled.
+- Give subprocess-heavy integration suites a timeout sized for full-suite
+  contention; do not infer stability from an isolated single-worker run.
 
-These failures do not invalidate the successful native runtime smoke, but they
-are real: the full frontend test gate is not Windows-portable yet. Follow-up
-fixes should normalize paths at the assertion boundary, use
-`node:path.delimiter`, create ZIP fixtures without an assumed Unix binary, and
-normalize source text to LF before exact multiline comparisons.
+The verified post-fix command was plain `pnpm test`, not a filtered invocation:
+all 152 test files passed with 1620 passing tests and two intentional
+platform-specific skips.
 
 The PR workflow's Rust skip list also misses five `identity_paths` tests whose
 fixtures set `HOME`. Windows `dirs::data_local_dir()` and `dirs::home_dir()`

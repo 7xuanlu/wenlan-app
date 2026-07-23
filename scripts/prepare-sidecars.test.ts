@@ -561,7 +561,7 @@ function wrongHash(hash: string): string {
   return hash.slice(0, -1) + (hash.endsWith("0") ? "1" : "0");
 }
 
-describe("prepare-sidecars --download mode", () => {
+describe("prepare-sidecars --download mode", { timeout: 30_000 }, () => {
   it("installs verified Darwin backend and cloudflared sidecars", () => {
     const base = makeTempRoot();
     const appRoot = resolve(base, "wenlan-app");

@@ -76,6 +76,15 @@ describe("Windows native smoke workflow contract", () => {
     expect(text).toContain("--native-driver");
   });
 
+  it("runs the complete frontend suite before installing the Rust toolchain", () => {
+    const text = workflow();
+    const frontendSuite = text.indexOf("run: pnpm test");
+    const rustToolchain = text.indexOf("name: Install Rust 1.95.0");
+
+    expect(frontendSuite).toBeGreaterThanOrEqual(0);
+    expect(rustToolchain).toBeGreaterThan(frontendSuite);
+  });
+
   it("builds the release-profile native target with an exact source-built backend", () => {
     const text = workflow();
 
