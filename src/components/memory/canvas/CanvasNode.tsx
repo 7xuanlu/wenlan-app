@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { memo, useRef } from "react";
+import { memo, useEffect, useRef } from "react";
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import { useTranslation } from "react-i18next";
 import {
@@ -221,12 +221,34 @@ function NodeNameInput({
 }) {
   const { t } = useTranslation();
   const cancelled = useRef(false);
+  const ref = useRef<HTMLInputElement>(null);
+
+  // React Flow mounts a freshly added node with visibility:hidden while it
+  // measures it, and a field that isn't visible cannot take focus — so React's
+  // autoFocus lands on nothing and every keystroke goes to the canvas instead.
+  // Ask again each frame until it sticks.
+  useEffect(() => {
+    let frame = 0;
+    let tries = 0;
+    const grab = () => {
+      const el = ref.current;
+      if (!el || document.activeElement === el) return;
+      el.focus();
+      el.select();
+      if (document.activeElement !== el && ++tries < 30) {
+        frame = requestAnimationFrame(grab);
+      }
+    };
+    grab();
+    return () => cancelAnimationFrame(frame);
+  }, []);
+
   return (
     <input
+      ref={ref}
       // Without these, React Flow drags the box and pans the canvas while the
       // user is trying to type into it.
       className="nodrag nopan nowheel"
-      autoFocus
       defaultValue={value}
       placeholder={placeholder}
       aria-label={t("pageCanvas.nameSectionLabel")}

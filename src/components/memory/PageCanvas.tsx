@@ -5,9 +5,11 @@ import {
   useMemo,
   useRef,
   useState,
+  type Dispatch,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
+  type SetStateAction,
 } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -78,8 +80,9 @@ const DRAFT_OFFSET = { x: 150, y: 64 };
 const NUDGE_STEP = 8;
 const NUDGE_STEP_COARSE = 40;
 
-// The hint bar. Gestures lead because they are what someone tries in the first
-// ten seconds; the key caps behind them are the same actions, faster.
+// The shortcut list behind the corner disclosure. Gestures lead because they are
+// what someone tries in the first ten seconds; the key caps behind them are the
+// same actions, faster.
 // `as const` is load-bearing: i18n keys are a literal union here, and a
 // `string` annotation would widen them past the point where t() type-checks.
 const SHORTCUTS = [
@@ -90,7 +93,12 @@ const SHORTCUTS = [
   { cap: "Enter", key: "pageCanvas.hintAddSibling" },
   { cap: "F2", key: "pageCanvas.hintRename" },
   { cap: "Delete", key: "pageCanvas.hintDelete" },
+  { cap: "Shift 1", key: "pageCanvas.hintFit" },
+  { cap: "Shift 2", key: "pageCanvas.hintZoomSelection" },
+  { cap: "Shift /", key: "pageCanvas.hintHelp" },
 ] as const;
+
+const HELP_PANEL_ID = "page-canvas-help-panel";
 
 /** An open right-click menu, positioned in surface-local pixels. */
 type CanvasMenu =
@@ -137,6 +145,8 @@ function PageCanvasInner({
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [draft, setDraft] = useState<{ parentId: string; x: number; y: number } | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
 
   const {
     data: map,
@@ -177,12 +187,32 @@ function PageCanvasInner({
     setEditingId(null);
     setNotice(null);
     setMenu(null);
+    setShowSuggestions(false);
   }, [pageId]);
 
   const untitled = t("pageCanvas.untitled");
+
+  // Suggestions are the daemon's guesses, not the user's map, so a page opens
+  // on what the user actually put there. "Improve" is the one thing that asks
+  // for them, and it un-hides them for the rest of the session.
+  const visibleNodes = useMemo(() => {
+    const all = map?.nodes ?? [];
+    return showSuggestions ? all : all.filter((n) => n.status !== "suggested");
+  }, [map?.nodes, showSuggestions]);
   const views = useMemo(
-    () => layoutMap(map?.nodes ?? [], labelOverrides, untitled),
-    [map?.nodes, labelOverrides, untitled],
+    () => layoutMap(visibleNodes, labelOverrides, untitled),
+    [visibleNodes, labelOverrides, untitled],
+  );
+
+  // Suggestions outlive the session that hid them: `showSuggestions` resets on
+  // every mount, so without a count to offer back, a reload would strand the
+  // ones already in the map where nobody can accept or dismiss them.
+  const hiddenSuggestions = useMemo(
+    () =>
+      showSuggestions
+        ? 0
+        : (map?.nodes ?? []).filter((n) => n.status === "suggested").length,
+    [map?.nodes, showSuggestions],
   );
 
   // Box metrics and collapse state by id, so the layout PUT can be built from
@@ -224,7 +254,10 @@ function PageCanvasInner({
 
   const improveMutation = useMutation({
     mutationFn: () => improvePageMap(pageId),
-    onSuccess: onMutated,
+    onSuccess: () => {
+      setShowSuggestions(true);
+      onMutated();
+    },
     onError: handleMutationError,
   });
 
@@ -520,6 +553,12 @@ function PageCanvasInner({
       draggable: false,
       selectable: false,
       position: { x: draft.x, y: draft.y },
+      // The draft lives only in displayNodes, never in `nodes`, so the measure
+      // React Flow reports for it is dropped by applyNodeChanges and it would
+      // stay visibility:hidden forever — with an unfocusable name field inside
+      // it. We already know the size, so say it and skip measuring.
+      width: DRAFT_SIZE.width,
+      height: DRAFT_SIZE.height,
       data,
     };
   }, [draft, palette, commitDraft, t]);
@@ -678,7 +717,12 @@ function PageCanvasInner({
   // node handler when the pointer was over one.
   const handleDoubleClick = useCallback(
     (event: ReactMouseEvent<HTMLDivElement>) => {
-      if ((event.target as HTMLElement).closest(".react-flow__node")) return;
+      // The actions, the badge and the shortcut disclosure all float inside the
+      // surface, so a double-click on any of them would otherwise draw a box
+      // behind the control the user was aiming at.
+      const inert =
+        ".react-flow__node, .page-canvas-actions, .page-canvas-help, .page-canvas-badge";
+      if ((event.target as HTMLElement).closest(inert)) return;
       addBoxAt(event.clientX, event.clientY);
     },
     [addBoxAt],
@@ -796,6 +840,28 @@ function PageCanvasInner({
         selectAll();
         return;
       }
+      // "?" is what GitHub, Linear and Slack all bind to the shortcut sheet.
+      // e.code again: the glyph is Shift+/ on a US layout and something else
+      // elsewhere, but the physical key is Slash either way.
+      if (e.shiftKey && e.code === "Slash") {
+        e.preventDefault();
+        setHelpOpen((v) => !v);
+        return;
+      }
+      // Obsidian's zoom keys, which is the muscle memory people arrive with.
+      // e.code rather than e.key: Shift+1 reports "!" on a US layout, and a
+      // different glyph again on most others.
+      if (e.shiftKey && (e.code === "Digit1" || e.code === "Digit2")) {
+        e.preventDefault();
+        const picked =
+          e.code === "Digit2" ? nodesRef.current.filter((n) => n.selected) : [];
+        // Passing `nodes: undefined` is not the same as omitting it: React Flow
+        // reads the key as "fit exactly these" and an empty list fits nothing.
+        void fitView(
+          picked.length ? { duration: 200, nodes: picked } : { duration: 200 },
+        );
+        return;
+      }
       if (readOnly) return;
       // Every shortcut below moves, renames or removes something the open menu
       // is pointing at, so the menu stops being about anything.
@@ -848,6 +914,7 @@ function PageCanvasInner({
       nudge,
       selectAll,
       clearSelection,
+      fitView,
       menu,
       draft,
       editingId,
@@ -923,7 +990,11 @@ function PageCanvasInner({
         title={t("pageCanvas.loadErrorTitle")}
         body={t("pageCanvas.loadErrorBody")}
         action={
-          <button type="button" onClick={() => void refetch()} style={primaryButtonStyle}>
+          <button
+            type="button"
+            className="page-canvas-message-action"
+            onClick={() => void refetch()}
+          >
             {t("pageCanvas.retry")}
           </button>
         }
@@ -939,9 +1010,9 @@ function PageCanvasInner({
         action={
           <button
             type="button"
+            className="page-canvas-message-action"
             onClick={() => improveMutation.mutate()}
             disabled={improveMutation.isPending || readOnly}
-            style={primaryButtonStyle}
           >
             {improveMutation.isPending
               ? t("pageCanvas.generating")
@@ -954,36 +1025,6 @@ function PageCanvasInner({
 
   return (
     <div className="page-canvas">
-      <div className="page-canvas-toolbar">
-        <button
-          type="button"
-          onClick={() => startDraft("child")}
-          disabled={readOnly}
-          style={primaryButtonStyle}
-        >
-          {t("pageCanvas.addSection")}
-        </button>
-        <button
-          type="button"
-          onClick={() => improveMutation.mutate()}
-          disabled={improveMutation.isPending || readOnly}
-          style={primaryButtonStyle}
-        >
-          {improveMutation.isPending
-            ? t("pageCanvas.improving")
-            : t("pageCanvas.improve")}
-        </button>
-        {readOnly && (
-          <span className="page-canvas-badge" title={t("pageCanvas.readOnlyNotice")}>
-            {t("pageCanvas.readOnlyBadge")}
-          </span>
-        )}
-        {notice && (
-          <span role="status" aria-live="polite" className="page-canvas-notice">
-            {notice}
-          </span>
-        )}
-      </div>
       {readOnly && (
         <p role="status" className="page-canvas-banner">
           {t("pageCanvas.readOnlyNotice")}
@@ -1020,6 +1061,9 @@ function PageCanvasInner({
           // a selection, two-finger scroll to pan, middle-drag to pan, and
           // pinch (or Cmd-scroll) to zoom.
           selectionOnDrag
+          // Meta alone is the React Flow default; Shift is what someone
+          // coming from Obsidian or Figma reaches for first.
+          multiSelectionKeyCode={["Meta", "Control", "Shift"]}
           panOnDrag={[1]}
           panOnScroll
           // Double-click is how a box gets drawn here, so it must not also be
@@ -1043,8 +1087,60 @@ function PageCanvasInner({
             onClose={() => setMenu(null)}
           />
         )}
+        {readOnly && (
+          <span className="page-canvas-badge" title={t("pageCanvas.readOnlyNotice")}>
+            {t("pageCanvas.readOnlyBadge")}
+          </span>
+        )}
+        <div className="page-canvas-actions">
+          <div className="page-canvas-action-cluster">
+            <button
+              type="button"
+              className="page-canvas-action"
+              onClick={() => startDraft("child")}
+              disabled={readOnly}
+            >
+              {t("pageCanvas.addSection")}
+            </button>
+            <button
+              type="button"
+              className="page-canvas-action is-improve"
+              onClick={() => improveMutation.mutate()}
+              disabled={improveMutation.isPending || readOnly}
+            >
+              <span
+                aria-hidden="true"
+                className={
+                  improveMutation.isPending
+                    ? "page-canvas-action-glyph is-spinning"
+                    : "page-canvas-action-glyph"
+                }
+              >
+                {improveMutation.isPending ? "\u25CC" : "\u2726"}
+              </span>
+              {improveMutation.isPending
+                ? t("pageCanvas.improving")
+                : t("pageCanvas.improve")}
+            </button>
+          </div>
+          {hiddenSuggestions > 0 && (
+            <button
+              type="button"
+              className="page-canvas-reveal"
+              onClick={() => setShowSuggestions(true)}
+            >
+              <span aria-hidden="true">{"\u25CE"}</span>
+              {t("pageCanvas.showSuggestions", { count: hiddenSuggestions })}
+            </button>
+          )}
+          {notice && (
+            <span role="status" aria-live="polite" className="page-canvas-notice">
+              {notice}
+            </span>
+          )}
+        </div>
+        {!readOnly && <CanvasHelp open={helpOpen} setOpen={setHelpOpen} />}
       </div>
-      {!readOnly && <CanvasHints />}
     </div>
   );
 }
@@ -1093,57 +1189,59 @@ function ContextMenu({
   );
 }
 
-function CanvasHints() {
+function CanvasHelp({
+  open,
+  setOpen,
+}: {
+  open: boolean;
+  setOpen: Dispatch<SetStateAction<boolean>>;
+}) {
   const { t } = useTranslation();
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+
   return (
     <div
-      role="note"
-      aria-label={t("pageCanvas.hintsLabel")}
-      style={{
-        display: "flex",
-        flexWrap: "wrap",
-        alignItems: "center",
-        gap: 12,
-        padding: "6px 10px",
-        fontFamily: "var(--mem-font-body)",
-        fontSize: 11,
-        color: "var(--mem-text-tertiary, var(--mem-text-secondary))",
+      className="page-canvas-help"
+      // Escape is a canvas shortcut too (it clears the selection), so an open
+      // panel has to swallow its own dismissal before the surface sees it.
+      onKeyDown={(e) => {
+        if (e.key !== "Escape" || !open) return;
+        e.preventDefault();
+        e.stopPropagation();
+        setOpen(false);
+        buttonRef.current?.focus();
       }}
     >
-      {SHORTCUTS.map((s) => (
-        <span key={s.cap} style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-          <kbd
-            style={{
-              fontFamily: "var(--mem-font-mono, ui-monospace, monospace)",
-              fontSize: 10,
-              lineHeight: 1.4,
-              padding: "1px 5px",
-              borderRadius: 4,
-              border: "1px solid var(--mem-border)",
-              backgroundColor: "var(--mem-surface)",
-            }}
-          >
-            {s.cap}
-          </kbd>
-          {t(s.key)}
-        </span>
-      ))}
-      <span style={{ opacity: 0.75 }}>{t("pageCanvas.hintSectionNote")}</span>
+      {open && (
+        <div
+          id={HELP_PANEL_ID}
+          className="page-canvas-help-panel"
+          role="note"
+          aria-label={t("pageCanvas.hintsLabel")}
+        >
+          {SHORTCUTS.map((s) => (
+            <div key={s.cap} className="page-canvas-help-row">
+              <kbd>{s.cap}</kbd>
+              <span>{t(s.key)}</span>
+            </div>
+          ))}
+          <p className="page-canvas-help-note">{t("pageCanvas.hintSectionNote")}</p>
+        </div>
+      )}
+      <button
+        ref={buttonRef}
+        type="button"
+        className="page-canvas-help-button"
+        aria-label={t("pageCanvas.hintsLabel")}
+        aria-expanded={open}
+        aria-controls={open ? HELP_PANEL_ID : undefined}
+        onClick={() => setOpen((v) => !v)}
+      >
+        ?
+      </button>
     </div>
   );
 }
-
-const primaryButtonStyle: React.CSSProperties = {
-  fontFamily: "var(--mem-font-body)",
-  fontSize: 12,
-  fontWeight: 500,
-  padding: "5px 12px",
-  borderRadius: 7,
-  border: "1px solid var(--mem-border)",
-  backgroundColor: "var(--mem-surface)",
-  color: "var(--mem-text-secondary)",
-  cursor: "pointer",
-};
 
 function CanvasMessage({
   title,

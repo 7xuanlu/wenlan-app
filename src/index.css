@@ -3015,10 +3015,118 @@ p.entity-error {
   gap: 10px;
 }
 
-.page-canvas-toolbar {
+/* The two acts float over the dot grid rather than sitting in a row above it:
+   the canvas is the object here, and its chrome should not push it down the
+   page. */
+.page-canvas-actions {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  max-width: min(280px, calc(100% - 20px));
+}
+
+.page-canvas-action-cluster {
+  display: flex;
+  overflow: hidden;
+  border: 1px solid var(--mem-border);
+  border-radius: 8px;
+  background-color: var(--mem-surface);
+}
+
+.page-canvas-action {
+  padding: 5px 12px;
+  border: none;
+  background: none;
+  color: var(--mem-text-secondary);
+  font-family: var(--mem-font-body);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.page-canvas-action:hover:not(:disabled) {
+  background-color: var(--mem-hover);
+  color: var(--mem-text);
+}
+
+.page-canvas-action:focus-visible {
+  outline: 2px solid var(--mem-accent-page);
+  outline-offset: -2px;
+}
+
+.page-canvas-action:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Improve runs the model and rewrites the whole map. It is the signature act of
+   this screen, so it carries the only filled ink here; "Add section" stays a
+   ghost beside it. Three same-weight labels in one segment was the old shape,
+   and it needed a paragraph of hairlines to stop them reading as triplets. */
+.page-canvas-action.is-improve {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 5px;
+  border-left: 1px solid var(--mem-border);
+  background-color: color-mix(in srgb, var(--mem-accent-page) 14%, transparent);
+  color: var(--mem-accent-page);
+  font-weight: 600;
+}
+
+.page-canvas-action.is-improve:hover:not(:disabled) {
+  background-color: color-mix(in srgb, var(--mem-accent-page) 24%, transparent);
+  color: var(--mem-accent-page);
+}
+
+.page-canvas-action-glyph {
+  font-size: 11px;
+  line-height: 1;
+}
+
+.page-canvas-action-glyph.is-spinning {
+  animation: page-canvas-spin 900ms linear infinite;
+}
+
+@keyframes page-canvas-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Not an act at all — a count of what the canvas is withholding. It sits below
+   the command cluster, in its own pill, so it reads as state rather than as a
+   third verb someone reaches for by mistake. */
+.page-canvas-reveal {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border: 1px solid var(--mem-border);
+  border-radius: 999px;
+  background-color: var(--mem-surface);
+  color: var(--mem-text-tertiary);
+  font-family: var(--mem-font-body);
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease;
+}
+
+.page-canvas-reveal:hover {
+  border-color: var(--mem-text-tertiary);
+  color: var(--mem-text-secondary);
+}
+
+.page-canvas-reveal:focus-visible {
+  outline: 2px solid var(--mem-accent-page);
+  outline-offset: 1px;
 }
 
 .page-canvas-badge {
@@ -3033,9 +3141,14 @@ p.entity-error {
 }
 
 .page-canvas-notice {
+  padding: 4px 8px;
+  border: 1px solid var(--mem-border);
+  border-radius: 7px;
+  background-color: var(--mem-surface);
   color: var(--mem-accent-amber);
   font-family: var(--mem-font-body);
   font-size: 12px;
+  line-height: 1.45;
 }
 
 .page-canvas-banner {
@@ -3062,6 +3175,14 @@ p.entity-error {
   outline: none;
 }
 
+.page-canvas-surface .page-canvas-badge {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 5;
+  background-color: var(--mem-surface);
+}
+
 .page-canvas-surface:focus-visible {
   outline: 2px solid var(--mem-accent-page, var(--mem-text-secondary));
   outline-offset: -2px;
@@ -3084,8 +3205,15 @@ p.entity-error {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .page-canvas-surface .react-flow__handle.page-canvas-grow {
+  .page-canvas-surface .react-flow__handle.page-canvas-grow,
+  .page-canvas-action,
+  .page-canvas-reveal,
+  .page-canvas-help-button {
     transition: none;
+  }
+
+  .page-canvas-action-glyph.is-spinning {
+    animation: none;
   }
 }
 
@@ -3134,6 +3262,100 @@ p.entity-error {
 .page-canvas-menu-item.is-danger:focus-visible {
   background-color: var(--mem-danger, #d4645f);
   color: var(--mem-surface);
+}
+
+/* Shortcuts hide behind a corner disclosure so the canvas keeps its full
+   height. The button borrows the zoom controls' treatment below so the two
+   bottom corners read as one family. */
+.page-canvas-help {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  z-index: 5;
+}
+
+.page-canvas-help-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--mem-border);
+  border-radius: 8px;
+  background-color: var(--mem-surface);
+  color: var(--mem-text-secondary);
+  font-family: var(--mem-font-body);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.page-canvas-help-button:hover {
+  background-color: var(--mem-hover);
+  color: var(--mem-text);
+}
+
+.page-canvas-help-button:focus-visible {
+  outline: 2px solid var(--mem-accent-page);
+  outline-offset: 1px;
+}
+
+/* Anchored above the button and inside the surface, so it is clipped by the
+   canvas rather than escaping over the page around it. */
+.page-canvas-help-panel {
+  position: absolute;
+  right: 0;
+  bottom: 32px;
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 10px;
+  min-width: 192px;
+  padding: 10px 12px;
+  border: 1px solid var(--mem-border);
+  border-radius: 8px;
+  background-color: var(--mem-surface);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 22%);
+}
+
+/* The row is a grouping wrapper only: `contents` drops it out of the layout so
+   every keycap shares one column and the labels line up down the panel. */
+.page-canvas-help-note {
+  grid-column: 1 / -1;
+  margin: 6px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--mem-border);
+  color: var(--mem-text-tertiary);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.page-canvas-help-row {
+  display: contents;
+}
+
+.page-canvas-help-row kbd {
+  justify-self: start;
+  /* A long action ("Zoom to selection") wraps to two lines, and a grid item
+     stretches to its row by default — which left the keycap a tall empty
+     box next to the wrapped text. Pin it to the first line. */
+  align-self: start;
+  padding: 1px 5px;
+  border: 1px solid var(--mem-border);
+  border-radius: 4px;
+  color: var(--mem-text-secondary);
+  font-family: var(--mem-font-mono);
+  font-size: 10px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.page-canvas-help-row span {
+  color: var(--mem-text-tertiary);
+  font-family: var(--mem-font-body);
+  font-size: 11px;
+  line-height: 1.6;
 }
 
 /* React Flow's stylesheet ships a light-only control bar — on the dark canvas
@@ -3193,6 +3415,33 @@ p.entity-error {
   color: var(--mem-text);
   font-family: var(--mem-font-heading);
   font-size: 16px;
+}
+
+.page-canvas-message-action {
+  padding: 5px 12px;
+  border: 1px solid var(--mem-border);
+  border-radius: 7px;
+  background-color: var(--mem-surface);
+  color: var(--mem-text-secondary);
+  font-family: var(--mem-font-body);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.page-canvas-message-action:hover:not(:disabled) {
+  background-color: var(--mem-hover);
+  color: var(--mem-text);
+}
+
+.page-canvas-message-action:focus-visible {
+  outline: 2px solid var(--mem-accent-page);
+  outline-offset: 1px;
+}
+
+.page-canvas-message-action:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .page-canvas-message-body {

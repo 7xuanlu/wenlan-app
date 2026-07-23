@@ -17,6 +17,8 @@ import PageCanvas from "./PageCanvas";
 // cannot re-prove — that one is verified by dragging in the running app.
 // Selection is simulated, because the keyboard shortcuts are meaningless
 // without it.
+const { fitViewSpy } = vi.hoisted(() => ({ fitViewSpy: vi.fn() }));
+
 vi.mock("@xyflow/react", async () => {
   const React = await import("react");
   return {
@@ -146,7 +148,7 @@ vi.mock("@xyflow/react", async () => {
       // Identity is the right stub: the mapping is React Flow's, and the code
       // under test only cares that the click point comes back as flow coords.
       screenToFlowPosition: (p: { x: number; y: number }) => p,
-      fitView: vi.fn(),
+      fitView: fitViewSpy,
     }),
     useNodesState: (initial: any) => {
       const [ns, setNs] = React.useState(initial);
@@ -262,6 +264,12 @@ async function tauri() {
 
 const surface = () => screen.getByRole("region", { name: "Canvas for Page One" });
 
+// Suggestions start hidden, so a page opens on what the user actually put
+// there. Anything testing one has to reveal them the way a user does.
+async function revealSuggestions(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(await screen.findByRole("button", { name: "1 suggestion" }));
+}
+
 beforeEach(() => vi.clearAllMocks());
 afterEach(() => cleanup());
 
@@ -269,7 +277,8 @@ describe("PageCanvas", () => {
   it("renders one node per live map node, resolving labels the daemon left null", async () => {
     const { getPageMap } = await tauri();
     (getPageMap as ReturnType<typeof vi.fn>).mockResolvedValue(makeMap());
-    renderCanvas();
+    const { user } = renderCanvas();
+    await revealSuggestions(user);
 
     expect(await screen.findByText("Page One")).toBeTruthy();
     expect(screen.getByText("Memory one")).toBeTruthy();
@@ -282,7 +291,8 @@ describe("PageCanvas", () => {
   it("derives tree edges under a tree- prefix and drops cross-links with a missing endpoint", async () => {
     const { getPageMap } = await tauri();
     (getPageMap as ReturnType<typeof vi.fn>).mockResolvedValue(makeMap());
-    renderCanvas();
+    const { user } = renderCanvas();
+    await revealSuggestions(user);
 
     const flow = await screen.findByTestId("react-flow");
     const ids = (flow.getAttribute("data-edge-ids") ?? "").split(",");
@@ -339,6 +349,7 @@ describe("PageCanvas", () => {
     expect(screen.queryByRole("button", { name: "Dismiss" })).toBeNull();
     // The shortcuts are hidden too: advertising keys that do nothing is worse
     // than showing none.
+    expect(screen.queryByRole("button", { name: "Canvas shortcuts" })).toBeNull();
     expect(screen.queryByRole("note", { name: "Canvas shortcuts" })).toBeNull();
     expect(screen.getByTestId("react-flow").getAttribute("data-nodes-draggable")).toBe("false");
   });
@@ -348,6 +359,7 @@ describe("PageCanvas", () => {
     (getPageMap as ReturnType<typeof vi.fn>).mockResolvedValue(makeMap());
     (patchPageMapNode as ReturnType<typeof vi.fn>).mockResolvedValue({});
     const { user } = renderCanvas();
+    await revealSuggestions(user);
 
     await user.click(await screen.findByRole("button", { name: "Accept" }));
     expect(patchPageMapNode).toHaveBeenCalledWith("p1", "n_sug", {
@@ -361,6 +373,7 @@ describe("PageCanvas", () => {
     (getPageMap as ReturnType<typeof vi.fn>).mockResolvedValue(makeMap());
     (patchPageMapNode as ReturnType<typeof vi.fn>).mockResolvedValue({});
     const { user } = renderCanvas();
+    await revealSuggestions(user);
 
     await user.click(await screen.findByRole("button", { name: "Dismiss" }));
     expect(patchPageMapNode).toHaveBeenCalledWith("p1", "n_sug", {
@@ -374,6 +387,7 @@ describe("PageCanvas", () => {
     const { getPageMap } = await tauri();
     (getPageMap as ReturnType<typeof vi.fn>).mockResolvedValue(makeMap());
     const { user } = renderCanvas();
+    await revealSuggestions(user);
 
     await user.click(await screen.findByText("Memory one"));
     expect(handlers.onMemoryClick).toHaveBeenCalledWith("mem_1");
@@ -407,6 +421,7 @@ describe("PageCanvas", () => {
       JSON.stringify({ status: 409, error: "revision moved" }),
     );
     const { user } = renderCanvas();
+    await revealSuggestions(user);
 
     await user.click(await screen.findByRole("button", { name: "Accept" }));
     expect(
@@ -419,19 +434,126 @@ describe("PageCanvas", () => {
     );
   });
 
-  it("tells the user which keys do what", async () => {
+  it("offers a counted way back to the suggestions it is hiding", async () => {
     const { getPageMap } = await tauri();
     (getPageMap as ReturnType<typeof vi.fn>).mockResolvedValue(makeMap());
+    const { user } = renderCanvas();
+
+    const chip = await screen.findByRole("button", { name: "1 suggestion" });
+    expect(screen.queryByText("Entity one")).toBeNull();
+
+    await user.click(chip);
+    expect(await screen.findByText("Entity one")).toBeTruthy();
+    // Nothing left to reveal, so the chip stops taking up room in the cluster.
+    expect(screen.queryByRole("button", { name: "1 suggestion" })).toBeNull();
+  });
+
+  it("keeps the cluster clean when the map has nothing suggested", async () => {
+    const { getPageMap } = await tauri();
+    (getPageMap as ReturnType<typeof vi.fn>).mockResolvedValue(
+      makeMap({
+        nodes: makeMap().nodes.filter((n) => n.status !== "suggested"),
+        edges: [],
+      }),
+    );
     renderCanvas();
 
+    expect(await screen.findByRole("button", { name: "Add section" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /suggestion/ })).toBeNull();
+  });
+
+  it("tells the user which keys do what, on request", async () => {
+    const { getPageMap } = await tauri();
+    (getPageMap as ReturnType<typeof vi.fn>).mockResolvedValue(makeMap());
+    const { user } = renderCanvas();
+
+    const toggle = await screen.findByRole("button", { name: "Canvas shortcuts" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByRole("note", { name: "Canvas shortcuts" })).toBeNull();
+
+    await user.click(toggle);
     const hints = await screen.findByRole("note", { name: "Canvas shortcuts" });
     expect(hints.textContent).toContain("Tab");
     expect(hints.textContent).toContain("Add child");
     expect(hints.textContent).toContain("F2");
     expect(hints.textContent).toContain("Rename");
-    // The one thing a user cannot guess: a new box is not free-floating, it
-    // becomes a section of the page.
+    // The one thing the keys themselves cannot tell you.
     expect(hints.textContent).toContain("New boxes become sections of the page.");
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("closes the shortcut panel on Escape and hands focus back", async () => {
+    const { getPageMap } = await tauri();
+    (getPageMap as ReturnType<typeof vi.fn>).mockResolvedValue(makeMap());
+    const { user } = renderCanvas();
+
+    const toggle = await screen.findByRole("button", { name: "Canvas shortcuts" });
+    await user.click(toggle);
+    expect(await screen.findByRole("note", { name: "Canvas shortcuts" })).toBeTruthy();
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("note", { name: "Canvas shortcuts" })).toBeNull();
+    expect(document.activeElement).toBe(toggle);
+  });
+
+  it("opens and closes the shortcut panel on Shift+/", async () => {
+    const { getPageMap } = await tauri();
+    (getPageMap as ReturnType<typeof vi.fn>).mockResolvedValue(makeMap());
+    renderCanvas();
+    await screen.findByText("Page One");
+    expect(screen.queryByRole("note", { name: "Canvas shortcuts" })).toBeNull();
+
+    fireEvent.keyDown(surface(), { key: "?", code: "Slash", shiftKey: true });
+    expect(await screen.findByRole("note", { name: "Canvas shortcuts" })).toBeTruthy();
+    // The panel documents the key that opens it, or the key is undiscoverable.
+    expect(
+      screen.getByRole("note", { name: "Canvas shortcuts" }).textContent,
+    ).toContain("Shift /");
+
+    fireEvent.keyDown(surface(), { key: "?", code: "Slash", shiftKey: true });
+    expect(screen.queryByRole("note", { name: "Canvas shortcuts" })).toBeNull();
+  });
+
+  // The running app cannot prove these: fitView animates through
+  // requestAnimationFrame, which a backgrounded tab suspends outright, so the
+  // viewport never moves there no matter who calls it.
+  it("frames the whole map on Shift+1", async () => {
+    const { getPageMap } = await tauri();
+    (getPageMap as ReturnType<typeof vi.fn>).mockResolvedValue(makeMap());
+    renderCanvas();
+    await screen.findByText("Page One");
+    fitViewSpy.mockClear();
+
+    fireEvent.keyDown(surface(), { key: "!", code: "Digit1", shiftKey: true });
+    // No `nodes` key at all — passing it as undefined means "fit exactly these",
+    // and an empty list frames nothing.
+    expect(fitViewSpy).toHaveBeenCalledWith({ duration: 200 });
+  });
+
+  it("frames only what is selected on Shift+2", async () => {
+    const { getPageMap } = await tauri();
+    (getPageMap as ReturnType<typeof vi.fn>).mockResolvedValue(makeMap());
+    const { user } = renderCanvas();
+    await screen.findByText("Page One");
+
+    await user.click(await screen.findByRole("button", { name: "select n_sec" }));
+    fitViewSpy.mockClear();
+    fireEvent.keyDown(surface(), { key: "@", code: "Digit2", shiftKey: true });
+
+    const arg = fitViewSpy.mock.calls[0]?.[0];
+    expect(arg.duration).toBe(200);
+    expect(arg.nodes.length).toBeGreaterThan(0);
+  });
+
+  it("falls back to framing everything when Shift+2 has no selection", async () => {
+    const { getPageMap } = await tauri();
+    (getPageMap as ReturnType<typeof vi.fn>).mockResolvedValue(makeMap());
+    renderCanvas();
+    await screen.findByText("Page One");
+    fitViewSpy.mockClear();
+
+    fireEvent.keyDown(surface(), { key: "@", code: "Digit2", shiftKey: true });
+    expect(fitViewSpy).toHaveBeenCalledWith({ duration: 200 });
   });
 
   it("adds a box by writing the heading first, then pointing a node at it", async () => {
