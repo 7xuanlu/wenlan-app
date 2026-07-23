@@ -13,13 +13,18 @@ export function appLogCandidates(environment = process.env) {
   ];
 }
 
+export function powerShellCommand(platform = process.platform) {
+  return platform === "win32" ? "powershell.exe" : "pwsh";
+}
+
 export function cleanupProcessInvocation(
   appExecutable,
   backendExecutable,
   scriptPath,
+  platform = process.platform,
 ) {
   return {
-    command: "pwsh",
+    command: powerShellCommand(platform),
     args: [
       "-NoLogo",
       "-NoProfile",

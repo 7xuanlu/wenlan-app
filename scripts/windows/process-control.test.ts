@@ -10,10 +10,19 @@ type ProcessControlModule = {
     appExecutable: string,
     backendExecutable: string,
     scriptPath: string,
+    platform?: NodeJS.Platform,
   ): { args: string[]; command: string };
+  powerShellCommand(platform?: NodeJS.Platform): string;
 };
 
 describe("Windows native smoke process cleanup", () => {
+  it("uses inbox Windows PowerShell without requiring pwsh", async () => {
+    const loaded = (await import("./process-control.mjs")) as ProcessControlModule;
+
+    expect(loaded.powerShellCommand("win32")).toBe("powershell.exe");
+    expect(loaded.powerShellCommand("linux")).toBe("pwsh");
+  });
+
   it("passes executable paths as literal process arguments", async () => {
     const loaded = await import("./process-control.mjs").catch(() => null);
     expect(loaded, "scripts/windows/process-control.mjs must exist").not.toBeNull();
@@ -25,10 +34,11 @@ describe("Windows native smoke process cleanup", () => {
       app,
       backend,
       script,
+      "win32",
     );
 
     expect(invocation).toEqual({
-      command: "pwsh",
+      command: "powershell.exe",
       args: [
         "-NoLogo",
         "-NoProfile",

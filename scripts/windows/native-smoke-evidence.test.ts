@@ -3,6 +3,12 @@ import { describe, expect, it } from "vitest";
 type Evidence = {
   claim: string;
   health: { ok: boolean; response: Record<string, unknown> };
+  inference: {
+    backend: string;
+    device: string | null;
+    device_index: number | null;
+    fallback_reason: string | null;
+  };
   metadata: {
     backend_commit: string;
     backend_server_sha256: string;
@@ -58,6 +64,8 @@ type ExpectedEvidence = {
   backendExecutable: string;
   backendServerSha256: string;
   fullQuitBreadcrumb: string;
+  inferenceBackend?: string;
+  inferenceDeviceContains?: string;
   marker: string;
   onnxruntimeDll: string;
   semanticQuery: string;
@@ -90,6 +98,12 @@ function completeEvidence(): Evidence {
   return {
     claim: "Windows Server 2022 native app with source-built backend smoke",
     health: { ok: true, response: { status: "ok" } },
+    inference: {
+      backend: "vulkan",
+      device: "NVIDIA GeForce RTX 3060 Laptop GPU",
+      device_index: 1,
+      fallback_reason: null,
+    },
     metadata: {
       backend_commit: BACKEND_COMMIT,
       backend_server_sha256: BACKEND_SHA256,
@@ -153,6 +167,8 @@ const expected: ExpectedEvidence = {
   backendExecutable: BACKEND_EXE,
   backendServerSha256: BACKEND_SHA256,
   fullQuitBreadcrumb: FULL_QUIT_BREADCRUMB,
+  inferenceBackend: "vulkan",
+  inferenceDeviceContains: "RTX 3060",
   marker: MARKER,
   onnxruntimeDll: ONNX_DLL,
   semanticQuery: SEMANTIC_QUERY,
@@ -199,6 +215,20 @@ describe("Windows native smoke evidence validator", () => {
       assertion: "port-7878-unused",
       mutate: (evidence: Evidence) => {
         evidence.processes.before.port_7878_in_use = true;
+      },
+    },
+    {
+      name: "wrong inference backend",
+      assertion: "inference-backend",
+      mutate: (evidence: Evidence) => {
+        evidence.inference.backend = "cpu";
+      },
+    },
+    {
+      name: "wrong inference device",
+      assertion: "inference-device",
+      mutate: (evidence: Evidence) => {
+        evidence.inference.device = "Intel(R) Iris(R) Xe Graphics";
       },
     },
     {

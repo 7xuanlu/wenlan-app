@@ -79,6 +79,23 @@ export function validateNativeSmokeEvidence(evidence, expected) {
       typeof evidence.health.response === "object",
     `health evidence was ${describeValue(evidence?.health)}`,
   );
+  if (expected?.inferenceBackend) {
+    check(
+      "inference-backend",
+      evidence?.inference?.backend === expected.inferenceBackend,
+      `expected ${describeValue(expected.inferenceBackend)}, got ${describeValue(evidence?.inference)}`,
+    );
+  }
+  if (expected?.inferenceDeviceContains) {
+    check(
+      "inference-device",
+      typeof evidence?.inference?.device === "string" &&
+        evidence.inference.device
+          .toLowerCase()
+          .includes(expected.inferenceDeviceContains.toLowerCase()),
+      `expected device containing ${describeValue(expected.inferenceDeviceContains)}, got ${describeValue(evidence?.inference?.device)}`,
+    );
+  }
   check(
     "app-pid",
     Number.isInteger(app?.pid) && app.pid > 0,

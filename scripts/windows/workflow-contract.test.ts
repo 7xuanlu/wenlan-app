@@ -205,6 +205,20 @@ describe("Windows native smoke workflow contract", () => {
     expect(verifyIndex).toBeGreaterThan(stageIndex);
   });
 
+  it("waits for the explicitly requested inference backend before validating evidence", () => {
+    const text = readFileSync(
+      resolve(process.cwd(), "scripts", "windows", "native-smoke.mjs"),
+      "utf8",
+    );
+
+    expect(text).toContain(
+      'poll("expected on-device inference backend"',
+    );
+    expect(text).toContain(
+      "WENLAN_NATIVE_EXPECT_INFERENCE_DEVICE_CONTAINS",
+    );
+  });
+
   it("proves the runner profile is clean before app launch and remains clean", () => {
     const text = nativeHarness();
     const beforeIndex = text.indexOf(

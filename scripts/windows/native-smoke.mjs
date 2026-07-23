@@ -20,6 +20,7 @@ import {
 import {
   appLogCandidates,
   cleanupProcessInvocation,
+  powerShellCommand,
 } from "./process-control.mjs";
 
 const CLAIM = "Windows Server 2022 native app with source-built backend smoke";
@@ -183,7 +184,7 @@ function collectProcessEvidence(
   outputPath,
 ) {
   const result = spawnSync(
-    "pwsh",
+    powerShellCommand(),
     [
       "-NoLogo",
       "-NoProfile",
@@ -312,6 +313,7 @@ async function main() {
   const lock = readSidecarLock();
   const resultPath = resolve(args.evidenceDir, "result.json");
   const healthPath = resolve(args.evidenceDir, "health.json");
+  const statusPath = resolve(args.evidenceDir, "status.json");
   const semanticSearchPath = resolve(
     args.evidenceDir,
     "semantic-search.json",
@@ -347,6 +349,12 @@ async function main() {
     source: "",
   };
   const marker = `WINDOWS_SMOKE_${process.env.GITHUB_RUN_ID || Date.now()}_${process.env.GITHUB_RUN_ATTEMPT || 1}`;
+  const inferenceExpectation = {
+    inferenceBackend:
+      process.env.WENLAN_NATIVE_EXPECT_INFERENCE_BACKEND?.trim() || "",
+    inferenceDeviceContains:
+      process.env.WENLAN_NATIVE_EXPECT_INFERENCE_DEVICE_CONTAINS?.trim() || "",
+  };
 
   const evidence = {
     claim: CLAIM,
@@ -369,6 +377,12 @@ async function main() {
       tauri_driver_version: process.env.TAURI_DRIVER_VERSION || "",
     },
     health: { ok: false, response: {} },
+    inference: {
+      backend: "not-captured",
+      device: null,
+      device_index: null,
+      fallback_reason: null,
+    },
     lifecycle: {
       fake_launch_agents_before_app_exists: false,
       fake_launch_agents_exists: false,
@@ -476,6 +490,33 @@ async function main() {
     );
     evidence.health = { ok: true, response: health };
     writeJson(healthPath, health);
+    const fetchInferenceStatus = async () => {
+      const candidate = await fetchJson("http://127.0.0.1:7878/api/status");
+      if (!inferenceExpectation.inferenceBackend) return candidate;
+      const inference = candidate?.on_device_inference;
+      const backendMatches =
+        inference?.backend === inferenceExpectation.inferenceBackend;
+      const deviceMatches =
+        !inferenceExpectation.inferenceDeviceContains ||
+        (typeof inference?.device === "string" &&
+          inference.device
+            .toLowerCase()
+            .includes(
+              inferenceExpectation.inferenceDeviceContains.toLowerCase(),
+            ));
+      return backendMatches && deviceMatches ? candidate : null;
+    };
+    const status = inferenceExpectation.inferenceBackend
+      ? await poll("expected on-device inference backend", fetchInferenceStatus, 180_000, 1_000)
+      : await fetchInferenceStatus();
+    evidence.inference = status?.on_device_inference ?? evidence.inference;
+    writeJson(statusPath, status);
+    log(
+      `captured on-device inference backend ${evidence.inference.backend}` +
+        (evidence.inference.device
+          ? ` on ${evidence.inference.device}`
+          : ""),
+    );
 
     const launched = await poll(
       "exactly one app and app-owned backend process",
@@ -649,6 +690,7 @@ async function main() {
       backendExecutable: runtime.backendExecutable,
       backendServerSha256: backendProof.serverSha256,
       fullQuitBreadcrumb: FULL_QUIT_BREADCRUMB,
+      ...inferenceExpectation,
       onnxruntimeDll: runtime.onnxruntimeDll,
       marker,
       semanticQuery: SEMANTIC_QUERY,
@@ -670,6 +712,7 @@ async function main() {
           backendExecutable: runtime.backendExecutable,
           backendServerSha256: backendProof.serverSha256,
           fullQuitBreadcrumb: FULL_QUIT_BREADCRUMB,
+          ...inferenceExpectation,
           onnxruntimeDll: runtime.onnxruntimeDll,
           marker,
           semanticQuery: SEMANTIC_QUERY,
@@ -689,6 +732,10 @@ async function main() {
   } finally {
     copyAppLog(args.evidenceDir);
     writeJsonIfMissing(healthPath, evidence.health);
+    writeJsonIfMissing(statusPath, {
+      error: evidence.error || "status was not captured before failure",
+      on_device_inference: evidence.inference,
+    });
     writeJsonIfMissing(semanticSearchPath, {
       error: evidence.error || "semantic search was not captured before failure",
     });
