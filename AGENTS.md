@@ -20,6 +20,7 @@ wenlan-app/
 |-- scripts/             # sidecar, backend-pin, version-lock contracts
 |-- e2e/                 # Playwright specs, wired by playwright.config.ts
 |-- preview/             # browser fixture/live preview harness on :1421
+|-- docs/windows-development.md # canonical physical Windows build/smoke runbook
 |-- docs/superpowers/    # living plans, specs, and generated inventories
 `-- .github/workflows/   # CI, release, backend pin automation
 ```
@@ -37,6 +38,7 @@ wenlan-app/
 | Sidecars/release | `scripts/AGENTS.md` | backend pin, sha256, cloudflared, release scripts |
 | Browser E2E | `e2e/AGENTS.md`, `playwright.config.ts` | CI runs Chromium tests on Vite |
 | Preview harness | `preview/AGENTS.md`, `vite.preview.config.ts` | Tauri API shims, fixture states |
+| Windows build/native smoke | `docs/windows-development.md`, `.github/workflows/windows-smoke.yml` | physical setup, portable tests, source-built backend, WebView2 evidence |
 | Historical plans | `docs/superpowers/` | do not treat generated inventories as product docs |
 
 ## CODE MAP
@@ -67,6 +69,10 @@ recorded here.
   the whitelisted modules in `vitest.config.ts`, not the whole tree.
 - CI creates empty sidecar placeholders for compile-time Tauri checks; real
   daemon binaries are covered separately by the download-smoke job.
+- Windows native validation must follow `docs/windows-development.md` and use
+  its source-built sidecar manifest plus process/module/UI evidence contract.
+- Windows CI must run the full `pnpm test` gate before Rust/native smoke work;
+  follow the runbook's path, shell, line-ending, and platform-assertion rules.
 - Release versions must stay aligned across `package.json`, `app/Cargo.toml`,
   `app/tauri.conf.json`, and `.wenlan-backend-version`.
 

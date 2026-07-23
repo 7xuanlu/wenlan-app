@@ -6,8 +6,8 @@ name: Release
 # origin-app repo for the .dmg" but a release workflow was never added here —
 # this repo has only ever had the test-only ci.yml. This file closes that
 # gap. Renamed origin -> wenlan throughout; adapted to the current
-# cross-repo sidecar build (scripts/prepare-sidecars.sh, which needs a
-# sibling wenlan backend checkout) and current secret names.
+# cross-repo sidecar build (scripts/prepare-sidecars.sh, which downloads the
+# exact release assets in the sidecar lock) and current secret names.
 #
 # Signing key: rotated 2026-07-01 to ~/.tauri/wenlan-updater.key (the prior
 # origin-updater.key was retired after its encrypted blob was accidentally
@@ -88,7 +88,7 @@ jobs:
 
           CARGO_VERSION=$(grep '^version = ' app/Cargo.toml | head -1 | sed 's/version = "\([^"]*\)".*/\1/')
           PKG_VERSION=$(node -p "require('./package.json').version")
-          PINNED_DAEMON_TAG=$(sed -n '1p' .wenlan-backend-version | tr -d '[:space:]')
+          PINNED_DAEMON_TAG=$(node scripts/sidecar-lock.mjs get backend_tag)
           PINNED_DAEMON_VERSION="${PINNED_DAEMON_TAG#v}"
 
           echo "Release tag (from app/tauri.conf.json): $TAG"
@@ -145,16 +145,6 @@ jobs:
 
       - name: Install frontend dependencies
         run: pnpm install
-
-      - name: Download cloudflared sidecar
-        run: |
-          mkdir -p app/binaries
-          curl -fsSL -o /tmp/cloudflared.tgz \
-            https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-arm64.tgz
-          tar -xzf /tmp/cloudflared.tgz -C /tmp
-          chmod 755 /tmp/cloudflared
-          xattr -cr /tmp/cloudflared
-          echo "CLOUDFLARED_BIN=/tmp/cloudflared" >> "$GITHUB_ENV"
 
       - name: Import code signing certificate
         if: env.APPLE_CERTIFICATE != ''
@@ -224,11 +214,12 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_DIR: app
           CXXFLAGS: "-std=c++17"
-          CLOUDFLARED_BIN: ${{ env.CLOUDFLARED_BIN }}
-          # Daemon sidecars come from the pinned RELEASED asset: tauri's
+          # Backend and cloudflared sidecars come from the pinned RELEASED
+          # assets: tauri's
           # beforeBuildCommand runs prepare-tauri-build-sidecars.sh, which honors
           # WENLAN_DOWNLOAD_SIDECARS=1 to download instead of compiling from a
-          # backend checkout. GH_TOKEN authenticates the cross-repo gh download.
+          # backend checkout. GH_TOKEN authenticates both public cross-repo
+          # downloads; their independent hashes are mandatory.
           WENLAN_DOWNLOAD_SIDECARS: '1'
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Ad-hoc sign ("-") when no Apple Developer cert is configured.

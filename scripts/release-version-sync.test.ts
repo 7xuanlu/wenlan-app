@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { parseSidecarLock } from "./sidecar-lock.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -19,13 +20,10 @@ function cargoVersion(): string {
 }
 
 function pinnedDaemonVersion(): string {
-  const pin = readFileSync(resolve(root, ".wenlan-backend-version"), "utf8")
-    .split(/\r?\n/)
-    .find((line) => line.trim().length > 0);
-  if (!pin) {
-    throw new Error(".wenlan-backend-version is missing a daemon tag");
-  }
-  return pin.replace(/^v/, "");
+  const lock = parseSidecarLock(
+    readFileSync(resolve(root, ".wenlan-backend-version"), "utf8"),
+  );
+  return lock.backend_tag.replace(/^v/, "");
 }
 
 describe("release version sync", () => {

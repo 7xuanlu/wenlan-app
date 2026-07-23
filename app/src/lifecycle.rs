@@ -56,6 +56,31 @@ pub const SERVER_PLIST_LABEL: &str = "com.wenlan.server";
 pub const LEGACY_SERVER_PLIST_LABEL: &str = "com.origin.server";
 pub const APP_PLIST_LABEL: &str = "com.wenlan.desktop";
 pub const LEGACY_APP_PLIST_LABEL: &str = "com.origin.desktop";
+pub(crate) const RUN_AT_LOGIN_UNSUPPORTED: &str = "Run at Login is not supported on this platform";
+pub(crate) const FULL_QUIT_BREADCRUMB: &str = "[quit] full quit command accepted";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct QuitPlan {
+    clean_launch_agents: bool,
+    shutdown_daemon: bool,
+    exit_app: bool,
+}
+
+pub(crate) fn run_at_login_capability(target_os: &str) -> Result<(), &'static str> {
+    if target_os == "macos" {
+        Ok(())
+    } else {
+        Err(RUN_AT_LOGIN_UNSUPPORTED)
+    }
+}
+
+fn quit_plan_for_target_os(target_os: &str) -> QuitPlan {
+    QuitPlan {
+        clean_launch_agents: target_os == "macos",
+        shutdown_daemon: true,
+        exit_app: true,
+    }
+}
 
 const APP_PLIST_TEMPLATE: &str = include_str!("../resources/com.wenlan.desktop.plist");
 
@@ -660,40 +685,47 @@ pub async fn quit_origin(app_handle: &AppHandle) -> Result<()> {
     let Some(attempt) = QuitAttemptGuard::try_begin(&QUITTING) else {
         return Ok(());
     };
+    log::info!("{FULL_QUIT_BREADCRUMB}");
 
-    // Spec lifecycle invariant #4: "Quit Wenlan = full off; both plists
-    // unloaded, both processes exit, no auto-restart on reboot." (H2)
-    // Order matters: uninstall plists FIRST so launchd won't respawn after
-    // the daemon dies, then shut the daemon down cleanly.
-    let launchctl = SystemLaunchctl;
-    if let Err(e) = uninstall_app_plist(&launchctl) {
-        log::warn!("[quit] uninstall_app_plist failed: {e}");
-    }
-    if let Err(e) = uninstall_server_plist_via_subprocess() {
-        log::warn!("[quit] uninstall_server_plist failed: {e}");
-    }
-    if let Err(e) = cleanup_legacy_app_plist(&launchctl) {
-        log::warn!("[quit] cleanup_legacy_app_plist failed: {e}");
-    }
-    if let Err(e) = cleanup_legacy_server_plist(&launchctl) {
-        log::warn!("[quit] cleanup_legacy_server_plist failed: {e}");
+    let quit_plan = quit_plan_for_target_os(std::env::consts::OS);
+
+    if quit_plan.clean_launch_agents {
+        // Spec lifecycle invariant #4 on macOS: uninstall plists FIRST so
+        // launchd cannot respawn the daemon after shutdown. Other platforms
+        // must never invoke launchctl or manufacture LaunchAgents paths.
+        let launchctl = SystemLaunchctl;
+        if let Err(e) = uninstall_app_plist(&launchctl) {
+            log::warn!("[quit] uninstall_app_plist failed: {e}");
+        }
+        if let Err(e) = uninstall_server_plist_via_subprocess() {
+            log::warn!("[quit] uninstall_server_plist failed: {e}");
+        }
+        if let Err(e) = cleanup_legacy_app_plist(&launchctl) {
+            log::warn!("[quit] cleanup_legacy_app_plist failed: {e}");
+        }
+        if let Err(e) = cleanup_legacy_server_plist(&launchctl) {
+            log::warn!("[quit] cleanup_legacy_server_plist failed: {e}");
+        }
     }
 
-    // 1. Tell daemon to shut down cleanly
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(2))
-        .build()?;
-    let _ = client
-        .post("http://127.0.0.1:7878/api/shutdown")
-        .send()
-        .await;
+    if quit_plan.shutdown_daemon {
+        // Tell the app-owned daemon to shut down cleanly on every platform.
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(2))
+            .build()?;
+        let _ = client
+            .post("http://127.0.0.1:7878/api/shutdown")
+            .send()
+            .await;
 
-    // 2. Wait briefly for daemon to flush
-    tokio::time::sleep(Duration::from_millis(500)).await;
+        // Wait briefly for daemon state to flush before the parent exits.
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
 
-    // 3. Tauri-graceful exit.
-    app_handle.exit(0);
-    attempt.commit();
+    if quit_plan.exit_app {
+        app_handle.exit(0);
+        attempt.commit();
+    }
     Ok(())
 }
 
@@ -712,8 +744,28 @@ pub(crate) fn reset_quitting_flag_for_test() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
     use std::os::unix::process::ExitStatusExt;
+    #[cfg(windows)]
+    use std::os::windows::process::ExitStatusExt;
     use std::sync::Mutex;
+
+    fn exit_status(code: u32) -> std::process::ExitStatus {
+        #[cfg(unix)]
+        {
+            std::process::ExitStatus::from_raw((code as i32) << 8)
+        }
+        #[cfg(windows)]
+        {
+            std::process::ExitStatus::from_raw(code)
+        }
+    }
+
+    #[test]
+    fn synthetic_exit_status_preserves_success_semantics() {
+        assert!(exit_status(0).success());
+        assert!(!exit_status(1).success());
+    }
 
     struct EnvGuard {
         home: Option<std::ffi::OsString>,
@@ -752,9 +804,9 @@ mod tests {
     struct MockLaunchctl {
         calls: Mutex<Vec<Vec<String>>>,
         /// Status code to return for load/start subcommands. Default 0 = ok.
-        load_status: Mutex<i32>,
+        load_status: Mutex<u32>,
         /// Status code to return for unload subcommands. Default 0 = ok.
-        unload_status: Mutex<i32>,
+        unload_status: Mutex<u32>,
     }
     impl LaunchctlExec for MockLaunchctl {
         fn run(&self, args: &[&str]) -> io::Result<Output> {
@@ -769,7 +821,7 @@ mod tests {
                 _ => 0,
             };
             Ok(Output {
-                status: std::process::ExitStatus::from_raw(status_code),
+                status: exit_status(status_code),
                 stdout: vec![],
                 stderr: vec![],
             })
@@ -1049,8 +1101,7 @@ mod tests {
         std::env::set_var("HOME", tmp.path());
 
         let mock = MockLaunchctl {
-            // ExitStatus::from_raw(256) => exit code 1 (not success).
-            load_status: Mutex::new(256),
+            load_status: Mutex::new(1),
             ..Default::default()
         };
         let err = install_app_plist(&mock).expect_err("install should fail when load fails");
@@ -1149,7 +1200,7 @@ mod tests {
         impl LaunchctlExec for MockListed {
             fn run(&self, _args: &[&str]) -> io::Result<Output> {
                 Ok(Output {
-                    status: std::process::ExitStatus::from_raw(0),
+                    status: exit_status(0),
                     stdout: self.0.as_bytes().to_vec(),
                     stderr: vec![],
                 })
@@ -1169,7 +1220,7 @@ mod tests {
         impl LaunchctlExec for MockListed {
             fn run(&self, _args: &[&str]) -> io::Result<Output> {
                 Ok(Output {
-                    status: std::process::ExitStatus::from_raw(0),
+                    status: exit_status(0),
                     stdout: self.0.as_bytes().to_vec(),
                     stderr: vec![],
                 })
@@ -1188,7 +1239,7 @@ mod tests {
         impl LaunchctlExec for MockListed {
             fn run(&self, _args: &[&str]) -> io::Result<Output> {
                 Ok(Output {
-                    status: std::process::ExitStatus::from_raw(0),
+                    status: exit_status(0),
                     stdout: self.0.as_bytes().to_vec(),
                     stderr: vec![],
                 })
@@ -1220,6 +1271,44 @@ mod tests {
         );
         // Cleanup so other tests start fresh.
         reset_quitting_flag_for_test();
+    }
+
+    #[test]
+    fn run_at_login_policy_is_macos_only() {
+        assert_eq!(run_at_login_capability("macos"), Ok(()));
+        assert_eq!(
+            run_at_login_capability("windows"),
+            Err("Run at Login is not supported on this platform")
+        );
+        assert_eq!(
+            run_at_login_capability("linux"),
+            Err("Run at Login is not supported on this platform")
+        );
+    }
+
+    #[test]
+    fn full_quit_breadcrumb_is_stable_for_native_smoke_evidence() {
+        assert_eq!(FULL_QUIT_BREADCRUMB, "[quit] full quit command accepted");
+    }
+
+    #[test]
+    fn full_quit_plan_keeps_cross_platform_shutdown_but_limits_launchagents_to_macos() {
+        assert_eq!(
+            quit_plan_for_target_os("macos"),
+            QuitPlan {
+                clean_launch_agents: true,
+                shutdown_daemon: true,
+                exit_app: true,
+            }
+        );
+        assert_eq!(
+            quit_plan_for_target_os("windows"),
+            QuitPlan {
+                clean_launch_agents: false,
+                shutdown_daemon: true,
+                exit_app: true,
+            }
+        );
     }
 
     #[test]
@@ -1305,7 +1394,7 @@ mod tests {
         std::fs::write(&plist, owned_legacy_app_plist()).unwrap();
 
         let mock = MockLaunchctl {
-            unload_status: Mutex::new(256),
+            unload_status: Mutex::new(1),
             ..Default::default()
         };
         cleanup_legacy_app_plist(&mock).unwrap();
@@ -1326,7 +1415,7 @@ mod tests {
         std::fs::write(&plist, owned_legacy_server_plist()).unwrap();
 
         let mock = MockLaunchctl {
-            unload_status: Mutex::new(256),
+            unload_status: Mutex::new(1),
             ..Default::default()
         };
         cleanup_legacy_server_plist(&mock).unwrap();
@@ -1816,7 +1905,7 @@ mod tests {
         std::fs::write(&plist, &original).unwrap();
 
         let mock = MockLaunchctl {
-            load_status: Mutex::new(256),
+            load_status: Mutex::new(1),
             ..Default::default()
         };
         let err = prepare_server_plist_for_startup_at_path(
@@ -1904,7 +1993,7 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(50));
             self.in_flight.fetch_sub(1, AcqRel);
             Ok(Output {
-                status: std::process::ExitStatus::from_raw(0),
+                status: exit_status(0),
                 stdout: vec![],
                 stderr: vec![],
             })

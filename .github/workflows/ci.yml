@@ -12,6 +12,12 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      windows_native_smoke:
+        description: Run only the Windows native app with source-built backend smoke
+        required: false
+        default: false
+        type: boolean
 
 env:
   CARGO_TERM_COLOR: always
@@ -21,7 +27,8 @@ jobs:
     name: Test & Lint
     runs-on: macos-latest
     if: >-
-      !startsWith(github.event.head_commit.message, 'chore(main): release')
+      !startsWith(github.event.head_commit.message, 'chore(main): release') &&
+      !(github.event_name == 'workflow_dispatch' && inputs.windows_native_smoke)
 
     steps:
       - uses: actions/checkout@v6
@@ -96,7 +103,8 @@ jobs:
     # just checking bytes on disk.
     runs-on: macos-14
     if: >-
-      !startsWith(github.event.head_commit.message, 'chore(main): release')
+      !startsWith(github.event.head_commit.message, 'chore(main): release') &&
+      !(github.event_name == 'workflow_dispatch' && inputs.windows_native_smoke)
 
     steps:
       - uses: actions/checkout@v6
@@ -104,9 +112,20 @@ jobs:
       - name: Download pinned daemon sidecars
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET_TRIPLE: aarch64-apple-darwin
+          WENLAN_SIDECAR_MANIFEST: ${{ runner.temp }}/staged-sidecars.json
         run: bash scripts/prepare-sidecars.sh --download
 
       - name: Smoke test downloaded binaries
         run: |
           ./app/binaries/wenlan-server-aarch64-apple-darwin --help
           ./app/binaries/wenlan-aarch64-apple-darwin --help
+          ./app/binaries/cloudflared-aarch64-apple-darwin --version
+          node -e "const fs=require('fs'); const p=process.env.RUNNER_TEMP+'/staged-sidecars.json'; const m=JSON.parse(fs.readFileSync(p)); if(m.staged.length!==4) throw new Error('expected four staged Darwin sidecars')"
+
+  windows-native-smoke:
+    name: Windows Native Smoke (manual)
+    if: github.event_name == 'workflow_dispatch' && inputs.windows_native_smoke
+    permissions:
+      contents: read
+    uses: ./.github/workflows/windows-smoke.yml

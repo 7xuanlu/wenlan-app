@@ -4,6 +4,11 @@ import { dirname, resolve } from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
+import {
+  bashExecutable,
+  canonicalizePathEnvironment,
+  prependNativePath,
+} from "../test-platform";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const script = readFileSync(resolve(root, "scripts/refactor/inventory.sh"), "utf8");
@@ -11,7 +16,7 @@ const tempRoots: string[] = [];
 
 afterEach(() => {
   for (const dir of tempRoots.splice(0)) {
-    rmSync(dir, { force: true, recursive: true });
+    rmSync(dir, { force: true, recursive: true, maxRetries: 20, retryDelay: 250 });
   }
 });
 
@@ -94,10 +99,13 @@ describe("refactor inventory", () => {
     writeFixtureRepo(appRoot);
     writeFakeTools(binRoot);
 
-    const result = spawnSync("bash", ["scripts/refactor/inventory.sh"], {
+    const result = spawnSync(bashExecutable(), ["scripts/refactor/inventory.sh"], {
       cwd: appRoot,
       encoding: "utf8",
-      env: { ...process.env, PATH: `${binRoot}:${process.env.PATH ?? ""}` },
+      env: canonicalizePathEnvironment({
+        ...process.env,
+        PATH: prependNativePath(binRoot),
+      }),
     });
 
     expect(result.status, result.stderr).toBe(0);

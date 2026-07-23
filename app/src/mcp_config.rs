@@ -450,12 +450,13 @@ const BACKEND_VERSION_PIN: &str = include_str!("../../.wenlan-backend-version");
 /// bare package name only if the pin file is unparseable — an unpinned `npx`
 /// can silently pull a backend the app was never tested against.
 fn pinned_wenlan_mcp_package(pin_file: &str) -> String {
-    let version = pin_file
+    let mut tags = pin_file
         .lines()
-        .next()
-        .unwrap_or_default()
-        .trim()
-        .trim_start_matches('v');
+        .filter_map(|line| line.strip_prefix("backend_tag="));
+    let version = match (tags.next(), tags.next()) {
+        (Some(tag), None) => tag.trim_start_matches('v'),
+        _ => return "wenlan-mcp".to_string(),
+    };
     if version.is_empty() || !version.starts_with(|c: char| c.is_ascii_digit()) {
         return "wenlan-mcp".to_string();
     }
@@ -1244,16 +1245,22 @@ mod tests {
     #[test]
     fn pinned_wenlan_mcp_package_tracks_the_backend_pin_file() {
         assert_eq!(
-            pinned_wenlan_mcp_package("v0.13.0\ndeadbeef\n"),
+            pinned_wenlan_mcp_package(
+                "backend_tag=v0.13.0\nbackend_darwin_arm64_sha256=deadbeef\n"
+            ),
             "wenlan-mcp@^0.13.0"
         );
-        assert_eq!(pinned_wenlan_mcp_package("0.12.0"), "wenlan-mcp@^0.12.0");
     }
 
     #[test]
     fn pinned_wenlan_mcp_package_falls_back_when_the_pin_is_unparseable() {
         assert_eq!(pinned_wenlan_mcp_package(""), "wenlan-mcp");
         assert_eq!(pinned_wenlan_mcp_package("latest\n"), "wenlan-mcp");
+        assert_eq!(pinned_wenlan_mcp_package("v0.12.0\n"), "wenlan-mcp");
+        assert_eq!(
+            pinned_wenlan_mcp_package("backend_tag=v0.12.0\nbackend_tag=v0.13.0\n"),
+            "wenlan-mcp"
+        );
     }
 
     /// The npx fallback must carry the version this app was built against, or a

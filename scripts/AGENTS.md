@@ -18,15 +18,17 @@ part of packaging behavior, not generic local helpers.
 
 ## CONVENTIONS
 
-- `.wenlan-backend-version` format is exact: line 1 is the daemon release tag,
-  line 2 is the sha256 for `wenlan-darwin-arm64.tar.gz`.
+- `.wenlan-backend-version` is a strict six-key lock: one `backend_tag`,
+  `backend_darwin_arm64_sha256`, `backend_windows_x64_sha256`, one
+  `cloudflared_version`, `cloudflared_darwin_arm64_sha256`, and
+  `cloudflared_windows_x64_sha256`.
 - Local/dev sidecars come from a sibling backend checkout found by
   `resolve-backend-dir.sh`; release/download sidecars come from the pinned
   public `7xuanlu/wenlan` asset.
 - `prepare-tauri-build-sidecars.sh` is the Tauri hook; keep it aligned with
   `app/tauri.conf.json` `beforeBuildCommand`.
-- `cloudflared` is optional only for download smoke paths. Full Tauri bundles
-  need `binaries/cloudflared-$TRIPLE`.
+- Download mode always verifies and stages the target's backend and cloudflared
+  assets. Full Tauri bundles need `binaries/cloudflared-$TRIPLE`.
 - Update scripts, tests, and workflows together when release or sidecar behavior
   changes. The workflow comments are part of the operational contract.
 

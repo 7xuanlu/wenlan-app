@@ -1,0 +1,408 @@
+name: Windows Server 2022 native app with source-built backend smoke
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  GH_TOKEN: ${{ github.token }}
+  RUST_LOG: "warn,wenlan_lib::lifecycle=info"
+  TARGET_TRIPLE: x86_64-pc-windows-msvc
+  WENLAN_DOWNLOAD_SIDECARS: "1"
+  WENLAN_BACKEND_SMOKE_COMMIT: c66f9d8e3e2edc991a540a89d3c5f60e2c109a99
+  WENLAN_PRESTAGED_SIDECARS: "1"
+  WENLAN_WINDOWS_BACKEND_BUILD_DIR: windows-smoke-backend
+
+jobs:
+  native-smoke:
+    name: Windows Server 2022 native app with source-built backend smoke
+    runs-on: windows-2022
+    timeout-minutes: 90
+
+    steps:
+      - name: Check out app
+        uses: actions/checkout@v6
+
+      - name: Check out exact backend smoke commit
+        uses: actions/checkout@v6
+        with:
+          repository: 7xuanlu/wenlan
+          ref: ${{ env.WENLAN_BACKEND_SMOKE_COMMIT }}
+          path: windows-smoke-backend
+
+      - name: Initialize always-uploaded evidence
+        shell: pwsh
+        run: |
+          $evidence = Join-Path $env:GITHUB_WORKSPACE "windows-native-smoke"
+          New-Item -ItemType Directory -Path $evidence -Force | Out-Null
+          "WENLAN_DATA_DIR=$(Join-Path $env:RUNNER_TEMP "wenlan-native-smoke-data")" |
+            Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "WENLAN_SIDECAR_MANIFEST=$(Join-Path $evidence "staged-sidecars.json")" |
+            Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          $initial = [ordered]@{
+            claim = "Windows Server 2022 native app with source-built backend smoke"
+            status = "workflow_initializing"
+            error = "native harness did not complete"
+          }
+          $initial | ConvertTo-Json -Depth 4 | Set-Content (Join-Path $evidence "result.json") -Encoding UTF8
+          @{ ok = $false; error = "health was not captured" } |
+            ConvertTo-Json | Set-Content (Join-Path $evidence "health.json") -Encoding UTF8
+          foreach ($name in @("processes-before.json", "processes-after-launch.json", "processes-after-workload.json", "processes-after-close.json")) {
+            @{ app = @(); backend = @(); error = "process evidence was not captured" } |
+              ConvertTo-Json | Set-Content (Join-Path $evidence $name) -Encoding UTF8
+          }
+          @{ error = "semantic search was not captured" } |
+            ConvertTo-Json | Set-Content (Join-Path $evidence "semantic-search.json") -Encoding UTF8
+          "native harness did not start" | Set-Content (Join-Path $evidence "webdriver.log")
+          "app did not start" | Set-Content (Join-Path $evidence "app.log")
+          @{ error = "sidecars were not staged" } |
+            ConvertTo-Json | Set-Content (Join-Path $evidence "staged-sidecars.json") -Encoding UTF8
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run full frontend test suite on Windows
+        run: pnpm test
+
+      - name: Prove Windows ZIP extraction
+        run: pnpm exec vitest run scripts/download-sidecars.test.ts --maxWorkers=1
+
+      - name: Install Rust 1.95.0
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.95.0
+          targets: x86_64-pc-windows-msvc
+
+      - name: Install sqlite3 for backend linking
+        shell: pwsh
+        run: |
+          vcpkg install sqlite3:x64-windows-static-md
+          "LIB=$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows-static-md\lib;$env:LIB" |
+            Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Cache Rust build inputs
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: windows-native-smoke
+          cache-all-crates: "true"
+          workspaces: |
+            . -> target
+            windows-smoke-backend -> target
+
+      - name: Install pinned native WebDriver tools
+        shell: pwsh
+        run: |
+          cargo install tauri-driver --version 2.0.6 --locked
+          cargo install --git https://github.com/chippers/msedgedriver-tool --rev 8c4b34f51b45f5cf08013366d703de464ab871d1 --locked
+
+      - name: Record runner and prepare matching EdgeDriver
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $evidence = Join-Path $env:GITHUB_WORKSPACE "windows-native-smoke"
+          $driverDir = Join-Path $evidence "driver"
+          New-Item -ItemType Directory -Path $driverDir -Force | Out-Null
+
+          $registryPaths = @(
+            "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}",
+            "HKLM:\SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}",
+            "HKCU:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}",
+            "HKCU:\SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+          )
+          $webviewVersion = $null
+          foreach ($path in $registryPaths) {
+            $candidate = Get-ItemProperty -Path $path -ErrorAction SilentlyContinue
+            if ($candidate -and $candidate.pv) {
+              $webviewVersion = [string]$candidate.pv
+              break
+            }
+          }
+          if ([string]::IsNullOrWhiteSpace($webviewVersion)) {
+            throw "WebView2 Evergreen runtime was not found in the supported registry paths"
+          }
+
+          Push-Location $driverDir
+          try {
+            msedgedriver-tool
+            if ($LASTEXITCODE -ne 0) {
+              throw "msedgedriver-tool failed with exit code $LASTEXITCODE"
+            }
+          }
+          finally {
+            Pop-Location
+          }
+
+          $driverPath = Join-Path $driverDir "msedgedriver.exe"
+          if (-not (Test-Path $driverPath -PathType Leaf)) {
+            throw "msedgedriver-tool did not create $driverPath"
+          }
+          $driverVersionOutput = (& $driverPath --version 2>&1) -join " "
+          if ($LASTEXITCODE -ne 0) {
+            throw "msedgedriver --version failed: $driverVersionOutput"
+          }
+          $driverVersionMatch = [regex]::Match($driverVersionOutput, "\d+\.\d+\.\d+\.\d+")
+          if (-not $driverVersionMatch.Success) {
+            throw "could not parse EdgeDriver version from: $driverVersionOutput"
+          }
+          $driverVersion = $driverVersionMatch.Value
+          if ($driverVersion.Split(".")[0] -ne $webviewVersion.Split(".")[0]) {
+            throw "EdgeDriver major $driverVersion does not match WebView2 $webviewVersion"
+          }
+
+          $os = Get-CimInstance Win32_OperatingSystem
+          $windowsBuild = "$($os.Caption) $($os.Version) build $($os.BuildNumber)"
+          $backendTag = (node scripts/sidecar-lock.mjs get backend_tag).Trim()
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($backendTag)) {
+            throw "backend release baseline lookup failed"
+          }
+          $backendCommit = $env:WENLAN_BACKEND_SMOKE_COMMIT
+
+          "WINDOWS_BUILD=$windowsBuild" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "WEBVIEW2_VERSION=$webviewVersion" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "MSEDGEDRIVER_VERSION=$driverVersion" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "TAURI_DRIVER_VERSION=2.0.6" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "WENLAN_BACKEND_COMMIT=$backendCommit" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+          $metadata = [ordered]@{
+            claim = "Windows Server 2022 native app with source-built backend smoke"
+            app_commit = $env:GITHUB_SHA
+            backend_tag = $backendTag
+            backend_commit = $backendCommit
+            backend_source = "source-build"
+            windows = [ordered]@{
+              caption = [string]$os.Caption
+              version = [string]$os.Version
+              build_number = [string]$os.BuildNumber
+              runner_image = [string]$env:ImageVersion
+            }
+            webview2_version = $webviewVersion
+            msedgedriver_version = $driverVersion
+            tauri_driver_version = "2.0.6"
+            rustc = (rustc --version)
+            cargo = (cargo --version)
+            cargo_profile = "release"
+            cargo_features = "default"
+          }
+          $metadata | ConvertTo-Json -Depth 6 |
+            Set-Content (Join-Path $evidence "toolchain.json") -Encoding UTF8
+
+      - name: Build exact backend commit and stage verified sidecars
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          node scripts/download-sidecars.mjs
+          if ($LASTEXITCODE -ne 0) {
+            throw "sidecar download failed with exit code $LASTEXITCODE"
+          }
+          Push-Location windows-smoke-backend
+          try {
+            cargo build --locked --release --target x86_64-pc-windows-msvc `
+              -p wenlan -p wenlan-server -p wenlan-mcp
+            if ($LASTEXITCODE -ne 0) {
+              throw "backend release build failed with exit code $LASTEXITCODE"
+            }
+            & scripts/stage-onnxruntime-windows.ps1 `
+              -DestinationDirectory "target\x86_64-pc-windows-msvc\release"
+            if (-not $?) {
+              throw "ONNX Runtime staging failed"
+            }
+          }
+          finally {
+            Pop-Location
+          }
+          node scripts/windows/stage-backend-build.mjs `
+            --backend-dir windows-smoke-backend `
+            --commit $env:WENLAN_BACKEND_SMOKE_COMMIT `
+            --manifest $env:WENLAN_SIDECAR_MANIFEST
+          if ($LASTEXITCODE -ne 0) {
+            throw "backend sidecar staging failed with exit code $LASTEXITCODE"
+          }
+
+      # Compile every unit-test target on Windows, then run the full suite except
+      # the exact historical cases whose fixtures assume macOS HOME, separators,
+      # or LaunchAgent paths. Keep this list explicit so Windows coverage cannot
+      # silently collapse to a few filtered tests.
+      - name: Compile Windows Rust library tests
+        run: cargo test -p wenlan-app --lib --no-run
+
+      - name: Run Windows Rust library tests except verified platform-assumption cases
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          # dirs::home_dir() uses FOLDERID_Profile on Windows, so macOS plist
+          # fixtures can leave this directory behind even when they set HOME.
+          # Record and remove only known test plist output before native-app proof.
+          $evidence = Join-Path $env:GITHUB_WORKSPACE "windows-native-smoke"
+          $launchAgentsPath = Join-Path $env:USERPROFILE "Library\LaunchAgents"
+          $contaminationPath = Join-Path $evidence "rust-test-launchagents.json"
+          if (Test-Path -LiteralPath $launchAgentsPath) {
+            throw "Windows Rust test precondition failed: fake LaunchAgents path already exists"
+          }
+
+          $testExitCode = 0
+          try {
+            cargo test -p wenlan-app --lib -- `
+              --skip config::tests::config_knowledge_path_default_uses_legacy_when_only_legacy_exists `
+              --skip config::tests::config_knowledge_path_default_uses_wenlan_when_no_legacy_exists `
+              --skip lifecycle::tests::app_plist_path_uses_wenlan_label `
+              --skip lifecycle::tests::install_app_plist_writes_file_and_calls_launchctl_load `
+              --skip lifecycle::tests::install_app_plist_writes_wenlan_log_paths `
+              --skip lifecycle::tests::legacy_app_plist_ownership_accepts_owned_origin_app_path `
+              --skip lifecycle::tests::legacy_app_plist_path_uses_origin_label `
+              --skip lifecycle::tests::legacy_server_plist_does_not_count_as_current_wenlan_service `
+              --skip lifecycle::tests::legacy_server_plist_ownership_accepts_owned_origin_server_path `
+              --skip lifecycle::tests::opt_out_flag_round_trip `
+              --skip lifecycle::tests::service_management_uses_wenlan_cli_next_to_app_binary `
+              --skip lifecycle::tests::set_run_at_login_false_cleans_legacy_app_and_server_plists `
+              --skip lifecycle::tests::stable_launch_agent_target_accepts_user_wenlan_app_bundle `
+              --skip lifecycle::tests::uninstall_app_plist_removes_file `
+              --skip mcp_config::tests::test_client_config_path_codex_cli `
+              --skip mcp_config::tests::test_client_config_path_gemini_cli `
+              --skip remote_access::tests::test_token_generate_args_include_wenlan_output_path `
+              --skip search::avatar_path_tests::avatar_storage_dir_uses_legacy_default_when_current_empty_and_legacy_has_avatars `
+              --skip sources::obsidian::discover_vaults_tests::vault_path_no_longer_on_disk_is_filtered_out
+            $testExitCode = $LASTEXITCODE
+          }
+          finally {
+            $items = @()
+            if (Test-Path -LiteralPath $launchAgentsPath) {
+              $items = @(
+                Get-ChildItem -LiteralPath $launchAgentsPath -Recurse -Force |
+                  ForEach-Object {
+                    [ordered]@{
+                      relative_path = [System.IO.Path]::GetRelativePath($launchAgentsPath, $_.FullName)
+                      kind = if ($_.PSIsContainer) { "directory" } else { "file" }
+                    }
+                  }
+              )
+            }
+            $allowedFiles = @(
+              "com.wenlan.desktop.plist",
+              "com.wenlan.server.plist",
+              "com.origin.desktop.plist",
+              "com.origin.server.plist"
+            )
+            $unexpected = @(
+              $items | Where-Object {
+                $_.kind -ne "file" -or $_.relative_path -notin $allowedFiles
+              }
+            )
+            $report = [ordered]@{
+              path = $launchAgentsPath
+              absent_before_tests = $true
+              existed_after_tests = (Test-Path -LiteralPath $launchAgentsPath)
+              entries_after_tests = $items
+              unexpected_entries = $unexpected
+              cleanup_completed = $false
+            }
+            $report | ConvertTo-Json -Depth 6 |
+              Set-Content -LiteralPath $contaminationPath -Encoding UTF8
+            if ($unexpected.Count -gt 0) {
+              throw "Windows Rust tests created unexpected LaunchAgents entries; see $contaminationPath"
+            }
+            if (Test-Path -LiteralPath $launchAgentsPath) {
+              Remove-Item -LiteralPath $launchAgentsPath -Recurse -Force
+            }
+            $report.cleanup_completed = -not (Test-Path -LiteralPath $launchAgentsPath)
+            $report | ConvertTo-Json -Depth 6 |
+              Set-Content -LiteralPath $contaminationPath -Encoding UTF8
+            if (-not $report.cleanup_completed) {
+              throw "Windows Rust test cleanup failed: fake LaunchAgents path remains"
+            }
+          }
+          if ($testExitCode -ne 0) {
+            throw "Windows Rust library tests failed with exit code $testExitCode"
+          }
+
+      - name: Build release-profile native Tauri executable
+        run: pnpm tauri build --no-bundle --target x86_64-pc-windows-msvc
+
+      - name: Run native app, backend, UI, and full-quit proof
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $evidence = Join-Path $env:GITHUB_WORKSPACE "windows-native-smoke"
+          $driverPath = Join-Path $evidence "driver\msedgedriver.exe"
+          $tauriDriver = Join-Path $env:USERPROFILE ".cargo\bin\tauri-driver.exe"
+          $driverStdout = Join-Path $evidence "tauri-driver.stdout.log"
+          $driverStderr = Join-Path $evidence "tauri-driver.stderr.log"
+          $driverProcess = Start-Process `
+            -FilePath $tauriDriver `
+            -ArgumentList @("--native-driver", $driverPath) `
+            -RedirectStandardOutput $driverStdout `
+            -RedirectStandardError $driverStderr `
+            -PassThru
+          $driverProcess.Id | Set-Content (Join-Path $evidence "tauri-driver.pid")
+
+          $ready = $false
+          for ($attempt = 0; $attempt -lt 40; $attempt += 1) {
+            if ($driverProcess.HasExited) {
+              throw "tauri-driver exited before port 4444 became ready"
+            }
+            $client = [System.Net.Sockets.TcpClient]::new()
+            try {
+              $connect = $client.ConnectAsync("127.0.0.1", 4444)
+              if ($connect.Wait(250) -and $client.Connected) {
+                $ready = $true
+                break
+              }
+            }
+            finally {
+              $client.Dispose()
+            }
+            Start-Sleep -Milliseconds 250
+          }
+          if (-not $ready) {
+            throw "tauri-driver did not listen on 127.0.0.1:4444"
+          }
+
+          pnpm test:native:windows `
+            --app target/x86_64-pc-windows-msvc/release/wenlan-app.exe `
+            --evidence-dir windows-native-smoke
+          if ($LASTEXITCODE -ne 0) {
+            throw "native smoke harness failed with exit code $LASTEXITCODE"
+          }
+
+      - name: Collect driver logs and clean processes
+        if: always()
+        shell: pwsh
+        run: |
+          $evidence = Join-Path $env:GITHUB_WORKSPACE "windows-native-smoke"
+          $webdriverLog = Join-Path $evidence "webdriver.log"
+          foreach ($entry in @(
+            @{ Label = "tauri-driver stdout"; Path = (Join-Path $evidence "tauri-driver.stdout.log") },
+            @{ Label = "tauri-driver stderr"; Path = (Join-Path $evidence "tauri-driver.stderr.log") }
+          )) {
+            if (Test-Path $entry.Path) {
+              Add-Content $webdriverLog "`n=== $($entry.Label) ==="
+              Get-Content $entry.Path | Add-Content $webdriverLog
+            }
+          }
+          $pidPath = Join-Path $evidence "tauri-driver.pid"
+          if (Test-Path $pidPath) {
+            Stop-Process -Id ([int](Get-Content $pidPath)) -Force -ErrorAction SilentlyContinue
+          }
+          Get-Process msedgedriver -ErrorAction SilentlyContinue |
+            Stop-Process -Force -ErrorAction SilentlyContinue
+
+      - name: Upload native evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: windows-native-smoke
+          path: windows-native-smoke
+          if-no-files-found: warn
+          retention-days: 14

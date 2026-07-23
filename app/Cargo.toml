@@ -72,16 +72,16 @@ tempfile = "3"
 
 serde_yaml = "0.9"
 
-[target.'cfg(target_os = "macos")'.dependencies]
-cocoa = "0.26"
-objc = "0.2"
-raw-window-handle = "0.6"
-
 # Workspace crates
 wenlan-types = "0.14.0"
 sysinfo = "0.33"
 pdf-extract = "0.10"
 zip = { version = "2.2", default-features = false, features = ["deflate"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+cocoa = "0.26"
+objc = "0.2"
+raw-window-handle = "0.6"
 
 [dev-dependencies]
 serial_test = "3"
