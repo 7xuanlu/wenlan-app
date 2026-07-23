@@ -490,6 +490,11 @@ async function main() {
       hostname: "127.0.0.1",
       port: 4444,
       logLevel: "info",
+      // Creating a Tauri session launches the desktop process, so POST
+      // /session is not idempotent. A WebdriverIO retry can launch a second app
+      // while leaving the first app-owned backend behind.
+      connectionRetryCount: 0,
+      connectionRetryTimeout: 180_000,
       capabilities: {
         "tauri:options": {
           application: args.app,

@@ -231,6 +231,15 @@ describe("Windows native smoke workflow contract", () => {
     expect(waitForWelcome).toBeGreaterThan(selectMain);
   });
 
+  it("does not relaunch the app when a cold WebDriver session fails", () => {
+    const text = nativeHarness();
+    const launchIndex = text.indexOf("browser = await remote(");
+    const retryIndex = text.indexOf("connectionRetryCount: 0", launchIndex);
+
+    expect(launchIndex).toBeGreaterThanOrEqual(0);
+    expect(retryIndex).toBeGreaterThan(launchIndex);
+  });
+
   it("proves the runner profile is clean before app launch and remains clean", () => {
     const text = nativeHarness();
     const beforeIndex = text.indexOf(
