@@ -80,6 +80,7 @@
     "@vitejs/plugin-react": "^4.0.0",
     "@vitest/coverage-v8": "^4.1.0",
     "cytoscape": "3.34.0",
+    "fflate": "0.8.2",
     "jsdom": "^28.1.0",
     "react-grab": "^0.1.48",
     "react-scan": "^0.5.7",

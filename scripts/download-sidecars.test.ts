@@ -113,6 +113,22 @@ describe("archive extraction command", () => {
       ],
     });
   });
+
+  it("uses the native Windows tar for cross-target tar archives", () => {
+    const archive = String.raw`C:\actions\temp\wenlan-darwin-arm64.tar.gz`;
+    const destination = String.raw`C:\actions\temp\darwin`;
+
+    expect(
+      archiveExtractionCommand("tar", archive, destination, "win32"),
+    ).toEqual({
+      commandName: resolve(
+        process.env.SystemRoot ?? String.raw`C:\Windows`,
+        "System32",
+        "tar.exe",
+      ),
+      args: ["-xf", archive, "-C", destination],
+    });
+  });
 });
 
 describe("staged sidecar installation", () => {

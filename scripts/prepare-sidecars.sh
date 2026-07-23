@@ -31,7 +31,6 @@ while [[ $# -gt 0 ]]; do
 done
 
 BIN_DIR="$REPO_ROOT/app/binaries"
-HOST_TRIPLE="$(rustc -vV | awk '/^host:/ { print $2 }')"
 
 if [[ "$DOWNLOAD" == "true" ]]; then
   # The Node implementation keeps archive mapping and checksum policy in one
@@ -40,6 +39,7 @@ if [[ "$DOWNLOAD" == "true" ]]; then
   exec node "$SCRIPT_DIR/download-sidecars.mjs"
 fi
 
+HOST_TRIPLE="$(rustc -vV | awk '/^host:/ { print $2 }')"
 BACKEND_DIR="$(bash "$SCRIPT_DIR/resolve-backend-dir.sh" "$REPO_ROOT")"
 
 REQUESTED_TRIPLE="${TARGET_TRIPLE:-${TAURI_ENV_TARGET_TRIPLE:-}}"

@@ -109,27 +109,34 @@ export function archiveExtractionCommand(
     };
   }
 
+  const tarCommand = platform === "win32"
+    ? resolve(process.env.SystemRoot ?? String.raw`C:\Windows`, "System32", "tar.exe")
+    : "tar";
   return {
-    commandName: "tar",
+    commandName: tarCommand,
     args: ["-xf", archivePath, "-C", extractRoot],
   };
 }
 
 function downloadReleaseAsset(product, destination) {
+  const ghArgs = [
+    "release",
+    "download",
+    product.tag,
+    "--repo",
+    product.repo,
+    "--pattern",
+    product.asset,
+    "--dir",
+    destination,
+    "--clobber",
+  ];
+  // Integration tests use a Node shim because Windows spawn does not execute
+  // extensionless shebang fixtures. Production continues to resolve `gh`.
+  const ghNodeShim = process.env.WENLAN_GH_NODE_SCRIPT;
   command(
-    "gh",
-    [
-      "release",
-      "download",
-      product.tag,
-      "--repo",
-      product.repo,
-      "--pattern",
-      product.asset,
-      "--dir",
-      destination,
-      "--clobber",
-    ],
+    ghNodeShim ? process.execPath : "gh",
+    ghNodeShim ? [ghNodeShim, ...ghArgs] : ghArgs,
     `failed to download ${product.asset} from ${product.repo} release ${product.tag}`,
   );
   const path = resolve(destination, product.asset);
