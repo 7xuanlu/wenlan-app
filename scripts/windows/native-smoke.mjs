@@ -355,8 +355,13 @@ async function main() {
     args.evidenceDir,
     "03-memory-visible.png",
   );
+  const nativeProfileRoot =
+    process.env.WENLAN_NATIVE_PROFILE_ROOT ||
+    process.env.USERPROFILE ||
+    process.env.HOME ||
+    "";
   const fakeLaunchAgentsPath = resolve(
-    process.env.USERPROFILE || process.env.HOME || "",
+    nativeProfileRoot,
     "Library",
     "LaunchAgents",
   );

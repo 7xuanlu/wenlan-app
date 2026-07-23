@@ -259,6 +259,7 @@ describe("Windows native smoke workflow contract", () => {
     expect(beforeIndex).toBeLessThan(launchIndex);
     expect(afterCloseIndex).toBeGreaterThan(launchIndex);
     expect(afterIndex).toBeGreaterThan(afterCloseIndex);
+    expect(text).toContain("process.env.WENLAN_NATIVE_PROFILE_ROOT ||");
   });
 
   it("drives the guarded native quit route instead of bypassing persistence", () => {
