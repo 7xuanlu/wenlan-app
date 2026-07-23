@@ -473,8 +473,31 @@ fn ensure_server_plist_data_dir_env(launchctl: &dyn LaunchctlExec) -> Result<()>
     result
 }
 
-pub fn prepare_server_plist_for_startup(launchctl: &dyn LaunchctlExec) -> Result<()> {
+fn prepare_server_plist_for_startup_at_path(
+    launchctl: &dyn LaunchctlExec,
+    app_exe: &Path,
+) -> Result<()> {
+    if !is_stable_launch_agent_target(app_exe) {
+        log::warn!(
+            "[startup] skipping server plist preflight from non-stable app path: {}",
+            app_exe.display()
+        );
+        return Ok(());
+    }
     ensure_server_plist_data_dir_env(launchctl)
+}
+
+pub fn prepare_server_plist_for_startup(launchctl: &dyn LaunchctlExec) -> Result<()> {
+    let app_exe = match current_app_path() {
+        Ok(path) => path,
+        Err(e) => {
+            log::warn!(
+                "[startup] unable to resolve app path; skipping server plist preflight: {e}"
+            );
+            return Ok(());
+        }
+    };
+    prepare_server_plist_for_startup_at_path(launchctl, &app_exe)
 }
 
 /// Run `wenlan install`. Resolves the CLI binary alongside our exe; the CLI
@@ -514,7 +537,18 @@ pub fn is_run_at_login_enabled(launchctl: &dyn LaunchctlExec) -> bool {
 /// First-run install of both plists. Detects stale paths (e.g. app moved)
 /// and re-installs when the embedded path doesn't match the current binary.
 /// Returns Ok(()) if the install completed or was unnecessary.
-pub fn first_run_install_if_needed(launchctl: &dyn LaunchctlExec) -> Result<()> {
+fn first_run_install_if_needed_at_path(
+    launchctl: &dyn LaunchctlExec,
+    exe_canonical: &Path,
+) -> Result<()> {
+    if !is_stable_launch_agent_target(exe_canonical) {
+        log::warn!(
+            "[first-run] skipping LaunchAgent install from non-stable app path: {}",
+            exe_canonical.display()
+        );
+        return Ok(());
+    }
+
     if user_opted_out() {
         if let Err(e) = remove_legacy_app_plist_file_if_owned() {
             log::warn!("[first-run] legacy app plist cleanup failed: {e}");
@@ -522,22 +556,6 @@ pub fn first_run_install_if_needed(launchctl: &dyn LaunchctlExec) -> Result<()> 
         if let Err(e) = cleanup_legacy_server_plist(launchctl) {
             log::warn!("[first-run] legacy server plist cleanup failed: {e}");
         }
-        return Ok(());
-    }
-
-    let exe_canonical = match current_app_path() {
-        Ok(path) => path,
-        Err(e) => {
-            log::warn!("[first-run] unable to resolve current app path: {e}");
-            return Ok(());
-        }
-    };
-
-    if !is_stable_launch_agent_target(&exe_canonical) {
-        log::warn!(
-            "[first-run] skipping LaunchAgent install from non-stable app path: {}",
-            exe_canonical.display()
-        );
         return Ok(());
     }
 
@@ -594,6 +612,17 @@ pub fn first_run_install_if_needed(launchctl: &dyn LaunchctlExec) -> Result<()> 
 
     log::info!("[first-run] LaunchAgents installed");
     Ok(())
+}
+
+pub fn first_run_install_if_needed(launchctl: &dyn LaunchctlExec) -> Result<()> {
+    let exe_canonical = match current_app_path() {
+        Ok(path) => path,
+        Err(e) => {
+            log::warn!("[first-run] unable to resolve current app path: {e}");
+            return Ok(());
+        }
+    };
+    first_run_install_if_needed_at_path(launchctl, &exe_canonical)
 }
 
 /// Toggle "Run at login". Holds a process-wide Mutex for the duration of the
@@ -1364,7 +1393,11 @@ mod tests {
         set_user_opted_out(true).unwrap();
 
         let mock = MockLaunchctl::default();
-        first_run_install_if_needed(&mock).unwrap();
+        first_run_install_if_needed_at_path(
+            &mock,
+            Path::new("/Applications/Wenlan.app/Contents/MacOS/wenlan-app"),
+        )
+        .unwrap();
 
         assert!(!legacy_app.exists(), "owned legacy app plist removed");
         assert!(!legacy_server.exists(), "owned legacy server plist removed");
@@ -1380,6 +1413,47 @@ mod tests {
                 .iter()
                 .any(|c| c[0] == "unload" && c[1] == legacy_app.to_string_lossy()),
             "first-run migration must not unload the legacy app job before replacement exists"
+        );
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn non_stable_first_run_preserves_opted_out_legacy_registrations() {
+        let _env = EnvGuard::capture();
+        let home = tempfile::tempdir().unwrap();
+        let inherited_data = tempfile::tempdir().unwrap();
+        std::env::set_var("HOME", home.path());
+        std::env::set_var("WENLAN_DATA_DIR", inherited_data.path());
+        std::env::remove_var("ORIGIN_DATA_DIR");
+        set_user_opted_out(true).unwrap();
+
+        let current_exe = current_app_path().unwrap();
+        assert_eq!(
+            classify_stable_launch_agent_target(&current_exe),
+            StableLaunchAgentTarget::Rejected,
+            "the test executable must exercise the non-stable startup path"
+        );
+
+        let legacy_app = legacy_app_plist_path().unwrap();
+        let legacy_server = legacy_server_plist_path().unwrap();
+        std::fs::create_dir_all(legacy_app.parent().unwrap()).unwrap();
+        std::fs::write(&legacy_app, owned_legacy_app_plist()).unwrap();
+        std::fs::write(&legacy_server, owned_legacy_server_plist()).unwrap();
+
+        let mock = MockLaunchctl::default();
+        first_run_install_if_needed(&mock).unwrap();
+
+        assert!(
+            legacy_app.exists(),
+            "a non-stable startup must preserve the legacy app registration"
+        );
+        assert!(
+            legacy_server.exists(),
+            "a non-stable startup must preserve the legacy server registration"
+        );
+        assert!(
+            mock.calls.lock().unwrap().is_empty(),
+            "a non-stable startup must not unload global legacy LaunchAgents"
         );
     }
 
@@ -1600,6 +1674,59 @@ mod tests {
 
     #[test]
     #[serial_test::serial]
+    fn non_stable_startup_preserves_existing_plist_and_inherited_data_dir() {
+        let _env = EnvGuard::capture();
+        let home = tempfile::tempdir().unwrap();
+        let inherited_data = tempfile::tempdir().unwrap();
+        let installed_data = tempfile::tempdir().unwrap();
+        std::env::set_var("HOME", home.path());
+        std::env::set_var("WENLAN_DATA_DIR", inherited_data.path());
+        std::env::remove_var("ORIGIN_DATA_DIR");
+
+        let current_exe = current_app_path().unwrap();
+        assert_eq!(
+            classify_stable_launch_agent_target(&current_exe),
+            StableLaunchAgentTarget::Rejected,
+            "the test executable must exercise the non-stable startup path"
+        );
+
+        let plist = server_plist_path().unwrap();
+        std::fs::create_dir_all(plist.parent().unwrap()).unwrap();
+        let original = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.wenlan.server</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>WENLAN_DATA_DIR</key>
+        <string>{}</string>
+    </dict>
+</dict>
+</plist>
+"#,
+            installed_data.path().display()
+        );
+        std::fs::write(&plist, &original).unwrap();
+
+        let mock = MockLaunchctl::default();
+        prepare_server_plist_for_startup(&mock).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(&plist).unwrap(),
+            original,
+            "a non-stable startup must preserve the existing global plist byte-for-byte"
+        );
+        assert!(
+            mock.calls.lock().unwrap().is_empty(),
+            "a non-stable startup must not unload or reload the global LaunchAgent"
+        );
+    }
+
+    #[test]
+    #[serial_test::serial]
     fn startup_server_plist_preflight_repairs_stale_data_dir_before_selection() {
         let _env = EnvGuard::capture();
         let tmp = tempfile::tempdir().unwrap();
@@ -1635,7 +1762,11 @@ mod tests {
         assert!(!current_server_plist_matches_selected_data_dir());
 
         let mock = MockLaunchctl::default();
-        prepare_server_plist_for_startup(&mock).unwrap();
+        prepare_server_plist_for_startup_at_path(
+            &mock,
+            Path::new("/Applications/Wenlan.app/Contents/MacOS/wenlan-app"),
+        )
+        .unwrap();
 
         assert!(
             current_server_plist_matches_selected_data_dir(),
@@ -1688,8 +1819,11 @@ mod tests {
             load_status: Mutex::new(256),
             ..Default::default()
         };
-        let err = prepare_server_plist_for_startup(&mock)
-            .expect_err("reload failure must make startup preflight fail");
+        let err = prepare_server_plist_for_startup_at_path(
+            &mock,
+            Path::new("/Applications/Wenlan.app/Contents/MacOS/wenlan-app"),
+        )
+        .expect_err("reload failure must make startup preflight fail");
         assert!(
             err.to_string().contains("launchctl load failed"),
             "unexpected error: {err}"
