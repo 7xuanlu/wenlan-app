@@ -236,6 +236,27 @@ async function waitForButton(browser, text, timeout = 30_000) {
   return button;
 }
 
+async function switchToMainWindow(browser, log) {
+  const mainHandle = await poll(
+    "main Tauri WebView",
+    async () => {
+      const handles = await browser.getWindowHandles();
+      for (const handle of handles) {
+        await browser.switchToWindow(handle);
+        const hash = new URL(await browser.getUrl()).hash;
+        if (hash !== "#toast" && hash !== "#quick-capture") {
+          return handle;
+        }
+      }
+      return null;
+    },
+    30_000,
+    250,
+  );
+  await browser.switchToWindow(mainHandle);
+  log("selected main Tauri WebView");
+}
+
 async function driveZeroConfigurationOnboarding(browser, log) {
   await (await waitForButton(browser, "Get started")).click();
   for (let index = 0; index < 3; index += 1) {
@@ -476,6 +497,7 @@ async function main() {
       },
     });
 
+    await switchToMainWindow(browser, log);
     const welcome = await waitForButton(browser, "Get started", 180_000);
     await welcome.waitForDisplayed();
     await browser.saveScreenshot(welcomePath);

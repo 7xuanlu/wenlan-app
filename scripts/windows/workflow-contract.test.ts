@@ -219,6 +219,18 @@ describe("Windows native smoke workflow contract", () => {
     );
   });
 
+  it("selects the main WebView instead of relying on Tauri window creation order", () => {
+    const text = nativeHarness();
+    const selectMain = text.indexOf("await switchToMainWindow(browser, log)");
+    const waitForWelcome = text.indexOf(
+      'await waitForButton(browser, "Get started", 180_000)',
+    );
+
+    expect(text).toContain("async function switchToMainWindow");
+    expect(selectMain).toBeGreaterThanOrEqual(0);
+    expect(waitForWelcome).toBeGreaterThan(selectMain);
+  });
+
   it("proves the runner profile is clean before app launch and remains clean", () => {
     const text = nativeHarness();
     const beforeIndex = text.indexOf(
