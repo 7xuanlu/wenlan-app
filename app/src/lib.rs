@@ -63,6 +63,13 @@ fn app_log_file_name() -> &'static str {
     "wenlan.log"
 }
 
+#[cfg(debug_assertions)]
+fn resolve_tauri_mcp_socket_path(override_path: Option<&std::ffi::OsStr>) -> std::path::PathBuf {
+    override_path
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from("/tmp/tauri-mcp.sock"))
+}
+
 static QUIT_GUARD_PENDING: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
@@ -190,11 +197,15 @@ pub fn run() {
         }));
 
     #[cfg(debug_assertions)]
-    let builder = builder.plugin(tauri_plugin_mcp::init_with_config(
-        tauri_plugin_mcp::PluginConfig::new("wenlan".to_string())
-            .start_socket_server(true)
-            .socket_path("/tmp/tauri-mcp.sock".into()),
-    ));
+    let builder = {
+        let socket_override = std::env::var_os("WENLAN_DEV_TAURI_MCP_SOCKET");
+        let socket_path = resolve_tauri_mcp_socket_path(socket_override.as_deref());
+        builder.plugin(tauri_plugin_mcp::init_with_config(
+            tauri_plugin_mcp::PluginConfig::new("wenlan".to_string())
+                .start_socket_server(true)
+                .socket_path(socket_path),
+        ))
+    };
 
     builder
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
@@ -704,9 +715,10 @@ pub fn run() {
                             // while breaking newer API calls.
                             if health.version != env!("CARGO_PKG_VERSION") {
                                 log::warn!(
-                                    "[init] Daemon version mismatch: daemon v{}, app v{} — a stale daemon may be holding port 7878; restart it (e.g. `wenlan restart`)",
+                                    "[init] Daemon version mismatch: daemon v{}, app v{} at {}; restart it (e.g. `wenlan restart`)",
                                     health.version,
-                                    env!("CARGO_PKG_VERSION")
+                                    env!("CARGO_PKG_VERSION"),
+                                    client.base_url()
                                 );
                             }
                             break;
@@ -1073,6 +1085,20 @@ mod tests {
     fn app_log_identity_uses_wenlan() {
         assert!(app_log_dir().ends_with("Library/Logs/com.wenlan.desktop"));
         assert_eq!(app_log_file_name(), "wenlan.log");
+    }
+
+    #[test]
+    fn dev_tauri_mcp_socket_accepts_a_worktree_override() {
+        assert_eq!(
+            resolve_tauri_mcp_socket_path(Some(std::ffi::OsStr::new(
+                "/tmp/worktree/tauri-mcp.sock"
+            ))),
+            std::path::PathBuf::from("/tmp/worktree/tauri-mcp.sock")
+        );
+        assert_eq!(
+            resolve_tauri_mcp_socket_path(None),
+            std::path::PathBuf::from("/tmp/tauri-mcp.sock")
+        );
     }
 
     #[test]
