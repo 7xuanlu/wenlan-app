@@ -77,8 +77,6 @@ function folderName(path: string): string {
 }
 
 const PAGE_LINK_ANCHOR_PREFIX = "#concept:";
-const PAGE_TABS = ["read", "canvas"] as const;
-type PageTab = (typeof PAGE_TABS)[number];
 type MenuInitialFocus = "first" | "last";
 
 function enabledMenuItems(menu: HTMLDivElement | null): HTMLElement[] {
@@ -160,24 +158,13 @@ export default function PageDetail({
     message: string;
   } | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [tab, setTab] = useState<PageTab>("read");
-  const tabRefs = useRef<Record<PageTab, HTMLButtonElement | null>>({
-    read: null,
-    canvas: null,
-  });
-  // Editing happens in the Read panel's textarea, so edit mode pins the tab:
-  // nobody gets to type into a page they cannot see.
-  const activeTab: PageTab = editing ? "read" : tab;
-
-  const handleTabKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-    e.preventDefault();
-    const step = e.key === "ArrowRight" ? 1 : PAGE_TABS.length - 1;
-    const next =
-      PAGE_TABS[(PAGE_TABS.indexOf(activeTab) + step) % PAGE_TABS.length];
-    setTab(next);
-    tabRefs.current[next]?.focus();
-  };
+  // Reading is what a page is for, so it needs no control of its own — only
+  // leaving for the canvas does. A two-tab row spent a whole band of the page
+  // telling you that you were doing the obvious thing.
+  const [canvasOpen, setCanvasOpen] = useState(false);
+  // Editing happens in the reading column's textarea, so edit mode pins the
+  // view: nobody gets to type into a page they cannot see.
+  const showCanvas = canvasOpen && !editing;
   const exportMenuTriggerRef = useRef<HTMLButtonElement>(null);
   const exportMenuRef = useRef<HTMLDivElement>(null);
   const exportMenuInitialFocusRef = useRef<MenuInitialFocus>("first");
@@ -687,6 +674,27 @@ export default function PageDetail({
             <div className="page-detail-icon-actions">
             {!editing && (
               <button
+                aria-label={t("pageCanvas.tabCanvas")}
+                aria-pressed={showCanvas}
+                onClick={() => setCanvasOpen((open) => !open)}
+                className={`mem-icon-action page-detail-canvas-toggle${
+                  showCanvas ? " is-active" : ""
+                }`}
+                title={t("pageCanvas.tabCanvas")}
+                type="button"
+              >
+                {/* Three nodes on a spine — the shape the canvas actually makes. */}
+                <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="5" cy="12" r="2.5" />
+                  <circle cx="19" cy="6" r="2.5" />
+                  <circle cx="19" cy="18" r="2.5" />
+                  <line x1="7.3" y1="10.8" x2="16.7" y2="7.2" />
+                  <line x1="7.3" y1="13.2" x2="16.7" y2="16.8" />
+                </svg>
+              </button>
+            )}
+            {!editing && (
+              <button
                 aria-label={t("pageDetail.editPage")}
                 onClick={beginEditing}
                 className="mem-icon-action"
@@ -994,42 +1002,8 @@ export default function PageDetail({
         </div>
       )}
 
-      {!editing && (
-        <div
-          role="tablist"
-          aria-label={t("pageCanvas.tabsLabel")}
-          className="page-detail-tabs"
-          onKeyDown={handleTabKeyDown}
-        >
-          {PAGE_TABS.map((key) => (
-            <button
-              key={key}
-              type="button"
-              role="tab"
-              id={`page-detail-tab-${key}`}
-              aria-selected={activeTab === key}
-              aria-controls={`page-detail-panel-${key}`}
-              tabIndex={activeTab === key ? 0 : -1}
-              ref={(el) => {
-                tabRefs.current[key] = el;
-              }}
-              onClick={() => setTab(key)}
-              className={`page-detail-tab${activeTab === key ? " is-active" : ""}`}
-            >
-              {key === "read"
-                ? t("pageCanvas.tabRead")
-                : t("pageCanvas.tabCanvas")}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {activeTab === "canvas" ? (
-        <div
-          role="tabpanel"
-          id="page-detail-panel-canvas"
-          aria-labelledby="page-detail-tab-canvas"
-        >
+      {showCanvas ? (
+        <div>
           <PageCanvas
             pageId={pageId}
             pageTitle={page.title}
@@ -1040,12 +1014,7 @@ export default function PageDetail({
           />
         </div>
       ) : (
-        <div
-          role="tabpanel"
-          id="page-detail-panel-read"
-          aria-labelledby="page-detail-tab-read"
-          className="page-detail-read-panel"
-        >
+        <div className="page-detail-read-panel">
           {/* Content — edit mode or rendered */}
           {editing ? (
             <div className="flex flex-col gap-2">

@@ -2964,41 +2964,24 @@ p.entity-error {
 
 /* ── Page tabs + canvas (PageDetail.tsx, PageCanvas.tsx) ───────────── */
 
-.page-detail-tabs {
-  display: inline-flex;
-  align-self: flex-start;
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--mem-border);
-  border-radius: 8px;
+/* A view switch, not an action — so it sits at the head of the icon cluster
+   with a hairline between it and the things that actually change the page. */
+.page-detail-canvas-toggle {
+  margin-right: 2px;
+  padding-right: 6px;
+  border-right: 1px solid var(--mem-border);
+  border-radius: 6px 0 0 6px;
 }
 
-.page-detail-tab {
-  padding: 5px 14px;
-  border: none;
-  border-radius: 6px;
-  background: none;
-  color: var(--mem-text-tertiary);
-  cursor: pointer;
-  font-family: var(--mem-font-body);
-  font-size: 12.5px;
-  transition:
-    background-color 150ms,
-    color 150ms;
+/* Held down while the canvas is up: the only control here with a persistent
+   state, so it is the only one that stays lit. */
+.page-detail-canvas-toggle.is-active {
+  background-color: color-mix(in srgb, var(--mem-accent-page) 16%, transparent);
+  color: var(--mem-accent-page);
 }
 
-.page-detail-tab:hover {
-  color: var(--mem-text);
-}
-
-.page-detail-tab.is-active {
-  background-color: var(--mem-hover-strong);
-  color: var(--mem-text);
-}
-
-.page-detail-tab:focus-visible {
-  outline: 2px solid var(--mem-accent-page);
-  outline-offset: 2px;
+.page-detail-canvas-toggle.is-active:hover {
+  background-color: color-mix(in srgb, var(--mem-accent-page) 26%, transparent);
 }
 
 /* Re-states .page-detail's own column gap so wrapping the reading column in a

@@ -710,6 +710,39 @@ describe("PageCanvas", () => {
     });
   });
 
+  it("says it is loading rather than showing an empty frame", async () => {
+    // A never-resolving fetch is the only way to hold the pending state still:
+    // a resolved mock skips straight past it, which is how a canvas that
+    // rendered nothing at all while it loaded passed review for so long.
+    const { getPageMap } = await tauri();
+    (getPageMap as ReturnType<typeof vi.fn>).mockReturnValue(
+      new Promise(() => {}),
+    );
+    renderCanvas();
+
+    const status = await screen.findByRole("status");
+    expect(status.textContent).toContain("Loading canvas");
+  });
+
+  it("keeps the draft box when focus is taken before anything is typed", async () => {
+    // Releasing a connector drag mounts the draft and then React Flow takes
+    // focus back for the pane, which blurs the name field with nothing in it.
+    // That blur is not the user saying "never mind" — dropping the draft here
+    // is what made a dragged-out box vanish the instant it appeared.
+    const { getPageMap, createPageMapNode } = await tauri();
+    (getPageMap as ReturnType<typeof vi.fn>).mockResolvedValue(makeMap());
+    const { user } = renderCanvas();
+
+    await user.click(await screen.findByRole("button", { name: "Add section" }));
+    const field = await screen.findByRole("textbox", { name: "Section name" });
+    fireEvent.blur(field, { target: { value: "" } });
+
+    expect(
+      screen.queryByRole("textbox", { name: "Section name" }),
+    ).toBeTruthy();
+    expect(createPageMapNode).not.toHaveBeenCalled();
+  });
+
   it("drops the draft box on Escape without writing anything", async () => {
     const { getPageMap, createPageMapNode, updatePage } = await tauri();
     (getPageMap as ReturnType<typeof vi.fn>).mockResolvedValue(makeMap());

@@ -514,10 +514,14 @@ function PageCanvasInner({
   const commitDraft = useCallback(
     (label: string) => {
       const pending = draft;
-      setDraft(null);
       if (!pending) return;
       const trimmed = label.trim();
-      if (!trimmed) return; // named nothing, added nothing
+      // An empty commit is never someone deciding against the box: the field
+      // blurs on its own when React Flow takes focus back for the pane after a
+      // connector drag, and clearing the draft here deleted the box a beat
+      // after it appeared. Leave it standing — Escape is how you say no.
+      if (!trimmed) return;
+      setDraft(null);
       if (!slugify(trimmed)) {
         setNotice(t("pageCanvas.badSectionName"));
         return;
@@ -973,7 +977,15 @@ function PageCanvasInner({
     return edges;
   }, [views, map?.edges, palette]);
 
-  if (isLoading) return null;
+  // Rendering nothing here made every slow fetch look like a canvas that had
+  // simply failed to arrive, with no way to tell waiting from broken.
+  if (isLoading) {
+    return (
+      <div className="page-canvas-message" role="status" aria-live="polite">
+        <p className="page-canvas-message-title">{t("pageCanvas.loading")}</p>
+      </div>
+    );
+  }
 
   if (error) {
     const status = asPageMapApiError(error)?.status;

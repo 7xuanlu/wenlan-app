@@ -121,15 +121,17 @@ function renderDetail() {
 beforeEach(() => vi.clearAllMocks());
 afterEach(() => cleanup());
 
-describe("PageDetail tabs", () => {
-  it("opens on Read with both tabs exposed to assistive tech", async () => {
+describe("PageDetail canvas toggle", () => {
+  it("opens reading with one unpressed Canvas control and no tab row", async () => {
     renderDetail();
     await screen.findByText("libSQL Architecture");
 
-    const tabs = screen.getAllByRole("tab");
-    expect(tabs.map((el) => el.textContent)).toEqual(["Read", "Canvas"]);
-    expect(tabs[0].getAttribute("aria-selected")).toBe("true");
-    expect(tabs[1].getAttribute("aria-selected")).toBe("false");
+    // Reading is the default, so it gets no control of its own.
+    expect(screen.queryAllByRole("tab")).toHaveLength(0);
+    expect(screen.queryByRole("button", { name: "Read" })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Canvas" }).getAttribute("aria-pressed"),
+    ).toBe("false");
     expect(screen.getByText(/Page info/i)).toBeTruthy();
   });
 
@@ -137,7 +139,7 @@ describe("PageDetail tabs", () => {
     const { user } = renderDetail();
     await screen.findByText("libSQL Architecture");
 
-    await user.click(screen.getByRole("tab", { name: "Canvas" }));
+    await user.click(screen.getByRole("button", { name: "Canvas" }));
 
     expect(
       await screen.findByRole("region", { name: "Canvas for libSQL Architecture" }),
@@ -145,12 +147,44 @@ describe("PageDetail tabs", () => {
     // the page title stays in the header; the prose and Page info do not
     expect(screen.queryByText(/Page info/i)).toBeNull();
     expect(screen.queryByText("More prose here.")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Canvas" }).getAttribute("aria-pressed"),
+    ).toBe("true");
+  });
+
+  it("goes back to reading when the same control is pressed again", async () => {
+    const { user } = renderDetail();
+    await screen.findByText("libSQL Architecture");
+
+    const toggle = screen.getByRole("button", { name: "Canvas" });
+    await user.click(toggle);
+    await screen.findByRole("region", { name: "Canvas for libSQL Architecture" });
+
+    // Without a Read tab, this control is the only way back — if it does not
+    // toggle, the canvas is a trap.
+    await user.click(toggle);
+    expect(
+      screen.queryByRole("region", { name: "Canvas for libSQL Architecture" }),
+    ).toBeNull();
+    expect(await screen.findByText("More prose here.")).toBeTruthy();
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("sits with the other page controls, not in a band of its own", async () => {
+    renderDetail();
+    await screen.findByText("libSQL Architecture");
+
+    const toggle = screen.getByRole("button", { name: "Canvas" });
+    const cluster = toggle.closest(".page-detail-icon-actions");
+    expect(cluster).toBeTruthy();
+    // The controls it was asked to join.
+    expect(cluster?.querySelector('[title="Edit page"]')).toBeTruthy();
   });
 
   it("resolves the root node label from the page title it already loaded", async () => {
     const { user } = renderDetail();
     await screen.findByText("libSQL Architecture");
-    await user.click(screen.getByRole("tab", { name: "Canvas" }));
+    await user.click(screen.getByRole("button", { name: "Canvas" }));
 
     // Both nodes arrive with label: null — the daemon stores refs, the client
     // renders the backing objects PageDetail already has in hand.
@@ -159,28 +193,15 @@ describe("PageDetail tabs", () => {
     expect(screen.getByText("libSQL stores vectors")).toBeTruthy();
   });
 
-  it("moves between tabs with the arrow keys", async () => {
+  it("hides the canvas control while editing so nobody types into an unseen page", async () => {
     const { user } = renderDetail();
     await screen.findByText("libSQL Architecture");
 
-    screen.getByRole("tab", { name: "Read" }).focus();
-    await user.keyboard("{ArrowRight}");
-    expect(screen.getByRole("tab", { name: "Canvas" }).getAttribute("aria-selected")).toBe("true");
-    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "Canvas" }));
-
-    await user.keyboard("{ArrowLeft}");
-    expect(screen.getByRole("tab", { name: "Read" }).getAttribute("aria-selected")).toBe("true");
-  });
-
-  it("hides the tab row while editing so nobody types into an unseen page", async () => {
-    const { user } = renderDetail();
-    await screen.findByText("libSQL Architecture");
-
-    await user.click(screen.getByRole("tab", { name: "Canvas" }));
+    await user.click(screen.getByRole("button", { name: "Canvas" }));
     await screen.findByRole("region", { name: "Canvas for libSQL Architecture" });
 
     await user.click(screen.getByTitle("Edit page"));
-    expect(screen.queryAllByRole("tab")).toHaveLength(0);
+    expect(screen.queryByRole("button", { name: "Canvas" })).toBeNull();
     expect(screen.getByRole("textbox")).toBeTruthy();
     expect(screen.queryByRole("region", { name: "Canvas for libSQL Architecture" })).toBeNull();
   });
