@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 use regex::Regex;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
@@ -116,6 +116,24 @@ async fn register_with_relay(tunnel_url: &str) -> Option<String> {
 /// Regex to extract cloudflared tunnel URL from stderr output.
 static TUNNEL_URL_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"https://[a-z0-9-]+\.trycloudflare\.com").unwrap());
+
+#[derive(Debug, Clone, Deserialize, Eq, PartialEq, Serialize)]
+struct CloudflaredOwner {
+    pid: u32,
+    port: u16,
+    identity: String,
+}
+
+fn cloudflared_owner_authorizes_signal(
+    owner: &CloudflaredOwner,
+    expected: Option<&CloudflaredOwner>,
+    range_start: u16,
+    live_identity: Option<&str>,
+) -> bool {
+    expected.is_none_or(|expected| expected == owner)
+        && (range_start..=range_start + (PORT_RANGE_LEN - 1)).contains(&owner.port)
+        && live_identity == Some(owner.identity.as_str())
+}
 
 /// Status of the remote access tunnel.
 #[derive(Debug, Clone, Serialize)]
@@ -265,54 +283,108 @@ pub fn cleanup_orphaned_mcp() {
     std::thread::sleep(std::time::Duration::from_millis(200));
 }
 
-fn cleanup_orphaned_cloudflared() {
-    let my_pid = std::process::id();
-    let range_start = port_range_start();
-    let output = std::process::Command::new("ps")
-        .args(["-ax", "-ww", "-o", "pid=,command="])
-        .output();
-    let Ok(output) = output else {
+fn cloudflared_owner_path() -> PathBuf {
+    crate::identity_paths::mcp_config_dir().join("cloudflared-owner.json")
+}
+
+fn read_cloudflared_owner() -> Result<Option<CloudflaredOwner>, String> {
+    let path = cloudflared_owner_path();
+    let contents = match std::fs::read(&path) {
+        Ok(contents) => contents,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(format!(
+                "Failed to read cloudflared ownership receipt at {}: {error}",
+                path.display()
+            ));
+        }
+    };
+    restrict_private_file(&path, "cloudflared ownership receipt")?;
+    serde_json::from_slice(&contents)
+        .map(Some)
+        .map_err(|error| {
+            format!(
+                "Invalid cloudflared ownership receipt at {}: {error}",
+                path.display()
+            )
+        })
+}
+
+fn record_cloudflared_owner(pid: u32, port: u16) -> Result<CloudflaredOwner, String> {
+    let identity = cloudflared_process_identity(pid, port).ok_or_else(|| {
+        format!("Spawned cloudflared PID {pid} does not match the expected tunnel for port {port}")
+    })?;
+    let owner = CloudflaredOwner {
+        pid,
+        port,
+        identity,
+    };
+    let contents = serde_json::to_vec(&owner)
+        .map_err(|error| format!("Failed to serialize cloudflared ownership receipt: {error}"))?;
+    write_private_file(
+        &cloudflared_owner_path(),
+        &contents,
+        "cloudflared ownership receipt",
+    )?;
+    Ok(owner)
+}
+
+fn remove_cloudflared_owner_if_matches(expected: &CloudflaredOwner) {
+    let Ok(Some(current)) = read_cloudflared_owner() else {
         return;
     };
-    let processes = String::from_utf8_lossy(&output.stdout);
-
-    for line in processes.lines() {
-        let line = line.trim();
-        let Some(separator) = line.find(char::is_whitespace) else {
-            continue;
-        };
-        let Ok(pid) = line[..separator].parse::<u32>() else {
-            continue;
-        };
-        if pid == my_pid {
-            continue;
-        }
-        let command = line[separator..].trim();
-        for port in range_start..=range_start + (PORT_RANGE_LEN - 1) {
-            if !is_expected_remote_tunnel_command(command, port) {
-                continue;
-            }
-            let Some(process_identity) = cloudflared_process_identity(pid, port) else {
-                break;
-            };
+    if current != *expected {
+        return;
+    }
+    if let Err(error) = std::fs::remove_file(cloudflared_owner_path()) {
+        if error.kind() != std::io::ErrorKind::NotFound {
             log::warn!(
-                "[remote-access] Killing orphaned cloudflared process {} for port {}",
-                pid,
-                port
+                "[remote-access] Failed to remove cloudflared ownership receipt: {}",
+                error
             );
-            let _ = std::process::Command::new("kill")
-                .arg(pid.to_string())
-                .output();
-            std::thread::sleep(std::time::Duration::from_millis(100));
-            if cloudflared_process_identity(pid, port).as_deref() == Some(process_identity.as_str())
-            {
-                let _ = std::process::Command::new("kill")
-                    .args(["-9", &pid.to_string()])
-                    .output();
-            }
-            break;
         }
     }
+}
+
+fn cleanup_owned_cloudflared(expected: Option<&CloudflaredOwner>) {
+    let owner = match read_cloudflared_owner() {
+        Ok(Some(owner)) => owner,
+        Ok(None) => return,
+        Err(error) => {
+            log::warn!("[remote-access] {error}; refusing cloudflared cleanup");
+            return;
+        }
+    };
+    let range_start = port_range_start();
+    let live_identity = cloudflared_process_identity(owner.pid, owner.port);
+    if !cloudflared_owner_authorizes_signal(&owner, expected, range_start, live_identity.as_deref())
+    {
+        log::warn!(
+            "[remote-access] refusing to signal cloudflared PID {} because its ownership receipt, selected range, or live identity does not match",
+            owner.pid
+        );
+        if expected.is_none_or(|expected| expected == &owner) {
+            remove_cloudflared_owner_if_matches(&owner);
+        }
+        return;
+    }
+    log::warn!(
+        "[remote-access] Killing owned cloudflared process {} for port {}",
+        owner.pid,
+        owner.port
+    );
+    let _ = std::process::Command::new("kill")
+        .arg(owner.pid.to_string())
+        .output();
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    if cloudflared_process_identity(owner.pid, owner.port).as_deref()
+        == Some(owner.identity.as_str())
+    {
+        let _ = std::process::Command::new("kill")
+            .args(["-9", &owner.pid.to_string()])
+            .output();
+    }
+    remove_cloudflared_owner_if_matches(&owner);
 }
 
 fn is_expected_remote_mcp_command(command: &str, port: u16) -> bool {
@@ -404,6 +476,14 @@ fn cloudflared_process_identity(pid: u32, port: u16) -> Option<String> {
         .ok()?;
     let started = String::from_utf8(started_output.stdout).ok()?;
     Some(format!("{}\n{}", started.trim(), command.trim()))
+}
+
+fn terminate_owned_cloudflared(
+    child: tauri_plugin_shell::process::CommandChild,
+    owner: &CloudflaredOwner,
+) {
+    let _ = child.kill();
+    cleanup_owned_cloudflared(Some(owner));
 }
 
 fn listener_pid_for_port(port: u16) -> Option<u32> {
@@ -673,7 +753,7 @@ async fn toggle_on_inner(
     let result = start_tunnel(&app_handle, operation_generation).await;
 
     match result {
-        Ok((tunnel_url, token, mcp_child, tunnel_child, port, mcp_rx, tunnel_rx)) => {
+        Ok((tunnel_url, token, mcp_child, tunnel_child, tunnel_owner, port, mcp_rx, tunnel_rx)) => {
             {
                 let state = app_handle
                     .state::<std::sync::Arc<tokio::sync::RwLock<crate::state::AppState>>>();
@@ -683,7 +763,7 @@ async fn toggle_on_inner(
                     || !matches!(ra.status, RemoteAccessStatus::Starting)
                 {
                     let _ = mcp_child.kill();
-                    let _ = tunnel_child.kill();
+                    terminate_owned_cloudflared(tunnel_child, &tunnel_owner);
                     return;
                 }
             }
@@ -693,7 +773,7 @@ async fn toggle_on_inner(
                 relay_url = register_with_relay(&tunnel_url) => relay_url,
                 _ = wait_for_generation_change(&app_handle, operation_generation) => {
                     let _ = mcp_child.kill();
-                    let _ = tunnel_child.kill();
+                    terminate_owned_cloudflared(tunnel_child, &tunnel_owner);
                     return;
                 }
             };
@@ -714,7 +794,7 @@ async fn toggle_on_inner(
                 drop(ra);
                 drop(app_state);
                 let _ = mcp_child.kill();
-                let _ = tunnel_child.kill();
+                terminate_owned_cloudflared(tunnel_child, &tunnel_owner);
                 return;
             }
             ra.status = status.clone();
@@ -1336,7 +1416,8 @@ async fn start_tunnel(
         String,                                                                 // token
         tauri_plugin_shell::process::CommandChild,                              // mcp_child
         tauri_plugin_shell::process::CommandChild,                              // tunnel_child
-        u16,                                                                    // port
+        CloudflaredOwner, // tunnel owner receipt
+        u16,              // port
         tokio::sync::mpsc::Receiver<tauri_plugin_shell::process::CommandEvent>, // mcp_rx
         tokio::sync::mpsc::Receiver<tauri_plugin_shell::process::CommandEvent>, // tunnel_rx
     ),
@@ -1344,7 +1425,7 @@ async fn start_tunnel(
 > {
     // 0. Clean up any orphaned MCP processes from previous app sessions
     cleanup_orphaned_mcp();
-    cleanup_orphaned_cloudflared();
+    cleanup_owned_cloudflared(None);
     if !remote_generation_is_current(app_handle, generation).await {
         return Err("Remote access start cancelled.".to_string());
     }
@@ -1418,9 +1499,17 @@ async fn start_tunnel(
             return Err(format!("Failed to spawn cloudflared: {error}"));
         }
     };
+    let tunnel_owner = match record_cloudflared_owner(tunnel_child.pid(), port) {
+        Ok(owner) => owner,
+        Err(error) => {
+            let _ = mcp_child.kill();
+            let _ = tunnel_child.kill();
+            return Err(error);
+        }
+    };
     if !remote_generation_is_current(app_handle, generation).await {
         let _ = mcp_child.kill();
-        let _ = tunnel_child.kill();
+        terminate_owned_cloudflared(tunnel_child, &tunnel_owner);
         return Err("Remote access start cancelled.".to_string());
     }
 
@@ -1432,7 +1521,7 @@ async fn start_tunnel(
         ) => result,
         _ = wait_for_generation_change(app_handle, generation) => {
             let _ = mcp_child.kill();
-            let _ = tunnel_child.kill();
+            terminate_owned_cloudflared(tunnel_child, &tunnel_owner);
             return Err("Remote access start cancelled.".to_string());
         }
     };
@@ -1441,16 +1530,17 @@ async fn start_tunnel(
         Ok(Err(Some(msg))) => {
             // Known error (rate limit, etc.) — kill mcp and propagate
             let _ = mcp_child.kill();
-            let _ = tunnel_child.kill();
+            terminate_owned_cloudflared(tunnel_child, &tunnel_owner);
             return Err(msg);
         }
         Ok(Err(None)) => {
             let _ = mcp_child.kill();
+            terminate_owned_cloudflared(tunnel_child, &tunnel_owner);
             return Err("cloudflared exited without producing a tunnel URL.".to_string());
         }
         Err(_) => {
             let _ = mcp_child.kill();
-            let _ = tunnel_child.kill();
+            terminate_owned_cloudflared(tunnel_child, &tunnel_owner);
             return Err("Failed to get tunnel URL from cloudflared (timeout).".to_string());
         }
     };
@@ -1486,6 +1576,7 @@ async fn start_tunnel(
         token,
         mcp_child,
         tunnel_child,
+        tunnel_owner,
         port,
         mcp_rx,
         tunnel_rx,
@@ -1524,7 +1615,7 @@ async fn transition_off(
 
     // Sweep for any orphaned processes the handles didn't cover
     cleanup_orphaned_mcp();
-    cleanup_orphaned_cloudflared();
+    cleanup_owned_cloudflared(None);
 
     let _ = app_handle.emit("remote-access-status", &RemoteAccessStatus::Off);
     drop(ra);
@@ -1745,6 +1836,50 @@ mod tests {
         assert!(!is_expected_remote_tunnel_command(
             "/tmp/cloudflared access tcp --url http://localhost:22000",
             22000,
+        ));
+    }
+
+    #[test]
+    fn cloudflared_signal_requires_the_persisted_owner_and_live_identity() {
+        let owner = CloudflaredOwner {
+            pid: 42,
+            port: 22000,
+            identity: "started\ncloudflared tunnel".to_string(),
+        };
+        let other = CloudflaredOwner {
+            pid: 43,
+            ..owner.clone()
+        };
+
+        assert!(cloudflared_owner_authorizes_signal(
+            &owner,
+            Some(&owner),
+            22000,
+            Some(owner.identity.as_str()),
+        ));
+        assert!(cloudflared_owner_authorizes_signal(
+            &owner,
+            None,
+            22000,
+            Some(owner.identity.as_str()),
+        ));
+        assert!(!cloudflared_owner_authorizes_signal(
+            &owner,
+            Some(&other),
+            22000,
+            Some(owner.identity.as_str()),
+        ));
+        assert!(!cloudflared_owner_authorizes_signal(
+            &owner,
+            Some(&owner),
+            22000,
+            Some("different process start"),
+        ));
+        assert!(!cloudflared_owner_authorizes_signal(
+            &owner,
+            Some(&owner),
+            23000,
+            Some(owner.identity.as_str()),
         ));
     }
 
