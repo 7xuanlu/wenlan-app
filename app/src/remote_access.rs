@@ -322,10 +322,43 @@ impl CloudflaredOwnerLock<'_> {
     }
 
     fn write(&self, owner: &CloudflaredOwner) -> Result<(), String> {
+        use std::io::Write;
+
         let contents = serde_json::to_vec(owner).map_err(|error| {
             format!("Failed to serialize cloudflared ownership receipt: {error}")
         })?;
-        write_private_file(self.path, &contents, "cloudflared ownership receipt")
+        let parent = self.path.parent().ok_or_else(|| {
+            format!(
+                "Cloudflared ownership receipt has no parent: {}",
+                self.path.display()
+            )
+        })?;
+        let mut staged = tempfile::NamedTempFile::new_in(parent).map_err(|error| {
+            format!(
+                "Failed to stage cloudflared ownership receipt beside {}: {error}",
+                self.path.display()
+            )
+        })?;
+        staged.write_all(&contents).map_err(|error| {
+            format!(
+                "Failed to write staged cloudflared ownership receipt for {}: {error}",
+                self.path.display()
+            )
+        })?;
+        staged.as_file().sync_all().map_err(|error| {
+            format!(
+                "Failed to sync staged cloudflared ownership receipt for {}: {error}",
+                self.path.display()
+            )
+        })?;
+        staged.persist(self.path).map_err(|error| {
+            format!(
+                "Failed to atomically replace cloudflared ownership receipt at {}: {}",
+                self.path.display(),
+                error.error
+            )
+        })?;
+        restrict_private_file(self.path, "cloudflared ownership receipt")
     }
 
     fn remove_if_matches(&self, expected: &CloudflaredOwner) -> Result<(), String> {
@@ -1999,6 +2032,33 @@ mod tests {
         cleanup.join().unwrap();
         replacement.join().unwrap();
 
+        assert_eq!(read_cloudflared_owner_at(&path).unwrap(), Some(new_owner));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn owner_replacement_swaps_the_receipt_inode_instead_of_truncating_in_place() {
+        use std::os::unix::fs::MetadataExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cloudflared-owner.json");
+        let old_owner = CloudflaredOwner {
+            pid: 42,
+            port: 22000,
+            identity: "old".to_string(),
+        };
+        let new_owner = CloudflaredOwner {
+            pid: 43,
+            port: 22001,
+            identity: "new".to_string(),
+        };
+
+        write_cloudflared_owner_at(&path, &old_owner).unwrap();
+        let old_inode = std::fs::metadata(&path).unwrap().ino();
+        write_cloudflared_owner_at(&path, &new_owner).unwrap();
+        let new_inode = std::fs::metadata(&path).unwrap().ino();
+
+        assert_ne!(old_inode, new_inode);
         assert_eq!(read_cloudflared_owner_at(&path).unwrap(), Some(new_owner));
     }
 
