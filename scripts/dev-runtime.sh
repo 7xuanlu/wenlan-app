@@ -15,6 +15,7 @@ DEV_TAURI_MCP_SOCKET="${WENLAN_DEV_TAURI_MCP_SOCKET:-$STATE_DIR/tauri-mcp.sock}"
 PID_FILE="$STATE_DIR/wenlan-server.pid"
 SERVER_PATH_FILE="$STATE_DIR/wenlan-server.path"
 PORT_FILE="$STATE_DIR/wenlan-server.port"
+DATA_DIR_FILE="$STATE_DIR/wenlan-server.data-dir"
 SERVER_LOG="$STATE_DIR/wenlan-server.log"
 LOCK_DIR="$STATE_DIR/runtime.lock"
 LOCK_OWNER_FILE="$LOCK_DIR/pid"
@@ -42,6 +43,7 @@ refuse_production_path() {
     "$HOME/Library/Application Support/origin" \
     "$HOME/Library/LaunchAgents" \
     "$HOME/Library/Logs/com.wenlan.desktop" \
+    "$HOME/Library/Logs/com.origin.desktop" \
     "$HOME/.config/wenlan-mcp" \
     "$HOME/.config/origin-mcp" \
     "$HOME/.wenlan" \
@@ -106,6 +108,7 @@ read_owned_pid() {
   OWNED_PID="$(sed -n '1p' "$PID_FILE")"
   OWNED_SERVER="$(sed -n '1p' "$SERVER_PATH_FILE")"
   OWNED_PORT="$(sed -n '1p' "$PORT_FILE")"
+  OWNED_DATA_DIR="$(sed -n '1p' "$DATA_DIR_FILE" 2>/dev/null || true)"
   [[ "$OWNED_PID" =~ ^[0-9]+$ && -n "$OWNED_SERVER" &&
     "$OWNED_PORT" =~ ^[0-9]+$ ]] || return 1
 }
@@ -159,7 +162,7 @@ stop_runtime() {
     return 0
   fi
   if ! kill -0 "$OWNED_PID" 2>/dev/null; then
-    rm -f "$PID_FILE" "$SERVER_PATH_FILE" "$PORT_FILE"
+    rm -f "$PID_FILE" "$SERVER_PATH_FILE" "$PORT_FILE" "$DATA_DIR_FILE"
     echo "Removed stale Wenlan dev daemon state."
     return 0
   fi
@@ -171,8 +174,7 @@ stop_runtime() {
   kill "$OWNED_PID"
   for _ in $(seq 1 50); do
     if ! kill -0 "$OWNED_PID" 2>/dev/null; then
-      rm -f "$PID_FILE" "$SERVER_PATH_FILE"
-      rm -f "$PORT_FILE"
+      rm -f "$PID_FILE" "$SERVER_PATH_FILE" "$PORT_FILE" "$DATA_DIR_FILE"
       echo "Stopped worktree-owned Wenlan dev daemon (PID $OWNED_PID)."
       return 0
     fi
@@ -184,7 +186,7 @@ stop_runtime() {
   fi
   for _ in $(seq 1 50); do
     if ! kill -0 "$OWNED_PID" 2>/dev/null; then
-      rm -f "$PID_FILE" "$SERVER_PATH_FILE" "$PORT_FILE"
+      rm -f "$PID_FILE" "$SERVER_PATH_FILE" "$PORT_FILE" "$DATA_DIR_FILE"
       echo "Force-stopped unresponsive worktree-owned Wenlan dev daemon (PID $OWNED_PID)."
       return 0
     fi
@@ -197,12 +199,16 @@ stop_runtime() {
 start_runtime() {
   local backend server pid listener_pid
   STARTED_RUNTIME=0
+  DEV_DATA_DIR="$(canonicalize_path "$DEV_DATA_DIR")"
   backend="$(bash "$SCRIPT_DIR/resolve-backend-dir.sh" "$REPO_ROOT")"
   server="$backend/target/debug/wenlan-server"
 
   if read_owned_pid && is_owned_process; then
-    if [[ "$OWNED_SERVER" != "$server" || "$OWNED_PORT" != "$DEV_PORT" ]]; then
+    if [[ "$OWNED_SERVER" != "$server" || "$OWNED_PORT" != "$DEV_PORT" ||
+      "$OWNED_DATA_DIR" != "$DEV_DATA_DIR" ]]; then
       echo "error: recorded dev daemon identity does not match this runtime configuration" >&2
+      echo "recorded: server=$OWNED_SERVER port=$OWNED_PORT data=$OWNED_DATA_DIR" >&2
+      echo "selected: server=$server port=$DEV_PORT data=$DEV_DATA_DIR" >&2
       return 1
     fi
     print_config
@@ -211,7 +217,7 @@ start_runtime() {
   fi
 
   mkdir -p "$STATE_DIR" "$DEV_DATA_DIR"
-  rm -f "$PID_FILE" "$SERVER_PATH_FILE" "$PORT_FILE"
+  rm -f "$PID_FILE" "$SERVER_PATH_FILE" "$PORT_FILE" "$DATA_DIR_FILE"
 
   if lsof -nP -iTCP:"$DEV_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
     echo "error: isolated dev port $DEV_PORT is already in use; set WENLAN_DEV_PORT" >&2
@@ -225,6 +231,7 @@ start_runtime() {
   printf '%s\n' "$pid" >"$PID_FILE"
   printf '%s\n' "$server" >"$SERVER_PATH_FILE"
   printf '%s\n' "$DEV_PORT" >"$PORT_FILE"
+  printf '%s\n' "$DEV_DATA_DIR" >"$DATA_DIR_FILE"
 
   for _ in $(seq 1 50); do
     if curl --fail --silent --max-time 1 \

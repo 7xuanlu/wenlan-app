@@ -134,15 +134,36 @@ pub enum RemoteAccessStatus {
     },
 }
 
-fn try_mark_starting(status: &mut RemoteAccessStatus) -> bool {
+fn generation_is_current(generation: u64, expected: u64) -> bool {
+    generation == expected
+}
+
+fn try_begin_start(
+    status: &mut RemoteAccessStatus,
+    generation: &mut u64,
+    expected_generation: Option<u64>,
+) -> Option<u64> {
     if matches!(
         status,
         RemoteAccessStatus::Starting | RemoteAccessStatus::Connected { .. }
     ) {
-        return false;
+        return None;
+    }
+    if let Some(expected) = expected_generation {
+        if !generation_is_current(*generation, expected) {
+            return None;
+        }
+    } else {
+        *generation = generation.wrapping_add(1);
     }
     *status = RemoteAccessStatus::Starting;
-    true
+    Some(*generation)
+}
+
+fn mark_off(status: &mut RemoteAccessStatus, generation: &mut u64) -> u64 {
+    *generation = generation.wrapping_add(1);
+    *status = RemoteAccessStatus::Off;
+    *generation
 }
 
 /// Runtime state for remote access — holds process handles and port.
@@ -151,6 +172,8 @@ pub struct RemoteAccessState {
     pub mcp_child: Option<tauri_plugin_shell::process::CommandChild>,
     pub tunnel_child: Option<tauri_plugin_shell::process::CommandChild>,
     pub port: Option<u16>,
+    /// Invalidates stale start/reconnect tasks when the user turns access off.
+    pub generation: u64,
     /// When Cloudflare returned 429 for our most recent tunnel creation.
     /// Used by `tunnel_health_loop` to enforce a cooldown before burning another quick tunnel.
     pub last_rate_limit_at: Option<std::time::Instant>,
@@ -163,6 +186,7 @@ impl Default for RemoteAccessState {
             mcp_child: None,
             tunnel_child: None,
             port: None,
+            generation: 0,
             last_rate_limit_at: None,
         }
     }
@@ -490,38 +514,69 @@ pub fn toggle_on(
     app_handle: tauri::AppHandle,
     is_retry: bool,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
-    Box::pin(toggle_on_inner(app_handle, if is_retry { 1 } else { 0 }))
+    Box::pin(toggle_on_inner(
+        app_handle,
+        if is_retry { 1 } else { 0 },
+        None,
+    ))
 }
 
 /// Start with explicit retry count (used by monitor auto-restart).
 fn toggle_on_with_retries(
     app_handle: tauri::AppHandle,
     retry_count: u32,
+    expected_generation: u64,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>> {
-    Box::pin(toggle_on_inner(app_handle, retry_count))
+    Box::pin(toggle_on_inner(
+        app_handle,
+        retry_count,
+        Some(expected_generation),
+    ))
 }
 
-async fn toggle_on_inner(app_handle: tauri::AppHandle, retry_count: u32) {
+async fn toggle_on_inner(
+    app_handle: tauri::AppHandle,
+    retry_count: u32,
+    expected_generation: Option<u64>,
+) {
     use tauri::Emitter;
 
     // Guard: don't start if already starting or connected
-    {
+    let operation_generation = {
         let state =
             app_handle.state::<std::sync::Arc<tokio::sync::RwLock<crate::state::AppState>>>();
         let app_state = state.read().await;
         let mut ra = app_state.remote_access.lock().await;
-        if !try_mark_starting(&mut ra.status) {
+        let RemoteAccessState {
+            status, generation, ..
+        } = &mut *ra;
+        let Some(operation_generation) = try_begin_start(status, generation, expected_generation)
+        else {
             log::warn!("[remote-access] Already active, skipping duplicate toggle_on");
             return;
-        }
-    }
-
-    let _ = app_handle.emit("remote-access-status", &RemoteAccessStatus::Starting);
+        };
+        let _ = app_handle.emit("remote-access-status", &RemoteAccessStatus::Starting);
+        operation_generation
+    };
 
     let result = start_tunnel(&app_handle).await;
 
     match result {
         Ok((tunnel_url, token, mcp_child, tunnel_child, port, mcp_rx, tunnel_rx)) => {
+            {
+                let state = app_handle
+                    .state::<std::sync::Arc<tokio::sync::RwLock<crate::state::AppState>>>();
+                let app_state = state.read().await;
+                let ra = app_state.remote_access.lock().await;
+                if !generation_is_current(ra.generation, operation_generation)
+                    || !matches!(ra.status, RemoteAccessStatus::Starting)
+                {
+                    let _ = mcp_child.kill();
+                    let _ = tunnel_child.kill();
+                    return;
+                }
+            }
+
             // Register with relay for a stable URL
             let relay_url = register_with_relay(&tunnel_url).await;
 
@@ -530,27 +585,42 @@ async fn toggle_on_inner(app_handle: tauri::AppHandle, retry_count: u32) {
                 token: token.clone(),
                 relay_url: relay_url.clone(),
             };
-            let _ = app_handle.emit("remote-access-status", &status);
-
             // Store process handles in state
             let state =
                 app_handle.state::<std::sync::Arc<tokio::sync::RwLock<crate::state::AppState>>>();
             let app_state = state.read().await;
             let mut ra = app_state.remote_access.lock().await;
-            ra.status = status;
+            if !generation_is_current(ra.generation, operation_generation)
+                || !matches!(ra.status, RemoteAccessStatus::Starting)
+            {
+                drop(ra);
+                drop(app_state);
+                let _ = mcp_child.kill();
+                let _ = tunnel_child.kill();
+                return;
+            }
+            ra.status = status.clone();
             ra.mcp_child = Some(mcp_child);
             ra.tunnel_child = Some(tunnel_child);
             ra.port = Some(port);
             // We just successfully created a tunnel → we're not currently
             // rate-limited, so clear any stale 429 stamp from an earlier attempt.
             ra.last_rate_limit_at = None;
+            let _ = app_handle.emit("remote-access-status", &status);
             drop(ra);
             drop(app_state);
 
             // Spawn background monitor for crash recovery
             let handle_for_monitor = app_handle.clone();
             tauri::async_runtime::spawn(async move {
-                monitor_processes(handle_for_monitor, mcp_rx, tunnel_rx, retry_count).await;
+                monitor_processes(
+                    handle_for_monitor,
+                    mcp_rx,
+                    tunnel_rx,
+                    retry_count,
+                    operation_generation,
+                )
+                .await;
             });
 
             // Spawn periodic tunnel health check (detects broken tunnels after sleep)
@@ -558,19 +628,29 @@ async fn toggle_on_inner(app_handle: tauri::AppHandle, retry_count: u32) {
             let health_tunnel_url = tunnel_url.clone();
             let health_retry_count = retry_count;
             tauri::async_runtime::spawn(async move {
-                tunnel_health_loop(handle_for_health, health_tunnel_url, health_retry_count).await;
+                tunnel_health_loop(
+                    handle_for_health,
+                    health_tunnel_url,
+                    health_retry_count,
+                    operation_generation,
+                )
+                .await;
             });
         }
         Err(e) => {
             log::error!("[remote-access] toggle_on failed: {}", e);
             let status = RemoteAccessStatus::Error { error: e.clone() };
-            let _ = app_handle.emit("remote-access-status", &status);
 
             let state =
                 app_handle.state::<std::sync::Arc<tokio::sync::RwLock<crate::state::AppState>>>();
             let app_state = state.read().await;
             let mut ra = app_state.remote_access.lock().await;
-            ra.status = status;
+            if !generation_is_current(ra.generation, operation_generation)
+                || !matches!(ra.status, RemoteAccessStatus::Starting)
+            {
+                return;
+            }
+            ra.status = status.clone();
             // Stamp rate-limit time so `tunnel_health_loop` enforces cooldown before
             // burning another quick tunnel. Only when the error is an actual 429.
             if e.contains("429") || e.contains("rate limit") {
@@ -580,6 +660,9 @@ async fn toggle_on_inner(app_handle: tauri::AppHandle, retry_count: u32) {
                     RATE_LIMIT_COOLDOWN.as_secs() / 60
                 );
             }
+            let _ = app_handle.emit("remote-access-status", &status);
+            drop(ra);
+            drop(app_state);
         }
     }
 }
@@ -733,6 +816,7 @@ pub async fn monitor_processes(
     mut mcp_rx: tokio::sync::mpsc::Receiver<tauri_plugin_shell::process::CommandEvent>,
     mut tunnel_rx: tokio::sync::mpsc::Receiver<tauri_plugin_shell::process::CommandEvent>,
     tunnel_retry_count: u32,
+    generation: u64,
 ) {
     use tauri::Emitter;
 
@@ -743,6 +827,18 @@ pub async fn monitor_processes(
             event = wait_for_exit(&mut mcp_rx) => ExitedProcess::Mcp(event),
             event = wait_for_exit(&mut tunnel_rx) => ExitedProcess::Tunnel(event),
         };
+
+        {
+            let state =
+                app_handle.state::<std::sync::Arc<tokio::sync::RwLock<crate::state::AppState>>>();
+            let app_state = state.read().await;
+            let ra = app_state.remote_access.lock().await;
+            if !generation_is_current(ra.generation, generation)
+                || !matches!(ra.status, RemoteAccessStatus::Connected { .. })
+            {
+                return;
+            }
+        }
 
         match exited {
             ExitedProcess::Mcp(reason) => {
@@ -758,6 +854,11 @@ pub async fn monitor_processes(
                         .state::<std::sync::Arc<tokio::sync::RwLock<crate::state::AppState>>>();
                     let app_state = state.read().await;
                     let mut ra = app_state.remote_access.lock().await;
+                    if !generation_is_current(ra.generation, generation)
+                        || !matches!(ra.status, RemoteAccessStatus::Connected { .. })
+                    {
+                        return;
+                    }
                     if let Some(child) = ra.mcp_child.take() {
                         let _ = child.kill();
                     }
@@ -786,6 +887,18 @@ pub async fn monitor_processes(
                 );
                 sleep(Duration::from_secs(delay)).await;
 
+                {
+                    let state = app_handle
+                        .state::<std::sync::Arc<tokio::sync::RwLock<crate::state::AppState>>>();
+                    let app_state = state.read().await;
+                    let ra = app_state.remote_access.lock().await;
+                    if !generation_is_current(ra.generation, generation)
+                        || !matches!(ra.status, RemoteAccessStatus::Connected { .. })
+                    {
+                        return;
+                    }
+                }
+
                 match spawn_mcp(&app_handle, port).await {
                     Ok((new_rx, new_child)) => {
                         // Store new child in state
@@ -793,6 +906,14 @@ pub async fn monitor_processes(
                             .state::<std::sync::Arc<tokio::sync::RwLock<crate::state::AppState>>>();
                         let app_state = state.read().await;
                         let mut ra = app_state.remote_access.lock().await;
+                        if !generation_is_current(ra.generation, generation)
+                            || !matches!(ra.status, RemoteAccessStatus::Connected { .. })
+                        {
+                            drop(ra);
+                            drop(app_state);
+                            let _ = new_child.kill();
+                            return;
+                        }
                         ra.mcp_child = Some(new_child);
                         drop(ra);
                         drop(app_state);
@@ -820,7 +941,9 @@ pub async fn monitor_processes(
     }
 
     // Full restart path — kills both processes, creates new tunnel
-    toggle_off(&app_handle).await;
+    let Some(restart_generation) = transition_off(&app_handle, Some(generation)).await else {
+        return;
+    };
 
     if tunnel_retry_count >= MAX_TUNNEL_RETRIES {
         log::error!(
@@ -833,12 +956,17 @@ pub async fn monitor_processes(
                 MAX_TUNNEL_RETRIES
             ),
         };
-        let _ = app_handle.emit("remote-access-status", &status);
         let state =
             app_handle.state::<std::sync::Arc<tokio::sync::RwLock<crate::state::AppState>>>();
         let app_state = state.read().await;
         let mut ra = app_state.remote_access.lock().await;
-        ra.status = status;
+        if !generation_is_current(ra.generation, restart_generation) {
+            return;
+        }
+        ra.status = status.clone();
+        let _ = app_handle.emit("remote-access-status", &status);
+        drop(ra);
+        drop(app_state);
         return;
     }
 
@@ -852,7 +980,17 @@ pub async fn monitor_processes(
             delay_secs, attempt, MAX_TUNNEL_RETRIES
         ),
     };
-    let _ = app_handle.emit("remote-access-status", &status);
+    {
+        let state =
+            app_handle.state::<std::sync::Arc<tokio::sync::RwLock<crate::state::AppState>>>();
+        let app_state = state.read().await;
+        let mut ra = app_state.remote_access.lock().await;
+        if !generation_is_current(ra.generation, restart_generation) {
+            return;
+        }
+        ra.status = status.clone();
+        let _ = app_handle.emit("remote-access-status", &status);
+    }
 
     sleep(Duration::from_secs(delay_secs)).await;
 
@@ -861,7 +999,7 @@ pub async fn monitor_processes(
         attempt,
         MAX_TUNNEL_RETRIES
     );
-    toggle_on_with_retries(app_handle, attempt).await;
+    toggle_on_with_retries(app_handle, attempt, restart_generation).await;
 }
 
 /// Wait for a process exit or error event on the command event receiver.
@@ -906,6 +1044,7 @@ async fn tunnel_health_loop(
     app_handle: tauri::AppHandle,
     tunnel_url: String,
     reconnect_count: u32,
+    generation: u64,
 ) {
     use tauri::Emitter;
 
@@ -922,7 +1061,9 @@ async fn tunnel_health_loop(
                 app_handle.state::<std::sync::Arc<tokio::sync::RwLock<crate::state::AppState>>>();
             let app_state = state.read().await;
             let ra = app_state.remote_access.lock().await;
-            if !matches!(ra.status, RemoteAccessStatus::Connected { .. }) {
+            if !generation_is_current(ra.generation, generation)
+                || !matches!(ra.status, RemoteAccessStatus::Connected { .. })
+            {
                 // No longer connected — stop health checking
                 return;
             }
@@ -1005,18 +1146,25 @@ async fn tunnel_health_loop(
             );
             // toggle_off emits `Off` internally. We emit `Error` AFTER it so the
             // frontend's last event is the error message, not Off.
-            toggle_off(&app_handle).await;
+            let Some(off_generation) = transition_off(&app_handle, Some(generation)).await else {
+                return;
+            };
             let error = format!(
                 "Tunnel kept dropping after {} reconnect attempts. Re-enable to try again.",
                 MAX_TUNNEL_RETRIES
             );
             let status = RemoteAccessStatus::Error { error };
-            let _ = app_handle.emit("remote-access-status", &status);
             let state =
                 app_handle.state::<std::sync::Arc<tokio::sync::RwLock<crate::state::AppState>>>();
             let app_state = state.read().await;
             let mut ra = app_state.remote_access.lock().await;
-            ra.status = status;
+            if !generation_is_current(ra.generation, off_generation) {
+                return;
+            }
+            ra.status = status.clone();
+            let _ = app_handle.emit("remote-access-status", &status);
+            drop(ra);
+            drop(app_state);
             return;
         }
 
@@ -1048,9 +1196,11 @@ async fn tunnel_health_loop(
             next_count,
             MAX_TUNNEL_RETRIES
         );
-        toggle_off(&app_handle).await;
+        let Some(restart_generation) = transition_off(&app_handle, Some(generation)).await else {
+            return;
+        };
         sleep(Duration::from_secs(delay_secs)).await;
-        toggle_on_with_retries(app_handle, next_count).await;
+        toggle_on_with_retries(app_handle, next_count, restart_generation).await;
         return; // New toggle_on spawns its own health loop with next_count.
     }
 }
@@ -1191,30 +1341,48 @@ async fn start_tunnel(
     ))
 }
 
-/// Stop the remote access tunnel — kill both processes.
-pub async fn toggle_off(app_handle: &tauri::AppHandle) {
+async fn transition_off(
+    app_handle: &tauri::AppHandle,
+    expected_generation: Option<u64>,
+) -> Option<u64> {
     use tauri::Emitter;
 
     let state = app_handle.state::<std::sync::Arc<tokio::sync::RwLock<crate::state::AppState>>>();
     let app_state = state.read().await;
     let mut ra = app_state.remote_access.lock().await;
-
-    if let Some(child) = ra.tunnel_child.take() {
-        let _ = child.kill();
-    }
-    if let Some(child) = ra.mcp_child.take() {
-        let _ = child.kill();
+    if expected_generation.is_some_and(|expected| !generation_is_current(ra.generation, expected)) {
+        return None;
     }
 
-    ra.status = RemoteAccessStatus::Off;
+    let tunnel_child = ra.tunnel_child.take();
+    let mcp_child = ra.mcp_child.take();
+    let generation = {
+        let RemoteAccessState {
+            status, generation, ..
+        } = &mut *ra;
+        mark_off(status, generation)
+    };
     ra.port = None;
-    drop(ra);
-    drop(app_state);
+
+    if let Some(child) = tunnel_child {
+        let _ = child.kill();
+    }
+    if let Some(child) = mcp_child {
+        let _ = child.kill();
+    }
 
     // Sweep for any orphaned processes the handles didn't cover
     cleanup_orphaned_mcp();
 
     let _ = app_handle.emit("remote-access-status", &RemoteAccessStatus::Off);
+    drop(ra);
+    drop(app_state);
+    Some(generation)
+}
+
+/// Stop the remote access tunnel — kill both processes and invalidate stale tasks.
+pub async fn toggle_off(app_handle: &tauri::AppHandle) {
+    let _ = transition_off(app_handle, None).await;
 }
 
 /// Rotate the bearer token — generate a new token then kill the old wenlan-mcp.
@@ -1318,10 +1486,26 @@ mod tests {
     #[test]
     fn starting_transition_is_atomic_against_duplicate_attempts() {
         let mut status = RemoteAccessStatus::Off;
+        let mut generation = 0;
 
-        assert!(try_mark_starting(&mut status));
+        let start_generation = try_begin_start(&mut status, &mut generation, None).unwrap();
         assert!(matches!(status, RemoteAccessStatus::Starting));
-        assert!(!try_mark_starting(&mut status));
+        assert!(try_begin_start(&mut status, &mut generation, Some(start_generation)).is_none());
+    }
+
+    #[test]
+    fn explicit_off_invalidates_in_flight_start_and_delayed_retry() {
+        let mut status = RemoteAccessStatus::Off;
+        let mut generation = 0;
+
+        let in_flight = try_begin_start(&mut status, &mut generation, None).unwrap();
+        let recovery = mark_off(&mut status, &mut generation);
+        assert_ne!(in_flight, recovery);
+
+        let explicit_off = mark_off(&mut status, &mut generation);
+        assert_ne!(recovery, explicit_off);
+        assert!(try_begin_start(&mut status, &mut generation, Some(recovery)).is_none());
+        assert!(!generation_is_current(generation, in_flight));
     }
 
     #[test]

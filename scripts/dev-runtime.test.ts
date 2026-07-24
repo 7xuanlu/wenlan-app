@@ -3,6 +3,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -117,6 +118,7 @@ describe("scoped dev runtime", () => {
   it.each([
     ["Library/LaunchAgents"],
     ["Library/Logs/com.wenlan.desktop"],
+    ["Library/Logs/com.origin.desktop"],
   ])("rejects a dev state directory under the production root %s", (suffix) => {
     const home = process.env.HOME;
     expect(home).toBeTruthy();
@@ -147,6 +149,65 @@ describe("scoped dev runtime", () => {
     expect(script).toContain('[[ "$listener_pid" == "$pid" ]]');
     expect(script).toContain("has_owned_command_identity");
     expect(script).toContain("acquire_runtime_lock");
+    expect(script).toContain("wenlan-server.data-dir");
+  });
+
+  it("refuses to reuse a worktree daemon opened on a different data directory", () => {
+    const tempRoot = mkdtempSync(resolve(tmpdir(), "wenlan-dev-data-identity-test-"));
+    tempRoots.push(tempRoot);
+    const backend = resolve(tempRoot, "wenlan");
+    const server = resolve(backend, "target/debug/wenlan-server");
+    const stateDir = resolve(tempRoot, "state");
+    const originalDataDir = resolve(stateDir, "data-original");
+    const changedDataDir = resolve(stateDir, "data-changed");
+    const fakeBin = resolve(tempRoot, "bin");
+
+    mkdirSync(resolve(backend, "crates/wenlan-server"), { recursive: true });
+    mkdirSync(resolve(backend, "crates/wenlan-mcp"), { recursive: true });
+    mkdirSync(resolve(backend, "crates/wenlan-cli"), { recursive: true });
+    mkdirSync(resolve(backend, "target/debug"), { recursive: true });
+    mkdirSync(originalDataDir, { recursive: true });
+    mkdirSync(changedDataDir, { recursive: true });
+    mkdirSync(fakeBin, { recursive: true });
+    writeFileSync(resolve(backend, "Cargo.toml"), "[workspace]\n");
+    symlinkSync("/bin/sleep", server);
+    writeFileSync(
+      resolve(fakeBin, "lsof"),
+      '#!/usr/bin/env bash\nprintf \'%s\\n\' "$FAKE_DAEMON_PID"\n',
+    );
+    chmodSync(resolve(fakeBin, "lsof"), 0o755);
+
+    const daemon = spawn(server, ["60"], { stdio: "ignore" });
+    expect(daemon.pid).toBeDefined();
+    writeFileSync(resolve(stateDir, "wenlan-server.pid"), `${daemon.pid}\n`);
+    writeFileSync(resolve(stateDir, "wenlan-server.path"), `${server}\n`);
+    writeFileSync(resolve(stateDir, "wenlan-server.port"), "27992\n");
+    writeFileSync(
+      resolve(stateDir, "wenlan-server.data-dir"),
+      `${realpathSync(originalDataDir)}\n`,
+    );
+
+    try {
+      const result = spawnSync("bash", ["scripts/dev-runtime.sh", "start"], {
+        cwd: root,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          PATH: `${fakeBin}:${process.env.PATH}`,
+          WENLAN_BACKEND_DIR: backend,
+          WENLAN_DEV_STATE_DIR: stateDir,
+          WENLAN_DEV_DATA_DIR: changedDataDir,
+          WENLAN_DEV_PORT: "27992",
+          WENLAN_DEV_UI_PORT: "28992",
+          FAKE_DAEMON_PID: `${daemon.pid}`,
+        },
+      });
+
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("identity does not match");
+    } finally {
+      daemon.kill("SIGKILL");
+    }
   });
 
   it("passes sidecar flags through pnpm without a literal separator", () => {
@@ -189,6 +250,10 @@ describe("scoped dev runtime", () => {
     writeFileSync(resolve(stateDir, "wenlan-server.pid"), `${daemon.pid}\n`);
     writeFileSync(resolve(stateDir, "wenlan-server.path"), `${server}\n`);
     writeFileSync(resolve(stateDir, "wenlan-server.port"), "27991\n");
+    writeFileSync(
+      resolve(stateDir, "wenlan-server.data-dir"),
+      `${resolve(realpathSync(stateDir), "data")}\n`,
+    );
 
     try {
       const result = spawnSync("bash", ["scripts/dev-all.sh"], {

@@ -182,6 +182,7 @@ fn validate_debug_runtime_isolation() -> Result<(), String> {
             home.join("Library/Application Support/origin"),
             home.join("Library/LaunchAgents"),
             home.join("Library/Logs/com.wenlan.desktop"),
+            home.join("Library/Logs/com.origin.desktop"),
             home.join(".config/wenlan-mcp"),
             home.join(".config/origin-mcp"),
             home.join(".wenlan"),
@@ -1407,6 +1408,7 @@ mod tests {
         let production_roots = [
             fake_home.join("Library/Application Support/wenlan"),
             fake_home.join("Library/Application Support/origin"),
+            fake_home.join("Library/Logs/com.origin.desktop"),
             fake_home.join(".config/origin-mcp"),
             fake_home.join(".origin"),
         ];
