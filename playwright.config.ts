@@ -34,5 +34,22 @@ export default defineConfig({
         timezoneId: "America/Los_Angeles",
       },
     },
+    // The app ships inside WKWebView, and pointer-driven canvas behaviour is
+    // where WebKit and Chromium are most likely to disagree — a connector drag
+    // that holds in Chromium could still drop its box in the real window. Off by
+    // default because CI installs Chromium only: run it with
+    // `pnpm exec playwright install webkit && E2E_WEBKIT=1 pnpm test:e2e`.
+    ...(process.env.E2E_WEBKIT
+      ? [
+          {
+            name: "webkit",
+            testMatch: /page-canvas-.*\.spec\.ts/,
+            use: {
+              ...devices["Desktop Safari"],
+              timezoneId: "America/Los_Angeles",
+            },
+          },
+        ]
+      : []),
   ],
 });

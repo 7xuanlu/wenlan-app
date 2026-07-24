@@ -144,6 +144,14 @@ function PageCanvasInner({
   // memo(CanvasNode) actually holds.
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [draft, setDraft] = useState<{ parentId: string; x: number; y: number } | null>(null);
+  // The named box, held on screen while the daemon catches up. Creating one is
+  // three round-trips against a real library — read the page, write the heading,
+  // create the node — and the map refetch behind them takes another second or
+  // two. Dropping the box at commit left that whole window blank, which reads as
+  // the box having been thrown away.
+  const [pending, setPending] = useState<
+    { parentId: string; label: string; x: number; y: number } | null
+  >(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -184,6 +192,7 @@ function PageCanvasInner({
   useEffect(() => {
     dirtyRef.current.clear();
     setDraft(null);
+    setPending(null);
     setEditingId(null);
     setNotice(null);
     setMenu(null);
@@ -343,15 +352,21 @@ function PageCanvasInner({
         label,
       });
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       setNotice(null);
-      // The page body gained a heading, so the Read tab and the revision list
-      // are both stale now.
+      // The page body gained a heading, so the reading column and the revision
+      // list are both stale now.
       void queryClient.invalidateQueries({ queryKey: ["page", pageId] });
       void queryClient.invalidateQueries({ queryKey: ["page-revisions", pageId] });
-      void invalidate();
+      // Held until the refetch lands: clearing first would blink the box out and
+      // back in as the server copy takes its place.
+      await invalidate();
+      setPending(null);
     },
-    onError: handleMutationError,
+    onError: (error: unknown) => {
+      setPending(null);
+      handleMutationError(error);
+    },
   });
 
   const layoutTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -526,15 +541,20 @@ function PageCanvasInner({
         setNotice(t("pageCanvas.badSectionName"));
         return;
       }
+      setPending({ ...pending, label: trimmed });
       mutateAdd({ parentId: pending.parentId, label: trimmed });
     },
     [draft, mutateAdd, t],
   );
 
+  // One box, two moments: being named, then waiting for the daemon. It keeps the
+  // same id and position through both so it never blinks out between them.
   const draftNode = useMemo<Node | null>(() => {
-    if (!draft) return null;
+    const spot = draft ?? pending;
+    if (!spot) return null;
+    const naming = draft !== null;
     const data: CanvasNodeData = {
-      label: "",
+      label: naming ? "" : (pending?.label ?? ""),
       refKind: "section",
       status: "active",
       dangling: false,
@@ -543,7 +563,7 @@ function PageCanvasInner({
       palette,
       width: DRAFT_SIZE.width,
       height: DRAFT_SIZE.height,
-      editing: true,
+      editing: naming,
       placeholder: t("pageCanvas.newSectionPlaceholder"),
       onOpen: () => {},
       onAccept: () => {},
@@ -556,7 +576,7 @@ function PageCanvasInner({
       type: "pageMapNode",
       draggable: false,
       selectable: false,
-      position: { x: draft.x, y: draft.y },
+      position: { x: spot.x, y: spot.y },
       // The draft lives only in displayNodes, never in `nodes`, so the measure
       // React Flow reports for it is dropped by applyNodeChanges and it would
       // stay visibility:hidden forever — with an unfocusable name field inside
@@ -565,7 +585,7 @@ function PageCanvasInner({
       height: DRAFT_SIZE.height,
       data,
     };
-  }, [draft, palette, commitDraft, t]);
+  }, [draft, pending, palette, commitDraft, t]);
 
   const rootId = useMemo(
     () => views.find((v) => v.node.parent_id === null)?.node.id ?? null,
@@ -974,8 +994,22 @@ function PageCanvasInner({
         },
       });
     }
+    // A box dragged out of a connector is a child of the box it came from, and
+    // the connection line vanishes the moment the pointer lifts. Without this,
+    // the new box hangs unattached until the daemon's copy arrives, which looks
+    // exactly like the drag having failed.
+    const spot = draft ?? pending;
+    if (spot && rendered.has(spot.parentId)) {
+      edges.push({
+        id: `tree-${DRAFT_ID}`,
+        source: spot.parentId,
+        sourceHandle: "anchor",
+        target: DRAFT_ID,
+        style: { stroke: palette.edge, strokeWidth: 1.2 },
+      });
+    }
     return edges;
-  }, [views, map?.edges, palette]);
+  }, [views, map?.edges, palette, draft, pending]);
 
   // Rendering nothing here made every slow fetch look like a canvas that had
   // simply failed to arrive, with no way to tell waiting from broken.

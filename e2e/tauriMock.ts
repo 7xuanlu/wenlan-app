@@ -26,7 +26,7 @@ export async function installTauriMock(
 ): Promise<TauriMockController> {
   const defaults = createSpacesNavigationFixture();
   const fixture = { ...defaults, ...(options.fixture ?? {}), memories: options.memories ?? options.fixture?.memories ?? defaults.memories };
-  const runtime = new TauriMockRuntime(fixture, options.failures, options.rawActions);
+  const runtime = new TauriMockRuntime(fixture, options.failures, options.rawActions, options.delays);
   await page.exposeBinding("__wenlanTauriInvoke", (_source, command: string, args?: unknown) => runtime.invoke(command, args));
   await page.addInitScript(({ locale, localeStorageKey, storageEntries }) => {
     window.localStorage.clear();

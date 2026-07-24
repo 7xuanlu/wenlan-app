@@ -10,6 +10,7 @@ import type {
 import type { SpacesNavigationFixture } from "../fixtures/spacesNavigation";
 import { baseResponse } from "./baseResponses";
 import { ConfiguredTauriFailureError, TauriMockArgumentError } from "./errors";
+import { PageMapStore } from "./pageMap";
 import type { MockCommandCall, MockFailure } from "./types";
 
 const CLIENT_PAGE_DRAFT_ID =
@@ -100,12 +101,14 @@ export class TauriMockRuntime {
   private readonly failures = new Map<string, string[]>();
   private readonly activityRows: readonly Record<string, unknown>[];
   private readonly pageDraftCreateRequests = new Map<string, PageDraftCreateRequest | null>();
+  private readonly pageMaps = new PageMapStore();
   private pageSequence: number;
 
   constructor(
     fixture: SpacesNavigationFixture,
     failures: readonly MockFailure[] = [],
     rawActions: readonly string[] = [],
+    private readonly delays: Readonly<Record<string, number>> = {},
   ) {
     this.spaces = fixture.spaces.map((space) => ({ ...space }));
     this.pages = fixture.pages.map((page) => ({ ...page }));
@@ -145,6 +148,8 @@ export class TauriMockRuntime {
     const configured = this.failures.get(command)?.shift();
     if (configured) throw new ConfiguredTauriFailureError(command, configured);
     if (command.startsWith("plugin:")) return null;
+    const delay = this.delays[command];
+    if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
 
     switch (command) {
       case "list_spaces": return this.spaces.map((space) => ({ ...space }));
@@ -161,6 +166,12 @@ export class TauriMockRuntime {
       case "update_page": return this.updatePage(args);
       case "delete_page": return this.deletePage(args);
       case "redistill_page": return this.redistillPage(args);
+      case "get_page_map": return this.pageMaps.get(args);
+      case "improve_page_map": return this.pageMaps.improve(args);
+      case "create_page_map_node": return this.pageMaps.create(args);
+      case "patch_page_map_node": return this.pageMaps.patch(args);
+      case "delete_page_map_node": return this.pageMaps.remove(args);
+      case "put_page_map_layout": return this.pageMaps.layout(args);
       case "create_page_draft": return this.createPageDraft(args);
       case "update_page_draft": return this.updatePageDraft(args);
       case "publish_page_draft": return this.publishPageDraft(args);
