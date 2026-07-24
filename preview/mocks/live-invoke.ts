@@ -957,7 +957,8 @@ export const DEFAULTS: Record<string, unknown> = {
   get_skip_title_patterns: [],
   suggest_tags: [],
   record_page_editor_diagnostic: null,
-  cancel_guarded_quit_request: null,
+  acknowledge_guarded_quit_request: true,
+  cancel_guarded_quit_request: true,
   quit_wenlan_full: null,
   quit_origin_full: null,
   // Preview's daemon is reachable (wire_state above), so a Start would find it up.

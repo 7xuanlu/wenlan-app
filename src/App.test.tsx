@@ -13,8 +13,11 @@ const quitGuardMock = vi.hoisted(
 const quitWenlanFullMock = vi.hoisted(
   () => vi.fn<() => Promise<void>>(),
 );
+const acknowledgeGuardedQuitRequestMock = vi.hoisted(
+  () => vi.fn<(requestId: number, deliveryId: number) => Promise<boolean>>(),
+);
 const cancelGuardedQuitRequestMock = vi.hoisted(
-  () => vi.fn<() => Promise<void>>(),
+  () => vi.fn<(requestId: number) => Promise<boolean>>(),
 );
 const hideWindowMock = vi.hoisted(() => vi.fn<() => Promise<void>>());
 const showWindowMock = vi.hoisted(() => vi.fn<() => Promise<void>>());
@@ -30,6 +33,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 vi.mock("./lib/tauri", () => ({
+  acknowledgeGuardedQuitRequest: acknowledgeGuardedQuitRequestMock,
   cancelGuardedQuitRequest: cancelGuardedQuitRequestMock,
   quitWenlanFull: quitWenlanFullMock,
   shouldShowWizard: vi.fn(),
@@ -105,6 +109,12 @@ function renderApp() {
   );
 }
 
+function dispatchQuit(requestId = 1, deliveryId = 1) {
+  eventListeners.get("quit-requested")?.({
+    payload: { requestId, deliveryId },
+  });
+}
+
 describe("App - first-run wizard gate", () => {
   beforeEach(() => {
     eventListeners.clear();
@@ -112,7 +122,8 @@ describe("App - first-run wizard gate", () => {
     focusWindowMock.mockReset().mockResolvedValue(undefined);
     hideWindowMock.mockReset().mockResolvedValue(undefined);
     quitGuardMock.mockReset().mockResolvedValue(true);
-    cancelGuardedQuitRequestMock.mockReset().mockResolvedValue(undefined);
+    acknowledgeGuardedQuitRequestMock.mockReset().mockResolvedValue(true);
+    cancelGuardedQuitRequestMock.mockReset().mockResolvedValue(true);
     quitWenlanFullMock.mockReset().mockResolvedValue(undefined);
     showWindowMock.mockReset().mockResolvedValue(undefined);
     vi.mocked(shouldShowWizard).mockReset();
@@ -182,11 +193,80 @@ describe("App - first-run wizard gate", () => {
     await screen.findByTestId("home-main");
 
     await act(async () => {
-      eventListeners.get("quit-requested")?.({ payload: null });
+      dispatchQuit();
       await Promise.resolve();
     });
+    expect(acknowledgeGuardedQuitRequestMock).toHaveBeenCalledWith(1, 1);
     expect(quitGuardMock).toHaveBeenCalledTimes(1);
     expect(quitWenlanFullMock).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveFlush(true);
+    });
+    await waitFor(() => expect(quitWenlanFullMock).toHaveBeenCalledTimes(1));
+  });
+
+  it("does not hide or flush until the native quit delivery is acknowledged", async () => {
+    let resolveAcknowledgement!: (acknowledged: boolean) => void;
+    acknowledgeGuardedQuitRequestMock.mockReturnValue(new Promise((resolve) => {
+      resolveAcknowledgement = resolve;
+    }));
+    vi.mocked(shouldShowWizard).mockResolvedValue(false);
+    renderApp();
+    await screen.findByTestId("home-main");
+
+    await act(async () => {
+      dispatchQuit(3, 1);
+      await Promise.resolve();
+    });
+    expect(hideWindowMock).not.toHaveBeenCalled();
+    expect(quitGuardMock).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveAcknowledgement(true);
+    });
+    await waitFor(() => expect(quitGuardMock).toHaveBeenCalledTimes(1));
+  });
+
+  it("ignores a stale native quit delivery without hiding or flushing", async () => {
+    acknowledgeGuardedQuitRequestMock.mockResolvedValue(false);
+    vi.mocked(shouldShowWizard).mockResolvedValue(false);
+    renderApp();
+    await screen.findByTestId("home-main");
+
+    await act(async () => {
+      dispatchQuit(3, 9);
+      await Promise.resolve();
+    });
+
+    expect(hideWindowMock).not.toHaveBeenCalled();
+    expect(quitGuardMock).not.toHaveBeenCalled();
+    expect(quitWenlanFullMock).not.toHaveBeenCalled();
+  });
+
+  it("acknowledges a liveness probe without starting a second draft flush", async () => {
+    let resolveFlush!: (saved: boolean) => void;
+    quitGuardMock.mockReturnValue(new Promise((resolve) => {
+      resolveFlush = resolve;
+    }));
+    vi.mocked(shouldShowWizard).mockResolvedValue(false);
+    renderApp();
+    await screen.findByTestId("home-main");
+
+    await act(async () => {
+      dispatchQuit(4, 1);
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(quitGuardMock).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      dispatchQuit(4, 2);
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(acknowledgeGuardedQuitRequestMock).toHaveBeenNthCalledWith(2, 4, 2);
+    });
+    expect(quitGuardMock).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       resolveFlush(true);
@@ -204,7 +284,7 @@ describe("App - first-run wizard gate", () => {
     await screen.findByTestId("home-main");
 
     await act(async () => {
-      eventListeners.get("quit-requested")?.({ payload: null });
+      dispatchQuit();
       await Promise.resolve();
     });
     expect(hideWindowMock).toHaveBeenCalledTimes(1);
@@ -226,7 +306,7 @@ describe("App - first-run wizard gate", () => {
     await screen.findByTestId("home-main");
 
     await act(async () => {
-      eventListeners.get("quit-requested")?.({ payload: null });
+      dispatchQuit();
       await Promise.resolve();
     });
     await waitFor(() => expect(quitWenlanFullMock).toHaveBeenCalledTimes(1));
@@ -245,7 +325,7 @@ describe("App - first-run wizard gate", () => {
     await screen.findByTestId("home-main");
 
     await act(async () => {
-      eventListeners.get("quit-requested")?.({ payload: null });
+      dispatchQuit();
       await Promise.resolve();
     });
     expect(quitWenlanFullMock).not.toHaveBeenCalled();
@@ -253,10 +333,11 @@ describe("App - first-run wizard gate", () => {
     expect(showWindowMock).toHaveBeenCalledTimes(1);
     expect(focusWindowMock).toHaveBeenCalledTimes(1);
     expect(cancelGuardedQuitRequestMock).toHaveBeenCalledTimes(1);
+    expect(cancelGuardedQuitRequestMock).toHaveBeenCalledWith(1);
     expect(emitMock).not.toHaveBeenCalledWith("quit-cancelled");
 
     await act(async () => {
-      eventListeners.get("quit-requested")?.({ payload: null });
+      dispatchQuit(2, 1);
       await Promise.resolve();
     });
     await waitFor(() => expect(quitWenlanFullMock).toHaveBeenCalledTimes(1));
@@ -276,7 +357,7 @@ describe("App - first-run wizard gate", () => {
     expect(title).toHaveFocus();
 
     await act(async () => {
-      eventListeners.get("quit-requested")?.({ payload: null });
+      dispatchQuit();
       await Promise.resolve();
     });
 
@@ -284,6 +365,7 @@ describe("App - first-run wizard gate", () => {
     expect(hideWindowMock).toHaveBeenCalledTimes(1);
     expect(focusWindowMock).toHaveBeenCalledTimes(1);
     expect(cancelGuardedQuitRequestMock).toHaveBeenCalledTimes(1);
+    expect(cancelGuardedQuitRequestMock).toHaveBeenCalledWith(1);
     expect(emitMock).not.toHaveBeenCalledWith("quit-cancelled");
     expect(title).toHaveFocus();
   });

@@ -57,6 +57,27 @@ describe('getPipelineStatus', () => {
   });
 });
 
+describe('guarded quit bridge', () => {
+  it('acknowledges the exact native quit delivery', async () => {
+    mockInvoke.mockResolvedValue(true);
+
+    await expect(tauri.acknowledgeGuardedQuitRequest(7, 3)).resolves.toBe(true);
+    expect(mockInvoke).toHaveBeenCalledWith('acknowledge_guarded_quit_request', {
+      requestId: 7,
+      deliveryId: 3,
+    });
+  });
+
+  it('cancels only the current native quit request', async () => {
+    mockInvoke.mockResolvedValue(true);
+
+    await expect(tauri.cancelGuardedQuitRequest(7)).resolves.toBe(true);
+    expect(mockInvoke).toHaveBeenCalledWith('cancel_guarded_quit_request', {
+      requestId: 7,
+    });
+  });
+});
+
 describe('addWatchPath', () => {
   it('calls invoke with path arg', async () => {
     await tauri.addWatchPath('/home/user/docs');

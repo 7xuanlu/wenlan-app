@@ -2453,8 +2453,15 @@ export async function quitWenlanFull(): Promise<void> {
   return invoke("quit_wenlan_full");
 }
 
-export async function cancelGuardedQuitRequest(): Promise<void> {
-  return invoke("cancel_guarded_quit_request");
+export async function acknowledgeGuardedQuitRequest(
+  requestId: number,
+  deliveryId: number,
+): Promise<boolean> {
+  return invoke("acknowledge_guarded_quit_request", { requestId, deliveryId });
+}
+
+export async function cancelGuardedQuitRequest(requestId: number): Promise<boolean> {
+  return invoke("cancel_guarded_quit_request", { requestId });
 }
 
 /** @deprecated Use quitWenlanFull. Kept as a legacy Origin bridge alias. */
