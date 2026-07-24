@@ -69,12 +69,12 @@ static QUIT_GUARD_PENDING: std::sync::atomic::AtomicBool =
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum GuardedQuitAction {
     RequestFrontendGuard,
-    ForceShutdown,
+    AwaitFrontendGuard,
 }
 
 fn guarded_quit_action(pending: &std::sync::atomic::AtomicBool) -> GuardedQuitAction {
     if pending.swap(true, std::sync::atomic::Ordering::AcqRel) {
-        GuardedQuitAction::ForceShutdown
+        GuardedQuitAction::AwaitFrontendGuard
     } else {
         GuardedQuitAction::RequestFrontendGuard
     }
@@ -110,7 +110,7 @@ fn request_full_quit(app: &tauri::AppHandle) -> Result<(), tauri::Error> {
                 return Err(error);
             }
         }
-        GuardedQuitAction::ForceShutdown => force_full_quit(app.clone()),
+        GuardedQuitAction::AwaitFrontendGuard => {}
     }
     Ok(())
 }
@@ -967,6 +967,7 @@ pub fn run() {
             search::get_page_revisions,
             search::list_orphan_links,
             search::update_page,
+            search::record_page_editor_diagnostic,
             search::archive_page,
             search::delete_page,
             search::list_pages,
@@ -1092,7 +1093,7 @@ mod tests {
     }
 
     #[test]
-    fn repeated_guarded_quit_forces_shutdown_until_the_frontend_cancels() {
+    fn repeated_guarded_quit_stays_pending_until_the_frontend_cancels() {
         let pending = std::sync::atomic::AtomicBool::new(false);
 
         assert_eq!(
@@ -1101,7 +1102,7 @@ mod tests {
         );
         assert_eq!(
             guarded_quit_action(&pending),
-            GuardedQuitAction::ForceShutdown
+            GuardedQuitAction::AwaitFrontendGuard
         );
 
         cancel_guarded_quit(&pending);
