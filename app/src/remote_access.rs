@@ -287,27 +287,112 @@ fn cloudflared_owner_path() -> PathBuf {
     crate::identity_paths::mcp_config_dir().join("cloudflared-owner.json")
 }
 
-fn read_cloudflared_owner() -> Result<Option<CloudflaredOwner>, String> {
-    let path = cloudflared_owner_path();
-    let contents = match std::fs::read(&path) {
-        Ok(contents) => contents,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => {
-            return Err(format!(
-                "Failed to read cloudflared ownership receipt at {}: {error}",
-                path.display()
-            ));
+fn cloudflared_owner_lock_path(path: &Path) -> PathBuf {
+    let mut lock_path = path.as_os_str().to_os_string();
+    lock_path.push(".lock");
+    PathBuf::from(lock_path)
+}
+
+struct CloudflaredOwnerLock<'a> {
+    path: &'a Path,
+    _file: std::fs::File,
+}
+
+impl CloudflaredOwnerLock<'_> {
+    fn read(&self) -> Result<Option<CloudflaredOwner>, String> {
+        let contents = match std::fs::read(self.path) {
+            Ok(contents) => contents,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => {
+                return Err(format!(
+                    "Failed to read cloudflared ownership receipt at {}: {error}",
+                    self.path.display()
+                ));
+            }
+        };
+        restrict_private_file(self.path, "cloudflared ownership receipt")?;
+        serde_json::from_slice(&contents)
+            .map(Some)
+            .map_err(|error| {
+                format!(
+                    "Invalid cloudflared ownership receipt at {}: {error}",
+                    self.path.display()
+                )
+            })
+    }
+
+    fn write(&self, owner: &CloudflaredOwner) -> Result<(), String> {
+        let contents = serde_json::to_vec(owner).map_err(|error| {
+            format!("Failed to serialize cloudflared ownership receipt: {error}")
+        })?;
+        write_private_file(self.path, &contents, "cloudflared ownership receipt")
+    }
+
+    fn remove_if_matches(&self, expected: &CloudflaredOwner) -> Result<(), String> {
+        if self.read()?.as_ref() != Some(expected) {
+            return Ok(());
         }
+        match std::fs::remove_file(self.path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(format!(
+                "Failed to remove cloudflared ownership receipt at {}: {error}",
+                self.path.display()
+            )),
+        }
+    }
+}
+
+fn with_cloudflared_owner_lock<T>(
+    path: &Path,
+    operation: impl FnOnce(&CloudflaredOwnerLock<'_>) -> Result<T, String>,
+) -> Result<T, String> {
+    let lock_path = cloudflared_owner_lock_path(path);
+    prepare_private_parent(&lock_path, "cloudflared ownership lock")?;
+    #[cfg(unix)]
+    let lock_file = {
+        use std::os::unix::fs::OpenOptionsExt;
+        std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .mode(0o600)
+            .open(&lock_path)
     };
-    restrict_private_file(&path, "cloudflared ownership receipt")?;
-    serde_json::from_slice(&contents)
-        .map(Some)
-        .map_err(|error| {
-            format!(
-                "Invalid cloudflared ownership receipt at {}: {error}",
-                path.display()
-            )
-        })
+    #[cfg(not(unix))]
+    let lock_file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&lock_path);
+    let lock_file = lock_file.map_err(|error| {
+        format!(
+            "Failed to open cloudflared ownership lock at {}: {error}",
+            lock_path.display()
+        )
+    })?;
+    restrict_private_file(&lock_path, "cloudflared ownership lock")?;
+    lock_file.lock().map_err(|error| {
+        format!(
+            "Failed to lock cloudflared ownership receipt at {}: {error}",
+            lock_path.display()
+        )
+    })?;
+    operation(&CloudflaredOwnerLock {
+        path,
+        _file: lock_file,
+    })
+}
+
+#[cfg(test)]
+fn read_cloudflared_owner_at(path: &Path) -> Result<Option<CloudflaredOwner>, String> {
+    with_cloudflared_owner_lock(path, |receipt| receipt.read())
+}
+
+fn write_cloudflared_owner_at(path: &Path, owner: &CloudflaredOwner) -> Result<(), String> {
+    with_cloudflared_owner_lock(path, |receipt| receipt.write(owner))
 }
 
 fn record_cloudflared_owner(pid: u32, port: u16) -> Result<CloudflaredOwner, String> {
@@ -319,72 +404,54 @@ fn record_cloudflared_owner(pid: u32, port: u16) -> Result<CloudflaredOwner, Str
         port,
         identity,
     };
-    let contents = serde_json::to_vec(&owner)
-        .map_err(|error| format!("Failed to serialize cloudflared ownership receipt: {error}"))?;
-    write_private_file(
-        &cloudflared_owner_path(),
-        &contents,
-        "cloudflared ownership receipt",
-    )?;
+    write_cloudflared_owner_at(&cloudflared_owner_path(), &owner)?;
     Ok(owner)
 }
 
-fn remove_cloudflared_owner_if_matches(expected: &CloudflaredOwner) {
-    let Ok(Some(current)) = read_cloudflared_owner() else {
-        return;
-    };
-    if current != *expected {
-        return;
-    }
-    if let Err(error) = std::fs::remove_file(cloudflared_owner_path()) {
-        if error.kind() != std::io::ErrorKind::NotFound {
-            log::warn!(
-                "[remote-access] Failed to remove cloudflared ownership receipt: {}",
-                error
-            );
-        }
-    }
-}
-
 fn cleanup_owned_cloudflared(expected: Option<&CloudflaredOwner>) {
-    let owner = match read_cloudflared_owner() {
-        Ok(Some(owner)) => owner,
-        Ok(None) => return,
-        Err(error) => {
-            log::warn!("[remote-access] {error}; refusing cloudflared cleanup");
-            return;
+    let path = cloudflared_owner_path();
+    if let Err(error) = with_cloudflared_owner_lock(&path, |receipt| {
+        let owner = match receipt.read()? {
+            Some(owner) => owner,
+            None => return Ok(()),
+        };
+        let range_start = port_range_start();
+        let live_identity = cloudflared_process_identity(owner.pid, owner.port);
+        if !cloudflared_owner_authorizes_signal(
+            &owner,
+            expected,
+            range_start,
+            live_identity.as_deref(),
+        ) {
+            log::warn!(
+                "[remote-access] refusing to signal cloudflared PID {} because its ownership receipt, selected range, or live identity does not match",
+                owner.pid
+            );
+            if expected.is_none_or(|expected| expected == &owner) {
+                receipt.remove_if_matches(&owner)?;
+            }
+            return Ok(());
         }
-    };
-    let range_start = port_range_start();
-    let live_identity = cloudflared_process_identity(owner.pid, owner.port);
-    if !cloudflared_owner_authorizes_signal(&owner, expected, range_start, live_identity.as_deref())
-    {
         log::warn!(
-            "[remote-access] refusing to signal cloudflared PID {} because its ownership receipt, selected range, or live identity does not match",
-            owner.pid
+            "[remote-access] Killing owned cloudflared process {} for port {}",
+            owner.pid,
+            owner.port
         );
-        if expected.is_none_or(|expected| expected == &owner) {
-            remove_cloudflared_owner_if_matches(&owner);
-        }
-        return;
-    }
-    log::warn!(
-        "[remote-access] Killing owned cloudflared process {} for port {}",
-        owner.pid,
-        owner.port
-    );
-    let _ = std::process::Command::new("kill")
-        .arg(owner.pid.to_string())
-        .output();
-    std::thread::sleep(std::time::Duration::from_millis(100));
-    if cloudflared_process_identity(owner.pid, owner.port).as_deref()
-        == Some(owner.identity.as_str())
-    {
         let _ = std::process::Command::new("kill")
-            .args(["-9", &owner.pid.to_string()])
+            .arg(owner.pid.to_string())
             .output();
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        if cloudflared_process_identity(owner.pid, owner.port).as_deref()
+            == Some(owner.identity.as_str())
+        {
+            let _ = std::process::Command::new("kill")
+                .args(["-9", &owner.pid.to_string()])
+                .output();
+        }
+        receipt.remove_if_matches(&owner)
+    }) {
+        log::warn!("[remote-access] {error}; refusing cloudflared cleanup");
     }
-    remove_cloudflared_owner_if_matches(&owner);
 }
 
 fn is_expected_remote_mcp_command(command: &str, port: u16) -> bool {
@@ -1881,6 +1948,58 @@ mod tests {
             23000,
             Some(owner.identity.as_str()),
         ));
+    }
+
+    #[test]
+    fn owner_lock_serializes_receipt_replacement_after_compare_remove() {
+        use std::sync::{mpsc, Arc};
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = Arc::new(dir.path().join("cloudflared-owner.json"));
+        let old_owner = CloudflaredOwner {
+            pid: 42,
+            port: 22000,
+            identity: "old".to_string(),
+        };
+        let new_owner = CloudflaredOwner {
+            pid: 43,
+            port: 22001,
+            identity: "new".to_string(),
+        };
+        write_cloudflared_owner_at(&path, &old_owner).unwrap();
+
+        let (validated_tx, validated_rx) = mpsc::channel();
+        let (continue_tx, continue_rx) = mpsc::channel();
+        let cleanup_path = Arc::clone(&path);
+        let cleanup_owner = old_owner.clone();
+        let cleanup = std::thread::spawn(move || {
+            with_cloudflared_owner_lock(&cleanup_path, |receipt| {
+                let current = receipt.read()?.unwrap();
+                assert_eq!(current, cleanup_owner);
+                validated_tx.send(()).unwrap();
+                continue_rx.recv().unwrap();
+                receipt.remove_if_matches(&cleanup_owner)
+            })
+            .unwrap();
+        });
+
+        validated_rx.recv().unwrap();
+        let (replacement_done_tx, replacement_done_rx) = mpsc::channel();
+        let replacement_path = Arc::clone(&path);
+        let replacement_owner = new_owner.clone();
+        let replacement = std::thread::spawn(move || {
+            write_cloudflared_owner_at(&replacement_path, &replacement_owner).unwrap();
+            replacement_done_tx.send(()).unwrap();
+        });
+
+        assert!(replacement_done_rx
+            .recv_timeout(std::time::Duration::from_millis(50))
+            .is_err());
+        continue_tx.send(()).unwrap();
+        cleanup.join().unwrap();
+        replacement.join().unwrap();
+
+        assert_eq!(read_cloudflared_owner_at(&path).unwrap(), Some(new_owner));
     }
 
     #[test]
