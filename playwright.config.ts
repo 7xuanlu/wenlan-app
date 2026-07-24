@@ -43,7 +43,10 @@ export default defineConfig({
       ? [
           {
             name: "webkit",
-            testMatch: /page-canvas-.*\.spec\.ts/,
+            // Glob, not a regex: a project-level regex testMatch silently
+            // matched nothing here, and the run reported "No tests found",
+            // which reads a lot like the suite having passed.
+            testMatch: "**/page-canvas-*.spec.ts",
             use: {
               ...devices["Desktop Safari"],
               timezoneId: "America/Los_Angeles",
