@@ -12,6 +12,7 @@ part of packaging behavior, not generic local helpers.
 | Stage sidecars | `prepare-sidecars.sh` | local build and pinned download modes |
 | Tauri build hook | `prepare-tauri-build-sidecars.sh` | `WENLAN_DOWNLOAD_SIDECARS=1` switches to download |
 | Resolve backend checkout | `resolve-backend-dir.sh` | validates sibling or `WENLAN_BACKEND_DIR` shape |
+| Isolated dev runtime | `dev-runtime.sh`, `dev-all.sh` | worktree-owned daemon/UI ports, data dir, debug MCP socket, PID, and teardown |
 | Version lockstep | `release-version-sync.test.ts` | app, Cargo, Tauri, daemon pin must match |
 | Sidecar tests | `prepare-sidecars.test.ts` | locks path, cloudflared, download, checksum behavior |
 | API route inventory | `refactor/api-route-diff.mjs` | route coverage signal, not a product requirement |
@@ -46,6 +47,8 @@ part of packaging behavior, not generic local helpers.
 bash -n scripts/prepare-sidecars.sh
 bash -n scripts/prepare-tauri-build-sidecars.sh
 bash -n scripts/resolve-backend-dir.sh
+bash -n scripts/dev-runtime.sh
+bash -n scripts/dev-all.sh
 bash scripts/prepare-sidecars.sh --print-paths
-pnpm vitest run scripts/prepare-sidecars.test.ts scripts/release-version-sync.test.ts
+pnpm vitest run scripts/prepare-sidecars.test.ts scripts/release-version-sync.test.ts scripts/dev-runtime.test.ts
 ```

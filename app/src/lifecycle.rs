@@ -520,6 +520,10 @@ pub fn uninstall_server_plist_via_subprocess() -> Result<()> {
 /// whitespace-separated field with `==`; a substring match would treat
 /// `com.origin.server.staging` as `com.origin.server` (H4).
 pub fn is_run_at_login_enabled(launchctl: &dyn LaunchctlExec) -> bool {
+    #[cfg(debug_assertions)]
+    if std::env::var_os("WENLAN_DEV_APP_ID").is_some() {
+        return false;
+    }
     let out = match launchctl.run(&["list"]) {
         Ok(o) => o,
         Err(_) => return false,
@@ -629,6 +633,10 @@ pub fn first_run_install_if_needed(launchctl: &dyn LaunchctlExec) -> Result<()> 
 /// install/uninstall sequence so concurrent toggles serialize (G2, spec
 /// line 198).
 pub async fn set_run_at_login(enabled: bool, launchctl: &dyn LaunchctlExec) -> Result<()> {
+    let dev_app_id = std::env::var_os("WENLAN_DEV_APP_ID");
+    if !should_manage_production_lifecycle(dev_app_id.as_deref()) {
+        anyhow::bail!("Run at Login is unavailable in an isolated dev app");
+    }
     let _guard = RUN_AT_LOGIN_LOCK.lock().await;
     if enabled {
         let exe = current_app_path()?;
@@ -654,6 +662,34 @@ pub async fn set_run_at_login(enabled: bool, launchctl: &dyn LaunchctlExec) -> R
     Ok(())
 }
 
+fn shutdown_url_for(client: &crate::api::WenlanClient) -> String {
+    format!("{}/api/shutdown", client.base_url())
+}
+
+fn should_shutdown_daemon_on_quit(preserve_dev_daemon: Option<&std::ffi::OsStr>) -> bool {
+    #[cfg(debug_assertions)]
+    {
+        preserve_dev_daemon != Some(std::ffi::OsStr::new("1"))
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = preserve_dev_daemon;
+        true
+    }
+}
+
+fn should_manage_production_lifecycle(dev_app_id: Option<&std::ffi::OsStr>) -> bool {
+    #[cfg(debug_assertions)]
+    {
+        dev_app_id.is_none()
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = dev_app_id;
+        true
+    }
+}
+
 pub async fn quit_origin(app_handle: &AppHandle) -> Result<()> {
     // Debounce: tray menu Quit Wenlan item stays clickable during the 500ms
     // shutdown sleep; double-click would otherwise spawn 2× POSTs (H1).
@@ -665,31 +701,41 @@ pub async fn quit_origin(app_handle: &AppHandle) -> Result<()> {
     // unloaded, both processes exit, no auto-restart on reboot." (H2)
     // Order matters: uninstall plists FIRST so launchd won't respawn after
     // the daemon dies, then shut the daemon down cleanly.
-    let launchctl = SystemLaunchctl;
-    if let Err(e) = uninstall_app_plist(&launchctl) {
-        log::warn!("[quit] uninstall_app_plist failed: {e}");
-    }
-    if let Err(e) = uninstall_server_plist_via_subprocess() {
-        log::warn!("[quit] uninstall_server_plist failed: {e}");
-    }
-    if let Err(e) = cleanup_legacy_app_plist(&launchctl) {
-        log::warn!("[quit] cleanup_legacy_app_plist failed: {e}");
-    }
-    if let Err(e) = cleanup_legacy_server_plist(&launchctl) {
-        log::warn!("[quit] cleanup_legacy_server_plist failed: {e}");
+    let dev_app_id = std::env::var_os("WENLAN_DEV_APP_ID");
+    if should_manage_production_lifecycle(dev_app_id.as_deref()) {
+        let launchctl = SystemLaunchctl;
+        if let Err(e) = uninstall_app_plist(&launchctl) {
+            log::warn!("[quit] uninstall_app_plist failed: {e}");
+        }
+        if let Err(e) = uninstall_server_plist_via_subprocess() {
+            log::warn!("[quit] uninstall_server_plist failed: {e}");
+        }
+        if let Err(e) = cleanup_legacy_app_plist(&launchctl) {
+            log::warn!("[quit] cleanup_legacy_app_plist failed: {e}");
+        }
+        if let Err(e) = cleanup_legacy_server_plist(&launchctl) {
+            log::warn!("[quit] cleanup_legacy_server_plist failed: {e}");
+        }
+    } else {
+        log::info!("[lifecycle] isolated dev app leaves production launch agents unchanged");
     }
 
-    // 1. Tell daemon to shut down cleanly
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(2))
-        .build()?;
-    let _ = client
-        .post("http://127.0.0.1:7878/api/shutdown")
-        .send()
-        .await;
+    // 1. Tell the daemon selected by this app to shut down cleanly. A debug
+    // `dev:all` session that reused an existing worktree daemon does not own
+    // that process and leaves it running for its original caller.
+    let preserve_dev_daemon = std::env::var_os("WENLAN_DEV_PRESERVE_DAEMON_ON_QUIT");
+    if should_shutdown_daemon_on_quit(preserve_dev_daemon.as_deref()) {
+        let shutdown_url = shutdown_url_for(&crate::api::WenlanClient::new());
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(2))
+            .build()?;
+        let _ = client.post(shutdown_url).send().await;
 
-    // 2. Wait briefly for daemon to flush
-    tokio::time::sleep(Duration::from_millis(500)).await;
+        // 2. Wait briefly for daemon to flush
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    } else {
+        log::info!("[lifecycle] preserving reused worktree dev daemon on app quit");
+    }
 
     // 3. Tauri-graceful exit.
     app_handle.exit(0);
@@ -719,6 +765,7 @@ mod tests {
         home: Option<std::ffi::OsString>,
         wenlan: Option<std::ffi::OsString>,
         origin: Option<std::ffi::OsString>,
+        dev_app_id: Option<std::ffi::OsString>,
     }
 
     impl EnvGuard {
@@ -727,6 +774,7 @@ mod tests {
                 home: std::env::var_os("HOME"),
                 wenlan: std::env::var_os("WENLAN_DATA_DIR"),
                 origin: std::env::var_os("ORIGIN_DATA_DIR"),
+                dev_app_id: std::env::var_os("WENLAN_DEV_APP_ID"),
             }
         }
     }
@@ -744,6 +792,10 @@ mod tests {
             match &self.origin {
                 Some(value) => std::env::set_var("ORIGIN_DATA_DIR", value),
                 None => std::env::remove_var("ORIGIN_DATA_DIR"),
+            }
+            match &self.dev_app_id {
+                Some(value) => std::env::set_var("WENLAN_DEV_APP_ID", value),
+                None => std::env::remove_var("WENLAN_DEV_APP_ID"),
             }
         }
     }
@@ -1206,6 +1258,18 @@ mod tests {
     }
 
     #[test]
+    #[cfg(debug_assertions)]
+    #[serial_test::serial]
+    fn isolated_dev_app_reports_run_at_login_disabled_without_querying_launchctl() {
+        let _env = EnvGuard::capture();
+        std::env::set_var("WENLAN_DEV_APP_ID", "com.wenlan.desktop.dev.123");
+        let mock = MockLaunchctl::default();
+
+        assert!(!is_run_at_login_enabled(&mock));
+        assert!(mock.calls.lock().unwrap().is_empty());
+    }
+
+    #[test]
     #[serial_test::serial]
     fn quit_origin_debounces_concurrent_calls() {
         // H1: tray menu Quit Wenlan item stays clickable during the 500ms
@@ -1220,6 +1284,67 @@ mod tests {
         );
         // Cleanup so other tests start fresh.
         reset_quitting_flag_for_test();
+    }
+
+    #[test]
+    fn quit_targets_the_selected_daemon_base_url() {
+        let client = crate::api::WenlanClient::with_base_url("http://127.0.0.1:17734".to_string());
+
+        assert_eq!(
+            shutdown_url_for(&client),
+            "http://127.0.0.1:17734/api/shutdown"
+        );
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    fn reused_dev_daemon_can_be_preserved_when_the_app_quits() {
+        assert!(should_shutdown_daemon_on_quit(None));
+        assert!(!should_shutdown_daemon_on_quit(Some(std::ffi::OsStr::new(
+            "1"
+        ))));
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    fn isolated_dev_app_does_not_manage_production_launch_agents() {
+        assert!(should_manage_production_lifecycle(None));
+        assert!(!should_manage_production_lifecycle(Some(
+            std::ffi::OsStr::new("com.wenlan.desktop.dev.123")
+        )));
+    }
+
+    #[test]
+    #[cfg(not(debug_assertions))]
+    fn release_build_always_manages_production_lifecycle() {
+        assert!(should_manage_production_lifecycle(Some(
+            std::ffi::OsStr::new("com.wenlan.desktop.dev.123")
+        )));
+        assert!(should_shutdown_daemon_on_quit(Some(std::ffi::OsStr::new(
+            "1"
+        ))));
+    }
+
+    #[tokio::test]
+    #[cfg(debug_assertions)]
+    #[serial_test::serial]
+    async fn isolated_dev_app_refuses_run_at_login_mutation() {
+        let _env = EnvGuard::capture();
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::set_var("HOME", tmp.path());
+        std::env::set_var("WENLAN_DEV_APP_ID", "com.wenlan.desktop.dev.123");
+        let plist = app_plist_path().unwrap();
+        std::fs::create_dir_all(plist.parent().unwrap()).unwrap();
+        std::fs::write(&plist, "<plist/>").unwrap();
+        let mock = MockLaunchctl::default();
+
+        let error = set_run_at_login(false, &mock)
+            .await
+            .expect_err("isolated dev must reject production lifecycle mutation");
+
+        assert!(error.to_string().contains("isolated dev"));
+        assert!(plist.exists(), "production app plist must remain untouched");
+        assert!(mock.calls.lock().unwrap().is_empty());
     }
 
     #[test]
