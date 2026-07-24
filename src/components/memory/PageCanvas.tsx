@@ -850,13 +850,22 @@ function PageCanvasInner({
       if (target && (target.tagName === "INPUT" || target.isContentEditable)) return;
 
       // Escape and select-all stay available on a read-only map: neither writes.
+      //
+      // It unwinds one layer at a time — the menu, then the shortcut sheet, then
+      // the box being named, then the selection — and only reaches the window
+      // handler that leaves the page once the canvas has nothing of its own left
+      // to dismiss. Letting it through unconditionally meant closing a menu threw
+      // the reader out of the page they were drawing.
       if (e.key === "Escape") {
         e.preventDefault();
         if (menu) setMenu(null);
+        else if (helpOpen) setHelpOpen(false);
         else if (draft || editingId) {
           setDraft(null);
           setEditingId(null);
-        } else clearSelection();
+        } else if (nodesRef.current.some((n) => n.selected)) clearSelection();
+        else return; // nothing of ours to close: Escape means "leave the page"
+        e.stopPropagation();
         return;
       }
       if ((e.metaKey || e.ctrlKey) && (e.key === "a" || e.key === "A")) {
@@ -942,6 +951,7 @@ function PageCanvasInner({
       menu,
       draft,
       editingId,
+      helpOpen,
     ],
   );
 

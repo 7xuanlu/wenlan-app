@@ -32,18 +32,31 @@ export class PageMapStore {
   private readonly maps = new Map<string, PageMap>();
   private sequence = 0;
 
-  /** Every page has a map: the daemon seeds one from the page itself. */
+  /**
+   * Every page has a map: the daemon seeds one from the page itself.
+   *
+   * Seeded with the shape the canvas actually has to handle — a centre, live
+   * children to select and delete, and one of the daemon's suggestions, which is
+   * hidden until asked for.
+   */
   private mapFor(pageId: string): PageMap {
     const existing = this.maps.get(pageId);
     if (existing) return existing;
-    const root: PageMapNode = {
-      id: "n_root",
-      parent_id: null,
-      rank: 0,
-      ref_kind: "page",
-      ref_id: pageId,
-      label: null,
-      status: "active",
+    const node = (
+      id: string,
+      parent: string | null,
+      rank: number,
+      refKind: PageMapRefKind,
+      label: string | null,
+      status: PageMapNode["status"] = "active",
+    ): PageMapNode => ({
+      id,
+      parent_id: parent,
+      rank,
+      ref_kind: refKind,
+      ref_id: refKind === "page" ? pageId : `${pageId}#${id}`,
+      label,
+      status,
       pinned: false,
       placed: false,
       collapsed: false,
@@ -52,13 +65,19 @@ export class PageMapStore {
       width: null,
       height: null,
       ref_state: "live",
-    };
+    });
     const map: PageMap = {
       page_id: pageId,
       revision: 1,
       map_schema: 1,
       viewport: null,
-      nodes: [root],
+      nodes: [
+        node("n_root", null, 0, "page", null),
+        node("n_storage", "n_root", 0, "section", "Storage layer"),
+        node("n_query", "n_root", 1, "section", "Query path"),
+        node("n_leaf", "n_storage", 0, "section", "Blob columns"),
+        node("n_guess", "n_root", 2, "section", "Vector search", "suggested"),
+      ],
       edges: [],
     };
     this.maps.set(pageId, map);
