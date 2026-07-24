@@ -12,6 +12,19 @@ const MCP_SIDECAR_NAME: &str = "wenlan-mcp";
 
 /// Port range for wenlan-mcp serve (high ports to avoid collisions).
 pub const PORT_RANGE_START: u16 = 18080;
+const PORT_RANGE_LEN: u16 = 4;
+
+fn port_range_start() -> u16 {
+    #[cfg(debug_assertions)]
+    if let Some(port) = std::env::var("WENLAN_DEV_REMOTE_PORT_START")
+        .ok()
+        .and_then(|value| value.parse::<u16>().ok())
+        .filter(|port| *port <= u16::MAX - (PORT_RANGE_LEN - 1))
+    {
+        return port;
+    }
+    PORT_RANGE_START
+}
 
 /// Relay URL for stable MCP endpoint.
 // Intentionally still the legacy Origin relay. Do not rename this constant
@@ -152,7 +165,8 @@ const RATE_LIMIT_COOLDOWN: Duration = Duration::from_secs(15 * 60);
 /// its child processes (the in-memory handles are lost on restart).
 pub fn cleanup_orphaned_mcp() {
     let my_pid = std::process::id();
-    for port in PORT_RANGE_START..=PORT_RANGE_START + 3 {
+    let range_start = port_range_start();
+    for port in range_start..=range_start + (PORT_RANGE_LEN - 1) {
         // Use lsof to find the PID holding this port
         let output = std::process::Command::new("lsof")
             .args(["-i", &format!(":{}", port), "-t", "-sTCP:LISTEN"])
@@ -165,6 +179,14 @@ pub fn cleanup_orphaned_mcp() {
                     if pid == my_pid {
                         continue;
                     }
+                    let Some(process_identity) = wenlan_mcp_process_identity(pid, port) else {
+                        log::warn!(
+                            "[remote-access] refusing to kill non-wenlan-mcp listener {} on port {}",
+                            pid,
+                            port
+                        );
+                        continue;
+                    };
                     log::warn!(
                         "[remote-access] Killing orphaned process {} on port {}",
                         pid,
@@ -175,10 +197,15 @@ pub fn cleanup_orphaned_mcp() {
                         .arg(pid.to_string())
                         .output();
                     std::thread::sleep(std::time::Duration::from_millis(100));
-                    // Force kill if still alive
-                    let _ = std::process::Command::new("kill")
-                        .args(["-9", &pid.to_string()])
-                        .output();
+                    // Force kill only if the PID still identifies the exact
+                    // remote-access child we inspected before SIGTERM.
+                    if wenlan_mcp_process_identity(pid, port).as_deref()
+                        == Some(process_identity.as_str())
+                    {
+                        let _ = std::process::Command::new("kill")
+                            .args(["-9", &pid.to_string()])
+                            .output();
+                    }
                 }
             }
         }
@@ -187,9 +214,56 @@ pub fn cleanup_orphaned_mcp() {
     std::thread::sleep(std::time::Duration::from_millis(200));
 }
 
-/// Find an available port in the range 18080-18083.
+fn is_expected_remote_mcp_command(command: &str, port: u16) -> bool {
+    let args: Vec<_> = command.split_whitespace().collect();
+    let Some(executable) = args.first() else {
+        return false;
+    };
+    let file_name = Path::new(executable)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
+    let expected_executable = matches!(
+        file_name,
+        "wenlan-mcp"
+            | "wenlan-mcp.exe"
+            | "wenlan-mcp-aarch64-apple-darwin"
+            | "wenlan-mcp-x86_64-unknown-linux-gnu"
+            | "wenlan-mcp-aarch64-unknown-linux-gnu"
+            | "wenlan-mcp-x86_64-pc-windows-msvc.exe"
+    );
+    let has_pair = |flag: &str, value: &str| {
+        args.windows(2)
+            .any(|pair| pair[0] == flag && pair[1] == value)
+    };
+    expected_executable
+        && args.contains(&"serve")
+        && has_pair("--port", &port.to_string())
+        && has_pair("--agent-name", "remote-mcp")
+}
+
+fn wenlan_mcp_process_identity(pid: u32, port: u16) -> Option<String> {
+    let pid = pid.to_string();
+    let command_output = std::process::Command::new("ps")
+        .args(["-ww", "-p", &pid, "-o", "command="])
+        .output()
+        .ok()?;
+    let command = String::from_utf8(command_output.stdout).ok()?;
+    if !is_expected_remote_mcp_command(command.trim(), port) {
+        return None;
+    }
+    let started_output = std::process::Command::new("ps")
+        .args(["-p", &pid, "-o", "lstart="])
+        .output()
+        .ok()?;
+    let started = String::from_utf8(started_output.stdout).ok()?;
+    Some(format!("{}\n{}", started.trim(), command.trim()))
+}
+
+/// Find an available port in the selected four-port range.
 pub fn find_available_port() -> Option<u16> {
-    (PORT_RANGE_START..=PORT_RANGE_START + 3)
+    let range_start = port_range_start();
+    (range_start..=range_start + (PORT_RANGE_LEN - 1))
         .find(|&port| TcpListener::bind(("127.0.0.1", port)).is_ok())
 }
 
@@ -358,10 +432,11 @@ fn relay_id_path_for_dirs(current_dir: &Path) -> PathBuf {
 /// wenlan-mcp stores tokens at ~/.config/wenlan-mcp/token (XDG convention),
 /// NOT ~/Library/Application Support/ (macOS convention from dirs::config_dir).
 fn token_file_path() -> Result<PathBuf, String> {
-    token_file_path_for_dirs(
-        &crate::identity_paths::mcp_config_dir(),
-        &crate::identity_paths::legacy_mcp_config_dir(),
-    )
+    let current = crate::identity_paths::mcp_config_dir();
+    if crate::identity_paths::isolated_dev_state_dir().is_some() {
+        return token_file_path_for_dirs(&current, &current);
+    }
+    token_file_path_for_dirs(&current, &crate::identity_paths::legacy_mcp_config_dir())
 }
 
 fn relay_id_path() -> PathBuf {
@@ -565,24 +640,28 @@ async fn spawn_mcp(
         MCP_SIDECAR_NAME,
         port
     );
+    let origin_url = crate::api::WenlanClient::new().base_url().to_string();
+    let port_string = port.to_string();
     let (mcp_rx, mcp_child) = app_handle
         .shell()
         .sidecar(MCP_SIDECAR_NAME)
         .map_err(|e| format!("{} sidecar not found: {}", MCP_SIDECAR_NAME, e))?
         .args([
-            "serve",
-            "--port",
-            &port.to_string(),
-            "--no-auth",
-            "--agent-name",
-            "remote-mcp",
-            "--allowed-origins",
-            "https://claude.ai,https://chatgpt.com",
+            "--origin-url".to_string(),
+            origin_url,
+            "serve".to_string(),
+            "--port".to_string(),
+            port_string,
+            "--no-auth".to_string(),
+            "--agent-name".to_string(),
+            "remote-mcp".to_string(),
+            "--allowed-origins".to_string(),
+            "https://claude.ai,https://chatgpt.com".to_string(),
         ])
         .spawn()
         .map_err(|e| format!("Failed to spawn {} serve: {}", MCP_SIDECAR_NAME, e))?;
 
-    let health_url = format!("http://127.0.0.1:{}/health", port);
+    let health_url = format!("http://127.0.0.1:{port}/health");
     let health_ok = timeout(Duration::from_secs(5), async {
         loop {
             if reqwest::get(&health_url)
@@ -963,8 +1042,14 @@ async fn start_tunnel(
     cleanup_orphaned_mcp();
 
     // 1. Find available port
-    let port = find_available_port()
-        .ok_or_else(|| "All remote access ports (18080-18083) are in use.".to_string())?;
+    let range_start = port_range_start();
+    let port = find_available_port().ok_or_else(|| {
+        format!(
+            "All remote access ports ({}-{}) are in use.",
+            range_start,
+            range_start + (PORT_RANGE_LEN - 1)
+        )
+    })?;
 
     // 2. Ensure token exists
     let token_path = token_file_path()?;
@@ -1155,13 +1240,23 @@ mod tests {
 
     struct HomeGuard {
         home: Option<OsString>,
+        dev_state: Option<OsString>,
+        dev_remote_port_start: Option<OsString>,
     }
 
     impl HomeGuard {
         fn set(path: &Path) -> Self {
             let home = std::env::var_os("HOME");
+            let dev_state = std::env::var_os("WENLAN_DEV_STATE_DIR");
+            let dev_remote_port_start = std::env::var_os("WENLAN_DEV_REMOTE_PORT_START");
             std::env::set_var("HOME", path);
-            Self { home }
+            std::env::remove_var("WENLAN_DEV_STATE_DIR");
+            std::env::remove_var("WENLAN_DEV_REMOTE_PORT_START");
+            Self {
+                home,
+                dev_state,
+                dev_remote_port_start,
+            }
         }
     }
 
@@ -1170,6 +1265,14 @@ mod tests {
             match &self.home {
                 Some(value) => std::env::set_var("HOME", value),
                 None => std::env::remove_var("HOME"),
+            }
+            match &self.dev_state {
+                Some(value) => std::env::set_var("WENLAN_DEV_STATE_DIR", value),
+                None => std::env::remove_var("WENLAN_DEV_STATE_DIR"),
+            }
+            match &self.dev_remote_port_start {
+                Some(value) => std::env::set_var("WENLAN_DEV_REMOTE_PORT_START", value),
+                None => std::env::remove_var("WENLAN_DEV_REMOTE_PORT_START"),
             }
         }
     }
@@ -1214,6 +1317,39 @@ mod tests {
         assert!(port.is_some());
         let p = port.unwrap();
         assert!((PORT_RANGE_START..=PORT_RANGE_START + 3).contains(&p));
+    }
+
+    #[test]
+    fn orphan_cleanup_requires_the_exact_remote_mcp_process_identity() {
+        assert!(is_expected_remote_mcp_command(
+            "/tmp/wenlan-mcp-aarch64-apple-darwin --origin-url http://127.0.0.1:17777 serve --port 22000 --no-auth --agent-name remote-mcp",
+            22000,
+        ));
+        assert!(!is_expected_remote_mcp_command(
+            "/tmp/wenlan-mcp-malicious serve --port 22000 --agent-name remote-mcp",
+            22000,
+        ));
+        assert!(!is_expected_remote_mcp_command(
+            "/tmp/wenlan-mcp-aarch64-apple-darwin serve --port 22001 --agent-name remote-mcp",
+            22000,
+        ));
+        assert!(!is_expected_remote_mcp_command(
+            "/tmp/wenlan-mcp-aarch64-apple-darwin serve --port 22000 --agent-name another-agent",
+            22000,
+        ));
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[serial_test::serial]
+    fn dev_remote_access_uses_its_worktree_port_range() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _home = HomeGuard::set(tmp.path());
+        std::env::set_var("WENLAN_DEV_REMOTE_PORT_START", "23000");
+
+        let port = find_available_port().expect("dev remote access port");
+
+        assert!((23000..=23003).contains(&port));
     }
 
     #[test]
@@ -1321,6 +1457,27 @@ mod tests {
 
         assert_eq!(path, current.join("token"));
         assert!(!current.join("token").exists());
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[serial_test::serial]
+    fn dev_token_path_does_not_import_production_credentials() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _home = HomeGuard::set(tmp.path());
+        let production_legacy = tmp.path().join(".config/origin-mcp");
+        std::fs::create_dir_all(&production_legacy).unwrap();
+        std::fs::write(production_legacy.join("token"), "production-token\n").unwrap();
+        let dev_state = tmp.path().join("dev-state");
+        std::env::set_var("WENLAN_DEV_STATE_DIR", &dev_state);
+
+        let path = token_file_path().unwrap();
+
+        assert_eq!(path, dev_state.join("mcp-config/token"));
+        assert!(
+            !path.exists(),
+            "production token must not be copied into dev"
+        );
     }
 
     #[test]

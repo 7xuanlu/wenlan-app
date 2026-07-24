@@ -64,6 +64,8 @@ describe("scoped dev runtime", () => {
     expect(config.WENLAN_PORT).not.toBe("7878");
     expect(config.WENLAN_DEV_UI_PORT).toMatch(/^\d+$/);
     expect(config.WENLAN_DEV_UI_PORT).not.toBe("1420");
+    expect(config.WENLAN_DEV_REMOTE_PORT_START).toMatch(/^\d+$/);
+    expect(Number(config.WENLAN_DEV_REMOTE_PORT_START)).toBeGreaterThanOrEqual(20_000);
     expect(config.WENLAN_DEV_APP_ID).toMatch(/^com\.wenlan\.desktop\.dev\.\d+$/);
     expect(config.WENLAN_DEV_TAURI_MCP_SOCKET).toContain(tempRoot);
     expect(config.WENLAN_DEV_TAURI_MCP_SOCKET).toMatch(/tauri-mcp\.sock$/);
@@ -71,11 +73,75 @@ describe("scoped dev runtime", () => {
     expect(config.WENLAN_DATA_DIR).toContain("wenlan-app-dev");
   });
 
+  it.each([
+    ["WENLAN_DEV_PORT", "7878"],
+    ["WENLAN_DEV_UI_PORT", "1420"],
+    ["WENLAN_DEV_APP_ID", "com.wenlan.desktop"],
+    ["WENLAN_DEV_TAURI_MCP_SOCKET", "/tmp/tauri-mcp.sock"],
+    ["WENLAN_DEV_REMOTE_PORT_START", "18080"],
+  ])("rejects production identity override %s=%s", (key, value) => {
+    const result = spawnSync("bash", ["scripts/dev-runtime.sh", "print-config"], {
+      cwd: root,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        [key]: value,
+      },
+    });
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("refusing production");
+  });
+
+  it("rejects the production data directory override", () => {
+    const home = process.env.HOME;
+    expect(home).toBeTruthy();
+    const result = spawnSync("bash", ["scripts/dev-runtime.sh", "print-config"], {
+      cwd: root,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        WENLAN_DEV_DATA_DIR: `${home}/Library/Application Support/wenlan`,
+      },
+    });
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("refusing production");
+  });
+
+  it.each([
+    ["Library/LaunchAgents"],
+    ["Library/Logs/com.wenlan.desktop"],
+  ])("rejects a dev state directory under the production root %s", (suffix) => {
+    const home = process.env.HOME;
+    expect(home).toBeTruthy();
+    const result = spawnSync("bash", ["scripts/dev-runtime.sh", "print-config"], {
+      cwd: root,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        WENLAN_DEV_STATE_DIR: resolve(home!, suffix),
+      },
+    });
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("refusing production");
+  });
+
   it("detaches the daemon from the lifecycle command", () => {
     const script = readFileSync(resolve(root, "scripts/dev-runtime.sh"), "utf8");
 
     expect(script).toContain("nohup env");
     expect(script).toContain("</dev/null");
+  });
+
+  it("claims a daemon only after the spawned PID owns the selected listener", () => {
+    const script = readFileSync(resolve(root, "scripts/dev-runtime.sh"), "utf8");
+
+    expect(script).toContain("listener_pid_for_port");
+    expect(script).toContain('[[ "$listener_pid" == "$pid" ]]');
+    expect(script).toContain("has_owned_command_identity");
+    expect(script).toContain("acquire_runtime_lock");
   });
 
   it("passes sidecar flags through pnpm without a literal separator", () => {
@@ -106,12 +172,18 @@ describe("scoped dev runtime", () => {
       resolve(fakeBin, "pnpm"),
       '#!/usr/bin/env bash\nprintf \'%s\\n\' "${WENLAN_DEV_PRESERVE_DAEMON_ON_QUIT:-unset}" >> "$FAKE_PNPM_ENV_LOG"\nexit 0\n',
     );
+    writeFileSync(
+      resolve(fakeBin, "lsof"),
+      '#!/usr/bin/env bash\nprintf \'%s\\n\' "$FAKE_DAEMON_PID"\n',
+    );
     chmodSync(resolve(fakeBin, "pnpm"), 0o755);
+    chmodSync(resolve(fakeBin, "lsof"), 0o755);
 
     const daemon = spawn(server, ["60"], { stdio: "ignore" });
     expect(daemon.pid).toBeDefined();
     writeFileSync(resolve(stateDir, "wenlan-server.pid"), `${daemon.pid}\n`);
     writeFileSync(resolve(stateDir, "wenlan-server.path"), `${server}\n`);
+    writeFileSync(resolve(stateDir, "wenlan-server.port"), "27991\n");
 
     try {
       const result = spawnSync("bash", ["scripts/dev-all.sh"], {
@@ -124,6 +196,7 @@ describe("scoped dev runtime", () => {
           WENLAN_DEV_STATE_DIR: stateDir,
           WENLAN_DEV_PORT: "27991",
           WENLAN_DEV_UI_PORT: "28991",
+          FAKE_DAEMON_PID: `${daemon.pid}`,
           FAKE_PNPM_ENV_LOG: pnpmEnvLog,
         },
       });
@@ -143,10 +216,32 @@ describe("scoped dev runtime", () => {
     expect(devAll).toContain("WENLAN_PORT|WENLAN_DEV_UI_PORT|");
     expect(devAll).toContain("WENLAN_DEV_APP_ID|");
     expect(devAll).toContain("WENLAN_DEV_TAURI_MCP_SOCKET|");
+    expect(devAll).toContain("WENLAN_DEV_REMOTE_PORT_START|");
     expect(devAll).toContain('[[ -S "$WENLAN_DEV_TAURI_MCP_SOCKET" ]]');
     expect(devAll).toContain('rm -f "$WENLAN_DEV_TAURI_MCP_SOCKET"');
     expect(devAll).toContain('identifier\\":\\"$WENLAN_DEV_APP_ID');
     expect(devAll).toContain('devUrl\\":\\"http://localhost:$WENLAN_DEV_UI_PORT');
     expect(viteConfig).toContain("process.env.WENLAN_DEV_UI_PORT");
+  });
+
+  it("remote access passes the selected dev daemon URL to wenlan-mcp", () => {
+    const remoteAccess = readFileSync(resolve(root, "app/src/remote_access.rs"), "utf8");
+
+    expect(remoteAccess).toContain('"--origin-url"');
+    expect(remoteAccess).toContain("crate::api::WenlanClient::new().base_url()");
+  });
+
+  it("remote cleanup verifies listener identity before sending signals", () => {
+    const remoteAccess = readFileSync(resolve(root, "app/src/remote_access.rs"), "utf8");
+
+    expect(remoteAccess).toContain("wenlan_mcp_process_identity");
+    expect(remoteAccess).toContain("refusing to kill non-wenlan-mcp listener");
+  });
+
+  it("documents dev:all as the supported isolated app entry point", () => {
+    const readme = readFileSync(resolve(root, "README.md"), "utf8");
+
+    expect(readme).toContain("pnpm dev:all");
+    expect(readme).not.toContain("pnpm tauri dev");
   });
 });

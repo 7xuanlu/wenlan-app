@@ -520,6 +520,10 @@ pub fn uninstall_server_plist_via_subprocess() -> Result<()> {
 /// whitespace-separated field with `==`; a substring match would treat
 /// `com.origin.server.staging` as `com.origin.server` (H4).
 pub fn is_run_at_login_enabled(launchctl: &dyn LaunchctlExec) -> bool {
+    #[cfg(debug_assertions)]
+    if std::env::var_os("WENLAN_DEV_APP_ID").is_some() {
+        return false;
+    }
     let out = match launchctl.run(&["list"]) {
         Ok(o) => o,
         Err(_) => return false,
@@ -629,6 +633,10 @@ pub fn first_run_install_if_needed(launchctl: &dyn LaunchctlExec) -> Result<()> 
 /// install/uninstall sequence so concurrent toggles serialize (G2, spec
 /// line 198).
 pub async fn set_run_at_login(enabled: bool, launchctl: &dyn LaunchctlExec) -> Result<()> {
+    let dev_app_id = std::env::var_os("WENLAN_DEV_APP_ID");
+    if !should_manage_production_lifecycle(dev_app_id.as_deref()) {
+        anyhow::bail!("Run at Login is unavailable in an isolated dev app");
+    }
     let _guard = RUN_AT_LOGIN_LOCK.lock().await;
     if enabled {
         let exe = current_app_path()?;
@@ -757,6 +765,7 @@ mod tests {
         home: Option<std::ffi::OsString>,
         wenlan: Option<std::ffi::OsString>,
         origin: Option<std::ffi::OsString>,
+        dev_app_id: Option<std::ffi::OsString>,
     }
 
     impl EnvGuard {
@@ -765,6 +774,7 @@ mod tests {
                 home: std::env::var_os("HOME"),
                 wenlan: std::env::var_os("WENLAN_DATA_DIR"),
                 origin: std::env::var_os("ORIGIN_DATA_DIR"),
+                dev_app_id: std::env::var_os("WENLAN_DEV_APP_ID"),
             }
         }
     }
@@ -782,6 +792,10 @@ mod tests {
             match &self.origin {
                 Some(value) => std::env::set_var("ORIGIN_DATA_DIR", value),
                 None => std::env::remove_var("ORIGIN_DATA_DIR"),
+            }
+            match &self.dev_app_id {
+                Some(value) => std::env::set_var("WENLAN_DEV_APP_ID", value),
+                None => std::env::remove_var("WENLAN_DEV_APP_ID"),
             }
         }
     }
@@ -1244,6 +1258,18 @@ mod tests {
     }
 
     #[test]
+    #[cfg(debug_assertions)]
+    #[serial_test::serial]
+    fn isolated_dev_app_reports_run_at_login_disabled_without_querying_launchctl() {
+        let _env = EnvGuard::capture();
+        std::env::set_var("WENLAN_DEV_APP_ID", "com.wenlan.desktop.dev.123");
+        let mock = MockLaunchctl::default();
+
+        assert!(!is_run_at_login_enabled(&mock));
+        assert!(mock.calls.lock().unwrap().is_empty());
+    }
+
+    #[test]
     #[serial_test::serial]
     fn quit_origin_debounces_concurrent_calls() {
         // H1: tray menu Quit Wenlan item stays clickable during the 500ms
@@ -1271,6 +1297,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(debug_assertions)]
     fn reused_dev_daemon_can_be_preserved_when_the_app_quits() {
         assert!(should_shutdown_daemon_on_quit(None));
         assert!(!should_shutdown_daemon_on_quit(Some(std::ffi::OsStr::new(
@@ -1279,11 +1306,45 @@ mod tests {
     }
 
     #[test]
+    #[cfg(debug_assertions)]
     fn isolated_dev_app_does_not_manage_production_launch_agents() {
         assert!(should_manage_production_lifecycle(None));
         assert!(!should_manage_production_lifecycle(Some(
             std::ffi::OsStr::new("com.wenlan.desktop.dev.123")
         )));
+    }
+
+    #[test]
+    #[cfg(not(debug_assertions))]
+    fn release_build_always_manages_production_lifecycle() {
+        assert!(should_manage_production_lifecycle(Some(
+            std::ffi::OsStr::new("com.wenlan.desktop.dev.123")
+        )));
+        assert!(should_shutdown_daemon_on_quit(Some(std::ffi::OsStr::new(
+            "1"
+        ))));
+    }
+
+    #[tokio::test]
+    #[cfg(debug_assertions)]
+    #[serial_test::serial]
+    async fn isolated_dev_app_refuses_run_at_login_mutation() {
+        let _env = EnvGuard::capture();
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::set_var("HOME", tmp.path());
+        std::env::set_var("WENLAN_DEV_APP_ID", "com.wenlan.desktop.dev.123");
+        let plist = app_plist_path().unwrap();
+        std::fs::create_dir_all(plist.parent().unwrap()).unwrap();
+        std::fs::write(&plist, "<plist/>").unwrap();
+        let mock = MockLaunchctl::default();
+
+        let error = set_run_at_login(false, &mock)
+            .await
+            .expect_err("isolated dev must reject production lifecycle mutation");
+
+        assert!(error.to_string().contains("isolated dev"));
+        assert!(plist.exists(), "production app plist must remain untouched");
+        assert!(mock.calls.lock().unwrap().is_empty());
     }
 
     #[test]
