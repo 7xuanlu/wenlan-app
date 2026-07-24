@@ -8,10 +8,12 @@ Tauri 2 + React 19. Talks to the Wenlan daemon over HTTP at `localhost:7878`.
 
 ```bash
 pnpm install
-pnpm tauri dev   # prepares sidecars, then launches the Tauri app
+pnpm dev:all   # launches an isolated worktree daemon + Tauri app
 ```
 
-If you want a fresh daemon plus app sequence, use `pnpm dev:all`.
+`pnpm dev:all` is the supported development entry point. It keeps development
+ports, data, process ownership, app identity, MCP sockets, and Remote Access
+state separate from the installed production runtime.
 
 ## License
 

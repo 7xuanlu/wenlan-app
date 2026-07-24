@@ -58,8 +58,9 @@ recorded here.
 ## CONVENTIONS
 
 - Root `Cargo.toml` is only a workspace wrapper; the app crate is `app/`.
-- Vite dev server is fixed at `:1420` with `strictPort: true`; preview uses
-  `vite.preview.config.ts` on `:1421`.
+- Plain `pnpm dev` uses Vite `:1420` with `strictPort: true`; `pnpm dev:all`
+  assigns a worktree-scoped UI port. Preview uses `vite.preview.config.ts` on
+  `:1421`.
 - Tailwind v4 is CSS-first through `src/index.css`; there is no
   `tailwind.config.*`.
 - TypeScript is strict and no-emit. `pnpm build` is `tsc -b && vite build`.
