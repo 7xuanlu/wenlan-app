@@ -301,12 +301,15 @@ describe("scoped dev runtime", () => {
     expect(remoteAccess).toContain("crate::api::WenlanClient::new().base_url()");
     expect(remoteAccess).toContain("mcp_child.pid()");
     expect(remoteAccess).toContain("listener_pid_for_port");
+    expect(remoteAccess).toContain("wait_for_generation_change");
+    expect(remoteAccess).toContain("Remote access start cancelled.");
   });
 
   it("remote cleanup verifies listener identity before sending signals", () => {
     const remoteAccess = readFileSync(resolve(root, "app/src/remote_access.rs"), "utf8");
 
     expect(remoteAccess).toContain("wenlan_mcp_process_identity");
+    expect(remoteAccess).toContain("cloudflared_process_identity");
     expect(remoteAccess).toContain("refusing to kill non-wenlan-mcp listener");
   });
 

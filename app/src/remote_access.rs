@@ -166,6 +166,22 @@ fn mark_off(status: &mut RemoteAccessStatus, generation: &mut u64) -> u64 {
     *generation
 }
 
+async fn remote_generation_is_current(
+    app_handle: &tauri::AppHandle,
+    expected_generation: u64,
+) -> bool {
+    let state = app_handle.state::<std::sync::Arc<tokio::sync::RwLock<crate::state::AppState>>>();
+    let app_state = state.read().await;
+    let ra = app_state.remote_access.lock().await;
+    generation_is_current(ra.generation, expected_generation)
+}
+
+async fn wait_for_generation_change(app_handle: &tauri::AppHandle, expected_generation: u64) {
+    while remote_generation_is_current(app_handle, expected_generation).await {
+        sleep(Duration::from_millis(50)).await;
+    }
+}
+
 /// Runtime state for remote access — holds process handles and port.
 pub struct RemoteAccessState {
     pub status: RemoteAccessStatus,
@@ -249,6 +265,56 @@ pub fn cleanup_orphaned_mcp() {
     std::thread::sleep(std::time::Duration::from_millis(200));
 }
 
+fn cleanup_orphaned_cloudflared() {
+    let my_pid = std::process::id();
+    let range_start = port_range_start();
+    let output = std::process::Command::new("ps")
+        .args(["-ax", "-ww", "-o", "pid=,command="])
+        .output();
+    let Ok(output) = output else {
+        return;
+    };
+    let processes = String::from_utf8_lossy(&output.stdout);
+
+    for line in processes.lines() {
+        let line = line.trim();
+        let Some(separator) = line.find(char::is_whitespace) else {
+            continue;
+        };
+        let Ok(pid) = line[..separator].parse::<u32>() else {
+            continue;
+        };
+        if pid == my_pid {
+            continue;
+        }
+        let command = line[separator..].trim();
+        for port in range_start..=range_start + (PORT_RANGE_LEN - 1) {
+            if !is_expected_remote_tunnel_command(command, port) {
+                continue;
+            }
+            let Some(process_identity) = cloudflared_process_identity(pid, port) else {
+                break;
+            };
+            log::warn!(
+                "[remote-access] Killing orphaned cloudflared process {} for port {}",
+                pid,
+                port
+            );
+            let _ = std::process::Command::new("kill")
+                .arg(pid.to_string())
+                .output();
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            if cloudflared_process_identity(pid, port).as_deref() == Some(process_identity.as_str())
+            {
+                let _ = std::process::Command::new("kill")
+                    .args(["-9", &pid.to_string()])
+                    .output();
+            }
+            break;
+        }
+    }
+}
+
 fn is_expected_remote_mcp_command(command: &str, port: u16) -> bool {
     let args: Vec<_> = command.split_whitespace().collect();
     let Some(executable) = args.first() else {
@@ -285,6 +351,51 @@ fn wenlan_mcp_process_identity(pid: u32, port: u16) -> Option<String> {
         .ok()?;
     let command = String::from_utf8(command_output.stdout).ok()?;
     if !is_expected_remote_mcp_command(command.trim(), port) {
+        return None;
+    }
+    let started_output = std::process::Command::new("ps")
+        .args(["-p", &pid, "-o", "lstart="])
+        .output()
+        .ok()?;
+    let started = String::from_utf8(started_output.stdout).ok()?;
+    Some(format!("{}\n{}", started.trim(), command.trim()))
+}
+
+fn is_expected_remote_tunnel_command(command: &str, port: u16) -> bool {
+    let args: Vec<_> = command.split_whitespace().collect();
+    let Some(executable) = args.first() else {
+        return false;
+    };
+    let file_name = Path::new(executable)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
+    let expected_executable = matches!(
+        file_name,
+        "cloudflared"
+            | "cloudflared.exe"
+            | "cloudflared-aarch64-apple-darwin"
+            | "cloudflared-x86_64-apple-darwin"
+            | "cloudflared-x86_64-unknown-linux-gnu"
+            | "cloudflared-aarch64-unknown-linux-gnu"
+            | "cloudflared-x86_64-pc-windows-msvc.exe"
+    );
+    let expected_url = format!("http://localhost:{port}");
+    expected_executable
+        && args.get(1) == Some(&"tunnel")
+        && args
+            .windows(2)
+            .any(|pair| pair[0] == "--url" && pair[1] == expected_url)
+}
+
+fn cloudflared_process_identity(pid: u32, port: u16) -> Option<String> {
+    let pid = pid.to_string();
+    let command_output = std::process::Command::new("ps")
+        .args(["-ww", "-p", &pid, "-o", "command="])
+        .output()
+        .ok()?;
+    let command = String::from_utf8(command_output.stdout).ok()?;
+    if !is_expected_remote_tunnel_command(command.trim(), port) {
         return None;
     }
     let started_output = std::process::Command::new("ps")
@@ -559,7 +670,7 @@ async fn toggle_on_inner(
         operation_generation
     };
 
-    let result = start_tunnel(&app_handle).await;
+    let result = start_tunnel(&app_handle, operation_generation).await;
 
     match result {
         Ok((tunnel_url, token, mcp_child, tunnel_child, port, mcp_rx, tunnel_rx)) => {
@@ -578,7 +689,14 @@ async fn toggle_on_inner(
             }
 
             // Register with relay for a stable URL
-            let relay_url = register_with_relay(&tunnel_url).await;
+            let relay_url = tokio::select! {
+                relay_url = register_with_relay(&tunnel_url) => relay_url,
+                _ = wait_for_generation_change(&app_handle, operation_generation) => {
+                    let _ = mcp_child.kill();
+                    let _ = tunnel_child.kill();
+                    return;
+                }
+            };
 
             let status = RemoteAccessStatus::Connected {
                 tunnel_url: tunnel_url.clone(),
@@ -730,6 +848,7 @@ const MAX_TUNNEL_RETRIES: u32 = 3;
 async fn spawn_mcp(
     app_handle: &tauri::AppHandle,
     port: u16,
+    generation: u64,
 ) -> Result<
     (
         tokio::sync::mpsc::Receiver<tauri_plugin_shell::process::CommandEvent>,
@@ -767,6 +886,9 @@ async fn spawn_mcp(
     let health_url = format!("http://127.0.0.1:{port}/health");
     let readiness = timeout(Duration::from_secs(5), async {
         loop {
+            if !remote_generation_is_current(app_handle, generation).await {
+                return Err("Remote access start cancelled.".to_string());
+            }
             if reqwest::get(&health_url)
                 .await
                 .map(|r| r.status().is_success())
@@ -899,7 +1021,7 @@ pub async fn monitor_processes(
                     }
                 }
 
-                match spawn_mcp(&app_handle, port).await {
+                match spawn_mcp(&app_handle, port, generation).await {
                     Ok((new_rx, new_child)) => {
                         // Store new child in state
                         let state = app_handle
@@ -1207,6 +1329,7 @@ async fn tunnel_health_loop(
 
 async fn start_tunnel(
     app_handle: &tauri::AppHandle,
+    generation: u64,
 ) -> Result<
     (
         String,                                                                 // tunnel_url
@@ -1221,6 +1344,10 @@ async fn start_tunnel(
 > {
     // 0. Clean up any orphaned MCP processes from previous app sessions
     cleanup_orphaned_mcp();
+    cleanup_orphaned_cloudflared();
+    if !remote_generation_is_current(app_handle, generation).await {
+        return Err("Remote access start cancelled.".to_string());
+    }
 
     // 1. Find available port
     let range_start = port_range_start();
@@ -1266,26 +1393,50 @@ async fn start_tunnel(
         restrict_private_file(&token_path, "token")?;
     }
     let token = read_token()?;
+    if !remote_generation_is_current(app_handle, generation).await {
+        return Err("Remote access start cancelled.".to_string());
+    }
 
     // 3. Spawn wenlan-mcp serve (with health check)
-    let (mcp_rx, mcp_child) = spawn_mcp(app_handle, port).await?;
+    let (mcp_rx, mcp_child) = spawn_mcp(app_handle, port, generation).await?;
 
     // 4. Spawn cloudflared tunnel
-    let (mut tunnel_rx, tunnel_child) = app_handle
-        .shell()
-        .sidecar("cloudflared")
-        .map_err(|e| format!("cloudflared sidecar not found: {}", e))?
+    let tunnel_command = match app_handle.shell().sidecar("cloudflared") {
+        Ok(command) => command,
+        Err(error) => {
+            let _ = mcp_child.kill();
+            return Err(format!("cloudflared sidecar not found: {error}"));
+        }
+    };
+    let (mut tunnel_rx, tunnel_child) = match tunnel_command
         .args(["tunnel", "--url", &format!("http://localhost:{}", port)])
         .spawn()
-        .map_err(|e| format!("Failed to spawn cloudflared: {}", e))?;
+    {
+        Ok(child) => child,
+        Err(error) => {
+            let _ = mcp_child.kill();
+            return Err(format!("Failed to spawn cloudflared: {error}"));
+        }
+    };
+    if !remote_generation_is_current(app_handle, generation).await {
+        let _ = mcp_child.kill();
+        let _ = tunnel_child.kill();
+        return Err("Remote access start cancelled.".to_string());
+    }
 
     // 5. Parse tunnel URL from cloudflared output (it logs to stderr)
-    let tunnel_url = match timeout(
-        Duration::from_secs(20),
-        parse_tunnel_url_from_events(&mut tunnel_rx),
-    )
-    .await
-    {
+    let tunnel_result = tokio::select! {
+        result = timeout(
+            Duration::from_secs(20),
+            parse_tunnel_url_from_events(&mut tunnel_rx),
+        ) => result,
+        _ = wait_for_generation_change(app_handle, generation) => {
+            let _ = mcp_child.kill();
+            let _ = tunnel_child.kill();
+            return Err("Remote access start cancelled.".to_string());
+        }
+    };
+    let tunnel_url = match tunnel_result {
         Ok(Ok(url)) => url,
         Ok(Err(Some(msg))) => {
             // Known error (rate limit, etc.) — kill mcp and propagate
@@ -1373,6 +1524,7 @@ async fn transition_off(
 
     // Sweep for any orphaned processes the handles didn't cover
     cleanup_orphaned_mcp();
+    cleanup_orphaned_cloudflared();
 
     let _ = app_handle.emit("remote-access-status", &RemoteAccessStatus::Off);
     drop(ra);
@@ -1568,6 +1720,30 @@ mod tests {
         ));
         assert!(!is_expected_remote_mcp_command(
             "/tmp/wenlan-mcp-aarch64-apple-darwin serve --port 22000 --agent-name another-agent",
+            22000,
+        ));
+    }
+
+    #[test]
+    fn orphan_cleanup_requires_the_exact_remote_tunnel_process_identity() {
+        assert!(is_expected_remote_tunnel_command(
+            "/tmp/cloudflared-aarch64-apple-darwin tunnel --url http://localhost:22000",
+            22000,
+        ));
+        assert!(is_expected_remote_tunnel_command(
+            "/tmp/cloudflared tunnel --url http://localhost:22000",
+            22000,
+        ));
+        assert!(!is_expected_remote_tunnel_command(
+            "/tmp/cloudflared tunnel --url http://localhost:22001",
+            22000,
+        ));
+        assert!(!is_expected_remote_tunnel_command(
+            "/tmp/not-cloudflared tunnel --url http://localhost:22000",
+            22000,
+        ));
+        assert!(!is_expected_remote_tunnel_command(
+            "/tmp/cloudflared access tcp --url http://localhost:22000",
             22000,
         ));
     }
