@@ -95,6 +95,34 @@ describe('radialPolar', () => {
     expect(unwrapped).toEqual([...unwrapped].sort((a, b) => a - b));
   });
 
+  it('puts the first branch at three o clock', () => {
+    const ring1 = byDepth(radialPolar(node(ROOT, [node(BRANCH), node(BRANCH)])), 1);
+    expect(Math.atan2(ring1[0].y, ring1[0].x)).toBeCloseTo(0, 6);
+  });
+
+  it('sends two branches sideways, never into a vertical chain', () => {
+    // The regression this rotation exists for: filling the circle from wherever
+    // the seam fell put two branches at 90 and 270 degrees, stacking them down
+    // a canvas twice as wide as it is tall. Both must clear the vertical.
+    const ring1 = byDepth(radialPolar(node(ROOT, [node(BRANCH), node(BRANCH)])), 1);
+    expect(ring1).toHaveLength(2);
+    for (const p of ring1) {
+      expect(Math.abs(p.x)).toBeGreaterThan(Math.abs(p.y));
+    }
+    // ...and on opposite sides of it, not both to the right.
+    expect(ring1[0].x * ring1[1].x).toBeLessThan(0);
+  });
+
+  it('stays collision-free through the rotation, at every branch count', () => {
+    for (let n = 1; n <= 8; n++) {
+      const tree = node(
+        ROOT,
+        Array.from({ length: n }, () => node(BRANCH, [node(LEAF)])),
+      );
+      expect(findCollisions(radialPolar(tree))).toEqual([]);
+    }
+  });
+
   it('handles a root-only map', () => {
     const placed = radialPolar(node(ROOT));
     expect(placed).toHaveLength(1);

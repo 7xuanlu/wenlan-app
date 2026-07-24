@@ -140,11 +140,22 @@ export function radialPolar(
       continue;
     }
     const spread = (TAU - seam) / span;
+    const angleOf = (n: { x: number }) => (n.x - minLeft) * spread + seam / 2;
+    // The first branch sits at three o'clock and the rest fan clockwise from
+    // there. Without the rotation the fan starts wherever the seam falls, and
+    // two branches land at 90 and 270 degrees — a vertical chain down a canvas
+    // twice as wide as it is tall, which reads as a list rather than a map.
+    //
+    // Rotating the whole fan is free: rings are separated by their boxes'
+    // half-diagonals and siblings by full box width at their own radius, so
+    // neither clearance depends on which way the map happens to point.
+    const branchAngles = ringed.filter((n) => n.depth === 1).map(angleOf);
+    const offset = branchAngles.length ? Math.min(...branchAngles) : 0;
     return place(
       all.map((n) => ({
         data: n.data,
         depth: n.depth,
-        angle: n.depth === 0 ? 0 : (n.x - minLeft) * spread + seam / 2,
+        angle: n.depth === 0 ? 0 : angleOf(n) - offset,
       })),
       radii,
     );

@@ -42,7 +42,7 @@ import {
 } from "../../lib/tauri";
 import { layoutMap, NODE_HEIGHT } from "../../lib/pageMap/tree";
 import { slugify, withHeading } from "../../lib/pageMap/slug";
-import { useGraphPalette } from "../../lib/graph/palette";
+import { useGraphPalette, type GraphPalette } from "../../lib/graph/palette";
 import CanvasNode, { type CanvasNodeData } from "./canvas/CanvasNode";
 
 interface PageCanvasProps {
@@ -99,6 +99,24 @@ const SHORTCUTS = [
 ] as const;
 
 const HELP_PANEL_ID = "page-canvas-help-panel";
+
+/**
+ * How a line arriving at a box on ring `depth` is drawn.
+ *
+ * Straight, because the rings are concentric and a spoke is what a mind map
+ * draws. React Flow's default bezier leaves from the bottom and arrives at the
+ * top whatever direction the child actually lies in, which turned every branch
+ * that ran sideways or upward into an S.
+ */
+function spineLook(palette: GraphPalette, depth: number): Partial<Edge> {
+  return {
+    type: "straight",
+    style:
+      depth <= 1
+        ? { stroke: palette.edgeStrong, strokeWidth: 1.6 }
+        : { stroke: palette.edge, strokeWidth: 1.1 },
+  };
+}
 
 /** An open right-click menu, positioned in surface-local pixels. */
 type CanvasMenu =
@@ -480,6 +498,7 @@ function PageCanvasInner({
           status: v.node.status,
           dangling: v.node.ref_state === "dangling",
           isRoot: v.node.parent_id === null,
+          depth: v.depth,
           readOnly,
           palette,
           width: v.width,
@@ -559,6 +578,9 @@ function PageCanvasInner({
       status: "active",
       dangling: false,
       isRoot: false,
+      // Dress it as what it is about to become, so it does not restyle itself
+      // the instant the server's copy arrives.
+      depth: (views.find((v) => v.node.id === spot.parentId)?.depth ?? 0) + 1,
       readOnly: false,
       palette,
       width: DRAFT_SIZE.width,
@@ -585,7 +607,7 @@ function PageCanvasInner({
       height: DRAFT_SIZE.height,
       data,
     };
-  }, [draft, pending, palette, commitDraft, t]);
+  }, [draft, pending, views, palette, commitDraft, t]);
 
   const rootId = useMemo(
     () => views.find((v) => v.node.parent_id === null)?.node.id ?? null,
@@ -595,6 +617,10 @@ function PageCanvasInner({
   const startDraftAt = useCallback((parentId: string, x: number, y: number) => {
     setEditingId(null);
     setMenu(null);
+    // Why the last thing failed has nothing to do with the box being drawn now.
+    // Left up, "The center box is the page itself" sat over a brand-new box and
+    // read as a complaint about that one.
+    setNotice(null);
     setDraft({ parentId, x, y });
   }, []);
 
@@ -985,7 +1011,10 @@ function PageCanvasInner({
         source: parent,
         sourceHandle: "anchor",
         target: v.node.id,
-        style: { stroke: palette.edge, strokeWidth: 1.2 },
+        // The lines are the structure, so they thin out as the structure does:
+        // spokes off the page carry weight, the twigs past them recede. Drawn in
+        // one flat ink they were the faintest thing on a map they hold together.
+        ...spineLook(palette, v.depth),
       });
     }
     for (const e of map?.edges ?? []) {
@@ -1015,7 +1044,10 @@ function PageCanvasInner({
         source: spot.parentId,
         sourceHandle: "anchor",
         target: DRAFT_ID,
-        style: { stroke: palette.edge, strokeWidth: 1.2 },
+        ...spineLook(
+          palette,
+          (views.find((v) => v.node.id === spot.parentId)?.depth ?? 0) + 1,
+        ),
       });
     }
     return edges;
@@ -1024,11 +1056,7 @@ function PageCanvasInner({
   // Rendering nothing here made every slow fetch look like a canvas that had
   // simply failed to arrive, with no way to tell waiting from broken.
   if (isLoading) {
-    return (
-      <div className="page-canvas-message" role="status" aria-live="polite">
-        <p className="page-canvas-message-title">{t("pageCanvas.loading")}</p>
-      </div>
-    );
+    return <CanvasMessage title={t("pageCanvas.loading")} live />;
   }
 
   if (error) {
@@ -1106,7 +1134,10 @@ function PageCanvasInner({
           onNodeDoubleClick={handleNodeDoubleClick}
           onNodeContextMenu={handleNodeContextMenu}
           onPaneContextMenu={handlePaneContextMenu}
-          onPaneClick={() => setMenu(null)}
+          onPaneClick={() => {
+            setMenu(null);
+            setNotice(null);
+          }}
           onNodeClick={() => setMenu(null)}
           onMoveStart={() => setMenu(null)}
           onConnectEnd={handleConnectEnd}
@@ -1224,14 +1255,21 @@ function ContextMenu({
       // close it.
       onContextMenu={(e) => e.preventDefault()}
     >
-      {items.map((item) => (
+      {items.map((item, i) => (
         <li key={item.key} role="none">
           <button
             type="button"
             role="menuitem"
-            className={
-              item.danger ? "page-canvas-menu-item is-danger" : "page-canvas-menu-item"
-            }
+            className={[
+              "page-canvas-menu-item",
+              item.danger ? "is-danger" : "",
+              // A rule above the destructive verb, so the pointer travelling
+              // down the list crosses a line before it reaches the one item
+              // that takes boxes away and cannot be undone.
+              item.danger && !items[i - 1]?.danger ? "is-separated" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
             onClick={() => {
               item.run();
               onClose();
@@ -1299,20 +1337,38 @@ function CanvasHelp({
   );
 }
 
+/**
+ * Waiting, empty, and failed — all three inside the frame the map would fill.
+ *
+ * Returned as bare text, they collapsed the page to a few lines floating where a
+ * 620px canvas had been, which reads as a broken screen rather than as a canvas
+ * that has not arrived.
+ */
 function CanvasMessage({
   title,
   body,
   action,
+  live,
 }: {
   title: string;
   body?: string;
   action?: ReactNode;
+  /** Announce it: true while waiting, so the wait is not silent. */
+  live?: boolean;
 }) {
   return (
-    <div className="page-canvas-message">
-      <p className="page-canvas-message-title">{title}</p>
-      {body && <p className="page-canvas-message-body">{body}</p>}
-      {action}
+    <div className="page-canvas">
+      <div
+        className="page-canvas-surface is-message"
+        role={live ? "status" : undefined}
+        aria-live={live ? "polite" : undefined}
+      >
+        <div className="page-canvas-message">
+          <p className="page-canvas-message-title">{title}</p>
+          {body && <p className="page-canvas-message-body">{body}</p>}
+          {action}
+        </div>
+      </div>
     </div>
   );
 }

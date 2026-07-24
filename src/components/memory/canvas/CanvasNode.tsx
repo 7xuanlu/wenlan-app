@@ -25,6 +25,8 @@ export interface CanvasNodeData extends Record<string, unknown> {
   status: PageMapStatus;
   dangling: boolean;
   isRoot: boolean;
+  /** Rings out from the page: 0 is the page, 1 its sections, 2+ their insides. */
+  depth: number;
   readOnly: boolean;
   palette: GraphPalette;
   width: number;
@@ -68,6 +70,7 @@ function CanvasNode({
     status,
     dangling,
     isRoot,
+    depth,
     readOnly,
     palette,
     width,
@@ -80,6 +83,18 @@ function CanvasNode({
   const suggested = status === "suggested";
   const showControls = suggested && !isRoot && !readOnly && !editing;
 
+  // A mind map is read by its hierarchy, and until this ladder existed a leaf
+  // was indistinguishable from a section: same fill, same border, same weight.
+  // Three rungs — the page, its sections, what is inside them — spend no new
+  // color, only weight, so the slot ink still means what it means everywhere
+  // else in the app.
+  const branch = depth <= 1;
+  const fill = compositeOver(
+    slotColor,
+    palette.surface,
+    isRoot ? 0.22 : branch ? 0.1 : 0.035,
+  );
+
   return (
     <div
       style={{
@@ -91,12 +106,10 @@ function CanvasNode({
         boxSizing: "border-box",
         padding: "0 10px",
         borderRadius: 10,
-        border: `${isRoot ? 1.5 : 1}px ${suggested ? "dashed" : "solid"} ${slotColor}`,
-        backgroundColor: compositeOver(
-          slotColor,
-          palette.surface,
-          isRoot ? 0.22 : 0.1,
-        ),
+        border: `${isRoot ? 1.5 : 1}px ${suggested ? "dashed" : "solid"} ${
+          branch ? slotColor : compositeOver(slotColor, palette.surface, 0.5)
+        }`,
+        backgroundColor: fill,
         opacity: dangling ? 0.45 : suggested ? 0.75 : 1,
         // Selection has to be visible or the keyboard shortcuts have no
         // referent — "Delete removes the selected box" is meaningless if
@@ -132,6 +145,13 @@ function CanvasNode({
             textAlign: "left",
             background: "none",
             border: "none",
+            // The box's selection ring is this canvas's focus indicator, and
+            // Tab is bound to "add box inside" so nothing ever lands here by
+            // keyboard. Left on, the browser drew a second ring tight around
+            // the label the moment a shortcut was pressed after a click —
+            // two rings in two colors, the inner one looking like a text field
+            // the name could be typed into.
+            outline: "none",
             padding: 0,
             cursor: "pointer",
             overflow: "hidden",
@@ -140,7 +160,7 @@ function CanvasNode({
             color: dangling ? palette.labelMuted : palette.label,
             fontFamily: "var(--mem-font-body)",
             fontSize: 12,
-            fontWeight: isRoot ? 600 : 400,
+            fontWeight: isRoot ? 600 : branch ? 500 : 400,
           }}
         >
           {label}

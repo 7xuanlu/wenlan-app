@@ -19,9 +19,22 @@ const NODE_MAX_WIDTH = 260;
 const CHAR_PX = 7.2;
 const NODE_PADDING_X = 28;
 
-/** Deterministic box size for a node, derived from its display label. */
-export function nodeBoxSize(label: string): { width: number; height: number } {
-  const raw = label.length * CHAR_PX + NODE_PADDING_X;
+// A suggestion carries an accept and a dismiss button inside the box. They took
+// their room out of the label, so "Vector search" rendered as "Vector …" on
+// every guess the daemon made — the one kind of box whose whole job is to be
+// read and judged.
+export const CONTROLS_PX = 48;
+
+/**
+ * Deterministic box size for a node, derived from its display label.
+ *
+ * `extra` is room for anything sharing the box with the label.
+ */
+export function nodeBoxSize(
+  label: string,
+  extra = 0,
+): { width: number; height: number } {
+  const raw = label.length * CHAR_PX + NODE_PADDING_X + extra;
   return {
     width: Math.min(NODE_MAX_WIDTH, Math.max(NODE_MIN_WIDTH, Math.round(raw))),
     height: NODE_HEIGHT,
@@ -94,7 +107,10 @@ export function buildSpine(
   const seen = new Set<string>();
   const walk = (n: PageMapNode): MapNodeInput => {
     seen.add(n.id);
-    const size = nodeBoxSize(label(n));
+    const size = nodeBoxSize(
+      label(n),
+      n.status === "suggested" ? CONTROLS_PX : 0,
+    );
     const kids = (childrenOf.get(n.id) ?? []).filter((c) => !seen.has(c.id));
     return {
       id: n.id,

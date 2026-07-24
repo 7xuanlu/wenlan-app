@@ -3241,6 +3241,13 @@ p.entity-error {
   color: var(--mem-danger, #d4645f);
 }
 
+.page-canvas-menu-item.is-separated {
+  margin-top: 4px;
+  border-top: 1px solid var(--mem-border);
+  border-radius: 0 0 5px 5px;
+  padding-top: 8px;
+}
+
 .page-canvas-menu-item.is-danger:hover,
 .page-canvas-menu-item.is-danger:focus-visible {
   background-color: var(--mem-danger, #d4645f);
@@ -3294,7 +3301,10 @@ p.entity-error {
   display: grid;
   grid-template-columns: max-content 1fr;
   gap: 6px 10px;
-  min-width: 192px;
+  /* Wide enough for the longest action on one line. At 192px "Zoom to
+     selection" and "Show these keys" each wrapped, which added two rows to a
+     panel that already covers a third of the canvas. */
+  min-width: 236px;
   padding: 10px 12px;
   border: 1px solid var(--mem-border);
   border-radius: 8px;
@@ -3385,12 +3395,22 @@ p.entity-error {
   fill: currentColor;
 }
 
+/* Waiting, empty, and failed all happen inside the frame the map would fill, so
+   the page keeps its shape and the trouble reads as the canvas's rather than the
+   whole screen's. Text stays ranged left inside the centered block: a centered
+   paragraph is harder to read and this one has something to say. */
+.page-canvas-surface.is-message {
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
 .page-canvas-message {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 8px;
-  padding: 48px 0;
+  max-width: 46ch;
 }
 
 .page-canvas-message-title {

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { describe, expect, it } from "vitest";
-import { buildSpine, displayLabel, layoutMap } from "./tree";
+import { buildSpine, displayLabel, layoutMap, nodeBoxSize } from "./tree";
 import { radialPolar, type MapNodeInput } from "./radial";
 import type { PageMapNode } from "../tauri";
 
@@ -148,5 +148,29 @@ describe("layoutMap", () => {
     expect(floating.y).not.toBe(500);
     expect(floating.x).toBeCloseTo(floatingSlot.x, 6);
     expect(floating.y).toBeCloseTo(floatingSlot.y, 6);
+  });
+
+  it("leaves a suggestion room for its accept and dismiss buttons", () => {
+    // Sized from the label alone, the two buttons took their width out of the
+    // text: "Vector search" rendered as "Vector …" on the one kind of box whose
+    // whole job is to be read and judged.
+    const label = "Vector search";
+    const nodes = [
+      n({ id: "root", ref_kind: "page", ref_id: "p1" }),
+      n({ id: "live", parent_id: "root", rank: 0, ref_kind: "section", label }),
+      n({
+        id: "guess",
+        parent_id: "root",
+        rank: 1,
+        ref_kind: "section",
+        label,
+        status: "suggested",
+      }),
+    ];
+    const views = layoutMap(nodes, new Map(), "FB");
+    const width = (id: string) => views.find((v) => v.node.id === id)!.width;
+
+    expect(width("guess")).toBeGreaterThan(width("live"));
+    expect(width("live")).toBe(nodeBoxSize(label).width);
   });
 });
