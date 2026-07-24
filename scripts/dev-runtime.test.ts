@@ -93,7 +93,12 @@ describe("scoped dev runtime", () => {
     expect(result.stderr).toContain("refusing production");
   });
 
-  it("rejects the production data directory override", () => {
+  it.each([
+    ["Library/Application Support/wenlan"],
+    ["Library/Application Support/origin"],
+    [".origin"],
+    [".config/origin-mcp"],
+  ])("rejects the production data directory override %s", (suffix) => {
     const home = process.env.HOME;
     expect(home).toBeTruthy();
     const result = spawnSync("bash", ["scripts/dev-runtime.sh", "print-config"], {
@@ -101,7 +106,7 @@ describe("scoped dev runtime", () => {
       encoding: "utf8",
       env: {
         ...process.env,
-        WENLAN_DEV_DATA_DIR: `${home}/Library/Application Support/wenlan`,
+        WENLAN_DEV_DATA_DIR: resolve(home!, suffix),
       },
     });
 
@@ -229,6 +234,8 @@ describe("scoped dev runtime", () => {
 
     expect(remoteAccess).toContain('"--origin-url"');
     expect(remoteAccess).toContain("crate::api::WenlanClient::new().base_url()");
+    expect(remoteAccess).toContain("mcp_child.pid()");
+    expect(remoteAccess).toContain("listener_pid_for_port");
   });
 
   it("remote cleanup verifies listener identity before sending signals", () => {

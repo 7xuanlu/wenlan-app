@@ -179,10 +179,13 @@ fn validate_debug_runtime_isolation() -> Result<(), String> {
     if let Some(home) = dirs::home_dir() {
         for protected in [
             home.join("Library/Application Support/wenlan"),
+            home.join("Library/Application Support/origin"),
             home.join("Library/LaunchAgents"),
             home.join("Library/Logs/com.wenlan.desktop"),
             home.join(".config/wenlan-mcp"),
+            home.join(".config/origin-mcp"),
             home.join(".wenlan"),
+            home.join(".origin"),
         ] {
             if let Ok(protected) = std::fs::canonicalize(protected) {
                 if [&state_dir, &data_dir, &socket_path]
@@ -1401,8 +1404,15 @@ mod tests {
             .collect();
         let tmp = tempfile::tempdir().unwrap();
         let fake_home = tmp.path().join("home");
-        let production_data = fake_home.join("Library/Application Support/wenlan");
-        std::fs::create_dir_all(&production_data).unwrap();
+        let production_roots = [
+            fake_home.join("Library/Application Support/wenlan"),
+            fake_home.join("Library/Application Support/origin"),
+            fake_home.join(".config/origin-mcp"),
+            fake_home.join(".origin"),
+        ];
+        for root in &production_roots {
+            std::fs::create_dir_all(root).unwrap();
+        }
         std::env::set_var("HOME", &fake_home);
         std::env::set_var("WENLAN_PORT", "17777");
         std::env::set_var("WENLAN_DEV_UI_PORT", "18777");
@@ -1418,12 +1428,14 @@ mod tests {
         assert!(validate_debug_runtime_isolation().is_err());
 
         std::env::set_var("WENLAN_DEV_STATE_DIR", &fake_home);
-        std::env::set_var("WENLAN_DATA_DIR", &production_data);
         std::env::set_var(
             "WENLAN_DEV_TAURI_MCP_SOCKET",
             fake_home.join("dev-tauri-mcp.sock"),
         );
-        assert!(validate_debug_runtime_isolation().is_err());
+        for production_root in production_roots {
+            std::env::set_var("WENLAN_DATA_DIR", production_root);
+            assert!(validate_debug_runtime_isolation().is_err());
+        }
 
         for (key, value) in previous {
             match value {

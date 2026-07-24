@@ -134,6 +134,17 @@ pub enum RemoteAccessStatus {
     },
 }
 
+fn try_mark_starting(status: &mut RemoteAccessStatus) -> bool {
+    if matches!(
+        status,
+        RemoteAccessStatus::Starting | RemoteAccessStatus::Connected { .. }
+    ) {
+        return false;
+    }
+    *status = RemoteAccessStatus::Starting;
+    true
+}
+
 /// Runtime state for remote access — holds process handles and port.
 pub struct RemoteAccessState {
     pub status: RemoteAccessStatus,
@@ -258,6 +269,17 @@ fn wenlan_mcp_process_identity(pid: u32, port: u16) -> Option<String> {
         .ok()?;
     let started = String::from_utf8(started_output.stdout).ok()?;
     Some(format!("{}\n{}", started.trim(), command.trim()))
+}
+
+fn listener_pid_for_port(port: u16) -> Option<u32> {
+    let output = std::process::Command::new("lsof")
+        .args(["-nP", &format!("-iTCP:{port}"), "-sTCP:LISTEN", "-t"])
+        .output()
+        .ok()?;
+    String::from_utf8(output.stdout)
+        .ok()?
+        .lines()
+        .find_map(|line| line.trim().parse::<u32>().ok())
 }
 
 /// Find an available port in the selected four-port range.
@@ -487,13 +509,10 @@ async fn toggle_on_inner(app_handle: tauri::AppHandle, retry_count: u32) {
         let state =
             app_handle.state::<std::sync::Arc<tokio::sync::RwLock<crate::state::AppState>>>();
         let app_state = state.read().await;
-        let ra = app_state.remote_access.lock().await;
-        match &ra.status {
-            RemoteAccessStatus::Starting | RemoteAccessStatus::Connected { .. } => {
-                log::warn!("[remote-access] Already active, skipping duplicate toggle_on");
-                return;
-            }
-            _ => {}
+        let mut ra = app_state.remote_access.lock().await;
+        if !try_mark_starting(&mut ra.status) {
+            log::warn!("[remote-access] Already active, skipping duplicate toggle_on");
+            return;
         }
     }
 
@@ -661,28 +680,40 @@ async fn spawn_mcp(
         .spawn()
         .map_err(|e| format!("Failed to spawn {} serve: {}", MCP_SIDECAR_NAME, e))?;
 
+    let child_pid = mcp_child.pid();
     let health_url = format!("http://127.0.0.1:{port}/health");
-    let health_ok = timeout(Duration::from_secs(5), async {
+    let readiness = timeout(Duration::from_secs(5), async {
         loop {
             if reqwest::get(&health_url)
                 .await
                 .map(|r| r.status().is_success())
                 .unwrap_or(false)
             {
-                return true;
+                match listener_pid_for_port(port) {
+                    Some(listener_pid) if listener_pid == child_pid => return Ok(()),
+                    Some(listener_pid) => {
+                        return Err(format!(
+                            "remote access port {port} is owned by PID {listener_pid}, not spawned {} PID {child_pid}",
+                            MCP_SIDECAR_NAME
+                        ));
+                    }
+                    None => {}
+                }
             }
             sleep(Duration::from_millis(200)).await;
         }
     })
     .await
-    .unwrap_or(false);
-
-    if !health_ok {
-        let _ = mcp_child.kill();
-        return Err(format!(
+    .unwrap_or_else(|_| {
+        Err(format!(
             "{} serve failed to start (health check timeout).",
             MCP_SIDECAR_NAME
-        ));
+        ))
+    });
+
+    if let Err(error) = readiness {
+        let _ = mcp_child.kill();
+        return Err(error);
     }
 
     Ok((mcp_rx, mcp_child))
@@ -1282,6 +1313,24 @@ mod tests {
         let state = RemoteAccessState::default();
         assert!(matches!(state.status, RemoteAccessStatus::Off));
         assert!(state.port.is_none());
+    }
+
+    #[test]
+    fn starting_transition_is_atomic_against_duplicate_attempts() {
+        let mut status = RemoteAccessStatus::Off;
+
+        assert!(try_mark_starting(&mut status));
+        assert!(matches!(status, RemoteAccessStatus::Starting));
+        assert!(!try_mark_starting(&mut status));
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn listener_identity_resolves_the_process_that_owns_the_port() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        assert_eq!(listener_pid_for_port(port), Some(std::process::id()));
     }
 
     #[test]

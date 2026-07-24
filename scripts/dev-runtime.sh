@@ -39,10 +39,13 @@ refuse_production_path() {
   canonical="$(canonicalize_path "$value")"
   for root in \
     "$HOME/Library/Application Support/wenlan" \
+    "$HOME/Library/Application Support/origin" \
     "$HOME/Library/LaunchAgents" \
     "$HOME/Library/Logs/com.wenlan.desktop" \
     "$HOME/.config/wenlan-mcp" \
-    "$HOME/.wenlan"; do
+    "$HOME/.config/origin-mcp" \
+    "$HOME/.wenlan" \
+    "$HOME/.origin"; do
     root="$(canonicalize_path "$root")"
     if path_is_within "$canonical" "$root"; then
       echo "error: refusing production path for $label: $value" >&2
