@@ -156,7 +156,10 @@ Install the following before building:
 The backend source build reached OpenSSL's Perl scripts. Git for Windows'
 minimal Perl is insufficient because it lacks modules such as
 `Locale::Maketext::Simple`; place Strawberry Perl before Git's Perl in
-`PATH`.
+`PATH`. If the Strawberry Perl MSI requires elevation or stalls in a
+non-elevated winget session, use its official 64-bit portable ZIP, set
+`OPENSSL_SRC_PERL` to `perl\bin\perl.exe`, and run
+`perl -MLocale::Maketext::Simple -e "1"` before Cargo.
 
 Open PowerShell from an x64 Visual Studio developer shell, or import the
 environment first:
@@ -201,12 +204,22 @@ Get-Item (Join-Path $env:LIBCLANG_PATH "libclang.dll")
 & .\scripts\setup-vulkan-sdk-windows.ps1
 
 # Keep nested llama.cpp shader paths short and serialize MSVC PDB writers.
+# Use a new target directory after changing from a Visual Studio generator to
+# Ninja; a mixed cache can fail with a missing install.vcxproj.
 $env:CARGO_TARGET_DIR = "C:\wl-target"
 $env:CARGO_BUILD_JOBS = "1"
 
 # Required with Visual Studio 2019 Build Tools. The VS 16 CMake generator
 # rejects llama.cpp's Vulkan shader DEPFILE rules.
 $env:CMAKE_GENERATOR = "Ninja"
+
+# Pin the Windows linker before any Git Bash boundary. Git for Windows also
+# ships a coreutils link.exe which is not the MSVC linker.
+$sysroot = (rustc --print sysroot).Trim()
+$lld = Join-Path $sysroot `
+  "lib\rustlib\x86_64-pc-windows-msvc\bin\rust-lld.exe"
+Get-Item $lld
+$env:RUSTFLAGS = "-C linker=$lld -C linker-flavor=lld-link"
 ```
 
 Rust 1.88 can compile most dependencies but fails on main's
@@ -250,10 +263,18 @@ not Git Bash. `scripts/run-tauri.mjs` now finds Git for Windows, prepends its
 Git Bash first and verify it:
 
 ```powershell
-$env:Path = "C:\Program Files\Git\bin;$env:Path"
-(Get-Command bash.exe).Source
-# Expected: C:\Program Files\Git\bin\bash.exe
+$gitBash = Join-Path $env:ProgramFiles "Git\bin\bash.exe"
+Get-Item $gitBash
+& $gitBash --version
 ```
+
+Do not rely on plain `bash` from an arbitrary PowerShell session. If Cargo's
+link error names `C:\Program Files\Git\usr\bin\link.exe` and coreutils reports
+`missing operand`, Git Bash shadowed the Windows linker; set the rust-lld
+`RUSTFLAGS` above and retry with the exact Git Bash path. A cold Windows
+release build can exceed 20 minutes even while `rustc` CPU time is increasing;
+the hosted release jobs intentionally allow 45–60 minutes and cache the
+Windows target.
 
 `pnpm dev:all` is also supported from Windows once Git Bash is discoverable.
 The isolated dev runtime normalizes native `C:\...` inputs at the shell
@@ -743,8 +764,11 @@ maintenance rules:
   quote that argument explicitly and verify the child command line.
 
 The verified post-main-sync command was plain `pnpm test`, not a filtered
-invocation: all 170 test files passed with 1842 passing tests and two
-intentional platform-specific skips.
+invocation: all 175 test files passed with 1929 passing tests and two
+intentional platform-specific skips. The jsdom Canvas tests may print
+`HTMLCanvasElement.getContext()` not-implemented diagnostics without failing;
+use the Vitest file/test summary and exit code rather than treating those
+diagnostics as assertion failures.
 
 Five `identity_paths` tests originally set `HOME` and therefore touched the real
 Windows profile because `dirs::data_local_dir()` uses the Windows known-folder
