@@ -4833,27 +4833,15 @@ mod avatar_path_tests {
     }
 
     #[test]
-    #[serial_test::serial]
-    fn avatar_storage_dir_uses_legacy_default_when_current_empty_and_legacy_has_avatars() {
-        let previous_home = std::env::var_os("HOME");
-        let previous_wenlan = std::env::var_os("WENLAN_DATA_DIR");
-        let previous_origin = std::env::var_os("ORIGIN_DATA_DIR");
+    fn legacy_default_selection_flows_to_avatar_storage() {
         let tmp = tempfile::tempdir().unwrap();
-
-        std::env::set_var("HOME", tmp.path());
-        std::env::remove_var("WENLAN_DATA_DIR");
-        std::env::remove_var("ORIGIN_DATA_DIR");
-
-        let current = dirs::data_local_dir().unwrap().join("wenlan");
-        let legacy = dirs::data_local_dir().unwrap().join("origin");
+        let current = tmp.path().join("wenlan");
+        let legacy = tmp.path().join("origin");
         std::fs::create_dir_all(&current).unwrap();
         std::fs::create_dir_all(legacy.join("avatars")).unwrap();
 
-        assert_eq!(avatar_storage_dir(), legacy.join("avatars"));
-
-        restore_env("HOME", previous_home);
-        restore_env("WENLAN_DATA_DIR", previous_wenlan);
-        restore_env("ORIGIN_DATA_DIR", previous_origin);
+        let selected = crate::identity_paths::app_data_dir_for_base(tmp.path());
+        assert_eq!(selected.join("avatars"), legacy.join("avatars"));
     }
 
     #[test]

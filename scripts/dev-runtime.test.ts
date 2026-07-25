@@ -136,6 +136,29 @@ describe("scoped dev runtime", () => {
     expect(result.stderr).toContain("refusing production");
   }, shellIntegrationTestTimeout);
 
+  it.runIf(process.platform === "win32")(
+    "rejects Windows production data roots under LOCALAPPDATA",
+    () => {
+      const localAppData = process.env.LOCALAPPDATA;
+      expect(localAppData).toBeTruthy();
+      const result = spawnSync(
+        bashExecutable(),
+        ["scripts/dev-runtime.sh", "print-config"],
+        {
+          cwd: root,
+          encoding: "utf8",
+          env: childEnv({
+            WENLAN_DEV_DATA_DIR: resolve(localAppData!, "wenlan"),
+          }),
+        },
+      );
+
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("refusing production");
+    },
+    shellIntegrationTestTimeout,
+  );
+
   it.each([
     ["Library/Application Support/wenlan"],
     ["Library/Application Support/origin"],

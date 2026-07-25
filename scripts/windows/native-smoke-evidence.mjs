@@ -33,6 +33,12 @@ function describeValue(value) {
   }
 }
 
+function timestampAtStartOfLine(value) {
+  const timestamp = String(value ?? "").match(/^(\S+)/)?.[1] || "";
+  const milliseconds = Date.parse(timestamp);
+  return Number.isFinite(milliseconds) ? milliseconds : null;
+}
+
 export function validateNativeSmokeEvidence(evidence, expected) {
   const assertions = [];
   const check = (name, ok, detail) => {
@@ -79,6 +85,20 @@ export function validateNativeSmokeEvidence(evidence, expected) {
       typeof evidence.health.response === "object",
     `health evidence was ${describeValue(evidence?.health)}`,
   );
+  const expectedBackendVersionCommit =
+    typeof expected?.backendCommit === "string" &&
+    /^[0-9a-f]{40}$/.test(expected.backendCommit)
+      ? `g${expected.backendCommit.slice(0, 8)}`
+      : "";
+  check(
+    "backend-runtime-version",
+    expectedBackendVersionCommit.length > 0 &&
+      typeof evidence?.health?.response?.version === "string" &&
+      evidence.health.response.version.includes(
+        expectedBackendVersionCommit,
+      ),
+    `expected health version containing ${describeValue(expectedBackendVersionCommit)}, got ${describeValue(evidence?.health?.response?.version)}`,
+  );
   if (expected?.inferenceBackend) {
     check(
       "inference-backend",
@@ -94,6 +114,27 @@ export function validateNativeSmokeEvidence(evidence, expected) {
           .toLowerCase()
           .includes(expected.inferenceDeviceContains.toLowerCase()),
       `expected device containing ${describeValue(expected.inferenceDeviceContains)}, got ${describeValue(evidence?.inference?.device)}`,
+    );
+  }
+  if (Number.isInteger(expected?.inferenceDeviceIndex)) {
+    check(
+      "inference-device-index",
+      evidence?.inference?.device_index === expected.inferenceDeviceIndex,
+      `expected device index ${describeValue(expected.inferenceDeviceIndex)}, got ${describeValue(evidence?.inference?.device_index)}`,
+    );
+  }
+  if (Number.isInteger(expected?.inferenceGpuLayers)) {
+    check(
+      "inference-gpu-layers",
+      evidence?.inference?.gpu_layers === expected.inferenceGpuLayers,
+      `expected GPU layers ${describeValue(expected.inferenceGpuLayers)}, got ${describeValue(evidence?.inference?.gpu_layers)}`,
+    );
+  }
+  if (expected?.requireNoInferenceFallback) {
+    check(
+      "inference-no-fallback",
+      evidence?.inference?.fallback_reason == null,
+      `expected no inference fallback, got ${describeValue(evidence?.inference?.fallback_reason)}`,
     );
   }
   check(
@@ -149,6 +190,16 @@ export function validateNativeSmokeEvidence(evidence, expected) {
       ),
     `expected loaded module ${describeValue(expected?.onnxruntimeDll)}, got ${describeValue(workloadBackend?.loaded_modules)}`,
   );
+  if (expected?.inferenceBackend === "vulkan") {
+    check(
+      "vulkan-loader-module",
+      Array.isArray(workloadBackend?.loaded_modules) &&
+        workloadBackend.loaded_modules.some((modulePath) =>
+          sameWindowsPath(modulePath, expected?.vulkanLoaderDll),
+        ),
+      `expected loaded module ${describeValue(expected?.vulkanLoaderDll)}, got ${describeValue(workloadBackend?.loaded_modules)}`,
+    );
+  }
   check(
     "marker-contract",
     typeof marker === "string" &&
@@ -240,6 +291,19 @@ export function validateNativeSmokeEvidence(evidence, expected) {
         expected.fullQuitBreadcrumb,
       ),
     `app log did not contain ${describeValue(expected?.fullQuitBreadcrumb)}`,
+  );
+  const runStartedAt = Date.parse(
+    String(evidence?.lifecycle?.run_started_at ?? ""),
+  );
+  const fullQuitAt = timestampAtStartOfLine(
+    evidence?.lifecycle?.full_quit_log,
+  );
+  check(
+    "full-quit-current-run",
+    Number.isFinite(runStartedAt) &&
+      fullQuitAt !== null &&
+      fullQuitAt >= runStartedAt,
+    `expected full-quit breadcrumb at or after ${describeValue(evidence?.lifecycle?.run_started_at)}, got ${describeValue(evidence?.lifecycle?.full_quit_log)}`,
   );
   check(
     "no-preexisting-fake-launchagents",

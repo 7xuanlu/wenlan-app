@@ -8,6 +8,7 @@ type Evidence = {
     device: string | null;
     device_index: number | null;
     fallback_reason: string | null;
+    gpu_layers: number | null;
   };
   metadata: {
     backend_commit: string;
@@ -19,6 +20,7 @@ type Evidence = {
     fake_launch_agents_exists: boolean;
     full_quit_log: string;
     full_quit_requested: boolean;
+    run_started_at: string;
   };
   marker: {
     backend_content: string;
@@ -66,10 +68,14 @@ type ExpectedEvidence = {
   fullQuitBreadcrumb: string;
   inferenceBackend?: string;
   inferenceDeviceContains?: string;
+  inferenceDeviceIndex?: number;
+  inferenceGpuLayers?: number;
   marker: string;
   onnxruntimeDll: string;
+  requireNoInferenceFallback?: boolean;
   semanticQuery: string;
   sourceAgent: string;
+  vulkanLoaderDll?: string;
 };
 
 type ValidationResult = {
@@ -89,6 +95,7 @@ const APP_EXE = "C:\\actions\\wenlan\\target\\release\\wenlan-app.exe";
 const BACKEND_EXE =
   "C:\\actions\\wenlan\\target\\release\\wenlan-server.exe";
 const ONNX_DLL = "C:\\actions\\wenlan\\target\\release\\onnxruntime.dll";
+const VULKAN_LOADER = "C:\\actions\\wenlan\\target\\release\\vulkan-1.dll";
 const BACKEND_COMMIT = "b".repeat(40);
 const BACKEND_SHA256 = "a".repeat(64);
 const FULL_QUIT_BREADCRUMB = "[quit] full quit command accepted";
@@ -97,12 +104,16 @@ const SEMANTIC_QUERY = "blue lamp adjusts ocean timepieces";
 function completeEvidence(): Evidence {
   return {
     claim: "Windows Server 2022 native app with source-built backend smoke",
-    health: { ok: true, response: { status: "ok" } },
+    health: {
+      ok: true,
+      response: { status: "ok", version: `0.14.1+g${BACKEND_COMMIT.slice(0, 8)}` },
+    },
     inference: {
       backend: "vulkan",
       device: "NVIDIA GeForce RTX 3060 Laptop GPU",
       device_index: 1,
       fallback_reason: null,
+      gpu_layers: 99,
     },
     metadata: {
       backend_commit: BACKEND_COMMIT,
@@ -112,8 +123,9 @@ function completeEvidence(): Evidence {
     lifecycle: {
       fake_launch_agents_before_app_exists: false,
       fake_launch_agents_exists: false,
-      full_quit_log: `2026-07-19 INFO ${FULL_QUIT_BREADCRUMB}`,
+      full_quit_log: `2026-07-19T00:00:01Z INFO ${FULL_QUIT_BREADCRUMB}`,
       full_quit_requested: true,
+      run_started_at: "2026-07-19T00:00:00Z",
     },
     marker: {
       backend_content: `A native proof containing ${MARKER}`,
@@ -136,6 +148,7 @@ function completeEvidence(): Evidence {
           loaded_modules: [
             "C:\\Windows\\System32\\kernel32.dll",
             ONNX_DLL,
+            VULKAN_LOADER,
           ],
         },
       },
@@ -148,6 +161,7 @@ function completeEvidence(): Evidence {
           loaded_modules: [
             "C:\\Windows\\System32\\kernel32.dll",
             ONNX_DLL,
+            VULKAN_LOADER,
           ],
         },
       },
@@ -169,10 +183,14 @@ const expected: ExpectedEvidence = {
   fullQuitBreadcrumb: FULL_QUIT_BREADCRUMB,
   inferenceBackend: "vulkan",
   inferenceDeviceContains: "RTX 3060",
+  inferenceDeviceIndex: 1,
+  inferenceGpuLayers: 99,
   marker: MARKER,
   onnxruntimeDll: ONNX_DLL,
+  requireNoInferenceFallback: true,
   semanticQuery: SEMANTIC_QUERY,
   sourceAgent: "windows-native-smoke",
+  vulkanLoaderDll: VULKAN_LOADER,
 };
 
 async function loadEvidenceModule(): Promise<EvidenceModule> {
@@ -211,6 +229,13 @@ describe("Windows native smoke evidence validator", () => {
       },
     },
     {
+      name: "runtime version from another backend commit",
+      assertion: "backend-runtime-version",
+      mutate: (evidence: Evidence) => {
+        evidence.health.response.version = "0.14.1+gcccccccc";
+      },
+    },
+    {
       name: "occupied port before launch",
       assertion: "port-7878-unused",
       mutate: (evidence: Evidence) => {
@@ -229,6 +254,28 @@ describe("Windows native smoke evidence validator", () => {
       assertion: "inference-device",
       mutate: (evidence: Evidence) => {
         evidence.inference.device = "Intel(R) Iris(R) Xe Graphics";
+      },
+    },
+    {
+      name: "wrong inference device index",
+      assertion: "inference-device-index",
+      mutate: (evidence: Evidence) => {
+        evidence.inference.device_index = 0;
+      },
+    },
+    {
+      name: "wrong inference GPU layer count",
+      assertion: "inference-gpu-layers",
+      mutate: (evidence: Evidence) => {
+        evidence.inference.gpu_layers = 0;
+      },
+    },
+    {
+      name: "unexpected inference fallback",
+      assertion: "inference-no-fallback",
+      mutate: (evidence: Evidence) => {
+        evidence.inference.fallback_reason =
+          "requested GPU device index 1 is unavailable";
       },
     },
     {
@@ -252,6 +299,16 @@ describe("Windows native smoke evidence validator", () => {
       mutate: (evidence: Evidence) => {
         evidence.processes.after_workload.backend.loaded_modules = [
           "C:\\Windows\\System32\\onnxruntime.dll",
+        ];
+      },
+    },
+    {
+      name: "Vulkan loader came from the system instead of the staged runtime",
+      assertion: "vulkan-loader-module",
+      mutate: (evidence: Evidence) => {
+        evidence.processes.after_workload.backend.loaded_modules = [
+          ONNX_DLL,
+          "C:\\Windows\\System32\\vulkan-1.dll",
         ];
       },
     },
@@ -337,6 +394,13 @@ describe("Windows native smoke evidence validator", () => {
       assertion: "full-quit-command-accepted",
       mutate: (evidence: Evidence) => {
         evidence.lifecycle.full_quit_log = "";
+      },
+    },
+    {
+      name: "full quit breadcrumb predates this run",
+      assertion: "full-quit-current-run",
+      mutate: (evidence: Evidence) => {
+        evidence.lifecycle.run_started_at = "2026-07-20T00:00:00Z";
       },
     },
     {

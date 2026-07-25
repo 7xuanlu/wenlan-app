@@ -124,7 +124,7 @@ jobs:
           node -e "const fs=require('fs'); const p=process.env.RUNNER_TEMP+'/staged-sidecars.json'; const m=JSON.parse(fs.readFileSync(p)); if(m.staged.length!==4) throw new Error('expected four staged Darwin sidecars')"
 
   windows-native-smoke:
-    name: Windows Native Smoke (manual)
+    name: Windows Native App + CPU Embeddings Smoke (manual)
     if: github.event_name == 'workflow_dispatch' && inputs.windows_native_smoke
     permissions:
       contents: read

@@ -4,6 +4,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { createHash } from "node:crypto";
@@ -75,6 +76,28 @@ function fileSha256(path) {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
 
+function optionalIntegerEnvironment(name) {
+  const raw = process.env[name]?.trim();
+  if (!raw) return null;
+  if (!/^-?\d+$/.test(raw)) {
+    throw new Error(`${name} must be an integer`);
+  }
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value)) {
+    throw new Error(`${name} must be a safe integer`);
+  }
+  return value;
+}
+
+function optionalTrueEnvironment(name) {
+  const raw = process.env[name]?.trim().toLowerCase();
+  if (!raw) return false;
+  if (raw !== "1" && raw !== "true") {
+    throw new Error(`${name} must be 1 or true when set`);
+  }
+  return true;
+}
+
 function sleep(milliseconds) {
   return new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds));
 }
@@ -125,9 +148,40 @@ function stageRuntimeSidecars(appExecutable) {
     }
     copyFileSync(source, resolve(runtimeDir, destinationName));
   }
+  const vulkanMappings = [
+    ["vulkan-1.dll", "vulkan-1.dll"],
+    ["VulkanRT-License.txt", "VulkanRT-License.txt"],
+  ];
+  const vulkanSources = vulkanMappings.map(([sourceName]) =>
+    resolve(REPO_ROOT, "app", "binaries", sourceName),
+  );
+  const vulkanPresent = vulkanSources.map((source) => existsSync(source));
+  if (vulkanPresent.some(Boolean) && !vulkanPresent.every(Boolean)) {
+    throw new Error(
+      "staged Vulkan runtime is incomplete; loader and license must travel together",
+    );
+  }
+  if (vulkanPresent.every(Boolean)) {
+    for (const [sourceName, destinationName] of vulkanMappings) {
+      copyFileSync(
+        resolve(REPO_ROOT, "app", "binaries", sourceName),
+        resolve(runtimeDir, destinationName),
+      );
+    }
+  } else {
+    for (const [, destinationName] of vulkanMappings) {
+      rmSync(resolve(runtimeDir, destinationName), { force: true });
+    }
+  }
   return {
     backendExecutable: resolve(runtimeDir, "wenlan-server.exe"),
     onnxruntimeDll: resolve(runtimeDir, "onnxruntime.dll"),
+    vulkanLoaderDll: vulkanPresent.every(Boolean)
+      ? resolve(runtimeDir, "vulkan-1.dll")
+      : "",
+    vulkanRuntimeLicense: vulkanPresent.every(Boolean)
+      ? resolve(runtimeDir, "VulkanRT-License.txt")
+      : "",
   };
 }
 
@@ -171,6 +225,24 @@ function verifySourceBuiltBackend(runtime) {
     throw new Error(
       `runtime backend hash diverged from staged manifest ${stagedServer.sha256}`,
     );
+  }
+  for (const [name, runtimePath] of [
+    ["vulkan-1.dll", runtime.vulkanLoaderDll],
+    ["VulkanRT-License.txt", runtime.vulkanRuntimeLicense],
+  ]) {
+    if (!runtimePath) continue;
+    const sourcePath = resolve(REPO_ROOT, "app", "binaries", name);
+    const entry = manifest.staged.find((candidate) => candidate?.name === name);
+    if (
+      !entry ||
+      entry.path !== sourcePath ||
+      entry.sha256 !== fileSha256(sourcePath) ||
+      entry.sha256 !== fileSha256(runtimePath)
+    ) {
+      throw new Error(
+        `runtime Vulkan payload diverged from staged manifest: ${name}`,
+      );
+    }
   }
   return {
     commit: expectedCommit,
@@ -324,6 +396,7 @@ function bestEffortCleanup(appExecutable, backendExecutable) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  const runStartedAt = new Date().toISOString();
   mkdirSync(args.evidenceDir, { recursive: true });
   const webdriverLog = resolve(args.evidenceDir, "webdriver.log");
   const log = (message) => {
@@ -381,6 +454,9 @@ async function main() {
       process.env.WENLAN_NATIVE_EXPECT_INFERENCE_BACKEND?.trim() || "",
     inferenceDeviceContains:
       process.env.WENLAN_NATIVE_EXPECT_INFERENCE_DEVICE_CONTAINS?.trim() || "",
+    inferenceDeviceIndex: null,
+    inferenceGpuLayers: null,
+    requireNoInferenceFallback: false,
     onDeviceModel:
       process.env.WENLAN_NATIVE_ON_DEVICE_MODEL?.trim() || "qwen3-4b",
   };
@@ -411,12 +487,14 @@ async function main() {
       device: null,
       device_index: null,
       fallback_reason: null,
+      gpu_layers: null,
     },
     lifecycle: {
       fake_launch_agents_before_app_exists: false,
       fake_launch_agents_exists: false,
       full_quit_log: "",
       full_quit_requested: false,
+      run_started_at: runStartedAt,
     },
     marker: {
       expected: marker,
@@ -463,7 +541,27 @@ async function main() {
   let workloadPollState = "not-started";
   let lastWorkloadSnapshot = null;
   try {
+    inferenceExpectation.inferenceDeviceIndex =
+      optionalIntegerEnvironment(
+        "WENLAN_NATIVE_EXPECT_INFERENCE_DEVICE_INDEX",
+      );
+    inferenceExpectation.inferenceGpuLayers =
+      optionalIntegerEnvironment(
+        "WENLAN_NATIVE_EXPECT_INFERENCE_GPU_LAYERS",
+      );
+    inferenceExpectation.requireNoInferenceFallback =
+      optionalTrueEnvironment(
+        "WENLAN_NATIVE_EXPECT_NO_INFERENCE_FALLBACK",
+      );
     Object.assign(runtime, stageRuntimeSidecars(args.app));
+    if (
+      inferenceExpectation.inferenceBackend === "vulkan" &&
+      (!runtime.vulkanLoaderDll || !runtime.vulkanRuntimeLicense)
+    ) {
+      throw new Error(
+        "Vulkan inference proof requires an adjacent staged loader and license",
+      );
+    }
     backendProof = verifySourceBuiltBackend(runtime);
     Object.assign(evidence.metadata, {
       backend_commit: backendProof.commit,
@@ -525,7 +623,10 @@ async function main() {
     );
     evidence.health = { ok: true, response: health };
     writeJson(healthPath, health);
-    if (inferenceExpectation.inferenceBackend) {
+    if (
+      inferenceExpectation.inferenceBackend &&
+      inferenceExpectation.inferenceBackend !== "disabled"
+    ) {
       await fetchJson(
         "http://127.0.0.1:7878/api/on-device-model/download",
         {
@@ -555,7 +656,23 @@ async function main() {
             .includes(
               inferenceExpectation.inferenceDeviceContains.toLowerCase(),
             ));
-      return backendMatches && deviceMatches ? candidate : null;
+      const deviceIndexMatches =
+        !Number.isInteger(inferenceExpectation.inferenceDeviceIndex) ||
+        inference?.device_index ===
+          inferenceExpectation.inferenceDeviceIndex;
+      const gpuLayersMatches =
+        !Number.isInteger(inferenceExpectation.inferenceGpuLayers) ||
+        inference?.gpu_layers === inferenceExpectation.inferenceGpuLayers;
+      const fallbackMatches =
+        !inferenceExpectation.requireNoInferenceFallback ||
+        inference?.fallback_reason == null;
+      return backendMatches &&
+        deviceMatches &&
+        deviceIndexMatches &&
+        gpuLayersMatches &&
+        fallbackMatches
+        ? candidate
+        : null;
     };
     const status = inferenceExpectation.inferenceBackend
       ? await poll("expected on-device inference backend", fetchInferenceStatus, 180_000, 1_000)
@@ -733,6 +850,7 @@ async function main() {
     evidence.lifecycle.full_quit_log = latestMatchingLogLine(
       appLog,
       FULL_QUIT_BREADCRUMB,
+      evidence.lifecycle.run_started_at,
     );
 
     const validation = validateNativeSmokeEvidence(evidence, {
@@ -743,6 +861,7 @@ async function main() {
       fullQuitBreadcrumb: FULL_QUIT_BREADCRUMB,
       ...inferenceExpectation,
       onnxruntimeDll: runtime.onnxruntimeDll,
+      vulkanLoaderDll: runtime.vulkanLoaderDll,
       marker,
       semanticQuery: SEMANTIC_QUERY,
       sourceAgent: SOURCE_AGENT,
@@ -765,6 +884,7 @@ async function main() {
           fullQuitBreadcrumb: FULL_QUIT_BREADCRUMB,
           ...inferenceExpectation,
           onnxruntimeDll: runtime.onnxruntimeDll,
+          vulkanLoaderDll: runtime.vulkanLoaderDll,
           marker,
           semanticQuery: SEMANTIC_QUERY,
           sourceAgent: SOURCE_AGENT,

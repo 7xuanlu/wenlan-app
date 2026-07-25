@@ -3,6 +3,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { createHash } from "node:crypto";
@@ -59,6 +60,8 @@ function fixture() {
     "wenlan-server.exe": "source server",
     "wenlan-mcp.exe": "source mcp",
     "onnxruntime.dll": "source ort",
+    "vulkan-1.dll": "source vulkan loader",
+    "VulkanRT-License.txt": "source vulkan license",
   };
   for (const [name, content] of Object.entries(sources)) {
     writeFileSync(resolve(sourceDir, name), content);
@@ -70,6 +73,8 @@ function fixture() {
     `wenlan-mcp-${TARGET}.exe`,
     `cloudflared-${TARGET}.exe`,
     "onnxruntime.dll",
+    "vulkan-1.dll",
+    "VulkanRT-License.txt",
   ];
   for (const name of destinations) {
     writeFileSync(resolve(appBinDir, name), `release ${name}`);
@@ -140,7 +145,7 @@ describe("Windows source-built backend staging", () => {
         sha256: "1".repeat(64),
       },
     });
-    expect(manifest.staged).toHaveLength(5);
+    expect(manifest.staged).toHaveLength(7);
     for (const entry of manifest.staged) {
       expect(entry.sha256).toBe(sha256(entry.path));
     }
@@ -180,6 +185,8 @@ describe("Windows source-built backend staging", () => {
       "wenlan-server.exe": "short target server",
       "wenlan-mcp.exe": "short target mcp",
       "onnxruntime.dll": "short target ort",
+      "vulkan-1.dll": "short target vulkan loader",
+      "VulkanRT-License.txt": "short target vulkan license",
     })) {
       writeFileSync(resolve(releaseDir, name), content);
     }
@@ -239,5 +246,41 @@ describe("Windows source-built backend staging", () => {
         resolveCheckoutCommit: () => COMMIT,
       }),
     ).toThrow("required backend build payload");
+  });
+
+  it("rejects a partial Vulkan runtime pair", async () => {
+    const { stageSourceBuiltBackend } = await loadStageModule();
+    const setup = fixture();
+    writeFileSync(resolve(setup.sourceDir, "VulkanRT-License.txt"), "");
+
+    expect(() =>
+      stageSourceBuiltBackend({
+        ...setup,
+        commit: COMMIT,
+        targetTriple: TARGET,
+        resolveCheckoutCommit: () => COMMIT,
+      }),
+    ).toThrow("Vulkan loader and license");
+  });
+
+  it("keeps legacy CPU source builds valid and removes stale Vulkan payloads", async () => {
+    const { stageSourceBuiltBackend } = await loadStageModule();
+    const setup = fixture();
+    unlinkSync(resolve(setup.sourceDir, "vulkan-1.dll"));
+    unlinkSync(resolve(setup.sourceDir, "VulkanRT-License.txt"));
+
+    stageSourceBuiltBackend({
+      ...setup,
+      commit: COMMIT,
+      targetTriple: TARGET,
+      resolveCheckoutCommit: () => COMMIT,
+    });
+
+    const manifest = JSON.parse(readFileSync(setup.manifestPath, "utf8"));
+    expect(manifest.staged).toHaveLength(5);
+    expect(existsSync(resolve(setup.appBinDir, "vulkan-1.dll"))).toBe(false);
+    expect(
+      existsSync(resolve(setup.appBinDir, "VulkanRT-License.txt")),
+    ).toBe(false);
   });
 });

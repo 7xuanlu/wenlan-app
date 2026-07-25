@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
@@ -51,6 +52,24 @@ function requiredFile(path) {
   if (!existsSync(path) || statSync(path).size <= 0) {
     throw new Error(`required backend build payload is missing or empty: ${path}`);
   }
+}
+
+function optionalVulkanPayloads(sourceDir) {
+  const payloads = [
+    ["vulkan-1.dll", "vulkan-1.dll"],
+    ["VulkanRT-License.txt", "VulkanRT-License.txt"],
+  ];
+  const present = payloads.map(([sourceName]) => {
+    const path = resolve(sourceDir, sourceName);
+    return existsSync(path) && statSync(path).size > 0;
+  });
+  if (present.every((value) => !value)) return [];
+  if (!present.every(Boolean)) {
+    throw new Error(
+      "Vulkan loader and license must both be present and non-empty",
+    );
+  }
+  return payloads;
 }
 
 export function resolveBackendDirectory(input, repoRoot = REPO_ROOT) {
@@ -135,6 +154,7 @@ export function stageSourceBuiltBackend(options) {
     ["wenlan-server.exe", `wenlan-server-${targetTriple}.exe`],
     ["wenlan-mcp.exe", `wenlan-mcp-${targetTriple}.exe`],
     ["onnxruntime.dll", "onnxruntime.dll"],
+    ...optionalVulkanPayloads(sourceDir),
   ];
 
   if (verifyOnly) {
@@ -193,6 +213,11 @@ export function stageSourceBuiltBackend(options) {
   }
 
   mkdirSync(appBinDir, { recursive: true });
+  if (payloads.length === 4) {
+    for (const name of ["vulkan-1.dll", "VulkanRT-License.txt"]) {
+      rmSync(resolve(appBinDir, name), { force: true });
+    }
+  }
   for (const [sourceName, destinationName] of payloads) {
     const source = resolve(sourceDir, sourceName);
     requiredFile(source);
@@ -205,6 +230,9 @@ export function stageSourceBuiltBackend(options) {
     `wenlan-mcp-${targetTriple}.exe`,
     `cloudflared-${targetTriple}.exe`,
     "onnxruntime.dll",
+    ...payloads
+      .slice(4)
+      .map(([, destinationName]) => destinationName),
   ];
   const staged = requiredDestinations.map((name) => {
     const path = resolve(appBinDir, name);

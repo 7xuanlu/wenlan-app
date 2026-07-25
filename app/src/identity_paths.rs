@@ -14,7 +14,7 @@ pub fn app_data_dir() -> PathBuf {
     app_data_dir_for_base(&base)
 }
 
-fn app_data_dir_for_base(base: &std::path::Path) -> PathBuf {
+pub(crate) fn app_data_dir_for_base(base: &std::path::Path) -> PathBuf {
     let current = base.join("wenlan");
     let legacy = base.join("origin");
     if path_has_app_state(&current) {
@@ -197,6 +197,17 @@ mod tests {
         std::fs::create_dir_all(&current).unwrap();
         std::fs::create_dir_all(&legacy).unwrap();
         std::fs::write(legacy.join("activities.json"), "[]").unwrap();
+        assert_eq!(app_data_dir_for_base(tmp.path()), legacy);
+    }
+
+    #[test]
+    fn app_data_dir_uses_legacy_default_when_current_empty_and_legacy_has_avatars() {
+        let tmp = tempfile::tempdir().unwrap();
+        let current = tmp.path().join("wenlan");
+        let legacy = tmp.path().join("origin");
+        std::fs::create_dir_all(&current).unwrap();
+        std::fs::create_dir_all(legacy.join("avatars")).unwrap();
+
         assert_eq!(app_data_dir_for_base(tmp.path()), legacy);
     }
 

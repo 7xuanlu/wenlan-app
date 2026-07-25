@@ -1,4 +1,4 @@
-name: Windows Server 2022 native app with source-built backend smoke
+name: Windows Server 2022 native app and CPU-embedding smoke
 
 on:
   workflow_call:
@@ -13,13 +13,14 @@ env:
   RUST_LOG: "warn,wenlan_lib::lifecycle=info"
   TARGET_TRIPLE: x86_64-pc-windows-msvc
   WENLAN_DOWNLOAD_SIDECARS: "1"
-  WENLAN_BACKEND_SMOKE_COMMIT: c66f9d8e3e2edc991a540a89d3c5f60e2c109a99
+  WENLAN_NATIVE_EXPECT_INFERENCE_BACKEND: "disabled"
+  WENLAN_NATIVE_EXPECT_NO_INFERENCE_FALLBACK: "1"
   WENLAN_PRESTAGED_SIDECARS: "1"
   WENLAN_WINDOWS_BACKEND_BUILD_DIR: windows-smoke-backend
 
 jobs:
   native-smoke:
-    name: Windows Server 2022 native app with source-built backend smoke
+    name: Windows native app and CPU embeddings (no LLM)
     runs-on: windows-2022
     timeout-minutes: 90
 
@@ -27,11 +28,24 @@ jobs:
       - name: Check out app
         uses: actions/checkout@v6
 
+      - name: Resolve locked backend smoke ref
+        id: backend_ref
+        shell: pwsh
+        run: |
+          $backendRef = (node scripts/sidecar-lock.mjs get backend_tag).Trim()
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($backendRef)) {
+            throw "backend release baseline lookup failed"
+          }
+          "WENLAN_BACKEND_SMOKE_REF=$backendRef" |
+            Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "ref=$backendRef" |
+            Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
       - name: Check out exact backend smoke commit
         uses: actions/checkout@v6
         with:
           repository: 7xuanlu/wenlan
-          ref: ${{ env.WENLAN_BACKEND_SMOKE_COMMIT }}
+          ref: ${{ steps.backend_ref.outputs.ref }}
           path: windows-smoke-backend
 
       - name: Initialize always-uploaded evidence
@@ -168,7 +182,13 @@ jobs:
           if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($backendTag)) {
             throw "backend release baseline lookup failed"
           }
-          $backendCommit = $env:WENLAN_BACKEND_SMOKE_COMMIT
+          if ($backendTag -ne $env:WENLAN_BACKEND_SMOKE_REF) {
+            throw "checked-out backend ref $env:WENLAN_BACKEND_SMOKE_REF does not match lock $backendTag"
+          }
+          $backendCommit = (git -C windows-smoke-backend rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $backendCommit -notmatch "^[0-9a-f]{40}$") {
+            throw "checked-out backend commit lookup failed"
+          }
 
           "WINDOWS_BUILD=$windowsBuild" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "WEBVIEW2_VERSION=$webviewVersion" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
@@ -225,20 +245,19 @@ jobs:
           }
           node scripts/windows/stage-backend-build.mjs `
             --backend-dir windows-smoke-backend `
-            --commit $env:WENLAN_BACKEND_SMOKE_COMMIT `
+            --commit $env:WENLAN_BACKEND_COMMIT `
             --manifest $env:WENLAN_SIDECAR_MANIFEST
           if ($LASTEXITCODE -ne 0) {
             throw "backend sidecar staging failed with exit code $LASTEXITCODE"
           }
 
-      # Compile every unit-test target on Windows, then run the full suite except
-      # the exact historical cases whose fixtures assume macOS HOME, separators,
-      # or LaunchAgent paths. Keep this list explicit so Windows coverage cannot
-      # silently collapse to a few filtered tests.
+      # Compile and run every Windows library test. macOS lifecycle fixtures use
+      # an explicit test HOME, while portable paths use Path comparisons, so no
+      # name-based Windows skip list can hide new failures.
       - name: Compile Windows Rust library tests
         run: cargo test -p wenlan-app --lib --no-run
 
-      - name: Run Windows Rust library tests except verified platform-assumption cases
+      - name: Run full Windows Rust library test suite
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -254,26 +273,7 @@ jobs:
 
           $testExitCode = 0
           try {
-            cargo test -p wenlan-app --lib -- `
-              --skip config::tests::config_knowledge_path_default_uses_legacy_when_only_legacy_exists `
-              --skip config::tests::config_knowledge_path_default_uses_wenlan_when_no_legacy_exists `
-              --skip lifecycle::tests::app_plist_path_uses_wenlan_label `
-              --skip lifecycle::tests::install_app_plist_writes_file_and_calls_launchctl_load `
-              --skip lifecycle::tests::install_app_plist_writes_wenlan_log_paths `
-              --skip lifecycle::tests::legacy_app_plist_ownership_accepts_owned_origin_app_path `
-              --skip lifecycle::tests::legacy_app_plist_path_uses_origin_label `
-              --skip lifecycle::tests::legacy_server_plist_does_not_count_as_current_wenlan_service `
-              --skip lifecycle::tests::legacy_server_plist_ownership_accepts_owned_origin_server_path `
-              --skip lifecycle::tests::opt_out_flag_round_trip `
-              --skip lifecycle::tests::service_management_uses_wenlan_cli_next_to_app_binary `
-              --skip lifecycle::tests::set_run_at_login_false_cleans_legacy_app_and_server_plists `
-              --skip lifecycle::tests::stable_launch_agent_target_accepts_user_wenlan_app_bundle `
-              --skip lifecycle::tests::uninstall_app_plist_removes_file `
-              --skip mcp_config::tests::test_client_config_path_codex_cli `
-              --skip mcp_config::tests::test_client_config_path_gemini_cli `
-              --skip remote_access::tests::test_token_generate_args_include_wenlan_output_path `
-              --skip search::avatar_path_tests::avatar_storage_dir_uses_legacy_default_when_current_empty_and_legacy_has_avatars `
-              --skip sources::obsidian::discover_vaults_tests::vault_path_no_longer_on_disk_is_filtered_out
+            cargo test -p wenlan-app --lib
             $testExitCode = $LASTEXITCODE
           }
           finally {
@@ -368,6 +368,22 @@ jobs:
           if (-not $ready) {
             throw "tauri-driver did not listen on 127.0.0.1:4444"
           }
+          $nativeDriver = @(
+            Get-CimInstance Win32_Process |
+              Where-Object {
+                $_.ParentProcessId -eq $driverProcess.Id -and
+                [string]::Equals(
+                  $_.ExecutablePath,
+                  $driverPath,
+                  [System.StringComparison]::OrdinalIgnoreCase
+                )
+              }
+          )
+          if ($nativeDriver.Count -ne 1) {
+            throw "expected exactly one tauri-driver-owned msedgedriver process"
+          }
+          $nativeDriver[0].ProcessId |
+            Set-Content (Join-Path $evidence "msedgedriver.pid")
 
           pnpm test:native:windows `
             --app target/x86_64-pc-windows-msvc/release/wenlan-app.exe `
@@ -395,8 +411,10 @@ jobs:
           if (Test-Path $pidPath) {
             Stop-Process -Id ([int](Get-Content $pidPath)) -Force -ErrorAction SilentlyContinue
           }
-          Get-Process msedgedriver -ErrorAction SilentlyContinue |
-            Stop-Process -Force -ErrorAction SilentlyContinue
+          $nativePidPath = Join-Path $evidence "msedgedriver.pid"
+          if (Test-Path $nativePidPath) {
+            Stop-Process -Id ([int](Get-Content $nativePidPath)) -Force -ErrorAction SilentlyContinue
+          }
 
       - name: Upload native evidence
         if: always()

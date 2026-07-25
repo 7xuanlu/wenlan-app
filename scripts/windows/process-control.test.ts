@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 type ProcessControlModule = {
   appLogCandidates(
     environment: Record<string, string | undefined>,
+    platform?: NodeJS.Platform,
   ): string[];
   cleanupProcessInvocation(
     appExecutable: string,
@@ -12,7 +13,11 @@ type ProcessControlModule = {
     scriptPath: string,
     platform?: NodeJS.Platform,
   ): { args: string[]; command: string };
-  latestMatchingLogLine(log: string, breadcrumb: string): string;
+  latestMatchingLogLine(
+    log: string,
+    breadcrumb: string,
+    notBefore?: string,
+  ): string;
   powerShellCommand(platform?: NodeJS.Platform): string;
 };
 
@@ -56,29 +61,22 @@ describe("Windows native smoke process cleanup", () => {
     });
   });
 
-  it("checks both Windows profile and HOME for the app's actual log layout", async () => {
+  it("uses the platform-native Windows app-data log layout", async () => {
     const loaded = (await import("./process-control.mjs")) as ProcessControlModule;
 
     expect(
       loaded.appLogCandidates({
         HOME: "/git-home",
+        LOCALAPPDATA: "C:\\Users\\tester\\AppData\\Local",
         USERPROFILE: "/windows-profile",
         WENLAN_APP_LOG: "/explicit/wenlan.log",
-      }),
+      }, "win32"),
     ).toEqual([
       "/explicit/wenlan.log",
       resolve(
-        "/windows-profile",
-        "Library",
-        "Logs",
-        "com.wenlan.desktop",
-        "wenlan.log",
-      ),
-      resolve(
-        "/git-home",
-        "Library",
-        "Logs",
-        "com.wenlan.desktop",
+        "C:\\Users\\tester\\AppData\\Local",
+        "wenlan",
+        "logs",
         "wenlan.log",
       ),
     ]);
@@ -99,8 +97,24 @@ describe("Windows native smoke process cleanup", () => {
           "",
         ].join("\r\n"),
         breadcrumb,
+        "2026-07-25T04:36:56Z",
       ),
     ).toBe(`2026-07-25T04:37:02Z INFO ${breadcrumb}`);
+  });
+
+  it("rejects a matching lifecycle breadcrumb from an earlier run", async () => {
+    const loaded = (await import(
+      "./process-control.mjs"
+    )) as ProcessControlModule;
+    const breadcrumb = "[quit] full quit command accepted";
+
+    expect(
+      loaded.latestMatchingLogLine(
+        `2026-07-23T02:20:14Z INFO ${breadcrumb}\r\n`,
+        breadcrumb,
+        "2026-07-25T04:36:56Z",
+      ),
+    ).toBe("");
   });
 
   it("rejects empty cleanup paths before enumerating system processes", () => {

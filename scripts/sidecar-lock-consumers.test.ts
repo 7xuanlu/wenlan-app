@@ -52,10 +52,12 @@ describe("sidecar lock workflow consumers", () => {
     expect(workflow).toContain(".\\wenlan-server.exe --help");
     expect(workflow).toContain(".\\wenlan-mcp.exe --help");
     expect(workflow).toContain("Test-Path .\\onnxruntime.dll -PathType Leaf");
-    expect(workflow).toContain("path: backend-smoke-contract");
+    expect(workflow).toContain("Test-Path .\\vulkan-1.dll -PathType Leaf");
     expect(workflow).toContain(
-      "ref: c66f9d8e3e2edc991a540a89d3c5f60e2c109a99",
+      "Test-Path .\\VulkanRT-License.txt -PathType Leaf",
     );
+    expect(workflow).toContain("path: backend-smoke-contract");
+    expect(workflow).toContain("ref: ${{ steps.latest.outputs.tag }}");
     expect(workflow).toContain("scripts\\smoke-windows.ps1");
     expect(workflow).toContain("-ExePath $candidateServer");
     expect(workflow).toContain("LATEST_TAG: ${{ steps.latest.outputs.tag }}");

@@ -92,6 +92,13 @@ for root in \
   "$HOME/.origin"; do
   PRODUCTION_PATH_ROOTS+=("$(canonicalize_path "$root")")
 done
+if is_windows_shell && [[ -n "${LOCALAPPDATA:-}" ]]; then
+  for root in \
+    "$LOCALAPPDATA/wenlan" \
+    "$LOCALAPPDATA/origin"; do
+    PRODUCTION_PATH_ROOTS+=("$(canonicalize_path "$root")")
+  done
+fi
 
 path_is_within() {
   [[ "$1" == "$2" || "$1" == "$2/"* ]]

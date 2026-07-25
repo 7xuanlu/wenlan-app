@@ -13,7 +13,8 @@ The native smoke proves that one release-profile `wenlan-app.exe`:
 2. reaches `/api/health` with an initialized database;
 3. records `/api/status` and, when requested, verifies the expected inference
    backend and physical device;
-4. loads the staged `onnxruntime.dll`;
+4. loads the staged `onnxruntime.dll` and, for Vulkan proof, the exact adjacent
+   `vulkan-1.dll` whose license travels with it;
 5. completes visible first-run onboarding in WebView2;
 6. stores a unique memory and retrieves it with a vector-only semantic query;
 7. renders that same marker in the native UI; and
@@ -297,7 +298,9 @@ reused across isolated evidence directories, but do not recursively copy its
 Hugging Face snapshot tree: it contains relative symlinks, and changing their
 representation can make ONNX Runtime report that an otherwise present model
 does not exist. Keep `WENLAN_DATA_DIR` and `WENLAN_NATIVE_PROFILE_ROOT` unique
-for every run.
+for every run. Debug startup and `scripts/dev-runtime.sh` both reject data or
+state directories under the production `%LOCALAPPDATA%\wenlan` and
+`%LOCALAPPDATA%\origin` roots.
 
 For a physical Vulkan run, also set:
 
@@ -305,12 +308,16 @@ For a physical Vulkan run, also set:
 $env:WENLAN_LLM_DEVICE = "auto"
 $env:WENLAN_NATIVE_EXPECT_INFERENCE_BACKEND = "vulkan"
 $env:WENLAN_NATIVE_EXPECT_INFERENCE_DEVICE_CONTAINS = "RTX 3060"
+$env:WENLAN_NATIVE_EXPECT_INFERENCE_DEVICE_INDEX = "1"
+$env:WENLAN_NATIVE_EXPECT_INFERENCE_GPU_LAYERS = "99"
+$env:WENLAN_NATIVE_EXPECT_NO_INFERENCE_FALLBACK = "1"
 $env:WENLAN_NATIVE_ON_DEVICE_MODEL = "qwen3-4b"
 ```
 
-Omit the two `WENLAN_NATIVE_EXPECT_*` values when the machine has no supported
-GPU. The harness still saves `status.json`; it only makes backend/device
-matching mandatory when the expectations are present.
+Omit the five `WENLAN_NATIVE_EXPECT_*` values when the machine has no supported
+GPU. The harness still saves `status.json`; it makes only the explicitly
+provided backend, device, device-index, GPU-layer, and no-fallback expectations
+mandatory. Invalid numeric or boolean expectation values fail closed.
 
 Install frontend dependencies and stage the locked release baseline:
 
@@ -332,6 +339,8 @@ try {
     --jobs 1 -p wenlan -p wenlan-server -p wenlan-mcp
 
   & .\scripts\stage-onnxruntime-windows.ps1 `
+    -DestinationDirectory (Join-Path $BackendCargoTarget "$Target\release")
+  & .\scripts\stage-vulkan-loader-windows.ps1 `
     -DestinationDirectory (Join-Path $BackendCargoTarget "$Target\release")
 }
 finally {
@@ -536,18 +545,27 @@ outer PowerShell exit failure. Do not kill every process named
 
 Treat the run as passed only when all of the following hold:
 
+- `app.log` was copied from the native Windows log at
+  `%LOCALAPPDATA%\wenlan\logs\wenlan.log` (or the explicit `WENLAN_APP_LOG`);
 - `result.json` has `status: "passed"` and `error: null`;
 - every entry in `assertions` has `ok: true`;
-- `health.json` reports `status: "ok"` and `db_initialized: true`;
+- `health.json` reports `status: "ok"`, `db_initialized: true`, and the same
+  short Git commit as the source-built sidecar manifest, preventing a stale
+  target binary from being relabelled;
 - `status.json` records the on-device backend; a physical GPU run must match
-  the explicit backend and device expectations;
+  the explicit backend, device, device-index, GPU-layer, and no-fallback
+  expectations;
 - the backend PID is a child of the recorded app PID;
 - the backend executable is the staged source-built binary;
 - loaded modules include the adjacent staged `onnxruntime.dll`;
+- a Vulkan-expected run maps the exact adjacent staged `vulkan-1.dll` in the
+  exercised backend process, and the source-build manifest also hashes
+  `VulkanRT-License.txt`; a system-wide loader is not accepted as proof;
 - the stored source ID, vector-only semantic-search source ID, and visible UI
   marker agree;
 - `01-welcome.png`, `02-app-ready.png`, and `03-memory-visible.png` exist;
-- the app log contains `[quit] full quit command accepted`; and
+- the app log contains `[quit] full quit command accepted` with a timestamp no
+  earlier than this harness run; and
 - the app, backend, ports 7878/4444, and WebDriver processes are gone.
 
 The physical run passed all 33 assertions with marker
@@ -564,9 +582,9 @@ all 35 assertions with marker `WINDOWS_SMOKE_1784954334839_1`, app commit
 `a38b6c682ea6750ac1802ded0517c6ffe7a3bf2538c1b517e2c6bdeda02f03bf`.
 The app-owned backend and app both exited cleanly, ports 7878 and 4444 were
 clear, and the three screenshots were visually inspected rather than accepted
-by file existence alone. The evidence extractor records the latest matching
-guarded-quit breadcrumb from the accumulated app log; selecting the first
-historical match would not prove the current run.
+by file existence alone. The evidence extractor now rejects guarded-quit
+breadcrumbs older than the recorded harness start time, so an accumulated log
+entry from a previous run cannot satisfy the current lifecycle assertion.
 
 ## Test results and remaining Windows gaps
 
@@ -575,9 +593,9 @@ The following commands were run, not inferred:
 | Command or gate | Physical Windows result |
 | --- | --- |
 | `pnpm build` | Passed; TypeScript and Vite production build completed |
-| Full `pnpm test` | Passed after the latest main sync and portability fixes: `170` files passed, `1834` tests passed, `2` skipped, `0` failed |
+| Full `pnpm test` | Passed after the latest main sync and portability fixes: `170` files passed, `1842` tests passed, `2` skipped, `0` failed |
 | `cargo test -p wenlan-app --lib --no-run` | Passed |
-| Rust library suite with Windows platform-assumption skips | `359 passed`, `0 failed`, `1 ignored`, `19 filtered` |
+| Full Rust library suite on Windows, without name-based skips | `381 passed`, `0 failed`, `1 ignored`, `0` filtered |
 | Exact backend source build | Passed for all three binaries |
 | `pnpm tauri build --no-bundle --target x86_64-pc-windows-msvc` | Passed |
 | Qwen hardware/inference probe | PR #96 baseline passed twice on CPU/OpenMP; backend Vulkan follow-up passed auto/discrete, forced CPU, and invalid-device fallback |
@@ -629,12 +647,18 @@ maintenance rules:
   `--cargo-target-dir` or
   `WENLAN_WINDOWS_BACKEND_CARGO_TARGET_DIR` when staging; never silently stage
   stale payloads from `<backend>\target`.
+- Treat `vulkan-1.dll` and `VulkanRT-License.txt` as one optional compatibility
+  pair while older CPU-only backend releases remain pinned. If either source
+  file exists, both must be non-empty, hashed in the source-build manifest,
+  copied beside the app-owned server, and verified by exact loaded-module
+  path. When neither exists, remove stale copies rather than borrowing them
+  from a previous build.
 - `Start-Process -ArgumentList` joins arguments into a Windows command line.
   Prefer direct invocation when an individual argument contains spaces, or
   quote that argument explicitly and verify the child command line.
 
 The verified post-main-sync command was plain `pnpm test`, not a filtered
-invocation: all 170 test files passed with 1834 passing tests and two
+invocation: all 170 test files passed with 1842 passing tests and two
 intentional platform-specific skips.
 
 Five `identity_paths` tests originally set `HOME` and therefore touched the real
@@ -643,10 +667,12 @@ API. They now exercise the same selection logic through an explicit temporary
 base directory. The Windows suite runs all five; do not add them to the skip
 list or reintroduce process-global profile mutation.
 
-The remaining 19 filtered Rust cases exercise macOS plist, LaunchAgent, or
-Unix-path assumptions and stay enumerated by full test name in
-`.github/workflows/windows-smoke.yml`. The workflow audits and removes only its
-known test-created profile artifacts around that suite.
+The former 19-name Rust skip list is gone. Tests now inject temporary roots
+into path-selection helpers, compare `Path` components instead of `/`-joined
+strings, JSON-escape Windows vault paths, and give macOS LaunchAgent fixtures
+an explicit test-only `HOME` rather than relying on the Windows known-folder
+API. The workflow runs the unfiltered library suite and still audits its real
+profile for unexpected `Library\LaunchAgents` pollution.
 
 ## Cleanup
 

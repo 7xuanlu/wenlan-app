@@ -72,7 +72,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: 7xuanlu/wenlan
-          ref: c66f9d8e3e2edc991a540a89d3c5f60e2c109a99
+          ref: ${{ steps.latest.outputs.tag }}
           path: backend-smoke-contract
 
       - name: Smoke candidate Windows release payload
@@ -109,6 +109,12 @@ jobs:
             if (-not (Test-Path .\onnxruntime.dll -PathType Leaf)) {
               throw "Windows candidate is missing onnxruntime.dll"
             }
+            if (-not (Test-Path .\vulkan-1.dll -PathType Leaf)) {
+              throw "Windows candidate is missing vulkan-1.dll"
+            }
+            if (-not (Test-Path .\VulkanRT-License.txt -PathType Leaf)) {
+              throw "Windows candidate is missing VulkanRT-License.txt"
+            }
             & .\wenlan.exe --help
             if ($LASTEXITCODE -ne 0) { throw "wenlan.exe --help failed" }
             & .\wenlan-server.exe --help
@@ -120,9 +126,9 @@ jobs:
             Pop-Location
           }
 
-          # Reuse the already-reviewed backend smoke at one immutable commit.
-          # Only the harness comes from source; the executable and DLL remain
-          # the untouched candidate release payload.
+          # Use the smoke contract shipped by the same immutable candidate tag.
+          # Only the harness comes from source; all runtime payloads remain the
+          # untouched candidate release files.
           $candidateServer = Join-Path $extractDir "wenlan-server.exe"
           $smokeScript = Join-Path $env:GITHUB_WORKSPACE "backend-smoke-contract\scripts\smoke-windows.ps1"
           & $smokeScript -ExePath $candidateServer

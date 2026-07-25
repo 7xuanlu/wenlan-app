@@ -130,6 +130,10 @@ pub fn set_user_opted_out(opted_out: bool) -> Result<()> {
 }
 
 fn home_dir() -> Result<PathBuf> {
+    #[cfg(test)]
+    if let Some(home) = std::env::var_os("HOME") {
+        return Ok(PathBuf::from(home));
+    }
     dirs::home_dir().context("HOME not set")
 }
 
@@ -212,7 +216,8 @@ fn classify_stable_launch_agent_target(exe: &Path) -> StableLaunchAgentTarget {
 
     let in_system_apps = app_bundle == Path::new("/Applications/Wenlan.app")
         || app_bundle == Path::new("/Applications/Origin.app");
-    let in_user_apps = dirs::home_dir()
+    let in_user_apps = home_dir()
+        .ok()
         .map(|home| {
             app_bundle == home.join("Applications/Wenlan.app")
                 || app_bundle == home.join("Applications/Origin.app")
@@ -307,7 +312,8 @@ fn path_is_legacy_origin_app_exe(path: &str) -> bool {
     let path = Path::new(path);
     path == Path::new("/Applications/Origin.app/Contents/MacOS/origin")
         || path == Path::new("/Applications/Origin.app/Contents/MacOS/origin-app")
-        || dirs::home_dir()
+        || home_dir()
+            .ok()
             .map(|home| {
                 path == home.join("Applications/Origin.app/Contents/MacOS/origin")
                     || path == home.join("Applications/Origin.app/Contents/MacOS/origin-app")
@@ -318,7 +324,8 @@ fn path_is_legacy_origin_app_exe(path: &str) -> bool {
 fn path_is_legacy_origin_server_exe(path: &str) -> bool {
     let path = Path::new(path);
     path == Path::new("/Applications/Origin.app/Contents/MacOS/origin-server")
-        || dirs::home_dir()
+        || home_dir()
+            .ok()
             .map(|home| path == home.join("Applications/Origin.app/Contents/MacOS/origin-server"))
             .unwrap_or(false)
 }
@@ -931,10 +938,8 @@ mod tests {
     #[serial_test::serial]
     fn opt_out_flag_round_trip() {
         let _env = EnvGuard::capture();
-        // Override HOME so the default app data root resolves under the tempdir.
         let tmp = tempfile::tempdir().unwrap();
-        std::env::set_var("HOME", tmp.path());
-        std::env::remove_var("WENLAN_DATA_DIR");
+        std::env::set_var("WENLAN_DATA_DIR", tmp.path());
         std::env::remove_var("ORIGIN_DATA_DIR");
 
         // Default = false
@@ -2052,14 +2057,14 @@ mod tests {
 
     #[test]
     fn service_management_uses_wenlan_cli_next_to_app_binary() {
-        let path = service_cli_path_for_app_exe(std::path::Path::new(
-            "/Applications/Origin.app/Contents/MacOS/origin-app",
-        ))
-        .unwrap();
-        assert_eq!(
-            path,
-            std::path::Path::new("/Applications/Origin.app/Contents/MacOS/wenlan")
-        );
+        let app_exe = std::path::Path::new("/Applications/Origin.app/Contents/MacOS/origin-app");
+        let path = service_cli_path_for_app_exe(app_exe).unwrap();
+        let mut expected = app_exe.parent().unwrap().join("wenlan");
+        if cfg!(target_os = "windows") {
+            expected.set_extension("exe");
+        }
+
+        assert_eq!(path, expected);
     }
 
     #[test]

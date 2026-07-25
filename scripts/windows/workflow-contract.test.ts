@@ -91,14 +91,17 @@ describe("Windows native smoke workflow contract", () => {
     expect(text).toContain("TARGET_TRIPLE: x86_64-pc-windows-msvc");
     expect(text).toContain("WENLAN_DOWNLOAD_SIDECARS: \"1\"");
     expect(text).toContain(
-      "WENLAN_BACKEND_SMOKE_COMMIT: c66f9d8e3e2edc991a540a89d3c5f60e2c109a99",
+      "WENLAN_BACKEND_SMOKE_REF=$backendRef",
     );
     expect(text).toContain(
       '"WENLAN_BACKEND_COMMIT=$backendCommit" | Out-File',
     );
     expect(text).toContain("WENLAN_PRESTAGED_SIDECARS: \"1\"");
     expect(text).toContain("repository: 7xuanlu/wenlan");
-    expect(text).toContain("ref: ${{ env.WENLAN_BACKEND_SMOKE_COMMIT }}");
+    expect(text).toContain("ref: ${{ steps.backend_ref.outputs.ref }}");
+    expect(text).toContain(
+      "$backendCommit = (git -C windows-smoke-backend rev-parse HEAD).Trim()",
+    );
     expect(text).toContain("path: windows-smoke-backend");
     expect(text).toContain(
       "cargo build --locked --release --target x86_64-pc-windows-msvc",
@@ -108,9 +111,9 @@ describe("Windows native smoke workflow contract", () => {
     expect(text).toContain("node scripts/windows/stage-backend-build.mjs");
     expect(text).toContain("cargo test -p wenlan-app --lib --no-run");
     expect(text).toContain(
-      "Run Windows Rust library tests except verified platform-assumption cases",
+      "Run full Windows Rust library test suite",
     );
-    expect(text).toContain("cargo test -p wenlan-app --lib --");
+    expect(text).toContain("cargo test -p wenlan-app --lib");
     expect(text).toContain(
       '$launchAgentsPath = Join-Path $env:USERPROFILE "Library\\LaunchAgents"',
     );
@@ -129,31 +132,7 @@ describe("Windows native smoke workflow contract", () => {
     expect(text).toContain(
       "Windows Rust test cleanup failed: fake LaunchAgents path remains",
     );
-    const platformAssumptionTests = [
-      "config::tests::config_knowledge_path_default_uses_legacy_when_only_legacy_exists",
-      "config::tests::config_knowledge_path_default_uses_wenlan_when_no_legacy_exists",
-      "lifecycle::tests::app_plist_path_uses_wenlan_label",
-      "lifecycle::tests::install_app_plist_writes_file_and_calls_launchctl_load",
-      "lifecycle::tests::install_app_plist_writes_wenlan_log_paths",
-      "lifecycle::tests::legacy_app_plist_ownership_accepts_owned_origin_app_path",
-      "lifecycle::tests::legacy_app_plist_path_uses_origin_label",
-      "lifecycle::tests::legacy_server_plist_does_not_count_as_current_wenlan_service",
-      "lifecycle::tests::legacy_server_plist_ownership_accepts_owned_origin_server_path",
-      "lifecycle::tests::opt_out_flag_round_trip",
-      "lifecycle::tests::service_management_uses_wenlan_cli_next_to_app_binary",
-      "lifecycle::tests::set_run_at_login_false_cleans_legacy_app_and_server_plists",
-      "lifecycle::tests::stable_launch_agent_target_accepts_user_wenlan_app_bundle",
-      "lifecycle::tests::uninstall_app_plist_removes_file",
-      "mcp_config::tests::test_client_config_path_codex_cli",
-      "mcp_config::tests::test_client_config_path_gemini_cli",
-      "remote_access::tests::test_token_generate_args_include_wenlan_output_path",
-      "search::avatar_path_tests::avatar_storage_dir_uses_legacy_default_when_current_empty_and_legacy_has_avatars",
-      "sources::obsidian::discover_vaults_tests::vault_path_no_longer_on_disk_is_filtered_out",
-    ];
-    for (const testName of platformAssumptionTests) {
-      expect(text).toContain(`--skip ${testName}`);
-    }
-    expect(text.match(/--skip /g)).toHaveLength(platformAssumptionTests.length);
+    expect(text).not.toContain("--skip ");
     const buildHook = readFileSync(
       resolve(process.cwd(), "scripts", "prepare-tauri-build-sidecars.sh"),
       "utf8",
@@ -187,9 +166,7 @@ describe("Windows native smoke workflow contract", () => {
     expect(text).toMatch(
       /node scripts\/windows\/stage-backend-build\.mjs[\s\S]*?--manifest \$env:WENLAN_SIDECAR_MANIFEST\s+if \(\$LASTEXITCODE -ne 0\) \{\s+throw "backend sidecar staging failed with exit code \$LASTEXITCODE"/,
     );
-    expect(text).not.toContain(
-      'gh api "repos/7xuanlu/wenlan/commits/$backendTag"',
-    );
+    expect(text).not.toContain("WENLAN_BACKEND_SMOKE_COMMIT:");
   });
 
   it("captures real staging failures inside the harness evidence boundary", () => {
@@ -224,7 +201,15 @@ describe("Windows native smoke workflow contract", () => {
     expect(text).toContain(
       "WENLAN_NATIVE_EXPECT_INFERENCE_DEVICE_CONTAINS",
     );
+    expect(text).toContain("WENLAN_NATIVE_EXPECT_INFERENCE_DEVICE_INDEX");
+    expect(text).toContain("WENLAN_NATIVE_EXPECT_INFERENCE_GPU_LAYERS");
+    expect(text).toContain(
+      "WENLAN_NATIVE_EXPECT_NO_INFERENCE_FALLBACK",
+    );
     expect(text).toContain("WENLAN_NATIVE_ON_DEVICE_MODEL");
+    expect(text).toContain(
+      'inferenceExpectation.inferenceBackend !== "disabled"',
+    );
     expect(hotLoadIndex).toBeGreaterThan(healthIndex);
     expect(inferencePollIndex).toBeGreaterThan(hotLoadIndex);
   });
@@ -291,6 +276,8 @@ describe("Windows native smoke workflow contract", () => {
     expect(text).toContain("name: windows-native-smoke");
     expect(text).toContain("path: windows-native-smoke");
     expect(text).toContain("if-no-files-found: warn");
+    expect(text).toContain('"msedgedriver.pid"');
+    expect(text).not.toContain("Get-Process msedgedriver");
   });
 
   it("does not weaken the proof into preview, remote desktop, or release work", () => {

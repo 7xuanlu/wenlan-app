@@ -57,9 +57,18 @@ fn app_log_dir() -> std::path::PathBuf {
     if let Some(state_dir) = crate::identity_paths::isolated_dev_state_dir() {
         return state_dir.join("logs");
     }
-    dirs::home_dir()
-        .map(|h| h.join("Library/Logs/com.wenlan.desktop"))
-        .unwrap_or_else(std::env::temp_dir)
+    #[cfg(target_os = "macos")]
+    {
+        dirs::home_dir()
+            .map(|home| home.join("Library/Logs/com.wenlan.desktop"))
+            .unwrap_or_else(std::env::temp_dir)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        dirs::data_local_dir()
+            .map(|base| base.join("wenlan").join("logs"))
+            .unwrap_or_else(|| std::env::temp_dir().join("wenlan").join("logs"))
+    }
 }
 
 fn app_log_file_name() -> &'static str {
@@ -100,9 +109,44 @@ fn app_fallback_log_dir() -> std::path::PathBuf {
     if let Some(state_dir) = crate::identity_paths::isolated_dev_state_dir() {
         return state_dir.join("fallback-logs");
     }
-    dirs::home_dir()
-        .map(|home| home.join("Library/Logs/com.wenlan.desktop-fallback"))
-        .unwrap_or_else(|| std::env::temp_dir().join("wenlan-app-fallback"))
+    #[cfg(target_os = "macos")]
+    {
+        dirs::home_dir()
+            .map(|home| home.join("Library/Logs/com.wenlan.desktop-fallback"))
+            .unwrap_or_else(|| std::env::temp_dir().join("wenlan-app-fallback"))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        std::env::temp_dir().join("wenlan-app-fallback")
+    }
+}
+
+#[cfg(debug_assertions)]
+fn production_runtime_roots(
+    home: Option<std::path::PathBuf>,
+    local_app_data: Option<std::path::PathBuf>,
+) -> Vec<std::path::PathBuf> {
+    let mut roots = Vec::new();
+    if let Some(home) = home {
+        roots.extend([
+            home.join("Library/Application Support/wenlan"),
+            home.join("Library/Application Support/origin"),
+            home.join("Library/LaunchAgents"),
+            home.join("Library/Logs/com.wenlan.desktop"),
+            home.join("Library/Logs/com.origin.desktop"),
+            home.join(".config/wenlan-mcp"),
+            home.join(".config/origin-mcp"),
+            home.join(".wenlan"),
+            home.join(".origin"),
+        ]);
+    }
+    #[cfg(target_os = "windows")]
+    if let Some(local_app_data) = local_app_data {
+        roots.extend([local_app_data.join("wenlan"), local_app_data.join("origin")]);
+    }
+    #[cfg(not(target_os = "windows"))]
+    let _ = local_app_data;
+    roots
 }
 
 #[cfg(debug_assertions)]
@@ -180,27 +224,15 @@ fn validate_debug_runtime_isolation() -> Result<(), String> {
         return Err("WENLAN_DEV_TAURI_MCP_SOCKET must not use the production socket".to_string());
     }
 
-    if let Some(home) = dirs::home_dir() {
-        for protected in [
-            home.join("Library/Application Support/wenlan"),
-            home.join("Library/Application Support/origin"),
-            home.join("Library/LaunchAgents"),
-            home.join("Library/Logs/com.wenlan.desktop"),
-            home.join("Library/Logs/com.origin.desktop"),
-            home.join(".config/wenlan-mcp"),
-            home.join(".config/origin-mcp"),
-            home.join(".wenlan"),
-            home.join(".origin"),
-        ] {
-            if let Ok(protected) = std::fs::canonicalize(protected) {
-                if [&state_dir, &data_dir, &socket_path]
-                    .iter()
-                    .any(|path| path.starts_with(&protected))
-                {
-                    return Err(
-                        "WENLAN_DEV_STATE_DIR must not use a production runtime root".to_string(),
-                    );
-                }
+    for protected in production_runtime_roots(dirs::home_dir(), dirs::data_local_dir()) {
+        if let Ok(protected) = std::fs::canonicalize(protected) {
+            if [&state_dir, &data_dir, &socket_path]
+                .iter()
+                .any(|path| path.starts_with(&protected))
+            {
+                return Err(
+                    "WENLAN_DEV_STATE_DIR must not use a production runtime root".to_string(),
+                );
             }
         }
     }
@@ -426,7 +458,7 @@ pub fn run() {
 
     // Log sinks: stderr AND a bounded rotating file under the selected app
     // identity. Debug builds use the worktree state directory; production uses
-    // ~/Library/Logs/com.wenlan.desktop.
+    // the platform-native log location.
     // GUI launches send stderr to /dev/null, so without the file sink any
     // setup() error — e.g. a sidecar spawn ENOENT — is silent. That is
     // exactly how the origin-server spawn regression hid for ~15 minutes
@@ -1679,6 +1711,7 @@ mod tests {
     fn debug_app_rejects_complete_but_production_touching_runtime_identities() {
         let keys = [
             "HOME",
+            "LOCALAPPDATA",
             "WENLAN_PORT",
             "WENLAN_DEV_UI_PORT",
             "WENLAN_DEV_REMOTE_PORT_START",
@@ -1693,17 +1726,24 @@ mod tests {
             .collect();
         let tmp = tempfile::tempdir().unwrap();
         let fake_home = tmp.path().join("home");
-        let production_roots = [
+        let fake_local_app_data = tmp.path().join("local-app-data");
+        let mut production_roots = vec![
             fake_home.join("Library/Application Support/wenlan"),
             fake_home.join("Library/Application Support/origin"),
             fake_home.join("Library/Logs/com.origin.desktop"),
             fake_home.join(".config/origin-mcp"),
             fake_home.join(".origin"),
         ];
+        #[cfg(target_os = "windows")]
+        production_roots.extend([
+            fake_local_app_data.join("wenlan"),
+            fake_local_app_data.join("origin"),
+        ]);
         for root in &production_roots {
             std::fs::create_dir_all(root).unwrap();
         }
         std::env::set_var("HOME", &fake_home);
+        std::env::set_var("LOCALAPPDATA", &fake_local_app_data);
         std::env::set_var("WENLAN_PORT", "17777");
         std::env::set_var("WENLAN_DEV_UI_PORT", "18777");
         std::env::set_var("WENLAN_DEV_REMOTE_PORT_START", "65533");
@@ -1749,5 +1789,36 @@ mod tests {
         assert!(startup_reveal_fallback_needed(false, true));
         assert!(startup_reveal_fallback_needed(true, false));
         assert!(startup_reveal_fallback_needed(false, false));
+    }
+}
+
+#[cfg(all(test, target_os = "windows"))]
+mod windows_tests {
+    use super::*;
+
+    #[test]
+    #[serial_test::serial]
+    fn app_log_identity_uses_windows_local_app_data() {
+        let previous = std::env::var_os("WENLAN_DEV_STATE_DIR");
+        std::env::remove_var("WENLAN_DEV_STATE_DIR");
+
+        assert!(app_log_dir().ends_with("wenlan/logs"));
+        assert_eq!(app_log_file_name(), "wenlan.log");
+
+        match previous {
+            Some(value) => std::env::set_var("WENLAN_DEV_STATE_DIR", value),
+            None => std::env::remove_var("WENLAN_DEV_STATE_DIR"),
+        }
+    }
+
+    #[test]
+    fn windows_production_roots_include_local_app_data() {
+        let fake_home = std::path::PathBuf::from(r"C:\fake-home");
+        let fake_local_app_data = std::path::PathBuf::from(r"C:\fake-local-app-data");
+
+        let roots = production_runtime_roots(Some(fake_home), Some(fake_local_app_data.clone()));
+
+        assert!(roots.contains(&fake_local_app_data.join("wenlan")));
+        assert!(roots.contains(&fake_local_app_data.join("origin")));
     }
 }
