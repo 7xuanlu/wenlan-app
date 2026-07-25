@@ -5,6 +5,8 @@ import { basename, dirname, delimiter, resolve } from "node:path";
 
 let cachedBashExecutable: string | undefined;
 
+export const shellIntegrationTestTimeout = process.platform === "win32" ? 60_000 : 10_000;
+
 export function prependNativePath(directory: string, inherited = process.env.PATH ?? ""): string {
   return inherited ? `${directory}${delimiter}${inherited}` : directory;
 }

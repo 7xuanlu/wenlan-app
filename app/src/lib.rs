@@ -54,6 +54,9 @@ fn set_main_window_dock_visibility<R: tauri::Runtime>(app: &tauri::AppHandle<R>,
 fn set_main_window_dock_visibility<R: tauri::Runtime>(_app: &tauri::AppHandle<R>, _visible: bool) {}
 
 fn app_log_dir() -> std::path::PathBuf {
+    if let Some(state_dir) = crate::identity_paths::isolated_dev_state_dir() {
+        return state_dir.join("logs");
+    }
     dirs::home_dir()
         .map(|h| h.join("Library/Logs/com.wenlan.desktop"))
         .unwrap_or_else(std::env::temp_dir)
@@ -67,31 +70,292 @@ fn launch_agent_startup_enabled() -> bool {
     cfg!(target_os = "macos")
 }
 
-static QUIT_GUARD_PENDING: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
+const APP_LOG_MAX_BYTES: usize = 5 * 1024 * 1024;
+const APP_LOG_BACKUPS: usize = 3;
+
+fn new_app_log_writer(
+    log_dir: &std::path::Path,
+    max_bytes: usize,
+    backups: usize,
+) -> std::io::Result<file_rotate::FileRotate<file_rotate::suffix::AppendCount>> {
+    let path = log_dir.join(app_log_file_name());
+    std::fs::create_dir_all(log_dir)?;
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)?;
+    if !file.metadata()?.is_file() {
+        return Err(std::io::Error::other("app log path is not a regular file"));
+    }
+    Ok(file_rotate::FileRotate::new(
+        path,
+        file_rotate::suffix::AppendCount::new(backups),
+        file_rotate::ContentLimit::Bytes(max_bytes),
+        file_rotate::compression::Compression::None,
+        None,
+    ))
+}
+
+fn app_fallback_log_dir() -> std::path::PathBuf {
+    if let Some(state_dir) = crate::identity_paths::isolated_dev_state_dir() {
+        return state_dir.join("fallback-logs");
+    }
+    dirs::home_dir()
+        .map(|home| home.join("Library/Logs/com.wenlan.desktop-fallback"))
+        .unwrap_or_else(|| std::env::temp_dir().join("wenlan-app-fallback"))
+}
+
+#[cfg(debug_assertions)]
+fn validate_debug_runtime_isolation() -> Result<(), String> {
+    fn required(name: &str) -> Result<std::ffi::OsString, String> {
+        std::env::var_os(name)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| format!("{name} is required"))
+    }
+
+    fn required_port(name: &str) -> Result<u16, String> {
+        required(name)?
+            .to_string_lossy()
+            .parse::<u16>()
+            .map_err(|_| format!("{name} must be a valid TCP port"))
+    }
+
+    let daemon_port = required_port("WENLAN_PORT")?;
+    let ui_port = required_port("WENLAN_DEV_UI_PORT")?;
+    let remote_port_start = required_port("WENLAN_DEV_REMOTE_PORT_START")?;
+    if daemon_port == 7878 {
+        return Err("WENLAN_PORT must not use the production port 7878".to_string());
+    }
+    if ui_port == 1420 {
+        return Err("WENLAN_DEV_UI_PORT must not use the production port 1420".to_string());
+    }
+    if remote_port_start > 65532 {
+        return Err(
+            "WENLAN_DEV_REMOTE_PORT_START must leave room for a four-port range".to_string(),
+        );
+    }
+    if remote_port_start <= 18083 && remote_port_start.saturating_add(3) >= 18080 {
+        return Err(
+            "WENLAN_DEV_REMOTE_PORT_START must not overlap production ports 18080-18083"
+                .to_string(),
+        );
+    }
+
+    let app_id = required("WENLAN_DEV_APP_ID")?;
+    if !app_id
+        .to_string_lossy()
+        .starts_with("com.wenlan.desktop.dev.")
+    {
+        return Err("WENLAN_DEV_APP_ID must use the isolated dev namespace".to_string());
+    }
+
+    let state_dir = std::path::PathBuf::from(required("WENLAN_DEV_STATE_DIR")?);
+    let data_dir = std::path::PathBuf::from(required("WENLAN_DATA_DIR")?);
+    let socket_path = std::path::PathBuf::from(required("WENLAN_DEV_TAURI_MCP_SOCKET")?);
+    let state_dir = std::fs::canonicalize(&state_dir)
+        .map_err(|error| format!("WENLAN_DEV_STATE_DIR is unavailable: {error}"))?;
+    let data_dir = std::fs::canonicalize(&data_dir)
+        .map_err(|error| format!("WENLAN_DATA_DIR is unavailable: {error}"))?;
+    let socket_parent = socket_path
+        .parent()
+        .ok_or_else(|| "WENLAN_DEV_TAURI_MCP_SOCKET has no parent directory".to_string())?;
+    let socket_parent = std::fs::canonicalize(socket_parent)
+        .map_err(|error| format!("WENLAN_DEV_TAURI_MCP_SOCKET parent is unavailable: {error}"))?;
+    let socket_path = socket_parent.join(
+        socket_path
+            .file_name()
+            .ok_or_else(|| "WENLAN_DEV_TAURI_MCP_SOCKET has no file name".to_string())?,
+    );
+    if !data_dir.starts_with(&state_dir) {
+        return Err("WENLAN_DATA_DIR must be contained by WENLAN_DEV_STATE_DIR".to_string());
+    }
+    if !socket_parent.starts_with(&state_dir) {
+        return Err(
+            "WENLAN_DEV_TAURI_MCP_SOCKET must be contained by WENLAN_DEV_STATE_DIR".to_string(),
+        );
+    }
+    let production_socket_parent =
+        std::fs::canonicalize("/tmp").unwrap_or_else(|_| std::path::PathBuf::from("/tmp"));
+    if socket_path == production_socket_parent.join("tauri-mcp.sock") {
+        return Err("WENLAN_DEV_TAURI_MCP_SOCKET must not use the production socket".to_string());
+    }
+
+    if let Some(home) = dirs::home_dir() {
+        for protected in [
+            home.join("Library/Application Support/wenlan"),
+            home.join("Library/Application Support/origin"),
+            home.join("Library/LaunchAgents"),
+            home.join("Library/Logs/com.wenlan.desktop"),
+            home.join("Library/Logs/com.origin.desktop"),
+            home.join(".config/wenlan-mcp"),
+            home.join(".config/origin-mcp"),
+            home.join(".wenlan"),
+            home.join(".origin"),
+        ] {
+            if let Ok(protected) = std::fs::canonicalize(protected) {
+                if [&state_dir, &data_dir, &socket_path]
+                    .iter()
+                    .any(|path| path.starts_with(&protected))
+                {
+                    return Err(
+                        "WENLAN_DEV_STATE_DIR must not use a production runtime root".to_string(),
+                    );
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(debug_assertions)]
+fn resolve_tauri_mcp_socket_path(override_path: Option<&std::ffi::OsStr>) -> std::path::PathBuf {
+    override_path
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from("/tmp/tauri-mcp.sock"))
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum GuardedQuitAction {
-    RequestFrontendGuard,
-    IgnoreDuplicate,
+    RequestFrontendGuard { request_id: u64, delivery_id: u64 },
+    AwaitFrontendGuard,
 }
 
-fn guarded_quit_action(pending: &std::sync::atomic::AtomicBool) -> GuardedQuitAction {
-    if pending.swap(true, std::sync::atomic::Ordering::AcqRel) {
-        GuardedQuitAction::IgnoreDuplicate
-    } else {
-        GuardedQuitAction::RequestFrontendGuard
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GuardedQuitPhase {
+    Idle,
+    AwaitingAcknowledgement {
+        request_id: u64,
+        delivery_id: u64,
+    },
+    Handling {
+        request_id: u64,
+        last_acked_delivery_id: u64,
+    },
+    Forcing,
+}
+
+#[derive(Debug)]
+struct GuardedQuitCoordinator {
+    next_request_id: u64,
+    phase: GuardedQuitPhase,
+}
+
+impl GuardedQuitCoordinator {
+    const fn new() -> Self {
+        Self {
+            next_request_id: 0,
+            phase: GuardedQuitPhase::Idle,
+        }
+    }
+
+    fn request(&mut self) -> GuardedQuitAction {
+        let (request_id, delivery_id) = match self.phase {
+            GuardedQuitPhase::Idle => {
+                self.next_request_id = self.next_request_id.wrapping_add(1).max(1);
+                (self.next_request_id, 1)
+            }
+            GuardedQuitPhase::Handling {
+                request_id,
+                last_acked_delivery_id,
+            } => (request_id, last_acked_delivery_id.wrapping_add(1).max(1)),
+            GuardedQuitPhase::AwaitingAcknowledgement { .. } | GuardedQuitPhase::Forcing => {
+                return GuardedQuitAction::AwaitFrontendGuard;
+            }
+        };
+        self.phase = GuardedQuitPhase::AwaitingAcknowledgement {
+            request_id,
+            delivery_id,
+        };
+        GuardedQuitAction::RequestFrontendGuard {
+            request_id,
+            delivery_id,
+        }
+    }
+
+    fn acknowledge(&mut self, request_id: u64, delivery_id: u64) -> bool {
+        if self.phase
+            != (GuardedQuitPhase::AwaitingAcknowledgement {
+                request_id,
+                delivery_id,
+            })
+        {
+            return false;
+        }
+        self.phase = GuardedQuitPhase::Handling {
+            request_id,
+            last_acked_delivery_id: delivery_id,
+        };
+        true
+    }
+
+    fn cancel(&mut self, request_id: u64) -> bool {
+        let is_current = match self.phase {
+            GuardedQuitPhase::AwaitingAcknowledgement {
+                request_id: active_request_id,
+                ..
+            }
+            | GuardedQuitPhase::Handling {
+                request_id: active_request_id,
+                ..
+            } => active_request_id == request_id,
+            GuardedQuitPhase::Idle | GuardedQuitPhase::Forcing => false,
+        };
+        if is_current {
+            self.phase = GuardedQuitPhase::Idle;
+        }
+        is_current
+    }
+
+    fn expire_unacknowledged(&mut self, request_id: u64, delivery_id: u64) -> bool {
+        if self.phase
+            != (GuardedQuitPhase::AwaitingAcknowledgement {
+                request_id,
+                delivery_id,
+            })
+        {
+            return false;
+        }
+        self.phase = GuardedQuitPhase::Forcing;
+        true
+    }
+
+    fn force_if_in_flight(&mut self) -> bool {
+        match self.phase {
+            GuardedQuitPhase::AwaitingAcknowledgement { .. }
+            | GuardedQuitPhase::Handling { .. } => {
+                self.phase = GuardedQuitPhase::Forcing;
+                true
+            }
+            GuardedQuitPhase::Idle | GuardedQuitPhase::Forcing => false,
+        }
     }
 }
 
-fn cancel_guarded_quit(pending: &std::sync::atomic::AtomicBool) {
-    pending.store(false, std::sync::atomic::Ordering::Release);
+static QUIT_GUARD: std::sync::Mutex<GuardedQuitCoordinator> =
+    std::sync::Mutex::new(GuardedQuitCoordinator::new());
+
+fn with_guarded_quit<T>(f: impl FnOnce(&mut GuardedQuitCoordinator) -> T) -> T {
+    let mut guard = QUIT_GUARD
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    f(&mut guard)
+}
+
+fn guarded_quit_ack_timeout() -> std::time::Duration {
+    std::time::Duration::from_secs(2)
 }
 
 #[cfg(not(feature = "review-fixtures"))]
 #[tauri::command]
-fn cancel_guarded_quit_request() {
-    cancel_guarded_quit(&QUIT_GUARD_PENDING);
+fn acknowledge_guarded_quit_request(request_id: u64, delivery_id: u64) -> bool {
+    with_guarded_quit(|guard| guard.acknowledge(request_id, delivery_id))
+}
+
+#[cfg(not(feature = "review-fixtures"))]
+#[tauri::command]
+fn cancel_guarded_quit_request(request_id: u64) -> bool {
+    with_guarded_quit(|guard| guard.cancel(request_id))
 }
 
 #[cfg(not(feature = "review-fixtures"))]
@@ -107,14 +371,31 @@ fn force_full_quit(app: tauri::AppHandle) {
 #[cfg(not(feature = "review-fixtures"))]
 fn request_full_quit(app: &tauri::AppHandle) -> Result<(), tauri::Error> {
     use tauri::Emitter;
-    match guarded_quit_action(&QUIT_GUARD_PENDING) {
-        GuardedQuitAction::RequestFrontendGuard => {
-            if let Err(error) = app.emit("quit-requested", ()) {
-                cancel_guarded_quit(&QUIT_GUARD_PENDING);
+    match with_guarded_quit(GuardedQuitCoordinator::request) {
+        GuardedQuitAction::RequestFrontendGuard {
+            request_id,
+            delivery_id,
+        } => {
+            let payload = serde_json::json!({
+                "requestId": request_id,
+                "deliveryId": delivery_id,
+            });
+            if let Err(error) = app.emit("quit-requested", payload) {
+                with_guarded_quit(|guard| guard.cancel(request_id));
                 return Err(error);
             }
+            let app_for_timeout = app.clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(guarded_quit_ack_timeout()).await;
+                if with_guarded_quit(|guard| guard.expire_unacknowledged(request_id, delivery_id)) {
+                    log::warn!(
+                        "[app] frontend did not acknowledge guarded quit delivery; forcing shutdown"
+                    );
+                    force_full_quit(app_for_timeout);
+                }
+            });
         }
-        GuardedQuitAction::IgnoreDuplicate => {}
+        GuardedQuitAction::AwaitFrontendGuard => {}
     }
     Ok(())
 }
@@ -138,8 +419,14 @@ fn startup_reveal_fallback_needed(ready: bool, visible: bool) -> bool {
 #[cfg(not(feature = "review-fixtures"))]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Log sinks: stderr (for terminal launches, `pnpm tauri dev`) AND a
-    // file at ~/Library/Logs/com.wenlan.desktop/wenlan.log.
+    #[cfg(debug_assertions)]
+    if let Err(error) = validate_debug_runtime_isolation() {
+        panic!("unsafe debug runtime refused: {error}. Start the app with `pnpm dev:all`");
+    }
+
+    // Log sinks: stderr AND a bounded rotating file under the selected app
+    // identity. Debug builds use the worktree state directory; production uses
+    // ~/Library/Logs/com.wenlan.desktop.
     // GUI launches send stderr to /dev/null, so without the file sink any
     // setup() error — e.g. a sidecar spawn ENOENT — is silent. That is
     // exactly how the origin-server spawn regression hid for ~15 minutes
@@ -147,13 +434,30 @@ pub fn run() {
     use tracing_subscriber::prelude::*;
 
     let log_dir = app_log_dir();
-    let _ = std::fs::create_dir_all(&log_dir);
-    let file_appender = tracing_appender::rolling::never(&log_dir, app_log_file_name());
-    let (file_writer, guard) = tracing_appender::non_blocking(file_appender);
-    // The guard flushes the background worker on drop. The app lives for
-    // the full process, so leaking it is correct — we never want the
-    // writer to stop flushing before exit.
-    std::mem::forget(guard);
+    let file_writer = match new_app_log_writer(&log_dir, APP_LOG_MAX_BYTES, APP_LOG_BACKUPS) {
+        Ok(writer) => writer,
+        Err(primary_error) => {
+            use std::io::Write as _;
+
+            let fallback = app_fallback_log_dir();
+            let mut writer =
+                    new_app_log_writer(&fallback, APP_LOG_MAX_BYTES, APP_LOG_BACKUPS)
+                        .unwrap_or_else(|fallback_error| {
+                            panic!(
+                                "unable to initialize bounded app logging: primary={primary_error}; fallback={fallback_error}"
+                            )
+                        });
+            let notice = format!(
+                "Primary app log unavailable at {}: {primary_error}; using {}",
+                log_dir.display(),
+                fallback.display()
+            );
+            eprintln!("{notice}");
+            let _ = writeln!(writer, "{notice}");
+            writer
+        }
+    };
+    let file_writer = std::sync::Mutex::new(file_writer);
 
     let env_filter = || {
         tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
@@ -200,11 +504,15 @@ pub fn run() {
         }));
 
     #[cfg(debug_assertions)]
-    let builder = builder.plugin(tauri_plugin_mcp::init_with_config(
-        tauri_plugin_mcp::PluginConfig::new("wenlan".to_string())
-            .start_socket_server(true)
-            .socket_path("/tmp/tauri-mcp.sock".into()),
-    ));
+    let builder = {
+        let socket_override = std::env::var_os("WENLAN_DEV_TAURI_MCP_SOCKET");
+        let socket_path = resolve_tauri_mcp_socket_path(socket_override.as_deref());
+        builder.plugin(tauri_plugin_mcp::init_with_config(
+            tauri_plugin_mcp::PluginConfig::new("wenlan".to_string())
+                .start_socket_server(true)
+                .socket_path(socket_path),
+        ))
+    };
 
     builder
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
@@ -443,6 +751,8 @@ pub fn run() {
                 .resizable(false)
                 .visible(false)
                 .build()?;
+                #[cfg(not(target_os = "macos"))]
+                let _ = &qc_win;
 
                 #[cfg(target_os = "macos")]
                 #[allow(deprecated)]
@@ -718,9 +1028,10 @@ pub fn run() {
                             // while breaking newer API calls.
                             if health.version != env!("CARGO_PKG_VERSION") {
                                 log::warn!(
-                                    "[init] Daemon version mismatch: daemon v{}, app v{} — a stale daemon may be holding port 7878; restart it (e.g. `wenlan restart`)",
+                                    "[init] Daemon version mismatch: daemon v{}, app v{} at {}; restart it (e.g. `wenlan restart`)",
                                     health.version,
-                                    env!("CARGO_PKG_VERSION")
+                                    env!("CARGO_PKG_VERSION"),
+                                    client.base_url()
                                 );
                             }
                             break;
@@ -981,6 +1292,7 @@ pub fn run() {
             search::get_page_revisions,
             search::list_orphan_links,
             search::update_page,
+            search::record_page_editor_diagnostic,
             search::archive_page,
             search::delete_page,
             search::list_pages,
@@ -1021,6 +1333,7 @@ pub fn run() {
             search::quit_wenlan_full,
             search::quit_origin_full,
             request_guarded_quit,
+            acknowledge_guarded_quit_request,
             cancel_guarded_quit_request,
             daemon_start::start_daemon_sidecar,
         ])
@@ -1036,6 +1349,19 @@ pub fn run() {
                     Ok(()) => api.prevent_exit(),
                     Err(e) => log::error!("[app] failed to request guarded quit: {e}"),
                 }
+            }
+            tauri::RunEvent::WindowEvent {
+                label,
+                event: tauri::WindowEvent::Destroyed,
+                ..
+            } if label == "main"
+                && !lifecycle::is_quitting()
+                && with_guarded_quit(GuardedQuitCoordinator::force_if_in_flight) =>
+            {
+                log::warn!(
+                    "[app] main window was destroyed during guarded quit; forcing shutdown"
+                );
+                force_full_quit(app.clone());
             }
             #[cfg(target_os = "macos")]
             tauri::RunEvent::Reopen {
@@ -1064,6 +1390,119 @@ mod platform_tests {
     #[test]
     fn launch_agent_startup_is_macos_only() {
         assert_eq!(launch_agent_startup_enabled(), cfg!(target_os = "macos"));
+    }
+
+    #[test]
+    fn unacknowledged_guarded_quit_expires_to_a_forced_shutdown() {
+        let mut guard = GuardedQuitCoordinator::new();
+
+        let request = guard.request();
+        assert_eq!(
+            request,
+            GuardedQuitAction::RequestFrontendGuard {
+                request_id: 1,
+                delivery_id: 1,
+            }
+        );
+        assert_eq!(guard.request(), GuardedQuitAction::AwaitFrontendGuard);
+        assert!(guard.expire_unacknowledged(1, 1));
+        assert_eq!(guard.request(), GuardedQuitAction::AwaitFrontendGuard);
+    }
+
+    #[test]
+    fn acknowledged_guarded_quit_uses_a_liveness_probe_before_forcing() {
+        let mut guard = GuardedQuitCoordinator::new();
+
+        assert_eq!(
+            guard.request(),
+            GuardedQuitAction::RequestFrontendGuard {
+                request_id: 1,
+                delivery_id: 1,
+            }
+        );
+        assert!(guard.acknowledge(1, 1));
+        assert!(!guard.expire_unacknowledged(1, 1));
+        assert_eq!(
+            guard.request(),
+            GuardedQuitAction::RequestFrontendGuard {
+                request_id: 1,
+                delivery_id: 2,
+            }
+        );
+        assert_eq!(guard.request(), GuardedQuitAction::AwaitFrontendGuard);
+        assert!(guard.acknowledge(1, 2));
+        assert!(!guard.expire_unacknowledged(1, 2));
+
+        assert!(guard.cancel(1));
+        assert_eq!(
+            guard.request(),
+            GuardedQuitAction::RequestFrontendGuard {
+                request_id: 2,
+                delivery_id: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn lost_liveness_probe_expires_an_acknowledged_guarded_quit() {
+        let mut guard = GuardedQuitCoordinator::new();
+
+        assert!(matches!(
+            guard.request(),
+            GuardedQuitAction::RequestFrontendGuard {
+                request_id: 1,
+                delivery_id: 1,
+            }
+        ));
+        assert!(guard.acknowledge(1, 1));
+        assert!(matches!(
+            guard.request(),
+            GuardedQuitAction::RequestFrontendGuard {
+                request_id: 1,
+                delivery_id: 2,
+            }
+        ));
+        assert!(guard.expire_unacknowledged(1, 2));
+    }
+
+    #[test]
+    fn stale_guarded_quit_messages_cannot_mutate_a_later_request() {
+        let mut guard = GuardedQuitCoordinator::new();
+
+        assert_eq!(
+            guard.request(),
+            GuardedQuitAction::RequestFrontendGuard {
+                request_id: 1,
+                delivery_id: 1,
+            }
+        );
+        assert!(guard.acknowledge(1, 1));
+        assert!(guard.cancel(1));
+        assert_eq!(
+            guard.request(),
+            GuardedQuitAction::RequestFrontendGuard {
+                request_id: 2,
+                delivery_id: 1,
+            }
+        );
+
+        assert!(!guard.acknowledge(1, 1));
+        assert!(!guard.cancel(1));
+        assert!(!guard.expire_unacknowledged(1, 1));
+        assert!(guard.acknowledge(2, 1));
+    }
+
+    #[test]
+    fn destroyed_window_forces_only_an_in_flight_guarded_quit() {
+        let mut guard = GuardedQuitCoordinator::new();
+
+        assert!(!guard.force_if_in_flight());
+        assert!(matches!(
+            guard.request(),
+            GuardedQuitAction::RequestFrontendGuard { .. }
+        ));
+        assert!(guard.force_if_in_flight());
+        assert!(!guard.force_if_in_flight());
     }
 }
 
@@ -1095,9 +1534,205 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn app_log_identity_uses_wenlan() {
+        let previous = std::env::var_os("WENLAN_DEV_STATE_DIR");
+        std::env::remove_var("WENLAN_DEV_STATE_DIR");
         assert!(app_log_dir().ends_with("Library/Logs/com.wenlan.desktop"));
         assert_eq!(app_log_file_name(), "wenlan.log");
+        match previous {
+            Some(value) => std::env::set_var("WENLAN_DEV_STATE_DIR", value),
+            None => std::env::remove_var("WENLAN_DEV_STATE_DIR"),
+        }
+    }
+
+    #[test]
+    fn app_log_writer_rotates_at_byte_cap_and_bounds_retention() {
+        use std::io::Write as _;
+
+        let root = tempfile::tempdir().unwrap();
+        let mut writer = new_app_log_writer(root.path(), 64, 2).unwrap();
+        for index in 0..20 {
+            writeln!(writer, "bounded app log line {index:02}").unwrap();
+        }
+        drop(writer);
+
+        let logs: Vec<_> = std::fs::read_dir(root.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.starts_with(app_log_file_name()))
+            })
+            .collect();
+        assert_eq!(logs.len(), 3);
+        assert!(logs.iter().all(|path| path.metadata().unwrap().len() <= 64));
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[serial_test::serial]
+    fn dev_app_log_is_scoped_to_the_worktree_state() {
+        let previous = std::env::var_os("WENLAN_DEV_STATE_DIR");
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::set_var("WENLAN_DEV_STATE_DIR", tmp.path());
+
+        assert_eq!(app_log_dir(), tmp.path().join("logs"));
+
+        match previous {
+            Some(value) => std::env::set_var("WENLAN_DEV_STATE_DIR", value),
+            None => std::env::remove_var("WENLAN_DEV_STATE_DIR"),
+        }
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    fn dev_tauri_mcp_socket_accepts_a_worktree_override() {
+        assert_eq!(
+            resolve_tauri_mcp_socket_path(Some(std::ffi::OsStr::new(
+                "/tmp/worktree/tauri-mcp.sock"
+            ))),
+            std::path::PathBuf::from("/tmp/worktree/tauri-mcp.sock")
+        );
+        assert_eq!(
+            resolve_tauri_mcp_socket_path(None),
+            std::path::PathBuf::from("/tmp/tauri-mcp.sock")
+        );
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[serial_test::serial]
+    fn debug_app_fails_closed_without_an_isolated_runtime_identity() {
+        let keys = [
+            "WENLAN_PORT",
+            "WENLAN_DEV_UI_PORT",
+            "WENLAN_DEV_REMOTE_PORT_START",
+            "WENLAN_DEV_APP_ID",
+            "WENLAN_DEV_TAURI_MCP_SOCKET",
+            "WENLAN_DATA_DIR",
+            "WENLAN_DEV_STATE_DIR",
+        ];
+        let previous: Vec<_> = keys
+            .iter()
+            .map(|key| (*key, std::env::var_os(key)))
+            .collect();
+        for key in keys {
+            std::env::remove_var(key);
+        }
+
+        let result = validate_debug_runtime_isolation();
+
+        for (key, value) in previous {
+            match value {
+                Some(value) => std::env::set_var(key, value),
+                None => std::env::remove_var(key),
+            }
+        }
+        assert!(result.is_err());
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[serial_test::serial]
+    fn debug_app_accepts_a_complete_worktree_scoped_runtime_identity() {
+        let keys = [
+            "WENLAN_PORT",
+            "WENLAN_DEV_UI_PORT",
+            "WENLAN_DEV_REMOTE_PORT_START",
+            "WENLAN_DEV_APP_ID",
+            "WENLAN_DEV_TAURI_MCP_SOCKET",
+            "WENLAN_DATA_DIR",
+            "WENLAN_DEV_STATE_DIR",
+        ];
+        let previous: Vec<_> = keys
+            .iter()
+            .map(|key| (*key, std::env::var_os(key)))
+            .collect();
+        let tmp = tempfile::tempdir().unwrap();
+        let state = tmp.path().join("state");
+        let data = state.join("data");
+        std::fs::create_dir_all(&data).unwrap();
+        std::env::set_var("WENLAN_PORT", "17777");
+        std::env::set_var("WENLAN_DEV_UI_PORT", "18777");
+        std::env::set_var("WENLAN_DEV_REMOTE_PORT_START", "22000");
+        std::env::set_var("WENLAN_DEV_APP_ID", "com.wenlan.desktop.dev.123");
+        std::env::set_var("WENLAN_DEV_TAURI_MCP_SOCKET", state.join("tauri-mcp.sock"));
+        std::env::set_var("WENLAN_DATA_DIR", &data);
+        std::env::set_var("WENLAN_DEV_STATE_DIR", &state);
+
+        let result = validate_debug_runtime_isolation();
+
+        for (key, value) in previous {
+            match value {
+                Some(value) => std::env::set_var(key, value),
+                None => std::env::remove_var(key),
+            }
+        }
+        assert_eq!(result, Ok(()));
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[serial_test::serial]
+    fn debug_app_rejects_complete_but_production_touching_runtime_identities() {
+        let keys = [
+            "HOME",
+            "WENLAN_PORT",
+            "WENLAN_DEV_UI_PORT",
+            "WENLAN_DEV_REMOTE_PORT_START",
+            "WENLAN_DEV_APP_ID",
+            "WENLAN_DEV_TAURI_MCP_SOCKET",
+            "WENLAN_DATA_DIR",
+            "WENLAN_DEV_STATE_DIR",
+        ];
+        let previous: Vec<_> = keys
+            .iter()
+            .map(|key| (*key, std::env::var_os(key)))
+            .collect();
+        let tmp = tempfile::tempdir().unwrap();
+        let fake_home = tmp.path().join("home");
+        let production_roots = [
+            fake_home.join("Library/Application Support/wenlan"),
+            fake_home.join("Library/Application Support/origin"),
+            fake_home.join("Library/Logs/com.origin.desktop"),
+            fake_home.join(".config/origin-mcp"),
+            fake_home.join(".origin"),
+        ];
+        for root in &production_roots {
+            std::fs::create_dir_all(root).unwrap();
+        }
+        std::env::set_var("HOME", &fake_home);
+        std::env::set_var("WENLAN_PORT", "17777");
+        std::env::set_var("WENLAN_DEV_UI_PORT", "18777");
+        std::env::set_var("WENLAN_DEV_REMOTE_PORT_START", "65533");
+        std::env::set_var("WENLAN_DEV_APP_ID", "com.wenlan.desktop.dev.123");
+        std::env::set_var("WENLAN_DEV_STATE_DIR", "/tmp");
+        std::env::set_var("WENLAN_DATA_DIR", tmp.path());
+        std::env::set_var("WENLAN_DEV_TAURI_MCP_SOCKET", "/tmp/dev-tauri-mcp.sock");
+        assert!(validate_debug_runtime_isolation().is_err());
+
+        std::env::set_var("WENLAN_DEV_REMOTE_PORT_START", "22000");
+        std::env::set_var("WENLAN_DEV_TAURI_MCP_SOCKET", "/tmp/tauri-mcp.sock");
+        assert!(validate_debug_runtime_isolation().is_err());
+
+        std::env::set_var("WENLAN_DEV_STATE_DIR", &fake_home);
+        std::env::set_var(
+            "WENLAN_DEV_TAURI_MCP_SOCKET",
+            fake_home.join("dev-tauri-mcp.sock"),
+        );
+        for production_root in production_roots {
+            std::env::set_var("WENLAN_DATA_DIR", production_root);
+            assert!(validate_debug_runtime_isolation().is_err());
+        }
+
+        for (key, value) in previous {
+            match value {
+                Some(value) => std::env::set_var(key, value),
+                None => std::env::remove_var(key),
+            }
+        }
     }
 
     #[test]
@@ -1114,25 +1749,5 @@ mod tests {
         assert!(startup_reveal_fallback_needed(false, true));
         assert!(startup_reveal_fallback_needed(true, false));
         assert!(startup_reveal_fallback_needed(false, false));
-    }
-
-    #[test]
-    fn repeated_guarded_quit_is_ignored_until_the_frontend_cancels() {
-        let pending = std::sync::atomic::AtomicBool::new(false);
-
-        assert_eq!(
-            guarded_quit_action(&pending),
-            GuardedQuitAction::RequestFrontendGuard
-        );
-        assert_eq!(
-            guarded_quit_action(&pending),
-            GuardedQuitAction::IgnoreDuplicate
-        );
-
-        cancel_guarded_quit(&pending);
-        assert_eq!(
-            guarded_quit_action(&pending),
-            GuardedQuitAction::RequestFrontendGuard
-        );
     }
 }

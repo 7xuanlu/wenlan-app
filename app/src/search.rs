@@ -113,6 +113,8 @@ pub fn set_traffic_lights_visible(window: tauri::Window, visible: bool) -> Resul
             }
         }
     }
+    #[cfg(not(target_os = "macos"))]
+    let _ = (&window, visible);
     Ok(())
 }
 
@@ -162,6 +164,8 @@ pub async fn position_quick_capture(app: tauri::AppHandle) -> Result<(), String>
     let win = app
         .get_webview_window("quick-capture")
         .ok_or("quick-capture window not found")?;
+    #[cfg(not(target_os = "macos"))]
+    let _ = &win;
 
     #[cfg(target_os = "macos")]
     #[allow(deprecated)]
@@ -3260,29 +3264,276 @@ mod page_draft_command_tests {
     }
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(tag = "outcome", rename_all = "snake_case")]
+pub enum UpdatePageOutcome {
+    Saved,
+    UpgradeRequired {
+        #[serde(rename = "reportedVersion")]
+        reported_version: String,
+        #[serde(rename = "requiredFloor")]
+        required_floor: String,
+    },
+    Conflict {
+        message: String,
+    },
+    Failure {
+        kind: UpdatePageFailureKind,
+        status: u16,
+        message: String,
+    },
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum UpdatePageFailureKind {
+    NotFound,
+    AuthRequired,
+    PayloadTooLarge,
+    Validation,
+    RateLimited,
+    Server,
+    Other,
+}
+
+#[derive(Deserialize)]
+struct DaemonErrorEnvelope {
+    error: String,
+}
+
+fn page_update_error_message(status: u16, body: &str) -> String {
+    if let Ok(envelope) = serde_json::from_str::<DaemonErrorEnvelope>(body) {
+        if !envelope.error.trim().is_empty() {
+            return envelope.error;
+        }
+    }
+
+    if status == 409 {
+        return "Page changed while you were editing.".to_string();
+    }
+
+    let body = body.trim();
+    if body.is_empty() {
+        format!("HTTP {status}")
+    } else {
+        body.to_string()
+    }
+}
+
+fn map_page_update_result(
+    result: Result<responses::PageWriteResponse, crate::api::PageUpdateRequestError>,
+) -> Result<UpdatePageOutcome, String> {
+    match result {
+        Ok(response) if response.ok && !response.gated => Ok(UpdatePageOutcome::Saved),
+        Ok(response) => Ok(UpdatePageOutcome::Failure {
+            kind: UpdatePageFailureKind::Other,
+            status: 200,
+            message: if response.gated {
+                "Daemon staged the page update instead of saving it.".to_string()
+            } else {
+                "Daemon did not confirm the page update.".to_string()
+            },
+        }),
+        Err(crate::api::PageUpdateRequestError::TransportOrDecode(message)) => Err(message),
+        Err(crate::api::PageUpdateRequestError::Http { status, body }) => {
+            let message = page_update_error_message(status, &body);
+            if status == 409 {
+                return Ok(UpdatePageOutcome::Conflict { message });
+            }
+
+            let kind = match status {
+                404 => UpdatePageFailureKind::NotFound,
+                401 | 403 => UpdatePageFailureKind::AuthRequired,
+                413 => UpdatePageFailureKind::PayloadTooLarge,
+                400 | 422 => UpdatePageFailureKind::Validation,
+                429 => UpdatePageFailureKind::RateLimited,
+                500..=599 => UpdatePageFailureKind::Server,
+                _ => UpdatePageFailureKind::Other,
+            };
+            Ok(UpdatePageOutcome::Failure {
+                kind,
+                status,
+                message,
+            })
+        }
+    }
+}
+
+// Stable v0.14.1 is the first released artifact proven to preserve exact page
+// source while retaining the v0.14.0 CAS/idempotency contract.
+const PAGE_EDIT_DAEMON_FLOOR: &str = "0.14.1";
+
+fn daemon_version_supports_page_edit(version: &str) -> bool {
+    let Ok(candidate) = semver::Version::parse(version) else {
+        return false;
+    };
+    let floor = semver::Version::parse(PAGE_EDIT_DAEMON_FLOOR)
+        .expect("page editor daemon floor is a static valid SemVer");
+
+    candidate.pre.is_empty() && candidate >= floor
+}
+
+fn page_edit_upgrade_required(reported_version: &str) -> Option<UpdatePageOutcome> {
+    (!daemon_version_supports_page_edit(reported_version)).then(|| {
+        UpdatePageOutcome::UpgradeRequired {
+            reported_version: reported_version.to_string(),
+            required_floor: PAGE_EDIT_DAEMON_FLOOR.to_string(),
+        }
+    })
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PageEditorDiagnosticEvent {
+    DaemonFloorBlocked,
+    EditorFallback,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PageEditorFallbackReason {
+    Load,
+    Construction,
+}
+
+fn page_editor_diagnostic_message(
+    event: PageEditorDiagnosticEvent,
+    reported_version: Option<&str>,
+    required_floor: Option<&str>,
+    reason: Option<PageEditorFallbackReason>,
+) -> Result<String, String> {
+    match event {
+        PageEditorDiagnosticEvent::DaemonFloorBlocked => {
+            if reason.is_some() {
+                return Err("daemon floor diagnostic cannot contain a fallback reason".to_string());
+            }
+            let required_floor =
+                required_floor.ok_or_else(|| "required floor is missing".to_string())?;
+            Ok(format!(
+                "[page-editor] daemon_floor_blocked reported_version={} required_floor={required_floor}",
+                reported_version.unwrap_or("unavailable"),
+            ))
+        }
+        PageEditorDiagnosticEvent::EditorFallback => {
+            if reported_version.is_some() || required_floor.is_some() {
+                return Err("editor fallback diagnostic cannot contain daemon fields".to_string());
+            }
+            let reason = match reason.ok_or_else(|| "fallback reason is missing".to_string())? {
+                PageEditorFallbackReason::Load => "load",
+                PageEditorFallbackReason::Construction => "construction",
+            };
+            Ok(format!("[page-editor] editor_fallback reason={reason}"))
+        }
+    }
+}
+
+#[tauri::command]
+pub fn record_page_editor_diagnostic(
+    event: PageEditorDiagnosticEvent,
+    reported_version: Option<String>,
+    required_floor: Option<String>,
+    reason: Option<PageEditorFallbackReason>,
+) -> Result<(), String> {
+    let message = page_editor_diagnostic_message(
+        event,
+        reported_version.as_deref(),
+        required_floor.as_deref(),
+        reason,
+    )?;
+    log::warn!("{message}");
+    Ok(())
+}
+
+#[cfg(test)]
+mod update_page_outcome_tests {
+    use super::*;
+    use crate::api::PageUpdateRequestError;
+
+    #[test]
+    fn successful_page_write_maps_to_saved() {
+        let result = map_page_update_result(Ok(responses::PageWriteResponse {
+            ok: true,
+            revision_card_id: Some("revision-1".to_string()),
+            gated: false,
+        }));
+
+        assert_eq!(result, Ok(UpdatePageOutcome::Saved));
+    }
+
+    #[test]
+    fn conflict_envelope_maps_to_typed_conflict() {
+        let result = map_page_update_result(Err(PageUpdateRequestError::Http {
+            status: 409,
+            body: r#"{"error":"expected version 7, found 8"}"#.to_string(),
+        }));
+
+        assert_eq!(
+            result,
+            Ok(UpdatePageOutcome::Conflict {
+                message: "expected version 7, found 8".to_string(),
+            })
+        );
+    }
+}
+
+#[cfg(test)]
+mod page_editor_diagnostic_tests {
+    use super::*;
+
+    #[test]
+    fn daemon_floor_log_contains_versions_but_no_page_or_source_field() {
+        let message = page_editor_diagnostic_message(
+            PageEditorDiagnosticEvent::DaemonFloorBlocked,
+            Some("0.13.9"),
+            Some("0.14.0"),
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(
+            message,
+            "[page-editor] daemon_floor_blocked reported_version=0.13.9 required_floor=0.14.0"
+        );
+        assert!(!message.contains("page_id"));
+        assert!(!message.contains("content"));
+    }
+}
+
 #[tauri::command]
 pub async fn update_page(
     state: tauri::State<'_, State>,
     id: String,
     content: String,
-) -> Result<(), String> {
-    let s = state.read().await;
+    expected_version: i64,
+    caller_id: String,
+    operation_id: String,
+) -> Result<UpdatePageOutcome, String> {
+    if caller_id != "wenlan-app" {
+        return Err("Unsupported page-update caller identity".to_string());
+    }
+    if operation_id.trim().is_empty() {
+        return Err("Page-update operation identity is required".to_string());
+    }
+
+    let client = state.read().await.client.clone();
+    let health = client.health().await?;
+    if let Some(outcome) = page_edit_upgrade_required(&health.version) {
+        log::warn!(
+            "[page-editor] blocked save: daemon_version={} required_floor={}",
+            health.version,
+            PAGE_EDIT_DAEMON_FLOOR,
+        );
+        return Ok(outcome);
+    }
+
     let req = requests::UpdatePageRequest {
         content,
         source_memory_ids: Vec::new(),
-        // Legacy-client path: the server guards on the version it loaded, so
-        // the ownership decision and the write describe the same row.
-        expected_version: None,
-        // No retry identity yet — an unreplayed write behaves as it did
-        // before the M0 gate. Sending a real pair would make retries no-ops.
-        caller_id: None,
-        operation_id: None,
+        expected_version: Some(expected_version),
+        caller_id: Some("wenlan-app".to_string()),
+        operation_id: Some(operation_id),
     };
-    let _resp: responses::SuccessResponse = s
-        .client
-        .post_json(&format!("/api/memory/{}/update-page", id), &req)
-        .await?;
-    Ok(())
+    map_page_update_result(client.post_page_update(&id, &req).await)
 }
 
 #[tauri::command]

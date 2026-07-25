@@ -1,6 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+to_shell_path() {
+  local path="$1"
+  if [[ "$path" =~ ^[A-Za-z]:[\\/].* ]]; then
+    if ! command -v cygpath >/dev/null 2>&1; then
+      echo "error: Windows path requires Git for Windows cygpath: $path" >&2
+      return 1
+    fi
+    cygpath -u "$path"
+  else
+    printf '%s\n' "$path"
+  fi
+}
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEFAULT_REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO_ROOT="${1:-$DEFAULT_REPO_ROOT}"
@@ -12,7 +25,7 @@ is_wenlan_backend_dir() {
 }
 
 if [[ -n "${WENLAN_BACKEND_DIR:-}" ]]; then
-  candidate="$WENLAN_BACKEND_DIR"
+  candidate="$(to_shell_path "$WENLAN_BACKEND_DIR")"
   if [[ "$candidate" != /* ]]; then
     candidate="$REPO_ROOT/$candidate"
   fi

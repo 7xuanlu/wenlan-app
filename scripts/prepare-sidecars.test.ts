@@ -22,6 +22,7 @@ import {
   canonicalizePathEnvironment,
   minimalBashPath,
   prependNativePath,
+  shellIntegrationTestTimeout,
 } from "./test-platform";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -31,6 +32,7 @@ const resolverScriptPath = resolve(root, "scripts/resolve-backend-dir.sh");
 const lockScriptPath = resolve(root, "scripts/sidecar-lock.mjs");
 const downloadScriptPath = resolve(root, "scripts/download-sidecars.mjs");
 const extractZipScriptPath = resolve(root, "scripts/extract-zip.ps1");
+const devRuntimeScriptPath = resolve(root, "scripts/dev-runtime.sh");
 const tempRoots: string[] = [];
 const pathOverrideEnvKeys = new Set([
   "WENLAN_BACKEND_DIR",
@@ -82,6 +84,7 @@ function writeAppScripts(appRoot: string): void {
     resolve(testBin, "rustc"),
     "#!/usr/bin/env bash\nprintf 'host: aarch64-apple-darwin\\n'\n",
   );
+  copyFileSync(devRuntimeScriptPath, resolve(appRoot, "scripts/dev-runtime.sh"));
 }
 
 function childEnv(overrides: Record<string, string> = {}): Record<string, string> {
@@ -315,10 +318,11 @@ describe("prepare-sidecars backend discovery", () => {
   it("uses the shared backend resolver from dev:daemon", () => {
     const packageJson = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8"));
     const devDaemon = String(packageJson.scripts["dev:daemon"]);
+    const devRuntime = readFileSync(devRuntimeScriptPath, "utf8");
 
-    expect(devDaemon).toContain("scripts/resolve-backend-dir.sh");
-    expect(devDaemon).toContain("BACKEND=$(bash scripts/resolve-backend-dir.sh) && cargo build");
-    expect(devDaemon).not.toContain("${WENLAN_BACKEND_DIR:-../..}");
+    expect(devDaemon).toBe("bash scripts/dev-runtime.sh start");
+    expect(devRuntime).toContain('resolve-backend-dir.sh" "$REPO_ROOT"');
+    expect(devRuntime).not.toContain("${WENLAN_BACKEND_DIR:-../..}");
   });
 
   it("uses the release-aware sidecar prep wrapper from Tauri build config", () => {
@@ -357,7 +361,7 @@ describe("prepare-sidecars backend discovery", () => {
     ).toBe(1);
     expect(result.stderr).toContain("WENLAN_BACKEND_DIR is not a Wenlan backend checkout");
     expect(result.stderr).not.toContain("cargo should not run");
-  });
+  }, shellIntegrationTestTimeout);
 
   it("fails loud when cloudflared is required but missing", () => {
     const base = makeTempRoot();

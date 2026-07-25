@@ -209,6 +209,15 @@ $env:Path = "C:\Program Files\Git\bin;$env:Path"
 # Expected: C:\Program Files\Git\bin\bash.exe
 ```
 
+`pnpm dev:all` is also supported from Windows once Git Bash is discoverable.
+The isolated dev runtime normalizes native `C:\...` inputs at the shell
+boundary, selects `wenlan-server.exe`, and uses PowerShell process and listener
+inspection when `lsof` is unavailable. Its PID, executable, port, and data-dir
+receipt remains worktree-scoped; a reused daemon is accepted only when all four
+values still match. Tests that launch these Bash entry points must use
+`scripts/test-platform.ts` so Windows' case-insensitive `Path`/`PATH` aliases
+and the WSL `bash.exe` launcher cannot change which tools run.
+
 Record the exact checkouts used for evidence:
 
 ```powershell

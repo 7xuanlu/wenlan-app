@@ -1,6 +1,6 @@
 [package]
 name = "wenlan-app"
-version = "0.14.0" # x-release-please-version
+version = "0.14.1" # x-release-please-version
 edition = "2021"
 license = "AGPL-3.0-only"
 default-run = "wenlan-app"
@@ -65,15 +65,17 @@ env_logger = "0.11"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "tracing-log"] }
 tracing-appender = "0.2"
 tracing = "0.1"
+file-rotate = "0.8"
 dirs = "6"
 async-trait = "0.1"
 futures = "0.3"
 tempfile = "3"
 
 serde_yaml = "0.9"
+semver = "=1.0.28"
 
 # Workspace crates
-wenlan-types = "0.14.0"
+wenlan-types = "=0.14.1"
 sysinfo = "0.33"
 pdf-extract = "0.10"
 zip = { version = "2.2", default-features = false, features = ["deflate"] }
