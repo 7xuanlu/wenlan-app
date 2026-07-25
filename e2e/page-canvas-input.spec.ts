@@ -299,6 +299,52 @@ test("the zoom keys work, and the zoom buttons say what they are", async ({ page
   expect(titles[2], "the fit button does not name its key").toContain("Shift 1");
 });
 
+test("the zoom keys leave the window's own zoom alone, and work off a US layout", async ({
+  page,
+}) => {
+  await installTauriMock(page, { locale: "en", rawActions: [] });
+  await openCanvas(page);
+  await page.waitForTimeout(600);
+  const opened = await scale(page);
+
+  // The app window has `zoomHotkeysEnabled`, so Cmd+plus is the webview's page
+  // zoom. If the canvas took it too, one press would resize the whole app UI
+  // and the map at once.
+  await page.keyboard.press("Meta+Equal");
+  await page.keyboard.press("Control+Minus");
+  await page.waitForTimeout(400);
+  const afterModified = await scale(page);
+  console.log(`Cmd+= / Ctrl+− : ${opened.toFixed(3)} → ${afterModified.toFixed(3)}`);
+  expect(afterModified, "a modified press zoomed the map as well as the window").toBeCloseTo(
+    opened,
+    2,
+  );
+
+  // On a German layout the key printed with a + reports code "BracketRight",
+  // so matching the physical US position alone leaves those readers with no
+  // zoom key at all. Playwright cannot type a layout it is not using, but the
+  // handler is an ordinary document listener, so the press itself is real.
+  const german = (key: string, code: string) =>
+    page.evaluate(
+      ([k, c]) =>
+        document.dispatchEvent(
+          new KeyboardEvent("keydown", { key: k, code: c, bubbles: true, cancelable: true }),
+        ),
+      [key, code],
+    );
+  await german("+", "BracketRight");
+  await page.waitForTimeout(400);
+  const germanIn = await scale(page);
+  await german("-", "Slash");
+  await page.waitForTimeout(400);
+  const germanOut = await scale(page);
+  console.log(
+    `German +/− : ${afterModified.toFixed(3)} → ${germanIn.toFixed(3)} → ${germanOut.toFixed(3)}`,
+  );
+  expect(germanIn, 'the German "+" key did not zoom in').toBeGreaterThan(afterModified + 0.01);
+  expect(germanOut, 'the German "-" key did not zoom out').toBeLessThan(germanIn - 0.01);
+});
+
 test("a drag that starts on a canvas control selects no text", async ({ page }) => {
   await installTauriMock(page, { locale: "en", rawActions: [] });
   await openCanvas(page);

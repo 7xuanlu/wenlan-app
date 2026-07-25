@@ -26,6 +26,17 @@ import { BaseEdge, type Edge, type EdgeProps } from "@xyflow/react";
  */
 const BOW = 0.11;
 
+/**
+ * The most the drawn arc may sag away from the straight line, px.
+ *
+ * A proportional bow is right for the spans the layout produces — a ring is one
+ * box-depth out from the last, so spokes run 150-250px and sag 8-14px. It stops
+ * being right once a box has been dragged: pull a child 600px out and a purely
+ * proportional bow sags 33px, which stops reading as a curve and starts reading
+ * as a detour around something.
+ */
+const MAX_SAG = 24;
+
 function SpineEdge({
   sourceX,
   sourceY,
@@ -38,9 +49,15 @@ function SpineEdge({
   const dy = targetY - sourceY;
   const span = Math.hypot(dx, dy);
   // Perpendicular to the chord, one consistent rotational sense for every edge
-  // on the map. Mixing the sign per edge makes siblings bow toward each other
-  // and the fan stops reading as a fan.
-  const offset = span * BOW;
+  // on the map. Mirroring the sign so a fan bows symmetrically is what a static
+  // bilateral mind map does, and it is wrong for a canvas you can edit: the sign
+  // flips the moment a child is dragged across its fan's bisector, so the arc
+  // visibly snaps to the other side mid-drag. One sense is stable under every
+  // edit, and the slight pinwheel reads as deliberate.
+  //
+  // The drawn arc sags half this offset — the midpoint of a quadratic sits
+  // halfway to its control point — so the cap is doubled here.
+  const offset = Math.min(span * BOW, MAX_SAG * 2);
   const cx = (sourceX + targetX) / 2 + (-dy / (span || 1)) * offset;
   const cy = (sourceY + targetY) / 2 + (dx / (span || 1)) * offset;
 

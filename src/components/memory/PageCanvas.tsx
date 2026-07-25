@@ -972,6 +972,13 @@ function PageCanvasInner({
         selectAll();
         return;
       }
+      // Everything below is unmodified, and Cmd/Ctrl belongs to the window
+      // rather than to the map: `zoomHotkeysEnabled` in tauri.conf.json gives
+      // the webview its own Cmd+plus page zoom, so letting that press reach the
+      // zoom keys below would resize the app UI and the map at once. Cmd+Tab and
+      // Cmd+Arrow are the system's too, and were being swallowed here.
+      if (e.metaKey || e.ctrlKey) return;
+
       // "?" is what GitHub, Linear and Slack all bind to the shortcut sheet.
       // e.code again: the glyph is Shift+/ on a US layout and something else
       // elsewhere, but the physical key is Slash either way.
@@ -980,18 +987,21 @@ function PageCanvasInner({
         setHelpOpen((v) => !v);
         return;
       }
-      // Bare +/− rather than the Cmd pair every browser uses, because the app
-      // window has `zoomHotkeysEnabled` on: Cmd+plus resizes the whole desktop
-      // UI, and a canvas that fought it would be zooming two things at once.
-      // Bare is also what Figma, Miro and tldraw bind, so it is the gesture
-      // people arrive with. Shift is not excluded — "+" *is* Shift+Equal on a US
-      // layout — and the numpad keys are the same request from a full keyboard.
-      if (e.code === "Equal" || e.code === "NumpadAdd") {
+      // Bare +/- rather than the Cmd pair every browser uses, because Cmd is the
+      // window's (above) — and bare is what Figma, Miro and tldraw bind, so it
+      // is the gesture people arrive with.
+      //
+      // Matched by glyph AND by physical key, because neither alone is enough:
+      // e.code binds the US position of "+", which on a German layout is a
+      // different key entirely, so those readers would press the key printed
+      // with a + and get nothing; e.key alone misses the numpad on layouts that
+      // report it oddly. Shift is not excluded — "+" *is* Shift+Equal here.
+      if (e.key === "+" || e.key === "=" || e.code === "Equal" || e.code === "NumpadAdd") {
         e.preventDefault();
         void zoomIn({ duration: ZOOM_DURATION });
         return;
       }
-      if (e.code === "Minus" || e.code === "NumpadSubtract") {
+      if (e.key === "-" || e.code === "Minus" || e.code === "NumpadSubtract") {
         e.preventDefault();
         void zoomOut({ duration: ZOOM_DURATION });
         return;
