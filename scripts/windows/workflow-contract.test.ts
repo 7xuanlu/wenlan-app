@@ -46,8 +46,9 @@ describe("Windows native smoke workflow contract", () => {
     expect(text).toContain("runs-on: windows-2022");
     expect(text).toContain("contents: read");
     expect(text).toContain(
-      "Windows Server 2022 native app with source-built backend smoke",
+      'WENLAN_NATIVE_CLAIM: "Windows Server 2022 native app with source-built backend smoke"',
     );
+    expect(nativeHarness()).toContain("process.env.WENLAN_NATIVE_CLAIM");
     expect(text).not.toMatch(/\b(push|pull_request|schedule):/);
   });
 

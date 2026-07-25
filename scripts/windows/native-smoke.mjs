@@ -25,7 +25,7 @@ import {
   powerShellCommand,
 } from "./process-control.mjs";
 
-const CLAIM = "Windows Server 2022 native app with source-built backend smoke";
+const CLAIM = process.env.WENLAN_NATIVE_CLAIM?.trim() || "";
 const SOURCE_AGENT = "windows-native-smoke";
 const TARGET_TRIPLE = "x86_64-pc-windows-msvc";
 const FULL_QUIT_BREADCRUMB = "[quit] full quit command accepted";
@@ -395,6 +395,11 @@ function bestEffortCleanup(appExecutable, backendExecutable) {
 }
 
 async function main() {
+  if (!CLAIM) {
+    throw new Error(
+      "WENLAN_NATIVE_CLAIM must identify the Windows runner being tested",
+    );
+  }
   const args = parseArgs(process.argv.slice(2));
   const runStartedAt = new Date().toISOString();
   mkdirSync(args.evidenceDir, { recursive: true });
@@ -862,6 +867,7 @@ async function main() {
       backendCommit: backendProof.commit,
       backendExecutable: runtime.backendExecutable,
       backendServerSha256: backendProof.serverSha256,
+      claim: CLAIM,
       fullQuitBreadcrumb: FULL_QUIT_BREADCRUMB,
       ...inferenceExpectation,
       onnxruntimeDll: runtime.onnxruntimeDll,
@@ -885,6 +891,7 @@ async function main() {
           backendCommit: backendProof.commit,
           backendExecutable: runtime.backendExecutable,
           backendServerSha256: backendProof.serverSha256,
+          claim: CLAIM,
           fullQuitBreadcrumb: FULL_QUIT_BREADCRUMB,
           ...inferenceExpectation,
           onnxruntimeDll: runtime.onnxruntimeDll,

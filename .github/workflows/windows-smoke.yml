@@ -13,6 +13,7 @@ env:
   RUST_LOG: "warn,wenlan_lib::lifecycle=info"
   TARGET_TRIPLE: x86_64-pc-windows-msvc
   WENLAN_DOWNLOAD_SIDECARS: "1"
+  WENLAN_NATIVE_CLAIM: "Windows Server 2022 native app with source-built backend smoke"
   WENLAN_NATIVE_EXPECT_INFERENCE_BACKEND: "disabled"
   WENLAN_NATIVE_EXPECT_NO_INFERENCE_FALLBACK: "1"
   WENLAN_PRESTAGED_SIDECARS: "1"
@@ -57,8 +58,8 @@ jobs:
             Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "WENLAN_SIDECAR_MANIFEST=$(Join-Path $evidence "staged-sidecars.json")" |
             Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          $initial = [ordered]@{
-            claim = "Windows Server 2022 native app with source-built backend smoke"
+           $initial = [ordered]@{
+             claim = $env:WENLAN_NATIVE_CLAIM
             status = "workflow_initializing"
             error = "native harness did not complete"
           }
@@ -196,8 +197,8 @@ jobs:
           "TAURI_DRIVER_VERSION=2.0.6" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "WENLAN_BACKEND_COMMIT=$backendCommit" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
-          $metadata = [ordered]@{
-            claim = "Windows Server 2022 native app with source-built backend smoke"
+           $metadata = [ordered]@{
+             claim = $env:WENLAN_NATIVE_CLAIM
             app_commit = $env:GITHUB_SHA
             backend_tag = $backendTag
             backend_commit = $backendCommit

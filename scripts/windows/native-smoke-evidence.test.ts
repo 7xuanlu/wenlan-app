@@ -65,6 +65,7 @@ type ExpectedEvidence = {
   backendCommit: string;
   backendExecutable: string;
   backendServerSha256: string;
+  claim: string;
   fullQuitBreadcrumb: string;
   inferenceBackend?: string;
   inferenceDeviceContains?: string;
@@ -100,10 +101,11 @@ const BACKEND_COMMIT = "b".repeat(40);
 const BACKEND_SHA256 = "a".repeat(64);
 const FULL_QUIT_BREADCRUMB = "[quit] full quit command accepted";
 const SEMANTIC_QUERY = "blue lamp adjusts ocean timepieces";
+const CLAIM = "Windows Server 2022 native app with source-built backend smoke";
 
 function completeEvidence(): Evidence {
   return {
-    claim: "Windows Server 2022 native app with source-built backend smoke",
+    claim: CLAIM,
     health: {
       ok: true,
       response: { status: "ok", version: `0.14.1+g${BACKEND_COMMIT.slice(0, 8)}` },
@@ -180,6 +182,7 @@ const expected: ExpectedEvidence = {
   backendCommit: BACKEND_COMMIT,
   backendExecutable: BACKEND_EXE,
   backendServerSha256: BACKEND_SHA256,
+  claim: CLAIM,
   fullQuitBreadcrumb: FULL_QUIT_BREADCRUMB,
   inferenceBackend: "vulkan",
   inferenceDeviceContains: "RTX 3060",
@@ -213,7 +216,31 @@ describe("Windows native smoke evidence validator", () => {
     expect(result.assertions.every((assertion) => assertion.ok)).toBe(true);
   });
 
+  it("binds a physical-run claim supplied by the current runner", async () => {
+    const { validateNativeSmokeEvidence } = await loadEvidenceModule();
+    const physicalClaim =
+      "Physical Windows 11 native app with source-built Vulkan backend smoke";
+    const evidence = completeEvidence();
+    evidence.claim = physicalClaim;
+
+    const result = validateNativeSmokeEvidence(evidence, {
+      ...expected,
+      claim: physicalClaim,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.assertions.every((assertion) => assertion.ok)).toBe(true);
+  });
+
   it.each([
+    {
+      name: "claim not bound to the current runner",
+      assertion: "claim-boundary",
+      mutate: (evidence: Evidence) => {
+        evidence.claim =
+          "Physical Windows 11 native app with source-built Vulkan backend smoke";
+      },
+    },
     {
       name: "unpinned backend commit",
       assertion: "backend-commit-pinned",

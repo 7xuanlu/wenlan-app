@@ -23,11 +23,11 @@ The native smoke proves that one release-profile `wenlan-app.exe`:
 
 It does **not** prove installer behavior, code signing, updater metadata,
 run-at-login integration, ARM64 Windows support, or general production support.
-The harness currently hard-codes the CI claim
-`Windows Server 2022 native app with source-built backend smoke`. A local
-physical-Windows result must therefore be accompanied by separately captured
-machine metadata; the claim string alone is not evidence of the operating
-system that ran it.
+`WENLAN_NATIVE_CLAIM` must identify the current runner. CI binds it to Windows
+Server 2022; a physical run must set a truthful physical-machine claim and
+capture the separate inventory below. The validator proves that the result and
+runner agreed on the claim; the claim string alone does not independently
+prove which operating system ran it.
 
 ## Verified physical-machine baseline
 
@@ -313,6 +313,8 @@ $env:CARGO_TARGET_DIR = $BackendCargoTarget
 $env:WENLAN_WINDOWS_BACKEND_CARGO_TARGET_DIR = $BackendCargoTarget
 $env:WENLAN_BACKEND_COMMIT = $BackendCommit
 $env:GITHUB_SHA = $AppCommit
+$env:WENLAN_NATIVE_CLAIM = `
+  "Physical Windows 11 native app with source-built Vulkan backend smoke"
 $env:WENLAN_DATA_DIR = $Data
 $env:WENLAN_TEST_FASTEMBED_CACHE = $FastEmbedCache
 $env:WENLAN_DOWNLOAD_SIDECARS = "1"

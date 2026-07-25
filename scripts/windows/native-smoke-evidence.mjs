@@ -1,5 +1,3 @@
-const CLAIM = "Windows Server 2022 native app with source-built backend smoke";
-
 export class NativeSmokeEvidenceError extends Error {
   constructor(message, assertions) {
     super(message);
@@ -54,8 +52,10 @@ export function validateNativeSmokeEvidence(evidence, expected) {
 
   check(
     "claim-boundary",
-    evidence?.claim === CLAIM,
-    `expected ${describeValue(CLAIM)}, got ${describeValue(evidence?.claim)}`,
+    typeof expected?.claim === "string" &&
+      expected.claim.trim() !== "" &&
+      evidence?.claim === expected.claim,
+    `expected ${describeValue(expected?.claim)}, got ${describeValue(evidence?.claim)}`,
   );
   check(
     "backend-commit-pinned",
