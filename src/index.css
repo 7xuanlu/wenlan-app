@@ -3149,6 +3149,19 @@ p.entity-error {
   border: 1px solid var(--mem-border);
   border-radius: 12px;
   background-color: var(--mem-surface);
+  /* A map is dragged, not read: any drag that starts off the pane — on a
+     control, on the frame's own padding — used to start a text selection
+     instead, and a select-all from anywhere in the window painted the
+     browser's opaque highlight over the whole map. React Flow does this for
+     its boxes already; the frame around them was left out. */
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* The one thing in here that is text: the field a box is named in. */
+.page-canvas-surface input {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 /* The surface takes focus so its shortcuts fire on a fresh canvas, but a ring

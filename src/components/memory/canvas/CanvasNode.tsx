@@ -27,6 +27,11 @@ export interface CanvasNodeData extends Record<string, unknown> {
   isRoot: boolean;
   /** Rings out from the page: 0 is the page, 1 its sections, 2+ their insides. */
   depth: number;
+  /**
+   * Direction away from the page at the middle, radians, screen axes. The grow
+   * dot rides this side of the box.
+   */
+  outward: number;
   readOnly: boolean;
   palette: GraphPalette;
   width: number;
@@ -58,6 +63,21 @@ const CENTER_HANDLE = {
   pointerEvents: "none",
 } as const;
 
+// Which side of the box the grow dot sits on, from the direction the box faces.
+// Quadrants clockwise from three o'clock, because screen y grows downward.
+const SIDES = [Position.Right, Position.Bottom, Position.Left, Position.Top];
+
+/**
+ * A radial map grows outward, so the dot you grab belongs on the side facing
+ * away from the page at the middle. Pinned to the bottom it pointed back at the
+ * parent for every box above the center, sat between a box and its own children
+ * for every box below it, and told everyone the map was a downward tree.
+ */
+function growSide(outward: number): Position {
+  const quadrant = Math.round(outward / (Math.PI / 2));
+  return SIDES[((quadrant % 4) + 4) % 4];
+}
+
 function CanvasNode({
   data,
   selected,
@@ -71,6 +91,7 @@ function CanvasNode({
     dangling,
     isRoot,
     depth,
+    outward,
     readOnly,
     palette,
     width,
@@ -210,7 +231,7 @@ function CanvasNode({
       <Handle
         id="grow"
         type="source"
-        position={Position.Bottom}
+        position={growSide(outward)}
         className="page-canvas-grow"
         isConnectable={isConnectable}
       />

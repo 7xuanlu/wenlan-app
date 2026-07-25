@@ -499,6 +499,9 @@ function PageCanvasInner({
           dangling: v.node.ref_state === "dangling",
           isRoot: v.node.parent_id === null,
           depth: v.depth,
+          // Layout puts the page at the origin, so the box's own center already
+          // points away from it.
+          outward: Math.atan2(v.y, v.x),
           readOnly,
           palette,
           width: v.width,
@@ -581,6 +584,10 @@ function PageCanvasInner({
       // Dress it as what it is about to become, so it does not restyle itself
       // the instant the server's copy arrives.
       depth: (views.find((v) => v.node.id === spot.parentId)?.depth ?? 0) + 1,
+      outward: Math.atan2(
+        spot.y + DRAFT_SIZE.height / 2,
+        spot.x + DRAFT_SIZE.width / 2,
+      ),
       readOnly: false,
       palette,
       width: DRAFT_SIZE.width,
@@ -1052,6 +1059,15 @@ function PageCanvasInner({
     }
     return edges;
   }, [views, map?.edges, palette, draft, pending]);
+
+  // Take the keyboard as soon as the canvas is on screen. Every shortcut below
+  // hangs off the surface's own onKeyDown, and opening the canvas leaves focus
+  // on the button in the page header — so the first Escape, Tab or ? did
+  // nothing, and Cmd-A fell through to the browser, which select-alls the whole
+  // window and paints its highlight straight over the map.
+  useEffect(() => {
+    surfaceRef.current?.focus({ preventScroll: true });
+  }, [isLoading]);
 
   // Rendering nothing here made every slow fetch look like a canvas that had
   // simply failed to arrive, with no way to tell waiting from broken.
