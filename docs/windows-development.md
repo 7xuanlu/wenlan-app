@@ -73,6 +73,21 @@ the source-built server SHA-256 was
 The final native run again passed 35/35 assertions with Vulkan device `1`,
 `NVIDIA GeForce RTX 3060 Laptop GPU`, and `gpu_layers=99`.
 
+The 2026-07-25 post-review implementation baseline used app commit
+`858225ae0edd786a68f39fcad054e6af796a453e` and backend commit
+`b80b24f743f79c13752722a8d290bbb8a3b93432`. Its native run passed all
+41 assertions with marker `WINDOWS_SMOKE_1784992221369_1`. The app-owned
+daemon reported Vulkan device `1`, RTX 3060, `gpu_layers=99`, and no fallback;
+its module inventory resolved the exact adjacent staged `vulkan-1.dll` and
+`onnxruntime.dll`. The app and daemon exited through guarded quit and ports
+7878/4444 were clear after driver cleanup.
+
+These dated entries are reproducible baselines, not permission to reuse stale
+artifacts. The merge-candidate run must rebuild both repository tips and make
+the sidecar manifest, health commit, binary hashes, module paths, and
+`result.json` agree. Record those final hashes in the PR evidence instead of
+rewriting this runbook after every docs-only commit.
+
 ## Current Windows GPU status
 
 The PR #96 baseline above deliberately used backend revision `c66f9d8e`, which
@@ -98,15 +113,23 @@ There are two relevant inference stacks:
   than a CUDA or DirectML package. Loading `onnxruntime.dll` proves the bundled
   runtime is used; it does not prove GPU execution.
 
+On a hybrid laptop, the Vulkan loader may load both Intel and NVIDIA ICD
+modules while enumerating adapters, and WebView2 may render the desktop UI on
+the integrated GPU. Neither observation identifies the Qwen compute device.
+Require `/api/status` plus llama.cpp's selected-device, per-layer assignment,
+offloaded-layer count, and model/KV/compute buffer logs. The verified run
+enumerated Intel as `Vulkan0` and NVIDIA as `Vulkan1`, then assigned layers
+0–36 and 2,375.91 MiB of model buffers to NVIDIA `Vulkan1`.
+
 The physical follow-up on the same mixed-GPU Windows 11 machine proved:
 
 | Leg | Result |
 | --- | --- |
 | Vulkan auto | Selected device `1`, `NVIDIA GeForce RTX 3060 Laptop GPU`; offloaded `37/37` layers; valid classification |
-| Forced CPU | All KV layers ran on CPU; Vulkan1 device allocation was `0.0000 MiB`; latest valid classification completed in about 11.56 seconds |
-| Invalid device `99` | Visible `requested GPU device index 99 is unavailable` reason followed by true CPU-only execution and a valid classification in about 11.95 seconds |
-| Warm Vulkan | Latest valid classification completed in about 1.16 seconds; an earlier cold run took about 20.56 seconds while creating shader/pipeline state |
-| App-owned backend status | Native Tauri smoke captured `/api/status`: `vulkan`, device `1`, RTX 3060, `gpu_layers=99`; 35/35 assertions passed |
+| Forced CPU | Offloaded `0/37` layers; all KV layers ran on CPU; Vulkan1 device allocation was `0.0000 MiB`; valid classification completed in about 12.13 seconds |
+| Invalid device `99` | Visible `requested GPU device index 99 is unavailable` reason followed by true CPU-only execution and a valid classification in about 12.31 seconds |
+| Warm Vulkan | Latest valid classification completed in about 1.14 seconds |
+| App-owned backend status | Native Tauri smoke captured `/api/status`: `vulkan`, device `1`, RTX 3060, `gpu_layers=99`, no fallback; 41/41 assertions passed |
 
 The Vulkan-enabled executable imports `vulkan-1.dll` at process start. A
 current vendor GPU driver or Vulkan runtime is therefore required even for the
@@ -159,12 +182,19 @@ Install and expose the pinned toolchain:
 rustup toolchain install 1.95.0 --profile minimal `
   --target x86_64-pc-windows-msvc
 $env:RUSTUP_TOOLCHAIN = "1.95.0"
+rustc --version
+# Expected: rustc 1.95.0 ...
 
 vcpkg install sqlite3:x64-windows-static-md
-$env:LIB = "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows-static-md\lib;$env:LIB"
+$SqliteLibDir = Join-Path $env:VCPKG_INSTALLATION_ROOT `
+  "installed\x64-windows-static-md\lib"
+Get-Item (Join-Path $SqliteLibDir "sqlite3.lib")
+$env:LIB = "$SqliteLibDir;$env:LIB"
 
-# Point this at the directory containing libclang.dll.
-$env:LIBCLANG_PATH = "C:\path\to\LLVM\bin"
+# winget's LLVM.LLVM package installs libclang here by default. Point at the
+# actual directory if a portable LLVM archive is used instead.
+$env:LIBCLANG_PATH = Join-Path $env:ProgramFiles "LLVM\bin"
+Get-Item (Join-Path $env:LIBCLANG_PATH "libclang.dll")
 
 # From the sibling backend repo. This verifies the official installer hash and
 # uses LunarG's non-admin copy_only mode.
@@ -179,7 +209,12 @@ $env:CARGO_BUILD_JOBS = "1"
 $env:CMAKE_GENERATOR = "Ninja"
 ```
 
-Codex workspace “full access” removes Codex approval prompts; it does not
+Rust 1.88 can compile most dependencies but fails on main's
+`std::fs::File::lock()` call with `E0658`; that API became stable in Rust 1.89.
+Use the repository-pinned 1.95.0 instead of patching out the cross-process lock
+or assuming a successful frontend build proves the native toolchain is ready.
+
+Codex workspace "full access" removes Codex approval prompts; it does not
 bypass Windows UAC. Prefer the SDK's verified `copy_only=1` setup and portable
 LLVM/Perl distributions when elevation is unavailable.
 
@@ -251,9 +286,9 @@ $AppCommit = (git -C $AppRepo rev-parse HEAD).Trim()
 $BackendCommit = (git -C $BackendRepo rev-parse HEAD).Trim()
 $Evidence = Join-Path $AppRepo "target\windows-native-smoke\physical-run"
 $Data = Join-Path $Evidence "data"
-$FastEmbedCache = Join-Path $Evidence "fastembed-cache"
+$FastEmbedCache = "C:\wl-fastembed-cache"
 
-New-Item -ItemType Directory -Force -Path $Evidence, $Data, $FastEmbedCache |
+New-Item -ItemType Directory -Force -Path $Evidence, $Data |
   Out-Null
 
 # Prevent the smoke from creating the default profile data. Windows
@@ -294,13 +329,14 @@ do not consistently follow a temporary `USERPROFILE`.
 
 `GITHUB_SHA` is also used for local physical runs so `result.json` binds the
 tested app binary to its source revision. A pre-warmed FastEmbed cache may be
-reused across isolated evidence directories, but do not recursively copy its
-Hugging Face snapshot tree: it contains relative symlinks, and changing their
-representation can make ONNX Runtime report that an otherwise present model
-does not exist. Keep `WENLAN_DATA_DIR` and `WENLAN_NATIVE_PROFILE_ROOT` unique
-for every run. Debug startup and `scripts/dev-runtime.sh` both reject data or
-state directories under the production `%LOCALAPPDATA%\wenlan` and
-`%LOCALAPPDATA%\origin` roots.
+reused across isolated evidence directories. Keep it on a short path and
+prepare it with the backend's hash-verifying script below. Do not recursively
+copy a Hugging Face snapshot tree: relative symlinks, path length, and changed
+file representation can make ONNX Runtime report that an otherwise hashable
+model does not exist. Keep `WENLAN_DATA_DIR` and
+`WENLAN_NATIVE_PROFILE_ROOT` unique for every run. Debug startup and
+`scripts/dev-runtime.sh` both reject data or state directories under the
+production `%LOCALAPPDATA%\wenlan` and `%LOCALAPPDATA%\origin` roots.
 
 For a physical Vulkan run, also set:
 
@@ -373,13 +409,40 @@ target\x86_64-pc-windows-msvc\release\wenlan-app.exe
 
 ## Prewarm the embedding model
 
-The first daemon start downloads the BGE ONNX model. Prewarm it before the UI
-smoke so a network failure is not confused with an app/runtime failure:
+The first daemon start downloads the BGE ONNX model. Materialize its pinned
+snapshot on a short path before the UI smoke so a network, symlink, or path
+failure is not confused with an app/runtime failure. The backend script verifies
+the SHA-256 of all five required files:
 
 ```powershell
+Push-Location $BackendRepo
+try {
+  python scripts\prepare-fastembed-cache.py --cache-dir $FastEmbedCache
+  if ($LASTEXITCODE -ne 0) {
+    throw "FastEmbed cache preparation failed with exit code $LASTEXITCODE"
+  }
+}
+finally {
+  Pop-Location
+}
+
+$PrewarmData = Join-Path $Evidence "prewarm-data"
+New-Item -ItemType Directory -Force -Path $PrewarmData | Out-Null
+$PrewarmConfig = @{
+  knowledge_path = (Join-Path $PrewarmData "pages")
+  setup_completed = $false
+} | ConvertTo-Json
+[System.IO.File]::WriteAllText(
+  (Join-Path $PrewarmData "config.json"),
+  $PrewarmConfig,
+  $Utf8NoBom
+)
+
 $BackendExe = Join-Path $BackendCargoTarget "$Target\release\wenlan-server.exe"
 $PrewarmStdout = Join-Path $Evidence "prewarm.stdout.log"
 $PrewarmStderr = Join-Path $Evidence "prewarm.stderr.log"
+$SmokeData = $env:WENLAN_DATA_DIR
+$env:WENLAN_DATA_DIR = $PrewarmData
 $prewarm = Start-Process -WindowStyle Hidden -FilePath $BackendExe `
   -RedirectStandardOutput $PrewarmStdout `
   -RedirectStandardError $PrewarmStderr `
@@ -427,15 +490,18 @@ finally {
   if ($prewarm -and -not $prewarm.HasExited) {
     Stop-Process -Id $prewarm.Id -Force
   }
+  $env:WENLAN_DATA_DIR = $SmokeData
 }
 ```
 
-When an expected inference backend is configured, the native harness repeats
-the model selection/load request after the app-owned daemon reaches health and
-then polls `/api/status`. This is intentional: the standalone prewarm proves
-the cache and backend, while the second request proves the exact daemon child
-started by Tauri. Do not replace it with a fixed sleep for the background
-startup scheduler.
+The model-selection route persists both `on_device_model` and
+`setup_completed=true`, so standalone prewarm must use `prewarm-data`, never the
+fresh `$Data` reserved for visible onboarding. When an expected inference
+backend is configured, the native harness completes visible onboarding first,
+then repeats the model selection/load request against the app-owned daemon and
+polls `/api/status`. This proves the exact child started by Tauri without making
+the API call hide its own onboarding controls. Do not replace the poll with a
+fixed sleep for the background startup scheduler.
 
 On the verified machine, `hf-hub 0.4.3` left a complete
 `model_optimized.onnx.part`, retried with a range beginning exactly at EOF,
@@ -541,6 +607,13 @@ checking `HasExited`; that cleanup race can turn a successful harness into an
 outer PowerShell exit failure. Do not kill every process named
 `msedgedriver.exe`; stop only the child PID owned by this driver.
 
+`tauri-driver`/EdgeDriver, not the Node runner, launches `wenlan-app.exe`.
+Therefore the app inherits `WENLAN_DATA_DIR`, cache, profile, logging, and GPU
+variables from the driver process. If any of those values changes between
+runs, stop the exact driver and its recorded EdgeDriver child, then start a new
+driver after setting the new environment. Changing only the runner shell can
+silently reuse the previous run's data root.
+
 ## Reading the evidence
 
 Treat the run as passed only when all of the following hold:
@@ -574,17 +647,20 @@ reported `0.14.1+gc66f9d8e` while the PR app still reported `0.14.0`. That is
 expected for this deliberate post-release source-build smoke, but it is not
 acceptable evidence for a version-matched packaged release.
 
-The latest main-sync Vulkan evidence is
-`target/windows-native-smoke/physical-win11-vulkan-main-sync-final4`. It passed
-all 35 assertions with marker `WINDOWS_SMOKE_1784954334839_1`, app commit
-`a0f7a6f99529a9d7fb50e1d22048428faef2e33a`, backend commit
-`b4677e277e70613585e37e99fa29721426b2a179`, and backend binary SHA-256
-`a38b6c682ea6750ac1802ded0517c6ffe7a3bf2538c1b517e2c6bdeda02f03bf`.
+The 2026-07-25 post-review baseline evidence is
+`target/windows-native-smoke/physical-win11-vulkan-b80b24f`. It passed all
+41 assertions with marker `WINDOWS_SMOKE_1784992221369_1`, app commit
+`858225ae0edd786a68f39fcad054e6af796a453e`, backend commit
+`b80b24f743f79c13752722a8d290bbb8a3b93432`, app SHA-256
+`c65be4ee218c49818d398378976ab2701595ce99a0fc6df1312d34ae23160133`,
+and server SHA-256
+`114b881d175398aebd2059914a4bd7ee7a53e2480185f172947310b5a82b64c4`.
 The app-owned backend and app both exited cleanly, ports 7878 and 4444 were
-clear, and the three screenshots were visually inspected rather than accepted
-by file existence alone. The evidence extractor now rejects guarded-quit
-breadcrumbs older than the recorded harness start time, so an accumulated log
-entry from a previous run cannot satisfy the current lifecycle assertion.
+clear after exact driver-child cleanup, and the three screenshots were
+visually inspected rather than accepted by file existence alone. The evidence
+extractor rejects guarded-quit breadcrumbs older than the recorded harness
+start time, so an accumulated log entry from a previous run cannot satisfy the
+current lifecycle assertion.
 
 ## Test results and remaining Windows gaps
 
@@ -599,13 +675,18 @@ The following commands were run, not inferred:
 | Exact backend source build | Passed for all three binaries |
 | `pnpm tauri build --no-bundle --target x86_64-pc-windows-msvc` | Passed |
 | Qwen hardware/inference probe | PR #96 baseline passed twice on CPU/OpenMP; backend Vulkan follow-up passed auto/discrete, forced CPU, and invalid-device fallback |
-| Native Tauri/WebView2 smoke | Historical CPU run passed 33/33; Vulkan app-owned backend run passed 35/35 |
+| Native Tauri/WebView2 smoke | Historical CPU run passed 33/33; latest post-review Vulkan app-owned backend run passed 41/41 |
 
 The first physical run found 22 Windows portability failures. They are now
 resolved, and the Windows workflow runs the complete frontend suite before it
 installs Rust or starts the expensive native smoke. The fixes establish these
 maintenance rules:
 
+- Keep Vitest capped at four workers. Vitest run mode otherwise uses all
+  available parallelism; on this mixed frontend suite, competing jsdom,
+  CodeMirror, and graph transforms can starve a real async UI transition past
+  Testing Library's one-second default and produce timing-only Page editor
+  failures. The capped full suite is the gate; an isolated retry is not proof.
 - Read source fixtures through `src/test/sourceText.ts` when exact multiline
   text matters. It normalizes CRLF and lone CR to LF.
 - Persist repository-relative keys with forward slashes. Do not compare a
@@ -637,9 +718,11 @@ maintenance rules:
   WebdriverIO `connectionRetryCount: 0`; an automatic retry can launch a second
   app and orphan the first app-owned daemon.
 - A physical inference expectation must use the Settings
-  `/api/on-device-model/download` route after app-owned backend health, then
-  poll `/api/status`. Background startup admission is deliberately delayed and
-  is not a reliable GPU-readiness trigger for a bounded smoke.
+  `/api/on-device-model/download` route after app-owned backend health and
+  visible onboarding, then poll `/api/status`. The route sets
+  `setup_completed=true`; calling it first can hide the controls the same test
+  intends to exercise. Background startup admission is deliberately delayed
+  and is not a reliable GPU-readiness trigger for a bounded smoke.
 - Keep `WENLAN_NATIVE_PROFILE_ROOT` separate from `USERPROFILE`: the former
   isolates only the macOS-path pollution assertion, while the latter controls
   Windows identity paths and model caches.

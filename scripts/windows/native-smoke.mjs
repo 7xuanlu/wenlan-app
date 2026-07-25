@@ -623,6 +623,15 @@ async function main() {
     );
     evidence.health = { ok: true, response: health };
     writeJson(healthPath, health);
+
+    // Selecting an on-device model persists setup_completed=true. Complete the
+    // visible first-run flow before that API call so the live GPU assertion
+    // cannot make its own onboarding controls disappear.
+    await driveZeroConfigurationOnboarding(browser, log);
+    await browser.saveScreenshot(appReadyPath);
+    evidence.screenshots.app_ready.exists = existsSync(appReadyPath);
+    log("captured native app-ready shell after visible onboarding");
+
     if (
       inferenceExpectation.inferenceBackend &&
       inferenceExpectation.inferenceBackend !== "disabled"
@@ -704,11 +713,6 @@ async function main() {
       app: launched.app[0],
       backend: launched.backend[0],
     };
-
-    await driveZeroConfigurationOnboarding(browser, log);
-    await browser.saveScreenshot(appReadyPath);
-    evidence.screenshots.app_ready.exists = existsSync(appReadyPath);
-    log("captured native app-ready shell after visible onboarding");
 
     const content = `Windows native sidecar and WebView2 smoke proof. Unique marker: ${marker}. A cobalt lantern calibrates tidal clocks during winter.`;
     const stored = await fetchJson("http://127.0.0.1:7878/api/memory/store", {

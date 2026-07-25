@@ -191,6 +191,10 @@ describe("Windows native smoke workflow contract", () => {
     const hotLoadIndex = text.indexOf(
       '"http://127.0.0.1:7878/api/on-device-model/download"',
     );
+    const onboardingIndex = text.indexOf(
+      "await driveZeroConfigurationOnboarding(browser, log);",
+      healthIndex,
+    );
     const inferencePollIndex = text.indexOf(
       'poll("expected on-device inference backend"',
     );
@@ -210,6 +214,8 @@ describe("Windows native smoke workflow contract", () => {
     expect(text).toContain(
       'inferenceExpectation.inferenceBackend !== "disabled"',
     );
+    expect(onboardingIndex).toBeGreaterThan(healthIndex);
+    expect(hotLoadIndex).toBeGreaterThan(onboardingIndex);
     expect(hotLoadIndex).toBeGreaterThan(healthIndex);
     expect(inferencePollIndex).toBeGreaterThan(hotLoadIndex);
   });
