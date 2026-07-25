@@ -3,6 +3,7 @@ import {
   findCollisions,
   radialNaive,
   radialPolar,
+  RING_SQUASH,
   type MapNodeInput,
   type PlacedNode,
 } from './radial';
@@ -78,13 +79,34 @@ describe('radialPolar', () => {
 
   it('keeps every node exactly on its depth ring', () => {
     const placed = radialPolar(pageTree());
+    // The rings are ellipses, not circles — squashed on y to match the frame the
+    // map is read in — so the invariant is the ellipse equation rather than a
+    // constant distance from the centre. Every node on a ring shares one
+    // (semi-major, semi-minor) pair, which is what "on its ring" now means.
+    // Un-squashing y turns the ellipse back into the circle the separation was
+    // solved on, so every node on a ring must report the same radius there. A
+    // node's own coordinates give it exactly, at any angle.
+    const semiMajor = (p: PlacedNode) => Math.hypot(p.x, p.y * RING_SQUASH);
     for (let depth = 1; depth <= 3; depth++) {
       const ring = byDepth(placed, depth);
-      const radius = Math.hypot(ring[0].x, ring[0].y);
+      const radius = semiMajor(ring[0]);
       for (const p of ring) {
-        expect(Math.hypot(p.x, p.y)).toBeCloseTo(radius, 6);
+        expect(semiMajor(p)).toBeCloseTo(radius, 6);
       }
     }
+  });
+
+  it('squashes the rings toward the shape of the frame they are read in', () => {
+    // The whole point of the squash: a map that is wider than it is tall fits a
+    // frame that is wider than it is tall. Circular rings made this ~1.0.
+    const placed = radialPolar(pageTree()).filter((p) => p.depth > 0);
+    const spanX =
+      Math.max(...placed.map((p) => p.x + p.width / 2)) -
+      Math.min(...placed.map((p) => p.x - p.width / 2));
+    const spanY =
+      Math.max(...placed.map((p) => p.y + p.height / 2)) -
+      Math.min(...placed.map((p) => p.y - p.height / 2));
+    expect(spanX / spanY).toBeGreaterThan(1.3);
   });
 
   it('preserves sibling input order as monotonic angles', () => {

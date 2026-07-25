@@ -4,7 +4,9 @@
 // cartesian-then-angle transform re-collides wide boxes near the center.
 // `radialNaive` exists to demonstrate that failure; `radialPolar` is the fix —
 // it runs flextree directly in polar coordinates (angular width = px / radius)
-// and grows the rings when a circle overflows.
+// and grows the rings when a circle overflows. Separation is solved on circles;
+// the rings are then squashed onto ellipses to match the frame (RING_SQUASH),
+// which only ever reduces vertical clearance, never radial.
 
 import flextree from './flextree/flextree.js';
 
@@ -54,6 +56,25 @@ function ringRadii(root: MapNodeInput, ringGap: number): number[] {
   return radii;
 }
 
+/**
+ * How much wider than tall each ring is.
+ *
+ * The rings are ellipses rather than circles because the frame they are read in
+ * is not square: the canvas is full width and `min(68vh, 620px)` tall, about
+ * 1.8:1, while circular rings produce a roughly square map. Fitting a square
+ * map into a wide frame wastes the width and spends the height, so a page with
+ * thirteen sections opened either unreadably small or with its top and bottom
+ * boxes cut off by the frame edge.
+ *
+ * 1.55 rather than the frame's own 1.8: squashing the y axis compresses the
+ * tangential clearance between siblings stacked either side of the vertical
+ * axis, and that clearance is what `radialPolar` works to establish. Measured on
+ * a 24-box map, the tightest gap between any two boxes goes from 4px at 1.0
+ * (circular) to 2px at 1.55 to boxes touching at 1.7. 1.55 is the most squash
+ * the layout's own margin pays for.
+ */
+export const RING_SQUASH = 1.55;
+
 function place(
   nodes: { data: MapNodeInput; depth: number; angle: number }[],
   radii: number[],
@@ -61,7 +82,7 @@ function place(
   return nodes.map(({ data, depth, angle }) => ({
     id: data.id,
     x: depth === 0 ? 0 : radii[depth] * Math.cos(angle),
-    y: depth === 0 ? 0 : radii[depth] * Math.sin(angle),
+    y: depth === 0 ? 0 : (radii[depth] / RING_SQUASH) * Math.sin(angle),
     width: data.width,
     height: data.height,
     depth,

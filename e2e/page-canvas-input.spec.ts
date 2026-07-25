@@ -299,6 +299,43 @@ test("the zoom keys work, and the zoom buttons say what they are", async ({ page
   expect(titles[2], "the fit button does not name its key").toContain("Shift 1");
 });
 
+test("a real-sized page opens with all of it on screen", async ({ page }) => {
+  await installTauriMock(page, { locale: "en", rawActions: [] });
+  await page.goto("/");
+  await seedLargeMap(page);
+  await openCanvas(page);
+  await page.waitForTimeout(800);
+
+  const view = await page.evaluate(() => {
+    const frame = document.querySelector(".page-canvas-surface")!.getBoundingClientRect();
+    const boxes = [...document.querySelectorAll(".react-flow__node")].map((el) => ({
+      r: el.getBoundingClientRect(),
+      label: (el.textContent ?? "").slice(0, 20),
+    }));
+    return {
+      nodes: boxes.length,
+      clipped: boxes
+        .filter(
+          ({ r }) =>
+            r.left < frame.left - 1 ||
+            r.right > frame.right + 1 ||
+            r.top < frame.top - 1 ||
+            r.bottom > frame.bottom + 1,
+        )
+        .map(({ label }) => label),
+    };
+  });
+  console.log(
+    `13-box map at ${(await scale(page)).toFixed(3)}: ${view.clipped.length} clipped ${JSON.stringify(view.clipped)}`,
+  );
+  await page.locator(".page-canvas").screenshot({ path: "shots/opens-complete.png" });
+  expect(view.nodes).toBeGreaterThan(10);
+  // Circular rings made a roughly square map, which in a frame near 1.8:1 could
+  // only open small or open cut. Squashing the rings toward the frame's own shape
+  // is what lets a page this size open both readable and whole.
+  expect(view.clipped, "boxes were cut off by the frame on open").toEqual([]);
+});
+
 test("fit all shows the whole map, however big it is", async ({ page }) => {
   await installTauriMock(page, { locale: "en", rawActions: [] });
   await page.goto("/");
