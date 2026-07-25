@@ -527,7 +527,14 @@ describe("PageCanvas", () => {
     fireEvent.keyDown(surface(), { key: "!", code: "Digit1", shiftKey: true });
     // No `nodes` key at all — passing it as undefined means "fit exactly these",
     // and an empty list frames nothing.
-    expect(fitViewSpy).toHaveBeenCalledWith({ duration: 200 });
+    //
+    // Framed, not bare: the key, the fit button and the menu item are one
+    // command, and reaching React Flow's defaults separately made them disagree.
+    expect(fitViewSpy).toHaveBeenCalledWith({
+      maxZoom: 1,
+      padding: 0.15,
+      duration: 200,
+    });
   });
 
   it("frames only what is selected on Shift+2", async () => {
@@ -553,7 +560,11 @@ describe("PageCanvas", () => {
     fitViewSpy.mockClear();
 
     fireEvent.keyDown(surface(), { key: "@", code: "Digit2", shiftKey: true });
-    expect(fitViewSpy).toHaveBeenCalledWith({ duration: 200 });
+    expect(fitViewSpy).toHaveBeenCalledWith({
+      maxZoom: 1,
+      padding: 0.15,
+      duration: 200,
+    });
   });
 
   it("adds a box by writing the heading first, then pointing a node at it", async () => {

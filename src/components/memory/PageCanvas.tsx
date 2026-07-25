@@ -121,6 +121,25 @@ const HELP_PANEL_ID = "page-canvas-help-panel";
  */
 const OPENING_VIEW = { minZoom: 0.75, maxZoom: 1, padding: 0.15 } as const;
 
+/**
+ * How the map is framed by "fit all" — the key, the button, and the menu item,
+ * which are one command and have to agree.
+ *
+ * They did not: each reached React Flow's bare defaults separately, so opening a
+ * thirteen-box page at 0.812 and then pressing the fit key moved it to 0.846 —
+ * a change with no cause a reader can see, which is exactly the kind of thing
+ * that makes a canvas feel like it needs watching. Same padding as the opening
+ * view fixes that.
+ *
+ * The ceiling is shared too, for a different reason: fitting a four-box page to
+ * the frame means magnifying it to 1.167, drawing every box half again larger
+ * than it was designed. Actual size is as large as anything should ever get.
+ *
+ * No floor, deliberately. A command that says it shows everything has to show
+ * everything, however small it ends up.
+ */
+const FIT_ALL_VIEW = { maxZoom: 1, padding: 0.15, duration: 200 } as const;
+
 // How much a key press zooms, and how long the move takes. React Flow's own
 // step is 1.2x, which the Controls buttons use; matching it keeps the button
 // and the key the same gesture.
@@ -129,10 +148,11 @@ const ZOOM_DURATION = 180;
 /**
  * How a line arriving at a box on ring `depth` is drawn.
  *
- * Straight, because the rings are concentric and a spoke is what a mind map
- * draws. React Flow's default bezier leaves from the bottom and arrives at the
- * top whatever direction the child actually lies in, which turned every branch
- * that ran sideways or upward into an S.
+ * A gentle arc along the spoke, drawn by `SpineEdge` — see that file for why
+ * neither of React Flow's own edge types will do it. The short version: the
+ * default bezier leaves from the bottom and arrives at the top whatever
+ * direction the child actually lies in, which turns every branch running
+ * sideways or upward into an S, and `straight` drew the map as a wire diagram.
  */
 function spineLook(palette: GraphPalette, depth: number): Partial<Edge> {
   return {
@@ -880,7 +900,7 @@ function PageCanvasInner({
         {
           key: "fit",
           label: t("pageCanvas.menuFitView"),
-          run: () => void fitView({ duration: 200 }),
+          run: () => void fitView(FIT_ALL_VIEW),
         },
       );
       return items;
@@ -1025,8 +1045,11 @@ function PageCanvasInner({
           e.code === "Digit2" ? nodesRef.current.filter((n) => n.selected) : [];
         // Passing `nodes: undefined` is not the same as omitting it: React Flow
         // reads the key as "fit exactly these" and an empty list fits nothing.
+        //
+        // Zooming to a selection keeps no ceiling: filling the frame with one box
+        // is the whole gesture, and Figma's Shift 2 magnifies for the same reason.
         void fitView(
-          picked.length ? { duration: 200, nodes: picked } : { duration: 200 },
+          picked.length ? { duration: 200, nodes: picked } : FIT_ALL_VIEW,
         );
         return;
       }
@@ -1318,7 +1341,10 @@ function PageCanvasInner({
           proOptions={{ hideAttribution: true }}
         >
           <Background color={palette.graticule} gap={24} />
-          <Controls showInteractive={false} />
+          {/* React Flow's fit button calls `fitView` with the options passed
+              here, not the ones on <ReactFlow>, so the button has to be handed
+              the same object as the key or the two disagree. */}
+          <Controls showInteractive={false} fitViewOptions={FIT_ALL_VIEW} />
         </ReactFlow>
         {menu && menuItems.length > 0 && (
           <ContextMenu

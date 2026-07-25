@@ -336,6 +336,50 @@ test("a real-sized page opens with all of it on screen", async ({ page }) => {
   expect(view.clipped, "boxes were cut off by the frame on open").toEqual([]);
 });
 
+test("fit all frames the map the same way however it is asked for", async ({ page }) => {
+  await installTauriMock(page, { locale: "en", rawActions: [] });
+
+  // Sparse first, and it has to stay first: seeded boxes outlive a `goto`, so a
+  // four-box check after `seedLargeMap` silently measures thirteen.
+  await openCanvas(page);
+  await page.waitForTimeout(600);
+  await page.locator(".react-flow__pane").click({ position: { x: 30, y: 30 } });
+  await page.keyboard.press("Shift+Digit1");
+  await page.waitForTimeout(400);
+  const sparse = await scale(page);
+  const sparseBox = (await page.locator(".react-flow__node").first().boundingBox())!;
+  console.log(`4 boxes: fit all at ${sparse.toFixed(3)}, box ${Math.round(sparseBox.width)}px wide`);
+  expect(await page.locator(".react-flow__node").count()).toBeLessThan(6);
+  // Fitting a sparse page to the frame means magnifying it to 1.167 — drawing
+  // every box half again larger than it was designed.
+  expect(sparse, "fit all magnified a sparse map past actual size").toBeLessThanOrEqual(1.001);
+
+  await page.goto("/");
+  await seedLargeMap(page);
+  await openCanvas(page);
+  await page.waitForTimeout(700);
+  const opened = await scale(page);
+
+  // The key, then the button, then the key again from a nudged viewport: one
+  // command asked for three ways has to land in the same place every time. Each
+  // reached React Flow's bare defaults separately before, so opening a page and
+  // then pressing fit moved the map for no reason a reader could see.
+  await page.locator(".react-flow__pane").click({ position: { x: 30, y: 30 } });
+  await page.keyboard.press("Shift+Digit1");
+  await page.waitForTimeout(400);
+  const byKey = await scale(page);
+
+  await page.keyboard.press("Equal");
+  await page.waitForTimeout(300);
+  await page.locator(".react-flow__controls-fitview").click();
+  await page.waitForTimeout(400);
+  const byButton = await scale(page);
+  console.log(`13 boxes: opened ${opened.toFixed(3)}, key ${byKey.toFixed(3)}, button ${byButton.toFixed(3)}`);
+
+  expect(byKey, "the fit key reframed a map that was already fitted").toBeCloseTo(opened, 2);
+  expect(byButton, "the fit button and the fit key disagree").toBeCloseTo(byKey, 2);
+});
+
 test("fit all shows the whole map, however big it is", async ({ page }) => {
   await installTauriMock(page, { locale: "en", rawActions: [] });
   await page.goto("/");
