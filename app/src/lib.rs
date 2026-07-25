@@ -1720,7 +1720,6 @@ mod tests {
     fn debug_app_rejects_complete_but_production_touching_runtime_identities() {
         let keys = [
             "HOME",
-            "LOCALAPPDATA",
             "WENLAN_PORT",
             "WENLAN_DEV_UI_PORT",
             "WENLAN_DEV_REMOTE_PORT_START",
@@ -1735,24 +1734,11 @@ mod tests {
             .collect();
         let tmp = tempfile::tempdir().unwrap();
         let fake_home = tmp.path().join("home");
-        let fake_local_app_data = tmp.path().join("local-app-data");
-        let mut production_roots = vec![
-            fake_home.join("Library/Application Support/wenlan"),
-            fake_home.join("Library/Application Support/origin"),
-            fake_home.join("Library/Logs/com.origin.desktop"),
-            fake_home.join(".config/origin-mcp"),
-            fake_home.join(".origin"),
-        ];
-        #[cfg(target_os = "windows")]
-        production_roots.extend([
-            fake_local_app_data.join("wenlan"),
-            fake_local_app_data.join("origin"),
-        ]);
+        let production_roots = production_runtime_roots(Some(fake_home.clone()), None);
         for root in &production_roots {
             std::fs::create_dir_all(root).unwrap();
         }
         std::env::set_var("HOME", &fake_home);
-        std::env::set_var("LOCALAPPDATA", &fake_local_app_data);
         std::env::set_var("WENLAN_PORT", "17777");
         std::env::set_var("WENLAN_DEV_UI_PORT", "18777");
         std::env::set_var("WENLAN_DEV_REMOTE_PORT_START", "65533");
