@@ -134,7 +134,7 @@ test("select all from outside the canvas cannot paint over the map", async ({ pa
   await page.keyboard.press("Meta+a");
   const selected = await page.evaluate(() => window.getSelection()?.toString() ?? "");
   await page.locator(".page-canvas").screenshot({ path: "shots/select-all-unfocused.png" });
-  for (const inside of ["Add section", "Improve", "suggestion", "Storage layer"]) {
+  for (const inside of ["Improve", "suggestion", "Storage layer"]) {
     expect(selected, `select-all reached "${inside}" inside the canvas`).not.toContain(inside);
   }
 });

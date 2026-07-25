@@ -3049,15 +3049,14 @@ p.entity-error {
   cursor: default;
 }
 
-/* Improve runs the model and rewrites the whole map. It is the signature act of
-   this screen, so it carries the only filled ink here; "Add section" stays a
-   ghost beside it. Three same-weight labels in one segment was the old shape,
-   and it needed a paragraph of hairlines to stop them reading as triplets. */
+/* Improve runs the model and rewrites the whole map, and it is now the only act
+   up here, so it carries the only filled ink. It had a hairline down its left
+   edge to divide it from "Add section"; with nothing to divide from, that line
+   was just a mark on the outside of a button. */
 .page-canvas-action.is-improve {
   display: flex;
   align-items: center;
   gap: 5px;
-  border-left: 1px solid var(--mem-border);
   background-color: color-mix(in srgb, var(--mem-accent-page) 14%, transparent);
   color: var(--mem-accent-page);
   font-weight: 600;

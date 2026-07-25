@@ -1360,15 +1360,12 @@ function PageCanvasInner({
           </span>
         )}
         <div className="page-canvas-actions">
+          {/* Improve is the only act here now. Adding a box had a button too,
+              which duplicated three gestures that are already the fastest way to
+              do it — double-click the canvas, Tab for a child, Enter for a
+              sibling — and an empty page offers Generate in its own right, so
+              nothing is only reachable by keyboard. */}
           <div className="page-canvas-action-cluster">
-            <button
-              type="button"
-              className="page-canvas-action"
-              onClick={() => startDraft("child")}
-              disabled={readOnly}
-            >
-              {t("pageCanvas.addSection")}
-            </button>
             <button
               type="button"
               className="page-canvas-action is-improve"

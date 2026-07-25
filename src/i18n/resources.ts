@@ -411,7 +411,6 @@ const en = {
     redistillPage: "Re-distill page",
   },
   pageCanvas: {
-    addSection: "Add section",
     newSectionPlaceholder: "Name this section",
     nameSectionLabel: "Section name",
     badSectionName: "Give the section a name with letters or numbers in it.",
@@ -1875,7 +1874,6 @@ const zhHans = {
     redistillPage: "重新精炼页面",
   },
   pageCanvas: {
-    addSection: "添加章节",
     newSectionPlaceholder: "为这个章节命名",
     nameSectionLabel: "章节名称",
     badSectionName: "章节名称需要包含字母或数字。",
@@ -3320,7 +3318,6 @@ const zhHant = {
     redistillPage: "重新精煉頁面",
   },
   pageCanvas: {
-    addSection: "新增章節",
     newSectionPlaceholder: "為這個章節命名",
     nameSectionLabel: "章節名稱",
     badSectionName: "章節名稱需要包含字母或數字。",

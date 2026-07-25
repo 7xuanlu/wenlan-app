@@ -344,7 +344,6 @@ describe("PageCanvas", () => {
 
     expect(await screen.findByText("Read-only")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Improve" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Add section" })).toBeDisabled();
     expect(screen.queryByRole("button", { name: "Accept" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Dismiss" })).toBeNull();
     // The shortcuts are hidden too: advertising keys that do nothing is worse
@@ -458,7 +457,7 @@ describe("PageCanvas", () => {
     );
     renderCanvas();
 
-    expect(await screen.findByRole("button", { name: "Add section" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Improve" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /suggestion/ })).toBeNull();
   });
 
@@ -578,7 +577,8 @@ describe("PageCanvas", () => {
     (createPageMapNode as ReturnType<typeof vi.fn>).mockResolvedValue({});
     const { user } = renderCanvas();
 
-    await user.click(await screen.findByRole("button", { name: "Add section" }));
+    await screen.findByText("Page One");
+    fireEvent.keyDown(surface(), { key: "Tab" });
     const field = await screen.findByRole("textbox", { name: "Section name" });
     await user.type(field, "Next steps{Enter}");
 
@@ -603,7 +603,8 @@ describe("PageCanvas", () => {
     (getPageMap as ReturnType<typeof vi.fn>).mockResolvedValue(makeMap());
     const { user } = renderCanvas();
 
-    await user.click(await screen.findByRole("button", { name: "Add section" }));
+    await screen.findByText("Page One");
+    fireEvent.keyDown(surface(), { key: "Tab" });
     const field = await screen.findByRole("textbox", { name: "Section name" });
     await user.type(field, "???{Enter}");
 
@@ -742,9 +743,10 @@ describe("PageCanvas", () => {
     // is what made a dragged-out box vanish the instant it appeared.
     const { getPageMap, createPageMapNode } = await tauri();
     (getPageMap as ReturnType<typeof vi.fn>).mockResolvedValue(makeMap());
-    const { user } = renderCanvas();
+    renderCanvas();
 
-    await user.click(await screen.findByRole("button", { name: "Add section" }));
+    await screen.findByText("Page One");
+    fireEvent.keyDown(surface(), { key: "Tab" });
     const field = await screen.findByRole("textbox", { name: "Section name" });
     fireEvent.blur(field, { target: { value: "" } });
 
@@ -759,7 +761,8 @@ describe("PageCanvas", () => {
     (getPageMap as ReturnType<typeof vi.fn>).mockResolvedValue(makeMap());
     const { user } = renderCanvas();
 
-    await user.click(await screen.findByRole("button", { name: "Add section" }));
+    await screen.findByText("Page One");
+    fireEvent.keyDown(surface(), { key: "Tab" });
     const field = await screen.findByRole("textbox", { name: "Section name" });
     await user.type(field, "Never mind{Escape}");
 
