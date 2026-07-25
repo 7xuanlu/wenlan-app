@@ -6,7 +6,6 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
-  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -39,7 +38,11 @@ function spawnFakeServer(server: string): ReturnType<typeof spawn> {
     copyFileSync(ping, server);
     return spawn(server, ["-n", "60", "127.0.0.1"], { stdio: "ignore" });
   }
-  symlinkSync("/bin/sleep", server);
+  // Keep the recorded executable identity stable on Unix too. A symlink to
+  // /bin/sleep is resolved by dev-runtime.sh before comparison, while the
+  // process fixture deliberately reports the path that was launched.
+  copyFileSync("/bin/sleep", server);
+  chmodSync(server, 0o755);
   return spawn(server, ["60"], { stdio: "ignore" });
 }
 
