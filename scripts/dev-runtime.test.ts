@@ -243,7 +243,7 @@ describe("scoped dev runtime", () => {
           WENLAN_DEV_PORT: "27992",
           WENLAN_DEV_UI_PORT: "28992",
           FAKE_DAEMON_PID: `${daemon.pid}`,
-          FAKE_DAEMON_COMMAND: server,
+      FAKE_DAEMON_COMMAND: realpathSync(server),
         }),
       });
 
@@ -314,7 +314,7 @@ describe("scoped dev runtime", () => {
           WENLAN_DEV_PORT: "27991",
           WENLAN_DEV_UI_PORT: "28991",
           FAKE_DAEMON_PID: `${daemon.pid}`,
-          FAKE_DAEMON_COMMAND: server,
+      FAKE_DAEMON_COMMAND: realpathSync(server),
           FAKE_PNPM_ENV_LOG: pnpmEnvLog,
         }),
       });
