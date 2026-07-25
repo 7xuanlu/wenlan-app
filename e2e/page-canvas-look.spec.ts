@@ -136,6 +136,43 @@ for (const theme of THEMES) {
       await page.locator(".page-canvas").screenshot({ path: `shots/${theme}-9-large-suggested.png` });
     });
 
+    test("the strokes between boxes are curves, not wires", async ({ page }) => {
+      await installTauriMock(page, {
+        locale: "en",
+        rawActions: [],
+        localStorage: { "wenlan-theme": theme },
+      });
+      await page.goto("/");
+      await seedLargeMap(page);
+      await openCanvas(page);
+      await page.waitForTimeout(600);
+
+      // Each stroke measured against its own chord: how far the drawn path bows
+      // away from the straight line between the two boxes, as a fraction of the
+      // distance between them. A straight edge — or React Flow's own bezier,
+      // which on center-pinned Top/Bottom handles lays an S over the spoke —
+      // does not produce a single consistent bow.
+      const bows = await page.locator(".react-flow__edge-path").evaluateAll((els) =>
+        els.map((el) => {
+          const path = el as unknown as SVGPathElement;
+          const len = path.getTotalLength();
+          const a = path.getPointAtLength(0);
+          const b = path.getPointAtLength(len);
+          const mid = path.getPointAtLength(len / 2);
+          const span = Math.hypot(b.x - a.x, b.y - a.y);
+          const off = Math.hypot(mid.x - (a.x + b.x) / 2, mid.y - (a.y + b.y) / 2);
+          return span > 1 ? off / span : 0;
+        }),
+      );
+      console.log(`bow per edge: ${bows.map((b) => b.toFixed(3)).join(", ")}`);
+      expect(bows.length).toBeGreaterThan(10);
+      for (const bow of bows) {
+        expect(bow, "a stroke was drawn straight").toBeGreaterThan(0.02);
+        // And not so far that it leans into a neighbouring box on a crowded ring.
+        expect(bow, "a stroke bowed far enough to cross the map").toBeLessThan(0.08);
+      }
+    });
+
     test("loading", async ({ page }) => {
       await installTauriMock(page, {
         locale: "en",

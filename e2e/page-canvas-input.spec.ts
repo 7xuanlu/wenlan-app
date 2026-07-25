@@ -208,6 +208,97 @@ test("the grow dot sits on the side each box faces", async ({ page }) => {
   }
 });
 
+/** The scale the viewport is actually drawn at, read off its own transform. */
+async function scale(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const vp = document.querySelector(".react-flow__viewport") as HTMLElement;
+    return new DOMMatrixReadOnly(getComputedStyle(vp).transform).a;
+  });
+}
+
+/** A map the size a real page grows to: thirteen boxes over three rings. */
+async function seedLargeMap(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    const add = async (parent: string, label: string): Promise<string> => {
+      const result = (await window.__wenlanTauriInvoke("create_page_map_node", {
+        pageId: "page-architecture",
+        body: { parent_id: parent, label, ref_kind: "section", ref_id: label },
+      })) as { node: { id: string } };
+      return result.node.id;
+    };
+    const ingest = await add("n_root", "Ingest pipeline");
+    await add(ingest, "Chunking");
+    await add(ingest, "Embedding queue");
+    const api = await add("n_root", "HTTP surface");
+    await add(api, "Auth");
+    await add(api, "Rate limits");
+    await add("n_root", "Observability");
+    await add("n_query", "Reranking");
+    await add("n_query", "Filters");
+  });
+}
+
+test("the map opens at a scale a person can read", async ({ page }) => {
+  await installTauriMock(page, { locale: "en", rawActions: [] });
+  await openCanvas(page);
+  await page.waitForTimeout(600);
+  const small = await scale(page);
+  const smallBox = (await page.locator(".react-flow__node").first().boundingBox())!;
+  console.log(`4 boxes: opened at ${small.toFixed(3)}, box ${Math.round(smallBox.width)}px wide`);
+  // A four-box map used to open at 1.167, drawing every box larger than it was
+  // designed. Framing the extent is not worth rendering the design wrong.
+  expect(small, "a sparse map opened zoomed past actual size").toBeLessThanOrEqual(1.001);
+
+  await page.goto("/");
+  await seedLargeMap(page);
+  await openCanvas(page);
+  await page.waitForTimeout(600);
+  const large = await scale(page);
+  console.log(`13 boxes: opened at ${large.toFixed(3)}, 12px label rasterizes at ${(12 * large).toFixed(1)}px`);
+  // And a thirteen-box map used to open at 0.563, which draws the 12px label at
+  // under 7px. Legibility is the floor; the rest of the map is one pan or one
+  // press of Shift 1 away.
+  expect(12 * large, "labels opened too small to read").toBeGreaterThanOrEqual(10);
+  expect(large, "a dense map opened zoomed past actual size").toBeLessThanOrEqual(1.001);
+});
+
+test("the zoom keys work, and the zoom buttons say what they are", async ({ page }) => {
+  await installTauriMock(page, { locale: "en", rawActions: [] });
+  await openCanvas(page);
+  await page.waitForTimeout(600);
+  // Focus stays on the Canvas button in the page header, which is where a
+  // reader's first keystroke actually lands.
+  const opened = await scale(page);
+
+  await page.keyboard.press("Minus");
+  await page.waitForTimeout(400);
+  const out = await scale(page);
+  await page.keyboard.press("Equal");
+  await page.keyboard.press("Equal");
+  await page.waitForTimeout(400);
+  const inAgain = await scale(page);
+  await page.keyboard.press("Shift+Digit0");
+  await page.waitForTimeout(400);
+  const actual = await scale(page);
+  console.log(`opened ${opened.toFixed(3)} → "−" ${out.toFixed(3)} → "++" ${inAgain.toFixed(3)} → "Shift 0" ${actual.toFixed(3)}`);
+  expect(out, '"−" did not zoom out').toBeLessThan(opened - 0.01);
+  expect(inAgain, '"+" did not zoom back in').toBeGreaterThan(out + 0.01);
+  expect(actual, '"Shift 0" did not return to actual size').toBeCloseTo(1, 2);
+
+  // Cmd+plus is the app window's own page zoom, so the canvas keys are bare —
+  // which makes them undiscoverable unless the control someone already reached
+  // for names them.
+  const titles = await page.evaluate(() =>
+    [".react-flow__controls-zoomin", ".react-flow__controls-zoomout", ".react-flow__controls-fitview"].map(
+      (sel) => document.querySelector(sel)?.getAttribute("title") ?? "",
+    ),
+  );
+  console.log(`control tooltips: ${JSON.stringify(titles)}`);
+  expect(titles[0], "the zoom-in button does not name its key").toContain("(+)");
+  expect(titles[1], "the zoom-out button does not name its key").toContain("(-)");
+  expect(titles[2], "the fit button does not name its key").toContain("Shift 1");
+});
+
 test("a drag that starts on a canvas control selects no text", async ({ page }) => {
   await installTauriMock(page, { locale: "en", rawActions: [] });
   await openCanvas(page);

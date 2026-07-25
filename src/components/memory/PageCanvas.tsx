@@ -22,6 +22,7 @@ import {
   type Edge,
   type FinalConnectionState,
   type Node,
+  type EdgeTypes,
   type NodeTypes,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
@@ -43,6 +44,7 @@ import { layoutMap, nodeBoxSize, NODE_HEIGHT } from "../../lib/pageMap/tree";
 import { slugify, withHeading } from "../../lib/pageMap/slug";
 import { useGraphPalette, type GraphPalette } from "../../lib/graph/palette";
 import CanvasNode, { type CanvasNodeData } from "./canvas/CanvasNode";
+import SpineEdge from "./canvas/SpineEdge";
 
 interface PageCanvasProps {
   pageId: string;
@@ -92,12 +94,33 @@ const SHORTCUTS = [
   { cap: "Enter", key: "pageCanvas.hintAddSibling" },
   { cap: "F2", key: "pageCanvas.hintRename" },
   { cap: "Delete", key: "pageCanvas.hintDelete" },
+  { cap: "+ -", key: "pageCanvas.hintZoom" },
+  { cap: "Shift 0", key: "pageCanvas.hintActualSize" },
   { cap: "Shift 1", key: "pageCanvas.hintFit" },
   { cap: "Shift 2", key: "pageCanvas.hintZoomSelection" },
   { cap: "Shift /", key: "pageCanvas.hintHelp" },
 ] as const;
 
 const HELP_PANEL_ID = "page-canvas-help-panel";
+
+/**
+ * How the map is framed when it opens.
+ *
+ * A bare `fitView` frames the extent and nothing else, which on a map this
+ * shape is the wrong thing to optimise: a four-box page opened at 1.167, so
+ * every box rendered larger than it was designed, and a thirteen-box page
+ * opened at 0.563, which rasterizes a 12px label at under 7px. Legibility is
+ * the constraint, extent is not — so the opening scale is clamped to a band
+ * either side of actual size, and a map too big for the band opens readable and
+ * partly off-frame. Seeing all of it is one key or one button away; reading it
+ * is what the reader came for.
+ */
+const OPENING_VIEW = { minZoom: 0.85, maxZoom: 1, padding: 0.15 } as const;
+
+// How much a key press zooms, and how long the move takes. React Flow's own
+// step is 1.2x, which the Controls buttons use; matching it keeps the button
+// and the key the same gesture.
+const ZOOM_DURATION = 180;
 
 /**
  * How a line arriving at a box on ring `depth` is drawn.
@@ -109,7 +132,7 @@ const HELP_PANEL_ID = "page-canvas-help-panel";
  */
 function spineLook(palette: GraphPalette, depth: number): Partial<Edge> {
   return {
-    type: "straight",
+    type: "spine",
     style:
       depth <= 1
         ? { stroke: palette.edgeStrong, strokeWidth: 1.6 }
@@ -130,6 +153,7 @@ interface MenuItem {
 }
 
 const nodeTypes: NodeTypes = { pageMapNode: CanvasNode as NodeTypes[string] };
+const edgeTypes: EdgeTypes = { spine: SpineEdge };
 
 export default function PageCanvas(props: PageCanvasProps) {
   // useReactFlow (for the viewport we persist) only works under a provider.
@@ -151,7 +175,8 @@ function PageCanvasInner({
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const palette = useGraphPalette();
-  const { getViewport, screenToFlowPosition, fitView } = useReactFlow();
+  const { getViewport, screenToFlowPosition, fitView, zoomIn, zoomOut, zoomTo } =
+    useReactFlow();
   const [notice, setNotice] = useState<string | null>(null);
   const [menu, setMenu] = useState<CanvasMenu | null>(null);
   const surfaceRef = useRef<HTMLDivElement | null>(null);
@@ -955,9 +980,31 @@ function PageCanvasInner({
         setHelpOpen((v) => !v);
         return;
       }
-      // Obsidian's zoom keys, which is the muscle memory people arrive with.
+      // Bare +/− rather than the Cmd pair every browser uses, because the app
+      // window has `zoomHotkeysEnabled` on: Cmd+plus resizes the whole desktop
+      // UI, and a canvas that fought it would be zooming two things at once.
+      // Bare is also what Figma, Miro and tldraw bind, so it is the gesture
+      // people arrive with. Shift is not excluded — "+" *is* Shift+Equal on a US
+      // layout — and the numpad keys are the same request from a full keyboard.
+      if (e.code === "Equal" || e.code === "NumpadAdd") {
+        e.preventDefault();
+        void zoomIn({ duration: ZOOM_DURATION });
+        return;
+      }
+      if (e.code === "Minus" || e.code === "NumpadSubtract") {
+        e.preventDefault();
+        void zoomOut({ duration: ZOOM_DURATION });
+        return;
+      }
+      // Figma's view keys — 0 for actual size, 1 for fit, 2 for fit selection —
+      // which is also what the map opens at, so 0 is the way back.
       // e.code rather than e.key: Shift+1 reports "!" on a US layout, and a
       // different glyph again on most others.
+      if (e.shiftKey && e.code === "Digit0") {
+        e.preventDefault();
+        void zoomTo(1, { duration: ZOOM_DURATION });
+        return;
+      }
       if (e.shiftKey && (e.code === "Digit1" || e.code === "Digit2")) {
         e.preventDefault();
         const picked =
@@ -1022,6 +1069,9 @@ function PageCanvasInner({
       selectAll,
       clearSelection,
       fitView,
+      zoomIn,
+      zoomOut,
+      zoomTo,
       menu,
       draft,
       editingId,
@@ -1202,6 +1252,7 @@ function PageCanvasInner({
           nodes={displayNodes}
           edges={rfEdges}
           nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
           onNodesChange={onNodesChange}
           onNodeDragStop={handleNodeDragStop}
           onNodeDoubleClick={handleNodeDoubleClick}
@@ -1234,6 +1285,16 @@ function PageCanvasInner({
           // daemon's copy untouched.
           deleteKeyCode={null}
           fitView
+          fitViewOptions={OPENING_VIEW}
+          // Where the zoom keys are discovered. React Flow puts these strings on
+          // both the `title` and the `aria-label` of its own zoom buttons, so
+          // hovering the control someone already reached for is what tells them
+          // there is a key for it — no second surface to explain the first.
+          ariaLabelConfig={{
+            "controls.zoomIn.ariaLabel": `${t("pageCanvas.zoomIn")} (+)`,
+            "controls.zoomOut.ariaLabel": `${t("pageCanvas.zoomOut")} (-)`,
+            "controls.fitView.ariaLabel": `${t("pageCanvas.fitView")} (Shift 1)`,
+          }}
           proOptions={{ hideAttribution: true }}
         >
           <Background color={palette.graticule} gap={24} />
