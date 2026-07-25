@@ -114,8 +114,12 @@ const HELP_PANEL_ID = "page-canvas-help-panel";
  * either side of actual size, and a map too big for the band opens readable and
  * partly off-frame. Seeing all of it is one key or one button away; reading it
  * is what the reader came for.
+ *
+ * The floor is derived rather than chosen: 12px labels at 0.75 render at 9px,
+ * which is the smallest defensible size for UI text. It governs the cold open
+ * and nothing else — "fit all" has no floor at all, by design.
  */
-const OPENING_VIEW = { minZoom: 0.85, maxZoom: 1, padding: 0.15 } as const;
+const OPENING_VIEW = { minZoom: 0.75, maxZoom: 1, padding: 0.15 } as const;
 
 // How much a key press zooms, and how long the move takes. React Flow's own
 // step is 1.2x, which the Controls buttons use; matching it keeps the button

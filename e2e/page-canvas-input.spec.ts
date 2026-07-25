@@ -256,9 +256,9 @@ test("the map opens at a scale a person can read", async ({ page }) => {
   const large = await scale(page);
   console.log(`13 boxes: opened at ${large.toFixed(3)}, 12px label rasterizes at ${(12 * large).toFixed(1)}px`);
   // And a thirteen-box map used to open at 0.563, which draws the 12px label at
-  // under 7px. Legibility is the floor; the rest of the map is one pan or one
-  // press of Shift 1 away.
-  expect(12 * large, "labels opened too small to read").toBeGreaterThanOrEqual(10);
+  // under 7px. 9px rendered is the derived floor — the smallest defensible size
+  // for UI text — and the rest of the map is one pan or one Shift 1 away.
+  expect(12 * large, "labels opened too small to read").toBeGreaterThanOrEqual(8.99);
   expect(large, "a dense map opened zoomed past actual size").toBeLessThanOrEqual(1.001);
 });
 
