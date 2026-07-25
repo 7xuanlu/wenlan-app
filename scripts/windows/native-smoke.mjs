@@ -20,6 +20,7 @@ import {
 import {
   appLogCandidates,
   cleanupProcessInvocation,
+  latestMatchingLogLine,
   powerShellCommand,
 } from "./process-control.mjs";
 
@@ -729,10 +730,10 @@ async function main() {
     );
     copyAppLog(args.evidenceDir);
     const appLog = readFileSync(resolve(args.evidenceDir, "app.log"), "utf8");
-    evidence.lifecycle.full_quit_log =
-      appLog
-        .split(/\r?\n/)
-        .find((line) => line.includes(FULL_QUIT_BREADCRUMB)) || "";
+    evidence.lifecycle.full_quit_log = latestMatchingLogLine(
+      appLog,
+      FULL_QUIT_BREADCRUMB,
+    );
 
     const validation = validateNativeSmokeEvidence(evidence, {
       appExecutable: args.app,

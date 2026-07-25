@@ -12,6 +12,7 @@ type ProcessControlModule = {
     scriptPath: string,
     platform?: NodeJS.Platform,
   ): { args: string[]; command: string };
+  latestMatchingLogLine(log: string, breadcrumb: string): string;
   powerShellCommand(platform?: NodeJS.Platform): string;
 };
 
@@ -81,6 +82,25 @@ describe("Windows native smoke process cleanup", () => {
         "wenlan.log",
       ),
     ]);
+  });
+
+  it("uses the current run's last matching lifecycle breadcrumb", async () => {
+    const loaded = (await import(
+      "./process-control.mjs"
+    )) as ProcessControlModule;
+    const breadcrumb = "[quit] full quit command accepted";
+
+    expect(
+      loaded.latestMatchingLogLine(
+        [
+          `2026-07-23T02:20:14Z INFO ${breadcrumb}`,
+          "2026-07-25T04:36:56Z INFO backend ready",
+          `2026-07-25T04:37:02Z INFO ${breadcrumb}`,
+          "",
+        ].join("\r\n"),
+        breadcrumb,
+      ),
+    ).toBe(`2026-07-25T04:37:02Z INFO ${breadcrumb}`);
   });
 
   it("rejects empty cleanup paths before enumerating system processes", () => {

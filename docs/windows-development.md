@@ -62,6 +62,16 @@ SHA-256
 the source-built `wenlan-server.exe` had SHA-256
 `9FE6DA49395C5222CE655312D8F0237DB7CFB90390674C3D62DE3E76A861996E`.
 
+The 2026-07-24 main-sync verification used app code revision
+`a0f7a6f99529a9d7fb50e1d22048428faef2e33a` and backend code revision
+`b4677e277e70613585e37e99fa29721426b2a179`, both after merging their current
+`origin/main`. The release app SHA-256 was
+`cb4abec322af02efe0edca768cc265afecb219606e2fdbacc4d6fcd96011d5ca`;
+the source-built server SHA-256 was
+`a38b6c682ea6750ac1802ded0517c6ffe7a3bf2538c1b517e2c6bdeda02f03bf`.
+The final native run again passed 35/35 assertions with Vulkan device `1`,
+`NVIDIA GeForce RTX 3060 Laptop GPU`, and `gpu_layers=99`.
+
 ## Current Windows GPU status
 
 The PR #96 baseline above deliberately used backend revision `c66f9d8e`, which
@@ -92,9 +102,9 @@ The physical follow-up on the same mixed-GPU Windows 11 machine proved:
 | Leg | Result |
 | --- | --- |
 | Vulkan auto | Selected device `1`, `NVIDIA GeForce RTX 3060 Laptop GPU`; offloaded `37/37` layers; valid classification |
-| Forced CPU | All KV layers ran on CPU; Vulkan1 device allocation was `0.0000 MiB`; valid classification in about 11.45 seconds |
-| Invalid device `99` | Visible `requested GPU device index 99 is unavailable` reason followed by true CPU-only execution and a valid classification in about 11.28 seconds |
-| Warm Vulkan | Valid classification in about 1.10 seconds; an earlier cold run took about 20.56 seconds while creating shader/pipeline state |
+| Forced CPU | All KV layers ran on CPU; Vulkan1 device allocation was `0.0000 MiB`; latest valid classification completed in about 11.56 seconds |
+| Invalid device `99` | Visible `requested GPU device index 99 is unavailable` reason followed by true CPU-only execution and a valid classification in about 11.95 seconds |
+| Warm Vulkan | Latest valid classification completed in about 1.16 seconds; an earlier cold run took about 20.56 seconds while creating shader/pipeline state |
 | App-owned backend status | Native Tauri smoke captured `/api/status`: `vulkan`, device `1`, RTX 3060, `gpu_layers=99`; 35/35 assertions passed |
 
 The Vulkan-enabled executable imports `vulkan-1.dll` at process start. A
@@ -236,6 +246,7 @@ From `wenlan-app`, define explicit paths and isolated runtime data:
 $AppRepo = (Resolve-Path .).Path
 $BackendRepo = (Resolve-Path ..\wenlan).Path
 $Target = "x86_64-pc-windows-msvc"
+$AppCommit = (git -C $AppRepo rev-parse HEAD).Trim()
 $BackendCommit = (git -C $BackendRepo rev-parse HEAD).Trim()
 $Evidence = Join-Path $AppRepo "target\windows-native-smoke\physical-run"
 $Data = Join-Path $Evidence "data"
@@ -265,6 +276,7 @@ $BackendCargoTarget = "C:\wl-target"
 $env:CARGO_TARGET_DIR = $BackendCargoTarget
 $env:WENLAN_WINDOWS_BACKEND_CARGO_TARGET_DIR = $BackendCargoTarget
 $env:WENLAN_BACKEND_COMMIT = $BackendCommit
+$env:GITHUB_SHA = $AppCommit
 $env:WENLAN_DATA_DIR = $Data
 $env:WENLAN_TEST_FASTEMBED_CACHE = $FastEmbedCache
 $env:WENLAN_DOWNLOAD_SIDECARS = "1"
@@ -278,6 +290,14 @@ $env:RUST_LOG = "warn,wenlan_lib::lifecycle=info"
 `Library\LaunchAgents` pollution check. Do not change `USERPROFILE` just to
 isolate that check: Windows known-folder APIs and the Hugging Face model cache
 do not consistently follow a temporary `USERPROFILE`.
+
+`GITHUB_SHA` is also used for local physical runs so `result.json` binds the
+tested app binary to its source revision. A pre-warmed FastEmbed cache may be
+reused across isolated evidence directories, but do not recursively copy its
+Hugging Face snapshot tree: it contains relative symlinks, and changing their
+representation can make ONNX Runtime report that an otherwise present model
+does not exist. Keep `WENLAN_DATA_DIR` and `WENLAN_NATIVE_PROFILE_ROOT` unique
+for every run.
 
 For a physical Vulkan run, also set:
 
@@ -458,8 +478,8 @@ $os = Get-CimInstance Win32_OperatingSystem
   build_number = $os.BuildNumber
   webview2_version = "record-the-detected-version"
   msedgedriver_version = "record-the-detected-version"
-  app_commit = (git rev-parse HEAD)
-  backend_commit = (git -C $BackendRepo rev-parse HEAD)
+  app_commit = $AppCommit
+  backend_commit = $BackendCommit
 } | ConvertTo-Json -Depth 4 |
   Set-Content -LiteralPath (Join-Path $Evidence "physical-machine.json") `
     -Encoding utf8
@@ -536,14 +556,17 @@ reported `0.14.1+gc66f9d8e` while the PR app still reported `0.14.0`. That is
 expected for this deliberate post-release source-build smoke, but it is not
 acceptable evidence for a version-matched packaged release.
 
-The final Vulkan evidence is
-`target/windows-native-smoke/physical-win11-vulkan-final2`. It passed all 35
-assertions with marker `WINDOWS_SMOKE_1784808706114_1`, backend commit
-`f3edbfe4b51ac3406597463dbfd9ad3632fad141`, and backend binary SHA-256
-`9fe6da49395c5222ce655312d8f0237db7cfb90390674c3d62de3e76a861996e`.
-The app PID was `5232`; the only backend PID was `20252`, whose parent was the
-app. Both exited cleanly. The three screenshots were visually inspected rather
-than accepted by file existence alone.
+The latest main-sync Vulkan evidence is
+`target/windows-native-smoke/physical-win11-vulkan-main-sync-final4`. It passed
+all 35 assertions with marker `WINDOWS_SMOKE_1784954334839_1`, app commit
+`a0f7a6f99529a9d7fb50e1d22048428faef2e33a`, backend commit
+`b4677e277e70613585e37e99fa29721426b2a179`, and backend binary SHA-256
+`a38b6c682ea6750ac1802ded0517c6ffe7a3bf2538c1b517e2c6bdeda02f03bf`.
+The app-owned backend and app both exited cleanly, ports 7878 and 4444 were
+clear, and the three screenshots were visually inspected rather than accepted
+by file existence alone. The evidence extractor records the latest matching
+guarded-quit breadcrumb from the accumulated app log; selecting the first
+historical match would not prove the current run.
 
 ## Test results and remaining Windows gaps
 
@@ -552,9 +575,9 @@ The following commands were run, not inferred:
 | Command or gate | Physical Windows result |
 | --- | --- |
 | `pnpm build` | Passed; TypeScript and Vite production build completed |
-| Full `pnpm test` | Passed after portability fixes: `152` files passed, `1628` tests passed, `2` skipped, `0` failed |
+| Full `pnpm test` | Passed after the latest main sync and portability fixes: `170` files passed, `1834` tests passed, `2` skipped, `0` failed |
 | `cargo test -p wenlan-app --lib --no-run` | Passed |
-| Rust library suite with Windows platform-assumption skips | `332 passed`, `0 failed`, `1 ignored`, `19 filtered` |
+| Rust library suite with Windows platform-assumption skips | `359 passed`, `0 failed`, `1 ignored`, `19 filtered` |
 | Exact backend source build | Passed for all three binaries |
 | `pnpm tauri build --no-bundle --target x86_64-pc-windows-msvc` | Passed |
 | Qwen hardware/inference probe | PR #96 baseline passed twice on CPU/OpenMP; backend Vulkan follow-up passed auto/discrete, forced CPU, and invalid-device fallback |
@@ -610,9 +633,9 @@ maintenance rules:
   Prefer direct invocation when an individual argument contains spaces, or
   quote that argument explicitly and verify the child command line.
 
-The verified post-fix command was plain `pnpm test`, not a filtered invocation:
-all 152 test files passed with 1628 passing tests and two intentional
-platform-specific skips.
+The verified post-main-sync command was plain `pnpm test`, not a filtered
+invocation: all 170 test files passed with 1834 passing tests and two
+intentional platform-specific skips.
 
 Five `identity_paths` tests originally set `HOME` and therefore touched the real
 Windows profile because `dirs::data_local_dir()` uses the Windows known-folder

@@ -13,6 +13,15 @@ export function appLogCandidates(environment = process.env) {
   ];
 }
 
+export function latestMatchingLogLine(log, breadcrumb) {
+  return (
+    log
+      .split(/\r?\n/)
+      .filter((line) => line.includes(breadcrumb))
+      .at(-1) || ""
+  );
+}
+
 export function powerShellCommand(platform = process.platform) {
   return platform === "win32" ? "powershell.exe" : "pwsh";
 }
