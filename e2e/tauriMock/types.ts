@@ -14,6 +14,15 @@ export type MockFailure = {
   readonly times?: number;
 };
 
+export type TauriMockPageScenario = {
+  readonly daemonVersion?: string;
+  readonly saveDaemonVersion?: string;
+  readonly firstWriteRemoteMutation?: {
+    readonly pageId: string;
+    readonly content: string;
+  };
+};
+
 export type InstallTauriMockOptions = {
   readonly locale: AppLocale;
   readonly rawActions: readonly string[];
@@ -27,6 +36,7 @@ export type InstallTauriMockOptions = {
    */
   readonly delays?: Readonly<Record<string, number>>;
   readonly localStorage?: Readonly<Record<string, string>>;
+  readonly pageScenario?: TauriMockPageScenario;
 };
 
 export type BrowserErrorCapture = {

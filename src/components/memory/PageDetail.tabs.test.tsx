@@ -202,7 +202,11 @@ describe("PageDetail canvas toggle", () => {
 
     await user.click(screen.getByTitle("Edit page"));
     expect(screen.queryByRole("button", { name: "Canvas" })).toBeNull();
-    expect(screen.getByRole("textbox")).toBeTruthy();
+    // Edit mode engaged: the whole header actions row goes with it. Asserted
+    // through the row rather than through a field, because what the editor
+    // itself resolves to is the editor's business — under this env's daemon
+    // check it is the page-editor floor notice, not a text box.
+    expect(screen.queryByTitle("Edit page")).toBeNull();
     expect(screen.queryByRole("region", { name: "Canvas for libSQL Architecture" })).toBeNull();
   });
 });

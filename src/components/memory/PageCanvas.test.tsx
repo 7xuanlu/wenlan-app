@@ -572,8 +572,9 @@ describe("PageCanvas", () => {
     (getPage as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: "p1",
       content: "# Page One\n\nBody.",
+      version: 3,
     });
-    (updatePage as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+    (updatePage as ReturnType<typeof vi.fn>).mockResolvedValue({ outcome: "saved" });
     (createPageMapNode as ReturnType<typeof vi.fn>).mockResolvedValue({});
     const { user } = renderCanvas();
 
@@ -584,8 +585,16 @@ describe("PageCanvas", () => {
 
     // Order matters: the daemon recomputes a section's liveness from the page's
     // headings, so the heading has to land before the node that points at it.
+    // The version goes with the write — the guarded update refuses on a stale
+    // one, which is what keeps this from clobbering an edit made elsewhere.
     await waitFor(() =>
-      expect(updatePage).toHaveBeenCalledWith("p1", "# Page One\n\nBody.\n\n## Next steps\n"),
+      expect(updatePage).toHaveBeenCalledWith({
+        id: "p1",
+        content: "# Page One\n\nBody.\n\n## Next steps\n",
+        expectedVersion: 3,
+        callerId: "wenlan-app",
+        operationId: expect.any(String),
+      }),
     );
     await waitFor(() =>
       expect(createPageMapNode).toHaveBeenCalledWith("p1", {
@@ -618,8 +627,12 @@ describe("PageCanvas", () => {
   it("adds under the selected box, not the root", async () => {
     const { getPageMap, getPage, updatePage, createPageMapNode } = await tauri();
     (getPageMap as ReturnType<typeof vi.fn>).mockResolvedValue(makeMap());
-    (getPage as ReturnType<typeof vi.fn>).mockResolvedValue({ id: "p1", content: "" });
-    (updatePage as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+    (getPage as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: "p1",
+      content: "",
+      version: 1,
+    });
+    (updatePage as ReturnType<typeof vi.fn>).mockResolvedValue({ outcome: "saved" });
     (createPageMapNode as ReturnType<typeof vi.fn>).mockResolvedValue({});
     const { user } = renderCanvas();
 
@@ -964,8 +977,9 @@ describe("PageCanvas direct manipulation", () => {
     (getPage as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: "p1",
       content: "# Page One\n\nBody.",
+      version: 3,
     });
-    (updatePage as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+    (updatePage as ReturnType<typeof vi.fn>).mockResolvedValue({ outcome: "saved" });
     (createPageMapNode as ReturnType<typeof vi.fn>).mockResolvedValue({});
     const { user } = renderCanvas();
     await screen.findByTestId("react-flow");

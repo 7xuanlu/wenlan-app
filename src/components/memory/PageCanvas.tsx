@@ -447,7 +447,23 @@ function PageCanvasInner({
       const page = await getPage(pageId);
       const content = page?.content ?? "";
       const next = withHeading(content, label);
-      if (next !== content) await updatePage(pageId, next);
+      // A new box is a new section, so the page text gains the heading. The
+      // write goes through the same guarded path the editor uses — it reports
+      // refusals as a value rather than throwing, and a heading that silently
+      // did not land would leave the box with nothing to point at, so anything
+      // but `saved` becomes the error the notice already knows how to show.
+      if (next !== content && page) {
+        const outcome = await updatePage({
+          id: pageId,
+          content: next,
+          expectedVersion: page.version,
+          callerId: "wenlan-app",
+          operationId: globalThis.crypto.randomUUID(),
+        });
+        if (outcome.outcome !== "saved") {
+          throw new Error(`page update ${outcome.outcome}`);
+        }
+      }
       const created = await createPageMapNode(pageId, {
         base_revision: revisionRef.current,
         parent_id: parentId,
@@ -1008,7 +1024,6 @@ function PageCanvasInner({
       // to dismiss. Letting it through unconditionally meant closing a menu threw
       // the reader out of the page they were drawing.
       if (e.key === "Escape") {
-        e.preventDefault();
         if (menu) setMenu(null);
         else if (helpOpen) setHelpOpen(false);
         else if (draft || editingId) {
@@ -1016,6 +1031,10 @@ function PageCanvasInner({
           setEditingId(null);
         } else if (nodesRef.current.some((n) => n.selected)) clearSelection();
         else return; // nothing of ours to close: Escape means "leave the page"
+        // Claimed only once something was actually closed: the window handler
+        // that leaves the page skips a press whose default is already
+        // prevented, so preventing it up front swallowed the last Escape.
+        e.preventDefault();
         e.stopPropagation();
         return;
       }
