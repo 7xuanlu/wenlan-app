@@ -1537,6 +1537,25 @@ export default function PageDetail({
                   ref={actionMenuListRef}
                   role="menu"
                 >
+                  {/* Below 600px the icon row is hidden and this menu is the
+                      whole toolbar, so the canvas needs a door here too — it
+                      was reachable by icon only, which is no door at all on a
+                      narrow window. */}
+                  {!editing ? (
+                    <button
+                      className="page-detail-mobile-menu-item"
+                      onClick={() => {
+                        setActionMenuOpen(false);
+                        setCanvasOpen((open) => !open);
+                      }}
+                      role="menuitem"
+                      type="button"
+                    >
+                      {showCanvas
+                        ? t("pageCanvas.closeCanvas")
+                        : t("pageCanvas.tabCanvas")}
+                    </button>
+                  ) : null}
                   {!editing ? (
                     <button
                       className="page-detail-mobile-menu-item"

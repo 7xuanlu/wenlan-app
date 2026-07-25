@@ -170,6 +170,23 @@ describe("PageDetail canvas toggle", () => {
     expect(toggle.getAttribute("aria-pressed")).toBe("false");
   });
 
+  it("keeps a door to the canvas in the actions menu, which is the whole toolbar on a narrow window", async () => {
+    const { user } = renderDetail();
+    await screen.findByText("libSQL Architecture");
+
+    // Under 600px the icon row is display:none and this menu is all that is
+    // left, so an icon-only control is no control at all there.
+    await user.click(screen.getByRole("button", { name: "Page actions" }));
+    await user.click(screen.getByRole("menuitem", { name: "Canvas" }));
+    await screen.findByRole("region", { name: "Canvas for libSQL Architecture" });
+
+    await user.click(screen.getByRole("button", { name: "Page actions" }));
+    await user.click(screen.getByRole("menuitem", { name: "Close canvas" }));
+    expect(
+      screen.queryByRole("region", { name: "Canvas for libSQL Architecture" }),
+    ).toBeNull();
+  });
+
   it("sits with the other page controls, not in a band of its own", async () => {
     renderDetail();
     await screen.findByText("libSQL Architecture");
