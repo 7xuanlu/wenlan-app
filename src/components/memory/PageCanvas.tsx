@@ -6,7 +6,6 @@ import {
   useRef,
   useState,
   type Dispatch,
-  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
   type SetStateAction,
@@ -40,7 +39,7 @@ import {
   type PageMapNode,
   type PageMapStatus,
 } from "../../lib/tauri";
-import { layoutMap, NODE_HEIGHT } from "../../lib/pageMap/tree";
+import { layoutMap, nodeBoxSize, NODE_HEIGHT } from "../../lib/pageMap/tree";
 import { slugify, withHeading } from "../../lib/pageMap/slug";
 import { useGraphPalette, type GraphPalette } from "../../lib/graph/palette";
 import CanvasNode, { type CanvasNodeData } from "./canvas/CanvasNode";
@@ -357,18 +356,55 @@ function PageCanvasInner({
   // (`compute_ref_state`), so the heading has to exist before the node does —
   // otherwise the box the user just drew comes back marked as gone.
   const addMutation = useMutation({
-    mutationFn: async ({ parentId, label }: { parentId: string; label: string }) => {
+    mutationFn: async ({
+      parentId,
+      label,
+      x,
+      y,
+    }: {
+      parentId: string;
+      label: string;
+      x: number;
+      y: number;
+    }) => {
       const page = await getPage(pageId);
       const content = page?.content ?? "";
       const next = withHeading(content, label);
       if (next !== content) await updatePage(pageId, next);
-      return createPageMapNode(pageId, {
+      const created = await createPageMapNode(pageId, {
         base_revision: revisionRef.current,
         parent_id: parentId,
         ref_kind: "section",
         ref_id: `${pageId}#${slugify(label)}`,
         label,
       });
+      // Where the box was let go of is the whole statement of where it belongs,
+      // and create cannot carry a position — so write it here, before anything
+      // refetches. A node that arrives unplaced is given a computed ring slot,
+      // which is the box jumping out from under the pointer a beat after it
+      // was made. Keep the center and take the real width for the label, so it
+      // settles around the drop point instead of away from it.
+      const size = nodeBoxSize(label);
+      try {
+        await putPageMapLayout(pageId, {
+          base_revision: created.revision,
+          positions: [
+            {
+              node_id: created.node.id,
+              x: x + DRAFT_SIZE.width / 2,
+              y: y + DRAFT_SIZE.height / 2,
+              width: size.width,
+              height: size.height,
+              collapsed: false,
+            },
+          ],
+        });
+      } catch {
+        // The box exists; only its position was lost. Landing in the computed
+        // slot is worse than staying put, but it is not a failed create and
+        // must not be reported as one.
+      }
+      return created;
     },
     onSuccess: async () => {
       setNotice(null);
@@ -564,7 +600,12 @@ function PageCanvasInner({
         return;
       }
       setPending({ ...pending, label: trimmed });
-      mutateAdd({ parentId: pending.parentId, label: trimmed });
+      mutateAdd({
+        parentId: pending.parentId,
+        label: trimmed,
+        x: pending.x,
+        y: pending.y,
+      });
     },
     [draft, mutateAdd, t],
   );
@@ -877,7 +918,7 @@ function PageCanvasInner({
   ]);
 
   const handleKeyDown = useCallback(
-    (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       // Typing a box's name is not a canvas shortcut.
       if (target && (target.tagName === "INPUT" || target.isContentEditable)) return;
@@ -1060,11 +1101,28 @@ function PageCanvasInner({
     return edges;
   }, [views, map?.edges, palette, draft, pending]);
 
-  // Take the keyboard as soon as the canvas is on screen. Every shortcut below
-  // hangs off the surface's own onKeyDown, and opening the canvas leaves focus
-  // on the button in the page header — so the first Escape, Tab or ? did
-  // nothing, and Cmd-A fell through to the browser, which select-alls the whole
-  // window and paints its highlight straight over the map.
+  // React Flow puts its own key handling on the document rather than on its
+  // container, which is why its Shift-drag and Meta-click work wherever focus
+  // happens to be. Ours hung off this surface's onKeyDown instead, so every
+  // shortcut died the moment focus was anywhere else — opening the canvas
+  // leaves focus on the button in the page header, and clicking the page title
+  // is enough to lose it again — and Cmd-A fell through to the browser, which
+  // select-alls the window and paints its highlight over the map. Same model as
+  // the library now: one document listener, ignored while a field has focus.
+  // Capture, not bubble: React runs its own handlers at the root container,
+  // which is inside the document, so a bubble-phase listener here lands after
+  // the page's Escape handler and Escape closed the whole canvas instead of
+  // dropping the selection. Capture puts the canvas first, and the layered
+  // Escape below still hands the key onward when it has nothing of its own left
+  // to close.
+  useEffect(() => {
+    document.addEventListener("keydown", handleKeyDown, true);
+    return () => document.removeEventListener("keydown", handleKeyDown, true);
+  }, [handleKeyDown]);
+
+  // Focus still moves to the map when it opens, so Tab adds a box straight away
+  // and a screen reader lands in the region it just asked for. The shortcuts no
+  // longer depend on it.
   useEffect(() => {
     surfaceRef.current?.focus({ preventScroll: true });
   }, [isLoading]);
@@ -1138,7 +1196,6 @@ function PageCanvasInner({
         // clicked — press Tab on a fresh canvas and nothing happens.
         tabIndex={0}
         aria-label={t("pageCanvas.regionLabel", { title: pageTitle })}
-        onKeyDown={handleKeyDown}
         onDoubleClick={handleDoubleClick}
       >
         <ReactFlow

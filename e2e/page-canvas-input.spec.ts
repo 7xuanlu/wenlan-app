@@ -70,6 +70,59 @@ test("select all picks the boxes, not the page text", async ({ page }) => {
   expect(selectedNodes).toBeGreaterThan(1);
 });
 
+test("a new box stays where it was dropped", async ({ page }) => {
+  // A slow map read, or the refetch lands before the box can be measured where
+  // it was dropped and the jump is invisible to the test.
+  const controller = await installTauriMock(page, {
+    locale: "en",
+    rawActions: [],
+    delays: { get_page_map: 1200 },
+  });
+  await openCanvas(page);
+  const pane = (await page.locator(".react-flow__pane").boundingBox())!;
+  const spot = { x: pane.x + pane.width - 110, y: pane.y + pane.height - 130 };
+
+  await page.mouse.dblclick(spot.x, spot.y);
+  const field = page.getByRole("textbox", { name: "Section name" });
+  await expect(field).toBeVisible();
+  await field.fill("Deploy notes");
+  await field.press("Enter");
+
+  const made = page.locator(".react-flow__node").filter({ hasText: "Deploy notes" }).first();
+  await expect(made).toBeVisible();
+  const center = async () => {
+    const r = (await made.boundingBox())!;
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  };
+  const dropped = await center();
+  // Guard the guard: if this is already the settled position, the test is
+  // measuring after the jump and would pass with the bug in.
+  expect(
+    Math.hypot(dropped.x - spot.x, dropped.y - spot.y),
+    "the held box is not where the double-click was",
+  ).toBeLessThan(130);
+
+  // Wait out the whole create: heading write, node create, position write, and
+  // the map refetch that replaces the held box with the server's copy. That
+  // refetch is the moment the box used to jump, because a node the daemon
+  // reports as unplaced is given a computed slot on the ring.
+  await expect
+    .poll(() => controller.calls().filter((c) => c.command === "get_page_map").length, {
+      timeout: 15_000,
+    })
+    .toBeGreaterThan(1);
+  await page.waitForTimeout(1500);
+
+  const settled = await center();
+  const moved = Math.hypot(settled.x - dropped.x, settled.y - dropped.y);
+  console.log(
+    `dropped at (${Math.round(dropped.x)},${Math.round(dropped.y)}), settled at (${Math.round(settled.x)},${Math.round(settled.y)}) — moved ${Math.round(moved)}px`,
+  );
+  // The box grows to fit its label, so its edges shift a little; its center is
+  // what the drop placed and what must hold.
+  expect(moved, "the new box jumped after it was created").toBeLessThan(24);
+});
+
 test("select all from outside the canvas cannot paint over the map", async ({ page }) => {
   await installTauriMock(page, { locale: "en", rawActions: [] });
   await openCanvas(page);

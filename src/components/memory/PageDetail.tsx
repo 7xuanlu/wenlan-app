@@ -683,13 +683,18 @@ export default function PageDetail({
                 title={t("pageCanvas.tabCanvas")}
                 type="button"
               >
-                {/* Three nodes on a spine — the shape the canvas actually makes. */}
+                {/* Boxes on a spine. Three dots joined by two diverging lines
+                    is the share glyph — the same drawing Lucide ships as
+                    share-2 — and on a page toolbar next to Copy and Export it
+                    reads as Share, not as a map. Rectangles say "boxes", which
+                    is what the canvas draws, and the sidebar's Graph keeps the
+                    round nodes. */}
                 <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="5" cy="12" r="2.5" />
-                  <circle cx="19" cy="6" r="2.5" />
-                  <circle cx="19" cy="18" r="2.5" />
-                  <line x1="7.3" y1="10.8" x2="16.7" y2="7.2" />
-                  <line x1="7.3" y1="13.2" x2="16.7" y2="16.8" />
+                  <rect x="1.5" y="9" width="7" height="6" rx="1.5" />
+                  <rect x="15.5" y="2.5" width="7" height="6" rx="1.5" />
+                  <rect x="15.5" y="15.5" width="7" height="6" rx="1.5" />
+                  <path d="M8.5 12h3.5V5.5h3.5" />
+                  <path d="M12 12v6.5h3.5" />
                 </svg>
               </button>
             )}
