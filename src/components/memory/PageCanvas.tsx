@@ -1296,6 +1296,12 @@ function PageCanvasInner({
           deleteKeyCode={null}
           fitView
           fitViewOptions={OPENING_VIEW}
+          // Below React Flow's default floor of 0.5, because the legibility
+          // floor belongs to the opening view above and nowhere else. Left at
+          // 0.5, a 28-box map answered "fit all" by clamping there and leaving
+          // ten boxes outside the frame — a command that says it shows
+          // everything has to show everything, however small.
+          minZoom={0.25}
           // Where the zoom keys are discovered. React Flow puts these strings on
           // both the `title` and the `aria-label` of its own zoom buttons, so
           // hovering the control someone already reached for is what tells them

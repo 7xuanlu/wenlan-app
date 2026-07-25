@@ -299,6 +299,78 @@ test("the zoom keys work, and the zoom buttons say what they are", async ({ page
   expect(titles[2], "the fit button does not name its key").toContain("Shift 1");
 });
 
+test("fit all shows the whole map, however big it is", async ({ page }) => {
+  await installTauriMock(page, { locale: "en", rawActions: [] });
+  await page.goto("/");
+  // Bigger than the thirteen-box fixture on purpose: React Flow's default zoom
+  // floor is 0.5, and a map only reveals that floor once fitting it needs less.
+  await page.evaluate(async () => {
+    const add = async (parent: string, label: string): Promise<string> => {
+      const result = (await window.__wenlanTauriInvoke("create_page_map_node", {
+        pageId: "page-architecture",
+        body: { parent_id: parent, label, ref_kind: "section", ref_id: label },
+      })) as { node: { id: string } };
+      return result.node.id;
+    };
+    for (let b = 0; b < 6; b++) {
+      const branch = await add("n_root", `Subsystem number ${b}`);
+      for (let c = 0; c < 3; c++) await add(branch, `Component ${b}.${c} detail`);
+    }
+  });
+  await openCanvas(page);
+  await page.waitForTimeout(800);
+  await page.locator(".react-flow__pane").click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press("Shift+Digit1");
+  await page.waitForTimeout(700);
+
+  const fit = await page.evaluate(() => {
+    const frame = document.querySelector(".page-canvas-surface")!.getBoundingClientRect();
+    const boxes = [...document.querySelectorAll(".react-flow__node")].map((el) =>
+      el.getBoundingClientRect(),
+    );
+    return {
+      nodes: boxes.length,
+      outside: boxes.filter(
+        (b) =>
+          b.left < frame.left - 1 ||
+          b.right > frame.right + 1 ||
+          b.top < frame.top - 1 ||
+          b.bottom > frame.bottom + 1,
+      ).length,
+    };
+  });
+  console.log(
+    `Shift 1 on ${fit.nodes} boxes at scale ${(await scale(page)).toFixed(3)}: ${fit.outside} outside the frame`,
+  );
+  expect(fit.nodes).toBeGreaterThan(20);
+  // The opening view has its own legibility floor. "Fit all" has no business
+  // inheriting one — it is the command that means "show me everything".
+  expect(fit.outside, "fit all left boxes outside the frame").toBe(0);
+});
+
+test("the zoom keys stay out of the box being renamed", async ({ page }) => {
+  await installTauriMock(page, { locale: "en", rawActions: [] });
+  await openCanvas(page);
+  await page.waitForTimeout(600);
+  const before = await scale(page);
+
+  await page.locator(".react-flow__node").filter({ hasText: "Storage layer" }).first().click();
+  await page.keyboard.press("F2");
+  const field = page.getByRole("textbox", { name: "Section name" });
+  await expect(field).toBeVisible();
+  // The key handler runs on the document in the capture phase, so it sees these
+  // presses before the field's own handler can stop them — the guard on the
+  // event target is the only thing between a hyphen and the viewport moving.
+  await field.press("Minus");
+  await field.press("Shift+Digit0");
+  await page.waitForTimeout(400);
+  const typed = await field.inputValue();
+  const after = await scale(page);
+  console.log(`renaming: field now ${JSON.stringify(typed)}, scale ${before.toFixed(3)} → ${after.toFixed(3)}`);
+  expect(after, "a keystroke meant for the name field moved the map").toBeCloseTo(before, 3);
+  expect(typed, "the name field did not receive the keystrokes").toContain("-");
+});
+
 test("the zoom keys leave the window's own zoom alone, and work off a US layout", async ({
   page,
 }) => {
