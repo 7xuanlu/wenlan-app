@@ -676,6 +676,58 @@ describe("PageCanvas", () => {
     );
   });
 
+  it("says what a delete destroyed, since nothing can bring it back", async () => {
+    // Backspace is the delete key on a Mac keyboard, it takes the box's whole
+    // subtree, and the daemon's tombstones are terminal — the section cannot be
+    // re-added under the same name. This was the quietest keystroke on the
+    // surface and the most expensive: the success handler clears the notice
+    // area, so a permanent destruction reported nothing at all.
+    const { getPageMap, deletePageMapNode } = await tauri();
+    (getPageMap as ReturnType<typeof vi.fn>).mockResolvedValue(makeMap());
+    (deletePageMapNode as ReturnType<typeof vi.fn>).mockResolvedValue({});
+    const { user } = renderCanvas();
+
+    await user.click(await screen.findByRole("button", { name: "select n_sec" }));
+    fireEvent.keyDown(surface(), { key: "Backspace" });
+
+    expect(
+      await screen.findByText("Deleted “Open questions”. This can't be undone."),
+    ).toBeTruthy();
+  });
+
+  it("counts the boxes that went with it when a delete takes a subtree", async () => {
+    const { getPageMap, deletePageMapNode } = await tauri();
+    const base = makeMap();
+    (getPageMap as ReturnType<typeof vi.fn>).mockResolvedValue(
+      makeMap({
+        nodes: [
+          ...base.nodes,
+          node({
+            id: "n_kid",
+            parent_id: "n_sec",
+            rank: 0,
+            ref_kind: "section",
+            ref_id: "sec_2",
+            label: "Nested",
+          }),
+        ],
+      }),
+    );
+    (deletePageMapNode as ReturnType<typeof vi.fn>).mockResolvedValue({});
+    const { user } = renderCanvas();
+
+    await user.click(await screen.findByRole("button", { name: "select n_sec" }));
+    fireEvent.keyDown(surface(), { key: "Delete" });
+
+    // The count is what came with it, not the total — "and the 1 box inside it"
+    // is the part a person could not have predicted from what they selected.
+    expect(
+      await screen.findByText(
+        "Deleted “Open questions” and the 1 box inside it. This can't be undone.",
+      ),
+    ).toBeTruthy();
+  });
+
   it("keeps a drop that lands while the previous save is still in flight", async () => {
     const { getPageMap, putPageMapLayout } = await tauri();
     // The second read is what the daemon returns once the layout PUT landed:

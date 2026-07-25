@@ -93,6 +93,18 @@ for (const theme of THEMES) {
       await page.waitForTimeout(300);
       await shot("5-notice");
 
+      // The other notice, and the one that matters: a real delete going through.
+      // Backspace is the delete key on a Mac, it takes the box's whole subtree,
+      // and the daemon's tombstones are terminal — so this is the most expensive
+      // keystroke here. Until this landed it was also the quietest: the success
+      // handler clears the notice area, so permanent destruction said nothing.
+      await box(page, "Storage layer").click();
+      await page.keyboard.press("Backspace");
+      await expect(
+        page.getByText("Deleted “Storage layer” and the 1 box inside it. This can't be undone."),
+      ).toBeVisible();
+      await shot("5-deleted");
+
       await page.locator(".react-flow__pane").dblclick({ position: { x: 120, y: 90 } });
       await page.waitForTimeout(300);
       await shot("6-naming");

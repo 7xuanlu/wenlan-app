@@ -42,7 +42,7 @@ import {
 } from "../../lib/tauri";
 import { layoutMap, nodeBoxSize, NODE_HEIGHT } from "../../lib/pageMap/tree";
 import { slugify, withHeading } from "../../lib/pageMap/slug";
-import { useGraphPalette, type GraphPalette } from "../../lib/graph/palette";
+import { useGraphPalette } from "../../lib/graph/palette";
 import CanvasNode, { type CanvasNodeData } from "./canvas/CanvasNode";
 import SpineEdge from "./canvas/SpineEdge";
 
@@ -153,14 +153,20 @@ const ZOOM_DURATION = 180;
  * default bezier leaves from the bottom and arrives at the top whatever
  * direction the child actually lies in, which turns every branch running
  * sideways or upward into an S, and `straight` drew the map as a wire diagram.
+ *
+ * The two inks are the canvas's own (`--canvas-edge*`), not the graph palette's:
+ * the knowledge-graph views composite their edges over a dark ground where a
+ * fainter stroke still reads, and at this size those values sank into the page
+ * surface. Named in CSS rather than resolved here so both themes stay in one
+ * place — `var()` is legal in an SVG `stroke`.
  */
-function spineLook(palette: GraphPalette, depth: number): Partial<Edge> {
+function spineLook(depth: number): Partial<Edge> {
   return {
     type: "spine",
     style:
       depth <= 1
-        ? { stroke: palette.edgeStrong, strokeWidth: 1.6 }
-        : { stroke: palette.edge, strokeWidth: 1.1 },
+        ? { stroke: "var(--canvas-edge-strong)", strokeWidth: 1.6 }
+        : { stroke: "var(--canvas-edge)", strokeWidth: 1.1 },
   };
 }
 
@@ -390,13 +396,35 @@ function PageCanvasInner({
         await deletePageMapNode(pageId, ordered[i], { base_revision: revision });
         if (i + 1 < ordered.length) revision = (await getPageMap(pageId)).revision;
       }
+      // What went, named while `views` still describes it — after the refetch
+      // these nodes are gone and there is nothing left to read a label off.
+      return {
+        label: views.find((v) => v.node.id === roots[0])?.label ?? "",
+        count: ordered.length,
+      };
     },
     [views, pageId],
   );
 
   const removeMutation = useMutation({
     mutationFn: removeSubtree,
-    onSuccess: onMutated,
+    // Say what was destroyed, and that it is destroyed. Deleting a box takes
+    // its whole subtree and the daemon's tombstones are terminal — the section
+    // cannot be re-added under the same name — so a bare Backspace on a
+    // selected box is the most expensive keystroke on this surface. It used to
+    // be the quietest too: `onMutated` clears the notice area, so success said
+    // nothing at all.
+    //
+    // The notice goes after `onMutated` for exactly that reason; before it, the
+    // clear would swallow the message.
+    onSuccess: ({ label, count }) => {
+      onMutated();
+      setNotice(
+        count > 1
+          ? t("pageCanvas.deletedWith", { label, count: count - 1 })
+          : t("pageCanvas.deletedOne", { label }),
+      );
+    },
     onError: handleMutationError,
   });
 
@@ -1149,7 +1177,7 @@ function PageCanvasInner({
         // The lines are the structure, so they thin out as the structure does:
         // spokes off the page carry weight, the twigs past them recede. Drawn in
         // one flat ink they were the faintest thing on a map they hold together.
-        ...spineLook(palette, v.depth),
+        ...spineLook(v.depth),
       });
     }
     for (const e of map?.edges ?? []) {
@@ -1179,10 +1207,7 @@ function PageCanvasInner({
         source: spot.parentId,
         sourceHandle: "anchor",
         target: DRAFT_ID,
-        ...spineLook(
-          palette,
-          (views.find((v) => v.node.id === spot.parentId)?.depth ?? 0) + 1,
-        ),
+        ...spineLook((views.find((v) => v.node.id === spot.parentId)?.depth ?? 0) + 1),
       });
     }
     return edges;
@@ -1393,7 +1418,9 @@ function PageCanvasInner({
               className="page-canvas-reveal"
               onClick={() => setShowSuggestions(true)}
             >
-              <span aria-hidden="true">{"\u25CE"}</span>
+              <span aria-hidden="true" className="page-canvas-reveal-dot">
+                {"\u25CF"}
+              </span>
               {t("pageCanvas.showSuggestions", { count: hiddenSuggestions })}
             </button>
           )}

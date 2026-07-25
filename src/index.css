@@ -407,6 +407,13 @@ html[data-theme="dark"] {
      same pixels, so ConstellationMap is unchanged. */
   --kg-edge: #3D414C;
   --kg-edge-strong: #5D616F;
+  /* The Canvas draws its spokes as SVG strokes on the page surface, not as
+     sigma edges over the graph's own ground, and at that size the graph inks
+     above disappear — the strokes are what make thirteen boxes read as a tree
+     rather than as scattered pills. Lifted here only; AtlasView, FocusGraph and
+     ConstellationMap keep the pre-composited values they were tuned against. */
+  --canvas-edge: #565B69;
+  --canvas-edge-strong: #7C8291;
   /* Cartography layer (design-mockup artifact, screen 01). Hull/graticule are
      painted by AtlasView's 2D underlay canvas — real alpha is fine there (the
      opaque-only rule above is sigma-WebGL-specific). Bridge IS a sigma edge
@@ -492,6 +499,10 @@ html[data-theme="light"] {
      rgba(88,97,116,.42/.72) pre-composited over #FFFFFF. */
   --kg-edge: #B9BDC5;
   --kg-edge-strong: #878D9B;
+  /* Canvas spokes — see the dark block. Light needed no lift, so these are the
+     graph values, named separately so the two can move independently. */
+  --canvas-edge: #B9BDC5;
+  --canvas-edge-strong: #878D9B;
   /* Cartography layer — light variants (see the dark block's note). */
   --kg-hull: rgba(94, 88, 200, 0.045);
   --kg-hull-border: rgba(94, 88, 200, 0.15);
@@ -3082,18 +3093,21 @@ p.entity-error {
   }
 }
 
-/* Not an act at all — a count of what the canvas is withholding. It sits below
-   the command cluster, in its own pill, so it reads as state rather than as a
-   third verb someone reaches for by mistake. */
+/* A count of what the canvas is withholding, and the only way to see it. It sits
+   below the command cluster, in its own pill, so it does not read as a third
+   verb beside Improve — but tertiary text on a plain surface at 11px read as a
+   disabled badge, which is the one thing it must not be: nothing else on the
+   surface reveals suggestions. The dot carries the accent so the pill reads as
+   live, the label stays secondary so it stays state rather than a command. */
 .page-canvas-reveal {
   display: flex;
   align-items: center;
   gap: 5px;
   padding: 3px 9px;
-  border: 1px solid var(--mem-border);
+  border: 1px solid color-mix(in srgb, var(--mem-accent-page) 30%, var(--mem-border));
   border-radius: 999px;
   background-color: var(--mem-surface);
-  color: var(--mem-text-tertiary);
+  color: var(--mem-text-secondary);
   font-family: var(--mem-font-body);
   font-size: 11px;
   white-space: nowrap;
@@ -3101,9 +3115,17 @@ p.entity-error {
   transition: color 120ms ease, border-color 120ms ease;
 }
 
+/* Filled, and smaller than the label: a ring glyph at label size lost most of
+   its ink to antialiasing on the dark ground, which is where the pill needed the
+   colour most. */
+.page-canvas-reveal-dot {
+  color: var(--mem-accent-page);
+  font-size: 8px;
+}
+
 .page-canvas-reveal:hover {
-  border-color: var(--mem-text-tertiary);
-  color: var(--mem-text-secondary);
+  border-color: var(--mem-accent-page);
+  color: var(--mem-text-primary);
 }
 
 .page-canvas-reveal:focus-visible {
