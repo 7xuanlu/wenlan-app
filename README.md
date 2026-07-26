@@ -15,6 +15,12 @@ pnpm dev:all   # launches an isolated worktree daemon + Tauri app
 ports, data, process ownership, app identity, MCP sockets, and Remote Access
 state separate from the installed production runtime.
 
+## Development documentation
+
+- [Windows development and native smoke testing](docs/windows-development.md)
+  covers the physical Windows setup, sibling backend build, WebView2 live
+  smoke, GPU status, and known test gaps.
+
 ## License
 
 AGPL-3.0-only. See [LICENSE](LICENSE).

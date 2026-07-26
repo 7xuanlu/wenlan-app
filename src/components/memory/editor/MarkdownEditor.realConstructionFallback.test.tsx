@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { createRef } from "react";
 import { act, cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { MarkdownEditor } from "./MarkdownEditor";
 import type { MarkdownEditorHandle } from "./MarkdownEditor";
 
@@ -24,6 +24,13 @@ vi.mock("@codemirror/view", async (importOriginal) => {
   }
 
   return { ...actual, EditorView: ThrowingEditorView };
+});
+
+beforeAll(async () => {
+  // This suite owns real EditorView construction failure, not lazy-import
+  // latency. Preload the mocked module so whole-suite worker contention cannot
+  // consume Testing Library's wait budget before construction even starts.
+  await import("./CodeMirrorMarkdownEditor");
 });
 
 afterEach(() => cleanup());

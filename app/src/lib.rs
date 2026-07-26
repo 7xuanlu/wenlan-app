@@ -57,13 +57,26 @@ fn app_log_dir() -> std::path::PathBuf {
     if let Some(state_dir) = crate::identity_paths::isolated_dev_state_dir() {
         return state_dir.join("logs");
     }
-    dirs::home_dir()
-        .map(|h| h.join("Library/Logs/com.wenlan.desktop"))
-        .unwrap_or_else(std::env::temp_dir)
+    #[cfg(target_os = "macos")]
+    {
+        dirs::home_dir()
+            .map(|home| home.join("Library/Logs/com.wenlan.desktop"))
+            .unwrap_or_else(std::env::temp_dir)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        dirs::data_local_dir()
+            .map(|base| base.join("wenlan").join("logs"))
+            .unwrap_or_else(|| std::env::temp_dir().join("wenlan").join("logs"))
+    }
 }
 
 fn app_log_file_name() -> &'static str {
     "wenlan.log"
+}
+
+fn launch_agent_startup_enabled() -> bool {
+    cfg!(target_os = "macos")
 }
 
 const APP_LOG_MAX_BYTES: usize = 5 * 1024 * 1024;
@@ -96,9 +109,44 @@ fn app_fallback_log_dir() -> std::path::PathBuf {
     if let Some(state_dir) = crate::identity_paths::isolated_dev_state_dir() {
         return state_dir.join("fallback-logs");
     }
-    dirs::home_dir()
-        .map(|home| home.join("Library/Logs/com.wenlan.desktop-fallback"))
-        .unwrap_or_else(|| std::env::temp_dir().join("wenlan-app-fallback"))
+    #[cfg(target_os = "macos")]
+    {
+        dirs::home_dir()
+            .map(|home| home.join("Library/Logs/com.wenlan.desktop-fallback"))
+            .unwrap_or_else(|| std::env::temp_dir().join("wenlan-app-fallback"))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        std::env::temp_dir().join("wenlan-app-fallback")
+    }
+}
+
+#[cfg(debug_assertions)]
+fn production_runtime_roots(
+    home: Option<std::path::PathBuf>,
+    local_app_data: Option<std::path::PathBuf>,
+) -> Vec<std::path::PathBuf> {
+    let mut roots = Vec::new();
+    if let Some(home) = home {
+        roots.extend([
+            home.join("Library/Application Support/wenlan"),
+            home.join("Library/Application Support/origin"),
+            home.join("Library/LaunchAgents"),
+            home.join("Library/Logs/com.wenlan.desktop"),
+            home.join("Library/Logs/com.origin.desktop"),
+            home.join(".config/wenlan-mcp"),
+            home.join(".config/origin-mcp"),
+            home.join(".wenlan"),
+            home.join(".origin"),
+        ]);
+    }
+    #[cfg(target_os = "windows")]
+    if let Some(local_app_data) = local_app_data {
+        roots.extend([local_app_data.join("wenlan"), local_app_data.join("origin")]);
+    }
+    #[cfg(not(target_os = "windows"))]
+    let _ = local_app_data;
+    roots
 }
 
 #[cfg(debug_assertions)]
@@ -176,27 +224,15 @@ fn validate_debug_runtime_isolation() -> Result<(), String> {
         return Err("WENLAN_DEV_TAURI_MCP_SOCKET must not use the production socket".to_string());
     }
 
-    if let Some(home) = dirs::home_dir() {
-        for protected in [
-            home.join("Library/Application Support/wenlan"),
-            home.join("Library/Application Support/origin"),
-            home.join("Library/LaunchAgents"),
-            home.join("Library/Logs/com.wenlan.desktop"),
-            home.join("Library/Logs/com.origin.desktop"),
-            home.join(".config/wenlan-mcp"),
-            home.join(".config/origin-mcp"),
-            home.join(".wenlan"),
-            home.join(".origin"),
-        ] {
-            if let Ok(protected) = std::fs::canonicalize(protected) {
-                if [&state_dir, &data_dir, &socket_path]
-                    .iter()
-                    .any(|path| path.starts_with(&protected))
-                {
-                    return Err(
-                        "WENLAN_DEV_STATE_DIR must not use a production runtime root".to_string(),
-                    );
-                }
+    for protected in production_runtime_roots(dirs::home_dir(), dirs::data_local_dir()) {
+        if let Ok(protected) = std::fs::canonicalize(protected) {
+            if [&state_dir, &data_dir, &socket_path]
+                .iter()
+                .any(|path| path.starts_with(&protected))
+            {
+                return Err(
+                    "WENLAN_DEV_STATE_DIR must not use a production runtime root".to_string(),
+                );
             }
         }
     }
@@ -396,6 +432,12 @@ fn request_full_quit(app: &tauri::AppHandle) -> Result<(), tauri::Error> {
     Ok(())
 }
 
+#[cfg(not(feature = "review-fixtures"))]
+#[tauri::command]
+fn request_guarded_quit(app: tauri::AppHandle) -> Result<(), String> {
+    request_full_quit(&app).map_err(|error| error.to_string())
+}
+
 #[cfg(target_os = "macos")]
 fn startup_reveal_fallback_delay() -> std::time::Duration {
     std::time::Duration::from_millis(1200)
@@ -416,7 +458,7 @@ pub fn run() {
 
     // Log sinks: stderr AND a bounded rotating file under the selected app
     // identity. Debug builds use the worktree state directory; production uses
-    // ~/Library/Logs/com.wenlan.desktop.
+    // the platform-native log location.
     // GUI launches send stderr to /dev/null, so without the file sink any
     // setup() error — e.g. a sidecar spawn ENOENT — is silent. That is
     // exactly how the origin-server spawn regression hid for ~15 minutes
@@ -551,7 +593,8 @@ pub fn run() {
             // Repair a stale server plist before daemon selection. The full
             // first-run install can stay async, but an already-running daemon
             // with the wrong data root must not win the port before repair.
-            let daemon_startup_preflight_ok = {
+            let launch_agent_startup = launch_agent_startup_enabled();
+            let daemon_startup_preflight_ok = if launch_agent_startup {
                 use tauri::Emitter;
                 let launchctl = crate::lifecycle::SystemLaunchctl;
                 match crate::lifecycle::prepare_server_plist_for_startup(&launchctl) {
@@ -562,6 +605,9 @@ pub fn run() {
                         false
                     }
                 }
+            } else {
+                log::info!("[startup] LaunchAgent preflight is not applicable on this platform");
+                true
             };
             // Carry the outcome to the on-demand "Start Wenlan" command, which
             // must not re-run the mutating preflight from a user click.
@@ -569,7 +615,7 @@ pub fn run() {
 
             // First-run silent install — H6: run on a blocking task so we
             // don't block setup() (which delays Tauri start by hundreds of ms).
-            {
+            if launch_agent_startup {
                 use tauri::Emitter;
                 let install_handle = handle.clone();
                 tauri::async_runtime::spawn(async move {
@@ -737,6 +783,8 @@ pub fn run() {
                 .resizable(false)
                 .visible(false)
                 .build()?;
+                #[cfg(not(target_os = "macos"))]
+                let _ = &qc_win;
 
                 #[cfg(target_os = "macos")]
                 #[allow(deprecated)]
@@ -977,8 +1025,8 @@ pub fn run() {
                     "[init] skipping daemon sidecar because server plist preflight failed"
                 );
             } else {
-                let launchd_managed =
-                    crate::lifecycle::current_server_plist_matches_selected_data_dir();
+                let launchd_managed = launch_agent_startup
+                    && crate::lifecycle::current_server_plist_matches_selected_data_dir();
                 if launchd_managed {
                     log::info!(
                         "[init] launchd-managed daemon detected, skipping sidecar spawn"
@@ -1325,6 +1373,7 @@ pub fn run() {
             search::set_run_at_login,
             search::quit_wenlan_full,
             search::quit_origin_full,
+            request_guarded_quit,
             acknowledge_guarded_quit_request,
             cancel_guarded_quit_request,
             daemon_start::start_daemon_sidecar,
@@ -1373,6 +1422,129 @@ pub fn run() {
             }
             _ => {}
         });
+}
+
+#[cfg(test)]
+mod platform_tests {
+    use super::*;
+
+    #[test]
+    fn launch_agent_startup_is_macos_only() {
+        assert_eq!(launch_agent_startup_enabled(), cfg!(target_os = "macos"));
+    }
+
+    #[test]
+    fn unacknowledged_guarded_quit_expires_to_a_forced_shutdown() {
+        let mut guard = GuardedQuitCoordinator::new();
+
+        let request = guard.request();
+        assert_eq!(
+            request,
+            GuardedQuitAction::RequestFrontendGuard {
+                request_id: 1,
+                delivery_id: 1,
+            }
+        );
+        assert_eq!(guard.request(), GuardedQuitAction::AwaitFrontendGuard);
+        assert!(guard.expire_unacknowledged(1, 1));
+        assert_eq!(guard.request(), GuardedQuitAction::AwaitFrontendGuard);
+    }
+
+    #[test]
+    fn acknowledged_guarded_quit_uses_a_liveness_probe_before_forcing() {
+        let mut guard = GuardedQuitCoordinator::new();
+
+        assert_eq!(
+            guard.request(),
+            GuardedQuitAction::RequestFrontendGuard {
+                request_id: 1,
+                delivery_id: 1,
+            }
+        );
+        assert!(guard.acknowledge(1, 1));
+        assert!(!guard.expire_unacknowledged(1, 1));
+        assert_eq!(
+            guard.request(),
+            GuardedQuitAction::RequestFrontendGuard {
+                request_id: 1,
+                delivery_id: 2,
+            }
+        );
+        assert_eq!(guard.request(), GuardedQuitAction::AwaitFrontendGuard);
+        assert!(guard.acknowledge(1, 2));
+        assert!(!guard.expire_unacknowledged(1, 2));
+
+        assert!(guard.cancel(1));
+        assert_eq!(
+            guard.request(),
+            GuardedQuitAction::RequestFrontendGuard {
+                request_id: 2,
+                delivery_id: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn lost_liveness_probe_expires_an_acknowledged_guarded_quit() {
+        let mut guard = GuardedQuitCoordinator::new();
+
+        assert!(matches!(
+            guard.request(),
+            GuardedQuitAction::RequestFrontendGuard {
+                request_id: 1,
+                delivery_id: 1,
+            }
+        ));
+        assert!(guard.acknowledge(1, 1));
+        assert!(matches!(
+            guard.request(),
+            GuardedQuitAction::RequestFrontendGuard {
+                request_id: 1,
+                delivery_id: 2,
+            }
+        ));
+        assert!(guard.expire_unacknowledged(1, 2));
+    }
+
+    #[test]
+    fn stale_guarded_quit_messages_cannot_mutate_a_later_request() {
+        let mut guard = GuardedQuitCoordinator::new();
+
+        assert_eq!(
+            guard.request(),
+            GuardedQuitAction::RequestFrontendGuard {
+                request_id: 1,
+                delivery_id: 1,
+            }
+        );
+        assert!(guard.acknowledge(1, 1));
+        assert!(guard.cancel(1));
+        assert_eq!(
+            guard.request(),
+            GuardedQuitAction::RequestFrontendGuard {
+                request_id: 2,
+                delivery_id: 1,
+            }
+        );
+
+        assert!(!guard.acknowledge(1, 1));
+        assert!(!guard.cancel(1));
+        assert!(!guard.expire_unacknowledged(1, 1));
+        assert!(guard.acknowledge(2, 1));
+    }
+
+    #[test]
+    fn destroyed_window_forces_only_an_in_flight_guarded_quit() {
+        let mut guard = GuardedQuitCoordinator::new();
+
+        assert!(!guard.force_if_in_flight());
+        assert!(matches!(
+            guard.request(),
+            GuardedQuitAction::RequestFrontendGuard { .. }
+        ));
+        assert!(guard.force_if_in_flight());
+        assert!(!guard.force_if_in_flight());
+    }
 }
 
 #[cfg(all(test, target_os = "macos"))]
@@ -1562,13 +1734,7 @@ mod tests {
             .collect();
         let tmp = tempfile::tempdir().unwrap();
         let fake_home = tmp.path().join("home");
-        let production_roots = [
-            fake_home.join("Library/Application Support/wenlan"),
-            fake_home.join("Library/Application Support/origin"),
-            fake_home.join("Library/Logs/com.origin.desktop"),
-            fake_home.join(".config/origin-mcp"),
-            fake_home.join(".origin"),
-        ];
+        let production_roots = production_runtime_roots(Some(fake_home.clone()), None);
         for root in &production_roots {
             std::fs::create_dir_all(root).unwrap();
         }
@@ -1619,117 +1785,35 @@ mod tests {
         assert!(startup_reveal_fallback_needed(true, false));
         assert!(startup_reveal_fallback_needed(false, false));
     }
+}
+
+#[cfg(all(test, target_os = "windows"))]
+mod windows_tests {
+    use super::*;
 
     #[test]
-    fn unacknowledged_guarded_quit_expires_to_a_forced_shutdown() {
-        let mut guard = GuardedQuitCoordinator::new();
+    #[serial_test::serial]
+    fn app_log_identity_uses_windows_local_app_data() {
+        let previous = std::env::var_os("WENLAN_DEV_STATE_DIR");
+        std::env::remove_var("WENLAN_DEV_STATE_DIR");
 
-        let request = guard.request();
-        assert_eq!(
-            request,
-            GuardedQuitAction::RequestFrontendGuard {
-                request_id: 1,
-                delivery_id: 1,
-            }
-        );
-        assert_eq!(guard.request(), GuardedQuitAction::AwaitFrontendGuard);
-        assert!(guard.expire_unacknowledged(1, 1));
-        assert_eq!(guard.request(), GuardedQuitAction::AwaitFrontendGuard);
+        assert!(app_log_dir().ends_with("wenlan/logs"));
+        assert_eq!(app_log_file_name(), "wenlan.log");
+
+        match previous {
+            Some(value) => std::env::set_var("WENLAN_DEV_STATE_DIR", value),
+            None => std::env::remove_var("WENLAN_DEV_STATE_DIR"),
+        }
     }
 
     #[test]
-    fn acknowledged_guarded_quit_uses_a_liveness_probe_before_forcing() {
-        let mut guard = GuardedQuitCoordinator::new();
+    fn windows_production_roots_include_local_app_data() {
+        let fake_home = std::path::PathBuf::from(r"C:\fake-home");
+        let fake_local_app_data = std::path::PathBuf::from(r"C:\fake-local-app-data");
 
-        assert_eq!(
-            guard.request(),
-            GuardedQuitAction::RequestFrontendGuard {
-                request_id: 1,
-                delivery_id: 1,
-            }
-        );
-        assert!(guard.acknowledge(1, 1));
-        assert!(!guard.expire_unacknowledged(1, 1));
-        assert_eq!(
-            guard.request(),
-            GuardedQuitAction::RequestFrontendGuard {
-                request_id: 1,
-                delivery_id: 2,
-            }
-        );
-        assert_eq!(guard.request(), GuardedQuitAction::AwaitFrontendGuard);
-        assert!(guard.acknowledge(1, 2));
-        assert!(!guard.expire_unacknowledged(1, 2));
+        let roots = production_runtime_roots(Some(fake_home), Some(fake_local_app_data.clone()));
 
-        assert!(guard.cancel(1));
-        assert_eq!(
-            guard.request(),
-            GuardedQuitAction::RequestFrontendGuard {
-                request_id: 2,
-                delivery_id: 1,
-            }
-        );
-    }
-
-    #[test]
-    fn lost_liveness_probe_expires_an_acknowledged_guarded_quit() {
-        let mut guard = GuardedQuitCoordinator::new();
-
-        assert!(matches!(
-            guard.request(),
-            GuardedQuitAction::RequestFrontendGuard {
-                request_id: 1,
-                delivery_id: 1,
-            }
-        ));
-        assert!(guard.acknowledge(1, 1));
-        assert!(matches!(
-            guard.request(),
-            GuardedQuitAction::RequestFrontendGuard {
-                request_id: 1,
-                delivery_id: 2,
-            }
-        ));
-        assert!(guard.expire_unacknowledged(1, 2));
-    }
-
-    #[test]
-    fn stale_guarded_quit_messages_cannot_mutate_a_later_request() {
-        let mut guard = GuardedQuitCoordinator::new();
-
-        assert_eq!(
-            guard.request(),
-            GuardedQuitAction::RequestFrontendGuard {
-                request_id: 1,
-                delivery_id: 1,
-            }
-        );
-        assert!(guard.acknowledge(1, 1));
-        assert!(guard.cancel(1));
-        assert_eq!(
-            guard.request(),
-            GuardedQuitAction::RequestFrontendGuard {
-                request_id: 2,
-                delivery_id: 1,
-            }
-        );
-
-        assert!(!guard.acknowledge(1, 1));
-        assert!(!guard.cancel(1));
-        assert!(!guard.expire_unacknowledged(1, 1));
-        assert!(guard.acknowledge(2, 1));
-    }
-
-    #[test]
-    fn destroyed_window_forces_only_an_in_flight_guarded_quit() {
-        let mut guard = GuardedQuitCoordinator::new();
-
-        assert!(!guard.force_if_in_flight());
-        assert!(matches!(
-            guard.request(),
-            GuardedQuitAction::RequestFrontendGuard { .. }
-        ));
-        assert!(guard.force_if_in_flight());
-        assert!(!guard.force_if_in_flight());
+        assert!(roots.contains(&fake_local_app_data.join("wenlan")));
+        assert!(roots.contains(&fake_local_app_data.join("origin")));
     }
 }

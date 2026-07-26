@@ -1,17 +1,76 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+to_shell_path() {
+  local path="$1"
+  if [[ "$path" =~ ^[A-Za-z]:[\\/].* ]]; then
+    if ! command -v cygpath >/dev/null 2>&1; then
+      echo "error: Windows path requires Git for Windows cygpath: $path" >&2
+      return 1
+    fi
+    cygpath -u "$path"
+  else
+    printf '%s\n' "$path"
+  fi
+}
+
+is_windows_shell() {
+  case "${OSTYPE:-}" in
+    msys* | cygwin* | win32*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+windows_executable_suffix() {
+  if is_windows_shell; then
+    printf '.exe\n'
+  else
+    printf '\n'
+  fi
+}
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 WORKTREE_ID="$(printf '%s' "$REPO_ROOT" | cksum | awk '{ print $1 }')"
-TMP_BASE="${TMPDIR:-/tmp/}"
-STATE_DIR="${WENLAN_DEV_STATE_DIR:-${TMP_BASE%/}/wenlan-app-dev/$WORKTREE_ID}"
+TMP_BASE="$(to_shell_path "${TMPDIR:-/tmp/}")"
+STATE_DIR="$(to_shell_path "${WENLAN_DEV_STATE_DIR:-${TMP_BASE%/}/wenlan-app-dev/$WORKTREE_ID}")"
 DEV_PORT="${WENLAN_DEV_PORT:-$((17000 + WORKTREE_ID % 1000))}"
 DEV_UI_PORT="${WENLAN_DEV_UI_PORT:-$((18000 + WORKTREE_ID % 1000))}"
 DEV_REMOTE_PORT_START="${WENLAN_DEV_REMOTE_PORT_START:-$((20000 + (WORKTREE_ID % 1000) * 4))}"
 DEV_APP_ID="${WENLAN_DEV_APP_ID:-com.wenlan.desktop.dev.$WORKTREE_ID}"
-DEV_DATA_DIR="${WENLAN_DEV_DATA_DIR:-$STATE_DIR/data}"
-DEV_TAURI_MCP_SOCKET="${WENLAN_DEV_TAURI_MCP_SOCKET:-$STATE_DIR/tauri-mcp.sock}"
+DEV_DATA_DIR="$(to_shell_path "${WENLAN_DEV_DATA_DIR:-$STATE_DIR/data}")"
+DEV_TAURI_MCP_SOCKET="$(to_shell_path "${WENLAN_DEV_TAURI_MCP_SOCKET:-$STATE_DIR/tauri-mcp.sock}")"
+STARTED_RUNTIME=0
+
+canonicalize_path() {
+  local path resolved suffix=""
+  path="$(to_shell_path "$1")"
+  if [[ "$path" != /* ]]; then
+    path="$PWD/$path"
+  fi
+  if resolved="$(realpath -m "$path" 2>/dev/null)"; then
+    if is_windows_shell; then
+      cygpath -m "$resolved"
+    else
+      printf '%s\n' "$resolved"
+    fi
+    return
+  fi
+  while [[ ! -e "$path" && "$path" != "/" ]]; do
+    suffix="/$(basename "$path")$suffix"
+    path="$(dirname "$path")"
+  done
+  resolved="$(realpath "$path")$suffix"
+  if is_windows_shell; then
+    cygpath -m "$resolved"
+  else
+    printf '%s\n' "$resolved"
+  fi
+}
+
+STATE_DIR="$(canonicalize_path "$STATE_DIR")"
+DEV_DATA_DIR="$(canonicalize_path "$DEV_DATA_DIR")"
+DEV_TAURI_MCP_SOCKET="$(canonicalize_path "$DEV_TAURI_MCP_SOCKET")"
 PID_FILE="$STATE_DIR/wenlan-server.pid"
 SERVER_PATH_FILE="$STATE_DIR/wenlan-server.path"
 PORT_FILE="$STATE_DIR/wenlan-server.port"
@@ -19,17 +78,27 @@ DATA_DIR_FILE="$STATE_DIR/wenlan-server.data-dir"
 SERVER_LOG="$STATE_DIR/wenlan-server.log"
 LOCK_DIR="$STATE_DIR/runtime.lock"
 LOCK_OWNER_FILE="$LOCK_DIR/pid"
-STARTED_RUNTIME=0
-
-canonicalize_path() {
-  local path suffix=""
-  path="$(node -e 'process.stdout.write(require("node:path").resolve(process.argv[1]))' "$1")"
-  while [[ ! -e "$path" && "$path" != "/" ]]; do
-    suffix="/$(basename "$path")$suffix"
-    path="$(dirname "$path")"
+PRODUCTION_TAURI_MCP_SOCKET="$(canonicalize_path "/tmp/tauri-mcp.sock")"
+PRODUCTION_PATH_ROOTS=()
+for root in \
+  "$HOME/Library/Application Support/wenlan" \
+  "$HOME/Library/Application Support/origin" \
+  "$HOME/Library/LaunchAgents" \
+  "$HOME/Library/Logs/com.wenlan.desktop" \
+  "$HOME/Library/Logs/com.origin.desktop" \
+  "$HOME/.config/wenlan-mcp" \
+  "$HOME/.config/origin-mcp" \
+  "$HOME/.wenlan" \
+  "$HOME/.origin"; do
+  PRODUCTION_PATH_ROOTS+=("$(canonicalize_path "$root")")
+done
+if is_windows_shell && [[ -n "${LOCALAPPDATA:-}" ]]; then
+  for root in \
+    "$LOCALAPPDATA/wenlan" \
+    "$LOCALAPPDATA/origin"; do
+    PRODUCTION_PATH_ROOTS+=("$(canonicalize_path "$root")")
   done
-  printf '%s%s\n' "$(realpath "$path")" "$suffix"
-}
+fi
 
 path_is_within() {
   [[ "$1" == "$2" || "$1" == "$2/"* ]]
@@ -38,17 +107,7 @@ path_is_within() {
 refuse_production_path() {
   local label="$1" value="$2" canonical root
   canonical="$(canonicalize_path "$value")"
-  for root in \
-    "$HOME/Library/Application Support/wenlan" \
-    "$HOME/Library/Application Support/origin" \
-    "$HOME/Library/LaunchAgents" \
-    "$HOME/Library/Logs/com.wenlan.desktop" \
-    "$HOME/Library/Logs/com.origin.desktop" \
-    "$HOME/.config/wenlan-mcp" \
-    "$HOME/.config/origin-mcp" \
-    "$HOME/.wenlan" \
-    "$HOME/.origin"; do
-    root="$(canonicalize_path "$root")"
+  for root in "${PRODUCTION_PATH_ROOTS[@]}"; do
     if path_is_within "$canonical" "$root"; then
       echo "error: refusing production path for $label: $value" >&2
       exit 2
@@ -85,7 +144,7 @@ if [[ "$DEV_APP_ID" == "com.wenlan.desktop" || "$DEV_APP_ID" == "com.origin.desk
   echo "error: refusing production app identifier: $DEV_APP_ID" >&2
   exit 2
 fi
-if [[ "$(canonicalize_path "$DEV_TAURI_MCP_SOCKET")" == "$(canonicalize_path "/tmp/tauri-mcp.sock")" ]]; then
+if [[ "$DEV_TAURI_MCP_SOCKET" == "$PRODUCTION_TAURI_MCP_SOCKET" ]]; then
   echo "error: refusing production Tauri MCP socket: $DEV_TAURI_MCP_SOCKET" >&2
   exit 2
 fi
@@ -111,15 +170,62 @@ read_owned_pid() {
   OWNED_DATA_DIR="$(sed -n '1p' "$DATA_DIR_FILE" 2>/dev/null || true)"
   [[ "$OWNED_PID" =~ ^[0-9]+$ && -n "$OWNED_SERVER" &&
     "$OWNED_PORT" =~ ^[0-9]+$ ]] || return 1
+  OWNED_SERVER="$(canonicalize_path "$OWNED_SERVER")"
+  if [[ -n "$OWNED_DATA_DIR" ]]; then
+    OWNED_DATA_DIR="$(canonicalize_path "$OWNED_DATA_DIR")"
+  fi
 }
 
 listener_pid_for_port() {
-  lsof -nP -tiTCP:"$1" -sTCP:LISTEN 2>/dev/null | sed -n '1p'
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -nP -tiTCP:"$1" -sTCP:LISTEN 2>/dev/null | sed -n '1p'
+  elif is_windows_shell; then
+    powershell.exe -NoLogo -NoProfile -NonInteractive -Command \
+      "\$listener = Get-NetTCPConnection -State Listen -LocalPort $1 -ErrorAction SilentlyContinue | Select-Object -First 1; if (\$null -ne \$listener) { [Console]::Out.Write(\$listener.OwningProcess) }"
+  fi
+}
+
+process_is_alive() {
+  local pid="$1"
+  if is_windows_shell; then
+    powershell.exe -NoLogo -NoProfile -NonInteractive -Command \
+      "if (Get-Process -Id $pid -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }" \
+      >/dev/null 2>&1
+  else
+    kill -0 "$pid" 2>/dev/null
+  fi
+}
+
+process_executable_path() {
+  local pid="$1"
+  powershell.exe -NoLogo -NoProfile -NonInteractive -Command \
+    "\$process = Get-Process -Id $pid -ErrorAction SilentlyContinue; if (\$null -eq \$process) { exit 1 }; [Console]::Out.Write(\$process.Path)"
+}
+
+terminate_process() {
+  local pid="$1" force="${2:-false}"
+  if is_windows_shell; then
+    local args=(/PID "$pid" /T)
+    if [[ "$force" == "true" ]]; then
+      args+=(/F)
+    fi
+    taskkill.exe "${args[@]}" >/dev/null 2>&1
+  elif [[ "$force" == "true" ]]; then
+    kill -KILL "$pid"
+  else
+    kill "$pid"
+  fi
 }
 
 has_owned_command_identity() {
-  local command
-  kill -0 "$OWNED_PID" 2>/dev/null || return 1
+  local command live_executable
+  process_is_alive "$OWNED_PID" || return 1
+  if is_windows_shell; then
+    live_executable="$(process_executable_path "$OWNED_PID" 2>/dev/null || true)"
+    [[ -n "$live_executable" ]] || return 1
+    [[ "$(canonicalize_path "$live_executable")" == "$(canonicalize_path "$OWNED_SERVER")" ]]
+    return
+  fi
   command="$(ps -p "$OWNED_PID" -o command= 2>/dev/null || true)"
   [[ "$command" == "$OWNED_SERVER" || "$command" == "$OWNED_SERVER "* ]]
 }
@@ -161,7 +267,7 @@ stop_runtime() {
     echo "No worktree-owned Wenlan dev daemon is recorded."
     return 0
   fi
-  if ! kill -0 "$OWNED_PID" 2>/dev/null; then
+  if ! process_is_alive "$OWNED_PID"; then
     rm -f "$PID_FILE" "$SERVER_PATH_FILE" "$PORT_FILE" "$DATA_DIR_FILE"
     echo "Removed stale Wenlan dev daemon state."
     return 0
@@ -171,9 +277,9 @@ stop_runtime() {
     return 1
   fi
 
-  kill "$OWNED_PID"
+  terminate_process "$OWNED_PID" false
   for _ in $(seq 1 50); do
-    if ! kill -0 "$OWNED_PID" 2>/dev/null; then
+    if ! process_is_alive "$OWNED_PID"; then
       rm -f "$PID_FILE" "$SERVER_PATH_FILE" "$PORT_FILE" "$DATA_DIR_FILE"
       echo "Stopped worktree-owned Wenlan dev daemon (PID $OWNED_PID)."
       return 0
@@ -182,10 +288,10 @@ stop_runtime() {
   done
 
   if has_owned_command_identity; then
-    kill -KILL "$OWNED_PID"
+    terminate_process "$OWNED_PID" true
   fi
   for _ in $(seq 1 50); do
-    if ! kill -0 "$OWNED_PID" 2>/dev/null; then
+    if ! process_is_alive "$OWNED_PID"; then
       rm -f "$PID_FILE" "$SERVER_PATH_FILE" "$PORT_FILE" "$DATA_DIR_FILE"
       echo "Force-stopped unresponsive worktree-owned Wenlan dev daemon (PID $OWNED_PID)."
       return 0
@@ -201,7 +307,7 @@ start_runtime() {
   STARTED_RUNTIME=0
   DEV_DATA_DIR="$(canonicalize_path "$DEV_DATA_DIR")"
   backend="$(bash "$SCRIPT_DIR/resolve-backend-dir.sh" "$REPO_ROOT")"
-  server="$backend/target/debug/wenlan-server"
+  server="$(canonicalize_path "$backend/target/debug/wenlan-server$(windows_executable_suffix)")"
 
   if read_owned_pid && is_owned_process; then
     if [[ "$OWNED_SERVER" != "$server" || "$OWNED_PORT" != "$DEV_PORT" ||
@@ -219,7 +325,7 @@ start_runtime() {
   mkdir -p "$STATE_DIR" "$DEV_DATA_DIR"
   rm -f "$PID_FILE" "$SERVER_PATH_FILE" "$PORT_FILE" "$DATA_DIR_FILE"
 
-  if lsof -nP -iTCP:"$DEV_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+  if [[ -n "$(listener_pid_for_port "$DEV_PORT")" ]]; then
     echo "error: isolated dev port $DEV_PORT is already in use; set WENLAN_DEV_PORT" >&2
     return 1
   fi
@@ -237,7 +343,7 @@ start_runtime() {
     if curl --fail --silent --max-time 1 \
       "http://127.0.0.1:$DEV_PORT/api/health" >/dev/null 2>&1; then
       listener_pid="$(listener_pid_for_port "$DEV_PORT")"
-      if kill -0 "$pid" 2>/dev/null && [[ "$listener_pid" == "$pid" ]]; then
+      if process_is_alive "$pid" && [[ "$listener_pid" == "$pid" ]]; then
         print_config
         echo "Started worktree-owned Wenlan dev daemon (PID $pid)."
         STARTED_RUNTIME=1
@@ -245,7 +351,7 @@ start_runtime() {
       fi
       break
     fi
-    if ! kill -0 "$pid" 2>/dev/null; then
+    if ! process_is_alive "$pid"; then
       break
     fi
     sleep 0.2

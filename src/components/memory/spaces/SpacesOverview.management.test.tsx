@@ -160,7 +160,9 @@ describe("SpacesOverview management", () => {
     await waitFor(() => expect(api.updateSpace).toHaveBeenCalledWith("Work", "Studio", "Projects and planning"));
 
     // When Delete is selected, the API waits for explicit confirmation
-    const actionsAfterRename = screen.getByRole("button", { name: labels.actionsFor("Work") });
+    const actionsAfterRename = await screen.findByRole("button", {
+      name: labels.actionsFor("Work"),
+    });
     fireEvent.click(actionsAfterRename);
     fireEvent.click(screen.getByRole("menuitem", { name: labels.delete }));
     expect(api.deleteSpace).not.toHaveBeenCalled();
@@ -203,7 +205,11 @@ describe("SpacesOverview management", () => {
 
     // Then the same API path receives the target order, while group boundary moves stay disabled
     await waitFor(() => expect(api.reorderSpace).toHaveBeenLastCalledWith("Work", 1));
-    fireEvent.click(screen.getByRole("button", { name: labels.actionsFor("Work") }));
+    const workActions = screen.getByRole("button", {
+      name: labels.actionsFor("Work"),
+    });
+    await waitFor(() => expect(workActions).toBeEnabled());
+    fireEvent.click(workActions);
     expect(screen.getByRole("menuitem", { name: labels.moveUp })).toBeDisabled();
   });
 

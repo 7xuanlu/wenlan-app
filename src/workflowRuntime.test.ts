@@ -7,6 +7,7 @@ const workflows = [
   ".github/workflows/backend-pin-bump.yml",
   ".github/workflows/ci.yml",
   ".github/workflows/release.yml",
+  ".github/workflows/windows-smoke.yml",
 ] as const;
 
 describe("GitHub Actions runtime floor", () => {
@@ -14,13 +15,14 @@ describe("GitHub Actions runtime floor", () => {
     const workflow = readFileSync(resolve(path), "utf8");
 
     expect(workflow).not.toMatch(
-      /(?:actions\/checkout|actions\/setup-node|pnpm\/action-setup)@v4/,
+      /(?:actions\/checkout|actions\/setup-node|actions\/upload-artifact|pnpm\/action-setup)@v4/,
     );
   });
 
   it.each([
     ".github/workflows/ci.yml",
     ".github/workflows/release.yml",
+    ".github/workflows/windows-smoke.yml",
   ])("%s runs project scripts on Node 24", (path) => {
     const workflow = readFileSync(resolve(path), "utf8");
 
