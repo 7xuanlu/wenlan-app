@@ -39,6 +39,7 @@ wenlan-app/
 | Browser E2E | `e2e/AGENTS.md`, `playwright.config.ts` | CI runs Chromium tests on Vite |
 | Preview harness | `preview/AGENTS.md`, `vite.preview.config.ts` | Tauri API shims, fixture states |
 | Windows build/native smoke | `docs/windows-development.md`, `.github/workflows/windows-smoke.yml` | physical setup, portable tests, source-built backend, WebView2 evidence |
+| Verifying a change in the running app | `.claude/skills/verify/SKILL.md` | launch/drive via `.claude/skills/run-wenlan-app/`, evidence recipes per change type |
 | Historical plans | `docs/superpowers/` | do not treat generated inventories as product docs |
 
 ## CODE MAP
