@@ -198,10 +198,24 @@ fn load_or_create_secret_in(dir: &Path) -> Result<[u8; SECRET_LEN], PresenceErro
     Ok(secret)
 }
 
-/// Canonical bytes a capability's HMAC is computed over. Fields are joined
-/// with a control character (`\u{1}`) unlikely to appear in any of them —
-/// this is a cooperative-boundary protocol (D7 §1), not hardened against an
-/// adversary choosing the target IDs, so a plain delimiter is sufficient.
+/// Appends one component as its big-endian `u32` byte length followed by its
+/// bytes. Nothing a component contains can be read as a boundary, because the
+/// boundary is a count read before the bytes rather than a value looked for
+/// inside them.
+fn push_component(out: &mut Vec<u8>, bytes: &[u8]) {
+    out.extend_from_slice(&(bytes.len() as u32).to_be_bytes());
+    out.extend_from_slice(bytes);
+}
+
+/// Canonical bytes a capability's HMAC is computed over: every component
+/// length-prefixed, and the target list additionally prefixed with its
+/// element count, so exactly one request maps to any given message.
+///
+/// A separator encoding could not promise that. Joining with a control
+/// character signed `["a", "b"]` and `["a\u{1}b"]` identically, and let a
+/// target ID borrow bytes from the base digest across their separator — so
+/// one capability's MAC was also a valid MAC for a different request. Length
+/// prefixes need no separators and no escaping.
 ///
 /// Private helper called from exactly two places (`mint_in`, test-only
 /// `verify_in`); a struct purely to satisfy the arg-count lint would be
@@ -218,18 +232,20 @@ fn signed_bytes(
     minted_at: u64,
     expires_at: u64,
 ) -> Vec<u8> {
-    let parts = vec![
-        protocol_version.to_string(),
-        action.as_str().to_string(),
-        target_ids.join("\u{1}"),
-        base_digest.to_string(),
-        caller_id.to_string(),
-        operation_id.to_string(),
-        hex(nonce),
-        minted_at.to_string(),
-        expires_at.to_string(),
-    ];
-    parts.join("\u{2}").into_bytes()
+    let mut out = Vec::new();
+    push_component(&mut out, &protocol_version.to_be_bytes());
+    push_component(&mut out, action.as_str().as_bytes());
+    out.extend_from_slice(&(target_ids.len() as u32).to_be_bytes());
+    for target_id in target_ids {
+        push_component(&mut out, target_id.as_bytes());
+    }
+    push_component(&mut out, base_digest.as_bytes());
+    push_component(&mut out, caller_id.as_bytes());
+    push_component(&mut out, operation_id.as_bytes());
+    push_component(&mut out, nonce);
+    push_component(&mut out, &minted_at.to_be_bytes());
+    push_component(&mut out, &expires_at.to_be_bytes());
+    out
 }
 
 /// Mints a capability for `request`, using the secret under `dir` and `now`
@@ -388,6 +404,52 @@ mod tests {
 
         assert!(verify_in(&cap, &secret, 1_059));
         assert!(!verify_in(&cap, &secret, 1_060));
+    }
+
+    /// One MAC over a fully fixed message, so two messages can be compared
+    /// directly — `mint_in` draws a fresh nonce every call, which would make
+    /// any two of its capabilities differ for the wrong reason.
+    fn mac_over(target_ids: &[&str], base_digest: &str) -> [u8; 32] {
+        let targets: Vec<String> = target_ids.iter().map(|id| (*id).to_string()).collect();
+        let bytes = signed_bytes(
+            PROTOCOL_VERSION,
+            PresenceAction::ReviewPage,
+            &targets,
+            base_digest,
+            "app",
+            "op-1",
+            &[0_u8; NONCE_LEN],
+            1_000,
+            1_060,
+        );
+        let mut mac = HmacSha256::new_from_slice(&[3_u8; SECRET_LEN]).unwrap();
+        mac.update(&bytes);
+        mac.finalize().into_bytes().into()
+    }
+
+    #[test]
+    fn two_different_requests_never_share_a_mac_through_field_boundaries() {
+        // A separator-joined message lets one field's content imitate the
+        // separator and swallow the boundary. Both pairs below are distinct
+        // requests that a separator encoding signs identically.
+        assert_ne!(
+            mac_over(&["a", "b"], "digest"),
+            mac_over(&["a\u{1}b"], "digest"),
+            "two target ids must not sign the same as one id containing the separator",
+        );
+        assert_ne!(
+            mac_over(&["a\u{2}b"], "c"),
+            mac_over(&["a"], "b\u{2}c"),
+            "a target id must not borrow bytes from the base digest",
+        );
+    }
+
+    #[test]
+    fn the_same_request_always_signs_the_same_bytes() {
+        assert_eq!(
+            mac_over(&["a", "b"], "digest"),
+            mac_over(&["a", "b"], "digest")
+        );
     }
 
     #[test]
