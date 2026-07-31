@@ -1019,6 +1019,60 @@ const UNSTUBBED_DEBT = new Set([
 // download_on_device_model, add_source) — and fails the moment a future
 // invoke() ships with no harness stub at all. One-directional on purpose: an
 // unused extra HANDLERS/DEFAULTS entry is fine, a missing one is the bug.
+describe("liveInvoke explicit-browse truth contract", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function headersOf(call: unknown[]): Record<string, string> {
+    const init = call[1] as { headers?: Record<string, string> } | undefined;
+    return init?.headers ?? {};
+  }
+
+  it("marks the explicit-browse reads as a human browse, exactly as the Rust client does", async () => {
+    // app/src/api.rs sends both headers on these two routes and neither on
+    // their unmarked counterparts. Aliasing the explicit handlers to the
+    // unmarked ones made the preview harness the one place where a browse
+    // reaches the daemon unmarked, so nothing it shows can be trusted to
+    // match what the app sees.
+    const fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ pages: [] }), { status: 200 })
+    );
+    vi.stubGlobal("fetch", fetch);
+
+    await liveInvoke("list_pages_explicit_browse", { status: "active" });
+    await liveInvoke("search_pages_explicit_browse", { query: "anything" });
+
+    expect(fetch.mock.calls.length).toBe(2);
+    expect(String(fetch.mock.calls[0]![0])).toContain("/daemon/api/pages?");
+    expect(String(fetch.mock.calls[1]![0])).toBe("/daemon/api/pages/search");
+    for (const call of fetch.mock.calls) {
+      expect(headersOf(call)["x-wenlan-truth-contract"]).toBe("1");
+      expect(headersOf(call)["x-wenlan-reader-intent"]).toBe("explicit");
+    }
+    // The POST still declares its body encoding.
+    expect(headersOf(fetch.mock.calls[1]!)["content-type"]).toBe("application/json");
+  });
+
+  it("leaves the unmarked reads unmarked, on the same two routes", async () => {
+    const fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ pages: [] }), { status: 200 })
+    );
+    vi.stubGlobal("fetch", fetch);
+
+    await liveInvoke("list_pages", { status: "active" });
+    await liveInvoke("search_pages", { query: "anything" });
+
+    expect(fetch.mock.calls.length).toBe(2);
+    expect(String(fetch.mock.calls[0]![0])).toContain("/daemon/api/pages?");
+    expect(String(fetch.mock.calls[1]![0])).toBe("/daemon/api/pages/search");
+    for (const call of fetch.mock.calls) {
+      expect(headersOf(call)["x-wenlan-truth-contract"]).toBeUndefined();
+      expect(headersOf(call)["x-wenlan-reader-intent"]).toBeUndefined();
+    }
+  });
+});
+
 describe("tauri.ts -> live-invoke.ts command coverage (parity)", () => {
   const source = readFileSync(TAURI_TS_PATH, "utf8");
   const commands = invokedCommands(source);
