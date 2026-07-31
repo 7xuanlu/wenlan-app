@@ -83,7 +83,12 @@ vi.mock("sigma", () => {
       y: pos.y,
       ratio,
     }));
-    refresh() {}
+    // Real sigma renders synchronously on refresh() and fires afterRender at
+    // the end of the frame. The underlay repaint hangs off that event, so a
+    // no-op here would silently pass any "it repainted" assertion.
+    refresh() {
+      this.handlers.get("afterRender")?.({});
+    }
     setSetting(_key: string, _value: unknown) {}
     kill() {}
   }
@@ -109,6 +114,9 @@ function makeEntity(overrides: Partial<import("../../lib/tauri").Entity> = {}): 
     name: overrides.name ?? "Entity",
     entity_type: overrides.entity_type ?? "concept",
     domain: overrides.domain ?? null,
+    // Kept distinct from domain: an entity can carry space: null or the empty
+    // string while domain says nothing, and all of those mean "unscoped".
+    space: overrides.space ?? null,
     source_agent: overrides.source_agent ?? null,
     confidence: overrides.confidence ?? null,
     confirmed: overrides.confirmed ?? false,
@@ -1024,6 +1032,27 @@ describe("AtlasView", () => {
     expect(await screen.findByText("Estimated regions")).toBeInTheDocument();
   });
 
+  // An entity's OWN space can be null or empty (model.ts's GraphNode.space) —
+  // it does not take a relation-only neighbor to put unscoped nodes on the
+  // map. Such a graph renders entirely on the fallback climb, so the badge
+  // must say so even though there is no relation, and no known space, to give
+  // it away.
+  it.each([
+    ["null", null],
+    ["empty-string", ""],
+  ])("badges the toolbar as estimated for a relation-free graph whose entity carries a %s space", async (_label, space) => {
+    const entity = makeEntity({ id: "e1", name: "Alice", domain: null, space });
+    mockListEntities.mockResolvedValue([entity]);
+    mockGetEntityDetail.mockResolvedValue({ entity, observations: [], relations: [] });
+
+    renderWithQuery(<AtlasView />);
+    await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
+
+    // Toolbar is provably rendered before the badge claim.
+    expect(screen.getByRole("button", { name: "Regions" })).toBeInTheDocument();
+    expect(await screen.findByText("Estimated regions")).toBeInTheDocument();
+  });
+
   it("badges the toolbar with an alerting sync-issue state when a space's community read fails", async () => {
     mockOneSpaceEntity();
     mockListCommunities.mockRejectedValue(new Error("connection reset"));
@@ -1075,6 +1104,66 @@ describe("AtlasView", () => {
     });
   }
 
+  // Records what the cartography underlay actually painted. drawCartography
+  // clears once per paint before drawing, so resetting on clearRect leaves
+  // `regionNames` holding the MOST RECENT paint only — immune to however many
+  // extra repaints a render happens to trigger — while `paints` counts them.
+  function recordingUnderlayCtx() {
+    const state = { paints: 0, regionNames: [] as string[] };
+    const ctx = {
+      strokeStyle: "",
+      fillStyle: "",
+      lineWidth: 0,
+      lineJoin: "",
+      lineCap: "",
+      font: "",
+      letterSpacing: "",
+      textAlign: "",
+      textBaseline: "",
+      setTransform: vi.fn(),
+      clearRect: vi.fn(() => {
+        state.paints += 1;
+        state.regionNames.length = 0;
+      }),
+      save: vi.fn(),
+      restore: vi.fn(),
+      beginPath: vi.fn(),
+      closePath: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      bezierCurveTo: vi.fn(),
+      arc: vi.fn(),
+      setLineDash: vi.fn(),
+      stroke: vi.fn(),
+      fill: vi.fn(),
+      fillText: vi.fn((text: string) => {
+        state.regionNames.push(text);
+      }),
+    };
+    return { ctx, state };
+  }
+
+  it("paints the underlay on mount through the post-mount effects, with no second draw of its own", async () => {
+    mockTwoTrianglesInSpace();
+    // The underlay canvas only exists once the mount effect has run, so stub
+    // the prototype to catch the very first paint.
+    const painter = recordingUnderlayCtx();
+    const originalGetContext = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = vi.fn().mockReturnValue(painter.ctx) as any;
+    try {
+      renderWithQuery(<AtlasView />);
+      await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
+
+      // Nothing here fired afterRender by hand: the theme and cartography
+      // effects both refresh() right after the mount effect, and that is the
+      // whole initial paint path — so the mount effect must not draw as well.
+      expect(painter.state.paints).toBeGreaterThan(0);
+      expect(painter.state.regionNames).toEqual(["Alice", "Bob"]);
+    } finally {
+      HTMLCanvasElement.prototype.getContext = originalGetContext;
+    }
+  });
+
   it("re-renders bridges and hulls when a space's cartography status changes, without a full remount", async () => {
     mockTwoTrianglesInSpace();
     // Starts on the default (empty) fallback climb: two 3-cliques, "rb" is
@@ -1085,6 +1174,17 @@ describe("AtlasView", () => {
     const graph = instance.graph;
 
     expect(graph.getEdgeAttribute("rb", "bridge")).toBe(true);
+
+    // Watch the hulls, not just the edge colours: on the fallback climb the
+    // two triangles are two named regions (leaders a1/b1 — the degree-3 hubs).
+    const underlay = document.querySelector(
+      'canvas[data-testid="atlas-cartography"]',
+    ) as HTMLCanvasElement;
+    const painter = recordingUnderlayCtx();
+    underlay.getContext = vi.fn().mockReturnValue(painter.ctx) as any;
+    instance.handlers.get("afterRender")!({});
+    expect(painter.state.regionNames).toEqual(["Alice", "Bob"]);
+    const paintsBeforeChange = painter.state.paints;
 
     // Durable arrives: the daemon puts all 6 members in ONE community, so
     // the bridge collapses into an ordinary intra-region edge.
@@ -1122,6 +1222,12 @@ describe("AtlasView", () => {
     await qc.invalidateQueries({ queryKey: ["constellation-cartography"] });
 
     await waitFor(() => expect(graph.getEdgeAttribute("rb", "bridge")).toBe(false));
+    // The hulls repainted on their OWN — no test-fired afterRender here — and
+    // the two regions have become the one merged region the daemon declared.
+    // Recolouring the edges alone would leave the old two-hull picture on the
+    // underlay, which is exactly what the round-1 test could not see.
+    expect(painter.state.paints).toBeGreaterThan(paintsBeforeChange);
+    expect(painter.state.regionNames).toEqual(["Alice"]);
     // Same sigma instance and the same graphology graph — no remount, no
     // layout/camera reset.
     expect(capturedSigmaInstances).toHaveLength(1);

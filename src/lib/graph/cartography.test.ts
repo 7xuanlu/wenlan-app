@@ -156,14 +156,14 @@ describe("communitiesFor", () => {
       ],
     ]);
     const communities = communitiesFor(m, cartographyBySpace);
-    expect(communities.get("x1")).toBe("durable:Work:c7");
-    expect(communities.get("x2")).toBe("durable:Work:c7");
-    expect(communities.get("x3")).toBe("durable:Work:c9");
+    expect(communities.get("x1")).toBe("durable:sWork:c7");
+    expect(communities.get("x2")).toBe("durable:sWork:c7");
+    expect(communities.get("x3")).toBe("durable:sWork:c9");
     // A member the daemon's read never covered gets its own singleton under
     // the separate `unassigned:` family (never nested under `durable:` —
     // see communitiesFor's collision note).
-    expect(communities.get("u1")).toBe("unassigned:Work:u1");
-    expect(communities.get("u2")).toBe("unassigned:Work:u2");
+    expect(communities.get("u1")).toBe("unassigned:sWork:u1");
+    expect(communities.get("u2")).toBe("unassigned:sWork:u2");
     expect(communities.get("u1")).not.toBe(communities.get("u2"));
   });
 
@@ -175,7 +175,7 @@ describe("communitiesFor", () => {
     const cartographyBySpace = new Map<string, SpaceCartography>([["Work", { status: "fallback" }]]);
     const communities = communitiesFor(m, cartographyBySpace);
     for (const id of ["a1", "a2", "a3"]) {
-      expect(communities.get(id)).toMatch(/^fallback:Work:/);
+      expect(communities.get(id)).toMatch(/^fallback:sWork:/);
     }
   });
 
@@ -203,9 +203,9 @@ describe("communitiesFor", () => {
       ],
     ]);
     const communities = communitiesFor(m, cartographyBySpace);
-    expect(communities.get("r1")).toBe("durable:Ready:c1");
-    expect(communities.get("r2")).toBe("durable:Ready:c1");
-    expect(communities.get("f1")).toMatch(/^fallback:Fallback:/);
+    expect(communities.get("r1")).toBe("durable:sReady:c1");
+    expect(communities.get("r2")).toBe("durable:sReady:c1");
+    expect(communities.get("f1")).toMatch(/^fallback:sFallback:/);
   });
 
   it("never merges two spaces' fallback climbs even when both land on the same local index and an edge crosses the boundary", () => {
@@ -228,9 +228,9 @@ describe("communitiesFor", () => {
       ],
     );
     const communities = communitiesFor(m, noCartography);
-    expect(communities.get("hubA")).toBe("fallback:Alpha:0");
-    expect(communities.get("sA1")).toBe("fallback:Alpha:0");
-    expect(communities.get("hubB")).toBe("fallback:Beta:0");
+    expect(communities.get("hubA")).toBe("fallback:sAlpha:0");
+    expect(communities.get("sA1")).toBe("fallback:sAlpha:0");
+    expect(communities.get("hubB")).toBe("fallback:sBeta:0");
     expect(communities.get("hubA")).not.toBe(communities.get("hubB"));
   });
 
@@ -266,7 +266,7 @@ describe("communitiesFor", () => {
     expect(withPair("a", "b:c")).not.toBe(withPair("a:b", "c"));
   });
 
-  it("pools null-space nodes under a reserved sentinel that no real space (not even an empty-string one) can forge", () => {
+  it("never lets a daemon's empty-string-space cartography reach the unscoped bucket", () => {
     const m = modelOf(
       [
         node("a1", { space: "Work" }),
@@ -288,6 +288,97 @@ describe("communitiesFor", () => {
     expect(communities.get("a1")).toMatch(/^durable:/);
     expect(communities.get("n1")).toMatch(/^fallback:/);
     expect(communities.get("n1")).not.toBe(communities.get("a1"));
+  });
+
+  // The daemon does not forbid NUL-bearing space names (create_space rejects
+  // only its own UUID sentinel), so ANY in-band magic value standing for "no
+  // space" is forgeable by a real space literally named it. "No space" is
+  // therefore represented out of band — see spaceSegment.
+  const FORGED_SENTINEL = " unscoped";
+
+  /** Two triangles joined by one cross edge: the first in `space`, the second
+   *  unscoped (space null). */
+  function scopedTriangleBesideUnscoped(space: string | null): GraphModel {
+    return modelOf(
+      [
+        node("s1", { space }),
+        node("s2", { space }),
+        node("s3", { space }),
+        node("n1", { space: null }),
+        node("n2", { space: null }),
+        node("n3", { space: null }),
+      ],
+      [
+        edge("es1", "s1", "s2"),
+        edge("es2", "s2", "s3"),
+        edge("es3", "s3", "s1"),
+        edge("en1", "n1", "n2"),
+        edge("en2", "n2", "n3"),
+        edge("en3", "n3", "n1"),
+        edge("cross", "s1", "n1"),
+      ],
+    );
+  }
+
+  it("never bridges a real space named exactly the old no-space sentinel to the unscoped bucket", () => {
+    const communities = communitiesFor(
+      scopedTriangleBesideUnscoped(FORGED_SENTINEL),
+      new Map<string, SpaceCartography>(),
+    );
+    expect(communities.get("s1")).not.toBe(communities.get("n1"));
+    expect(bridgeEdgeTest(communities)("s1", "n1")).toBe(false);
+  });
+
+  it("still honors durable cartography for a space named exactly the old no-space sentinel", () => {
+    const cartographyBySpace = new Map<string, SpaceCartography>([
+      [
+        FORGED_SENTINEL,
+        {
+          status: "ready",
+          memberCommunityId: new Map([
+            ["s1", "c1"],
+            ["s2", "c1"],
+            ["s3", "c1"],
+          ]),
+        },
+      ],
+    ]);
+    const communities = communitiesFor(
+      scopedTriangleBesideUnscoped(FORGED_SENTINEL),
+      cartographyBySpace,
+    );
+    // The real space keeps its daemon assignment; the unscoped nodes stay on
+    // the client climb and never pick that assignment up.
+    expect(communities.get("s1")).toMatch(/^durable:/);
+    expect(communities.get("s1")).toBe(communities.get("s3"));
+    expect(communities.get("n1")).toMatch(/^fallback:/);
+    expect(bridgeEdgeTest(communities)("s1", "n1")).toBe(false);
+  });
+
+  it("pools null-space and empty-string-space nodes into ONE unscoped bucket that may bridge itself", () => {
+    const m = modelOf(
+      [
+        node("p1", { space: null }),
+        node("p2", { space: null }),
+        node("p3", { space: null }),
+        node("q1", { space: "" }),
+        node("q2", { space: "" }),
+        node("q3", { space: "" }),
+      ],
+      [
+        edge("ep1", "p1", "p2"),
+        edge("ep2", "p2", "p3"),
+        edge("ep3", "p3", "p1"),
+        edge("eq1", "q1", "q2"),
+        edge("eq2", "q2", "q3"),
+        edge("eq3", "q3", "q1"),
+        edge("cross", "p1", "q1"),
+      ],
+    );
+    const communities = communitiesFor(m, new Map<string, SpaceCartography>());
+    // One bucket, so two unscoped regions CAN bridge each other.
+    expect(communities.get("p1")).not.toBe(communities.get("q1"));
+    expect(bridgeEdgeTest(communities)("p1", "q1")).toBe(true);
   });
 });
 

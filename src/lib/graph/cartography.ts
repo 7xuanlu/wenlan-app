@@ -23,12 +23,34 @@ function pushInto<K, V>(map: Map<K, V[]>, key: K, value: V): void {
   else map.set(key, [value]);
 }
 
-// A node whose space is unknown (a relation-only synthesized neighbor —
-// see model.ts) still needs a partition to fall into; this sentinel stands
-// in for "no space". NUL-prefixed so no real space/domain string (daemon
-// data, never NUL-bearing) can forge it — "" alone isn't safe, since a
-// daemon could in principle report an empty-string space.
-export const UNSCOPED_SPACE = "\u0000unscoped";
+/**
+ * "No space" is represented OUT OF BAND, never as a magic string. The daemon
+ * forbids only its own UUID sentinel in `create_space`, so ANY in-band value
+ * — NUL-prefixed included — is forgeable by a real space literally named it,
+ * and a forged one lands in the null bucket: a cross-space bridge, which
+ * D13/App-PR forbids.
+ *
+ * The space component of every community id is therefore TAG-DISCRIMINATED:
+ * a real space renders as `s` + encodeURIComponent(space), the unscoped
+ * bucket as the bare token `u`. No real segment can spell `u` (they all start
+ * with `s`), and encodeURIComponent is injective, so two segments compare
+ * equal iff they came from the same space. Neither tag can contain an
+ * unescaped ":", so the 3-segment split below still reads the space back
+ * whole.
+ */
+const UNSCOPED_SEGMENT = "u";
+
+/** Everything that lands in the unscoped bucket: null, undefined, and the
+ *  empty string alike — an empty space string is no more a space than a
+ *  missing one. AtlasView asks this same question of raw entities for the
+ *  fallback badge, so the rule lives here rather than in two places. */
+export function isUnscopedSpace(space: string | null | undefined): boolean {
+  return !space;
+}
+
+function spaceSegment(space: string | null | undefined): string {
+  return isUnscopedSpace(space) ? UNSCOPED_SEGMENT : `s${encodeURIComponent(space as string)}`;
+}
 
 /**
  * Steepest-ascent peak-climbing over ONE space's nodes: every node follows
@@ -93,19 +115,20 @@ function climbFallback(nodeIds: string[], edges: { source: string; target: strin
  * more than one per space:
  *
  * - READY (`cartographyBySpace.get(space)?.status === "ready"`): the
- *   daemon's own community_id, namespaced `durable:<enc(space)>:
+ *   daemon's own community_id, namespaced `durable:<spaceSegment>:
  *   <enc(community_id)>`.
  * - a member the daemon's read didn't cover gets its own singleton under a
- *   SEPARATE top-level family, `unassigned:<enc(space)>:<enc(node id)>` —
+ *   SEPARATE top-level family, `unassigned:<spaceSegment>:<enc(node id)>` —
  *   never nested under `durable:`, so a daemon-assigned community_id that
  *   happens to spell out the literal string "unassigned:<id>" can't forge
  *   one (see the collision note below).
  * - anything else (not ready — no durable data published yet, or a
  *   partial-error): the client-side fallback climb, namespaced
- *   `fallback:<enc(space)>:<enc(local id)>`.
+ *   `fallback:<spaceSegment>:<enc(local id)>`.
  *
- * Every variable component (space, community_id, node id) is
- * encodeURIComponent-escaped before joining. That does two things:
+ * The space component is the tag-discriminated segment above (`s<enc>` or
+ * `u`); community_id and node id are encodeURIComponent-escaped before
+ * joining. That does two things:
  *   1. Collision-proofs the join itself — encodeURIComponent never leaves a
  *      literal ":" unescaped, so `<prefix>:<encSpace>:<encRest>` always
  *      splits back into exactly 3 parts; two different (space, id) pairs
@@ -126,39 +149,44 @@ export function communitiesFor(
   model: GraphModel,
   cartographyBySpace: Map<string, SpaceCartography>,
 ): Map<string, string> {
-  const bySpace = new Map<string, string[]>();
-  for (const node of model.nodes) pushInto(bySpace, node.space ?? UNSCOPED_SPACE, node.id);
+  // null keys the one unscoped bucket — an out-of-band key no space string
+  // can occupy, so the partition itself is unforgeable, not just the ids.
+  const bySpace = new Map<string | null, string[]>();
+  for (const node of model.nodes) {
+    pushInto(bySpace, isUnscopedSpace(node.space) ? null : node.space, node.id);
+  }
 
   const result = new Map<string, string>();
   for (const [space, nodeIds] of bySpace) {
-    const encSpace = encodeURIComponent(space);
-    const cartography = space !== UNSCOPED_SPACE ? cartographyBySpace.get(space) : undefined;
+    const segment = spaceSegment(space);
+    const cartography = space !== null ? cartographyBySpace.get(space) : undefined;
     if (cartography?.status === "ready" && cartography.memberCommunityId) {
       for (const id of nodeIds) {
         const communityId = cartography.memberCommunityId.get(id);
         result.set(
           id,
           communityId !== undefined
-            ? `durable:${encSpace}:${encodeURIComponent(communityId)}`
-            : `unassigned:${encSpace}:${encodeURIComponent(id)}`,
+            ? `durable:${segment}:${encodeURIComponent(communityId)}`
+            : `unassigned:${segment}:${encodeURIComponent(id)}`,
         );
       }
       continue;
     }
     const local = climbFallback(nodeIds, model.edges);
     for (const [id, localId] of local) {
-      result.set(id, `fallback:${encSpace}:${encodeURIComponent(localId)}`);
+      result.set(id, `fallback:${segment}:${encodeURIComponent(localId)}`);
     }
   }
   return result;
 }
 
-/** Extract the escaped space segment from a namespaced community id
- *  (`durable:<space>:…` / `fallback:<space>:…` / `unassigned:<space>:…`) —
- *  every family shares this exact 3-segment shape (see communitiesFor), so
- *  a single split index reads the space regardless of prefix. Compared
- *  still-encoded: encodeURIComponent is injective, so two ids carry the
- *  same original space iff their encoded segments are equal. */
+/** Extract the tagged space segment from a namespaced community id
+ *  (`durable:<segment>:…` / `fallback:<segment>:…` / `unassigned:<segment>:…`)
+ *  — every family shares this exact 3-segment shape (see communitiesFor), so
+ *  a single split index reads the space regardless of prefix. Compared as the
+ *  tagged segment itself: `s<enc>` is injective in the space and `u` is
+ *  unreachable from any real name, so two ids carry the same space iff their
+ *  segments are equal, and unscoped only ever matches unscoped. */
 function communitySpace(id: string): string {
   return id.split(":")[1] ?? "";
 }
