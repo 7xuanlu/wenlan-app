@@ -101,6 +101,47 @@ describe("fetchSpaceCartography", () => {
     expect(result).toEqual({ status: "partial-error", reason: "member-count-mismatch" });
   });
 
+  it("rejects a read that pads a community's member_count with duplicate rows instead of distinct members", async () => {
+    mockListCommunities.mockResolvedValue(
+      communitiesPage({ communities: [summary({ member_count: 2 })] }),
+    );
+    // The same node twice across two pages. Counting raw rows reads 2 and
+    // calls the read complete, while only ONE member is actually assigned.
+    mockListCommunityMembers
+      .mockResolvedValueOnce(
+        membersPage({
+          members: [member({ node_id: "e1" })],
+          next_cursor: { space: "Work", node_id: "e1" },
+        }),
+      )
+      .mockResolvedValueOnce(membersPage({ members: [member({ node_id: "e1" })] }));
+
+    const result = await fetchSpaceCartography("Work");
+
+    expect(result).toEqual({ status: "partial-error", reason: "member-count-mismatch" });
+  });
+
+  it("rejects a member row pointing at a community id no summary ever declared", async () => {
+    mockListCommunities.mockResolvedValue(
+      communitiesPage({ communities: [summary({ community_id: "c1", member_count: 1 })] }),
+    );
+    // c1 reconciles exactly, so a per-summary count check alone never even
+    // looks at the orphan row — but that row would still be handed to the
+    // renderer as a real community assignment.
+    mockListCommunityMembers.mockResolvedValue(
+      membersPage({
+        members: [
+          member({ node_id: "e1", community_id: "c1" }),
+          member({ node_id: "e2", community_id: "ghost" }),
+        ],
+      }),
+    );
+
+    const result = await fetchSpaceCartography("Work");
+
+    expect(result).toEqual({ status: "partial-error", reason: "unknown-community" });
+  });
+
   it("returns ready when every community's drained member count matches its summary", async () => {
     mockListCommunities.mockResolvedValue(
       communitiesPage({ communities: [summary({ member_count: 2 })] }),

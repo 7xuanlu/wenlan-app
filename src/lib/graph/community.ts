@@ -28,6 +28,7 @@ export type PartialErrorReason =
   | "generation-mismatch"
   | "interrupted"
   | "member-count-mismatch"
+  | "unknown-community"
   | "foreign-space";
 
 export interface SpaceCartography {
@@ -133,25 +134,37 @@ export async function fetchSpaceCartography(space: string): Promise<SpaceCartogr
   }
   const [currentGeneration] = generations;
 
+  const declaredCommunityIds = new Set(communities.rows.map((c) => c.community_id));
   const memberCommunityId = new Map<string, string>();
-  const actualCounts = new Map<string, number>();
+  // Members are collected as a SET of node ids per community, not a running
+  // row count: a daemon that repeats a row across pages must not be able to
+  // satisfy member_count with duplicates while memberCommunityId stays short.
+  const membersByCommunity = new Map<string, Set<string>>();
   for (const member of members.rows) {
     // Covers both a mid-pagination generation bump on the member stream and
     // a member page landing on a generation the summary read never saw.
     if (member.published_generation !== currentGeneration) {
       return { status: "partial-error", reason: "generation-mismatch" };
     }
+    // A row pointing at a community no summary declared is unreconcilable —
+    // the per-summary check below iterates summaries, so it would never
+    // inspect this row at all, yet the assignment would still reach the map.
+    if (!declaredCommunityIds.has(member.community_id)) {
+      return { status: "partial-error", reason: "unknown-community" };
+    }
     memberCommunityId.set(member.node_id, member.community_id);
-    actualCounts.set(member.community_id, (actualCounts.get(member.community_id) ?? 0) + 1);
+    const seen = membersByCommunity.get(member.community_id);
+    if (seen) seen.add(member.node_id);
+    else membersByCommunity.set(member.community_id, new Set([member.node_id]));
   }
 
   // Generation agreement alone doesn't prove the member read is COMPLETE for
   // each community — a daemon that drops rows mid-drain (or reports a stale
   // next_cursor: null) still agrees on generation while quietly delivering
   // fewer members than the summary promised. Reconcile every community's
-  // drained count against its own member_count before trusting the read.
+  // UNIQUE drained members against its own member_count before trusting it.
   for (const community of communities.rows) {
-    if ((actualCounts.get(community.community_id) ?? 0) !== community.member_count) {
+    if ((membersByCommunity.get(community.community_id)?.size ?? 0) !== community.member_count) {
       return { status: "partial-error", reason: "member-count-mismatch" };
     }
   }
