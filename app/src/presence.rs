@@ -47,6 +47,9 @@ const SECRET_LOCK_FILE_NAME: &str = "presence_secret.lock";
 /// Prefix every staging file carries, so a sweep can recognise the ones an
 /// earlier run abandoned. Deliberately distinct from the lock file's name.
 const STAGING_PREFIX: &str = "presence_secret.staging.";
+/// What the sweep matches on, which is wider than what it writes — see
+/// [`is_sweepable`]. Every sibling this module has ever created starts here.
+const SWEEP_PREFIX: &str = "presence_secret.";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PresenceAction {
@@ -232,20 +235,36 @@ fn lock_secret_dir(dir: &Path) -> Result<std::fs::File, PresenceError> {
     Ok(file)
 }
 
+/// Whether the sweep should collect `name`. Deliberately wider than the
+/// current staging prefix: an earlier build staged as
+/// `presence_secret.<pid>.<random>` with no `.staging.` segment, and those
+/// orphans are already on installs that ran it. Matching the whole
+/// `presence_secret.` family covers that scheme, the current one, and any
+/// later rename, so this predicate never has to be revisited.
+///
+/// Two names are spared. The secret itself is `presence_secret` with no
+/// trailing dot, so it cannot match in the first place; the lock file can,
+/// and is excluded by name.
+fn is_sweepable(name: &str) -> bool {
+    name.starts_with(SWEEP_PREFIX) && name != SECRET_LOCK_FILE_NAME
+}
+
 /// Deletes staging files an earlier run abandoned. Only correct with the lock
 /// held: the one staging file that might legitimately be in flight belongs to
 /// whoever holds the lock, and that is this caller, which has not staged
 /// anything yet.
+///
+/// Deletion failures are ignored on purpose. Every later load sweeps again
+/// under the same lock, so a file that could not be removed this time is
+/// simply retried next time — the condition heals itself, and failing the
+/// load over it would take presence minting down for a leftover file that
+/// harms nothing while it sits there.
 fn sweep_staging_files(dir: &Path) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
     for entry in entries.flatten() {
-        if entry
-            .file_name()
-            .to_str()
-            .is_some_and(|name| name.starts_with(STAGING_PREFIX))
-        {
+        if entry.file_name().to_str().is_some_and(is_sweepable) {
             let _ = std::fs::remove_file(entry.path());
         }
     }
@@ -809,15 +828,20 @@ mod tests {
         }
     }
 
-    /// Written out rather than taken from the implementation's constant on
-    /// purpose. This is the on-disk naming contract: a staging file a crashed
-    /// earlier build left behind carries the old name, and renaming the
-    /// constant must not quietly stop those from being swept.
-    #[cfg(unix)]
-    const STAGING_NAME_PREFIX: &str = "presence_secret.staging.";
+    /// Written out rather than taken from the implementation's constants on
+    /// purpose. These are the on-disk naming contract: a staging file a
+    /// crashed earlier build left behind carries whatever name that build
+    /// used, and renaming a constant must not quietly stop those from being
+    /// swept.
     #[cfg(unix)]
     const ORPHAN_STAGING_NAME: &str = "presence_secret.staging.999.00deadbeef00";
+    /// The scheme the first version of this code staged under: no `.staging.`
+    /// segment at all. Files with this shape are already on real installs.
+    #[cfg(unix)]
+    const LEGACY_ORPHAN_STAGING_NAME: &str = "presence_secret.999.00deadbeef00";
 
+    /// Everything in `dir` the sweep is supposed to have collected: any
+    /// `presence_secret.` sibling that is not the lock file.
     #[cfg(unix)]
     fn staging_files_in(dir: &Path) -> Vec<PathBuf> {
         std::fs::read_dir(dir)
@@ -826,7 +850,9 @@ mod tests {
             .filter(|path| {
                 path.file_name()
                     .and_then(|name| name.to_str())
-                    .is_some_and(|name| name.starts_with(STAGING_NAME_PREFIX))
+                    .is_some_and(|name| {
+                        name.starts_with("presence_secret.") && name != "presence_secret.lock"
+                    })
             })
             .collect()
     }
@@ -849,6 +875,33 @@ mod tests {
             "the orphaned staging file must be swept away"
         );
         assert!(staging_files_in(tmp.path()).is_empty());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_staging_file_from_the_first_naming_scheme_is_swept_away_too() {
+        // The first version of this code staged under `presence_secret.<pid>.
+        // <random>`, with no `.staging.` segment. Orphans in that shape are
+        // already sitting on installs that ran it, so a sweep that only knew
+        // the current name would leave them there for good.
+        let tmp = tempfile::tempdir().unwrap();
+        let legacy = tmp.path().join(LEGACY_ORPHAN_STAGING_NAME);
+        std::fs::write(&legacy, [7_u8; SECRET_LEN]).unwrap();
+
+        let secret =
+            load_or_create_secret_in(tmp.path()).expect("a legacy orphan must not block a load");
+
+        assert!(!legacy.exists(), "the legacy orphan must be swept away");
+        assert!(staging_files_in(tmp.path()).is_empty());
+
+        // The two files the sweep must never touch.
+        let secret_path = secret_path_in(tmp.path());
+        assert!(secret_path.exists(), "the secret itself must survive");
+        assert_eq!(std::fs::read(&secret_path).unwrap(), secret);
+        assert!(
+            tmp.path().join("presence_secret.lock").exists(),
+            "the lock file must survive",
+        );
     }
 
     #[test]
