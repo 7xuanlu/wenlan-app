@@ -26,7 +26,9 @@ export type PartialErrorReason =
   | "old-daemon"
   | "schema-mismatch"
   | "generation-mismatch"
-  | "interrupted";
+  | "interrupted"
+  | "member-count-mismatch"
+  | "foreign-space";
 
 export interface SpaceCartography {
   status: CartographyStatus;
@@ -122,6 +124,7 @@ export async function fetchSpaceCartography(space: string): Promise<SpaceCartogr
   const [currentGeneration] = generations;
 
   const memberCommunityId = new Map<string, string>();
+  const actualCounts = new Map<string, number>();
   for (const member of members.rows) {
     // Covers both a mid-pagination generation bump on the member stream and
     // a member page landing on a generation the summary read never saw.
@@ -129,6 +132,18 @@ export async function fetchSpaceCartography(space: string): Promise<SpaceCartogr
       return { status: "partial-error", reason: "generation-mismatch" };
     }
     memberCommunityId.set(member.node_id, member.community_id);
+    actualCounts.set(member.community_id, (actualCounts.get(member.community_id) ?? 0) + 1);
+  }
+
+  // Generation agreement alone doesn't prove the member read is COMPLETE for
+  // each community — a daemon that drops rows mid-drain (or reports a stale
+  // next_cursor: null) still agrees on generation while quietly delivering
+  // fewer members than the summary promised. Reconcile every community's
+  // drained count against its own member_count before trusting the read.
+  for (const community of communities.rows) {
+    if ((actualCounts.get(community.community_id) ?? 0) !== community.member_count) {
+      return { status: "partial-error", reason: "member-count-mismatch" };
+    }
   }
 
   return { status: "ready", memberCommunityId };
