@@ -530,6 +530,32 @@ describe("PagesOverview", () => {
     ).toBeInTheDocument();
   });
 
+  it("never lets a machine-driven refetch carry the human-intent marker", async () => {
+    // The explicit-browse commands tell the daemon a human asked for this
+    // read. TanStack Query would otherwise repeat them on network reconnect
+    // and on a timer, neither of which follows a human gesture, so both are
+    // turned off here. Mount-on-navigation and post-edit invalidation do
+    // follow a gesture and stay.
+    vi.mocked(listPagesExplicitBrowse).mockResolvedValue([]);
+    const { queryClient } = renderOverview();
+
+    await screen.findByText("No pages yet");
+
+    for (const status of ["active", "draft"]) {
+      const query = queryClient.getQueryCache().find({
+        queryKey: ["pages", status, "explicit-browse"],
+      });
+      expect(query, `no mounted query for ${status} explicit browse`).toBeDefined();
+      const options = query!.observers[0]!.options;
+      expect(options.refetchOnReconnect, `${status} refetchOnReconnect`).toBe(false);
+      expect(options.refetchOnWindowFocus, `${status} refetchOnWindowFocus`).toBe(false);
+      expect(
+        options.refetchInterval ?? false,
+        `${status} refetchInterval`,
+      ).toBe(false);
+    }
+  });
+
   it("shows no truth badge at all for a page the daemon left without truth state", async () => {
     vi.mocked(listPagesExplicitBrowse).mockImplementation(async (status) => status === "draft"
       ? []

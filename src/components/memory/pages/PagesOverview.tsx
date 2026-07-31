@@ -6,7 +6,11 @@ import { listRefinements, type DistillReviewResponse, type Page } from "../../..
 import ReviewDialog from "../ReviewDialog";
 import { reviewSuppressKey, useSuppressedReviewItems } from "../reviewSuppression";
 import { REVIEW_QUEUE_LIMIT, reviewItemId, type ReviewItem } from "../useReviewQueue";
-import { listAllActivePagesExplicitBrowse, listAllDraftPagesExplicitBrowse } from "./listAllPages";
+import {
+  EXPLICIT_BROWSE_QUERY_POLICY,
+  listAllActivePagesExplicitBrowse,
+  listAllDraftPagesExplicitBrowse,
+} from "./listAllPages";
 import {
   DISTILL_REVIEW_SESSION_QUERY_KEY,
   DISTILL_REVIEW_SESSION_QUERY_POLICY,
@@ -130,10 +134,12 @@ export function PagesOverview({
   const activePagesQuery = useQuery({
     queryKey: ["pages", "active", "explicit-browse"],
     queryFn: listAllActivePagesExplicitBrowse,
+    ...EXPLICIT_BROWSE_QUERY_POLICY,
   });
   const draftPagesQuery = useQuery({
     queryKey: ["pages", "draft", "explicit-browse"],
     queryFn: listAllDraftPagesExplicitBrowse,
+    ...EXPLICIT_BROWSE_QUERY_POLICY,
   });
   const pages = useMemo(
     () => Array.from(new Map([
