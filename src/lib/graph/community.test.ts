@@ -121,6 +121,32 @@ describe("fetchSpaceCartography", () => {
     expect(result).toEqual({ status: "partial-error", reason: "member-count-mismatch" });
   });
 
+  it("rejects a node the same read assigns to two different communities", async () => {
+    mockListCommunities.mockResolvedValue(
+      communitiesPage({
+        communities: [
+          summary({ community_id: "c1", member_count: 1 }),
+          summary({ community_id: "c2", member_count: 1 }),
+        ],
+      }),
+    );
+    // Both summaries reconcile at one member each, so counting alone is happy
+    // — but a node cannot be in two communities, and last-write-wins would
+    // quietly hand the renderer c2.
+    mockListCommunityMembers.mockResolvedValue(
+      membersPage({
+        members: [
+          member({ node_id: "e1", community_id: "c1" }),
+          member({ node_id: "e1", community_id: "c2" }),
+        ],
+      }),
+    );
+
+    const result = await fetchSpaceCartography("Work");
+
+    expect(result).toEqual({ status: "partial-error", reason: "conflicting-assignment" });
+  });
+
   it("rejects a member row pointing at a community id no summary ever declared", async () => {
     mockListCommunities.mockResolvedValue(
       communitiesPage({ communities: [summary({ community_id: "c1", member_count: 1 })] }),

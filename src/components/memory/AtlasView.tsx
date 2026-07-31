@@ -138,35 +138,15 @@ export default function AtlasView({ onNodeClick, focusEntityId, onBack }: AtlasV
 
   // D13/App-PR readiness, one fetch-and-classify per known space (community.ts):
   // cursor-paginated to exhaustion, generation-checked, never declared ready off
-  // a partial read. Keyed on ALL known spaces regardless of spaceFilter — the
-  // toolbar badge below is a whole-graph aggregate, not scoped to the filter.
+  // a partial read. Keyed on ALL known spaces regardless of spaceFilter, so
+  // one space's trouble stays visible while another is being viewed; the
+  // unscoped half of the badge is read off the filtered model instead (below).
   const { data: cartographyBySpace = new Map() } = useQuery({
     queryKey: ["constellation-cartography", spaces],
     queryFn: () => fetchCartographyForSpaces(spaces),
     enabled: spaces.length > 0,
     refetchInterval: 120_000,
   });
-  // Whatever lands in cartography.ts's unscoped bucket is always drawn on the
-  // fallback climb, so the badge must never read all-durable while any of it
-  // is on the map — even if every known space is ready. Two ways in, and the
-  // relation one alone is not enough: an entity's OWN space can be null or
-  // empty (model.ts's GraphNode.space), which no relation would reveal and
-  // which `spaces` above drops as falsy. Whole-graph like cartographyStatus
-  // below, not scoped to spaceFilter.
-  const hasUnscopedFallback = useMemo(() => {
-    const knownIds = new Set(entities.map((e: Entity) => e.id));
-    return (
-      entities.some((e: Entity) => isUnscopedSpace(e.space ?? e.domain)) ||
-      // A relation-only synthesized neighbor (model.ts's nodeFromRelation):
-      // whatever a detail's relation points at that isn't in `entities`.
-      details.some((d: EntityDetail) => d.relations.some((r) => !knownIds.has(r.entity_id)))
-    );
-  }, [entities, details]);
-  const cartographyStatus = useMemo(
-    () => aggregateCartographyStatus(cartographyBySpace, hasUnscopedFallback),
-    [cartographyBySpace, hasUnscopedFallback],
-  );
-
   // Scoping filters the model INPUTS: the space's own entities plus whatever
   // bridge neighbors their relations synthesize (those carry no space of their
   // own). Regions, counts, and insights all re-derive from the scoped model.
@@ -177,6 +157,25 @@ export default function AtlasView({ onNodeClick, focusEntityId, onBack }: AtlasV
       details.filter((d: EntityDetail) => (d.entity.space ?? d.entity.domain) === spaceFilter),
     );
   }, [entities, details, spaceFilter]);
+
+  // Anything in cartography.ts's unscoped bucket is drawn on the fallback
+  // climb, so the badge must never read all-durable while such a node is on
+  // the map. Asked of the RENDERED model — the very nodes communitiesFor
+  // partitions — so the badge and the drawn cartography cannot disagree.
+  // Reading the raw entity list instead misses the case the model CREATES
+  // rather than carries: under a space filter a relation to another space's
+  // entity keeps its endpoint while that entity is filtered away, so
+  // buildGraphModel synthesizes it with no space at all. Going through the
+  // model also covers the two unfiltered ways in — a relation-only neighbor,
+  // and an entity whose own space is null or empty.
+  const hasUnscopedFallback = useMemo(
+    () => model.nodes.some((n: GraphNode) => isUnscopedSpace(n.space)),
+    [model],
+  );
+  const cartographyStatus = useMemo(
+    () => aggregateCartographyStatus(cartographyBySpace, hasUnscopedFallback),
+    [cartographyBySpace, hasUnscopedFallback],
+  );
   const communities = useMemo(
     () => communitiesFor(model, cartographyBySpace),
     [model, cartographyBySpace],

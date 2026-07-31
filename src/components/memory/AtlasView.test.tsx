@@ -1053,6 +1053,86 @@ describe("AtlasView", () => {
     expect(await screen.findByText("Estimated regions")).toBeInTheDocument();
   });
 
+  // Scoping to a space drops the other space's entities from the model inputs
+  // but keeps the relations pointing at them, so buildGraphModel synthesizes
+  // those endpoints with space: null — real unscoped nodes, drawn on the
+  // fallback climb, that exist ONLY in the filtered model. A badge derived
+  // from the unfiltered entity list cannot see them and keeps claiming
+  // durable while the map shows otherwise.
+  it("badges the toolbar as estimated once a space filter synthesizes an unscoped bridge neighbor", async () => {
+    const entities = [
+      makeEntity({ id: "e1", name: "Alice", domain: "Work" }),
+      makeEntity({ id: "e2", name: "Bob", domain: "Personal" }),
+    ];
+    mockListEntities.mockResolvedValue(entities);
+    mockGetEntityDetail.mockImplementation(async (id: string) => ({
+      entity: entities.find((e) => e.id === id)!,
+      observations: [],
+      relations:
+        id === "e1"
+          ? [
+              {
+                id: "rel-1",
+                relation_type: "knows",
+                direction: "outgoing" as const,
+                entity_id: "e2",
+                entity_name: "Bob",
+                entity_type: "person",
+                source_agent: null,
+                created_at: Math.floor(Date.now() / 1000),
+              },
+            ]
+          : [],
+    }));
+    // Both spaces publish durable cartography, so nothing about the daemon
+    // reads is degraded — only the filtered view is.
+    const communityId = (space: string) => (space === "Work" ? "c1" : "c2");
+    const nodeId = (space: string) => (space === "Work" ? "e1" : "e2");
+    mockListCommunities.mockImplementation(async (space: string) => ({
+      schema_version: "community-read-v1" as const,
+      communities: [
+        {
+          community_id: communityId(space),
+          space,
+          display_name: null,
+          member_count: 1,
+          published_generation: 1,
+          algo_version: "v1",
+          projection_version: "v1",
+        },
+      ],
+      next_cursor: null,
+    }));
+    mockListCommunityMembers.mockImplementation(async (space: string) => ({
+      schema_version: "community-read-v1" as const,
+      members: [
+        {
+          space,
+          node_id: nodeId(space),
+          node_kind: "entity",
+          community_id: communityId(space),
+          published_generation: 1,
+          attachment: "core",
+        },
+      ],
+      next_cursor: null,
+    }));
+
+    renderWithQuery(<AtlasView />);
+    await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
+
+    // Unfiltered, every rendered node carries a ready space.
+    expect(await screen.findByText("Durable regions")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Space" }), {
+      target: { value: "Work" },
+    });
+
+    // Bob is now a synthesized, space-less endpoint on the map.
+    expect(await screen.findByText("Estimated regions")).toBeInTheDocument();
+    expect(screen.queryByText("Durable regions")).not.toBeInTheDocument();
+  });
+
   it("badges the toolbar with an alerting sync-issue state when a space's community read fails", async () => {
     mockOneSpaceEntity();
     mockListCommunities.mockRejectedValue(new Error("connection reset"));
