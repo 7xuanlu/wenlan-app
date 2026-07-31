@@ -6,7 +6,7 @@ import { listRefinements, type DistillReviewResponse, type Page } from "../../..
 import ReviewDialog from "../ReviewDialog";
 import { reviewSuppressKey, useSuppressedReviewItems } from "../reviewSuppression";
 import { REVIEW_QUEUE_LIMIT, reviewItemId, type ReviewItem } from "../useReviewQueue";
-import { listAllActivePages, listAllDraftPages } from "./listAllPages";
+import { listAllActivePagesExplicitBrowse, listAllDraftPagesExplicitBrowse } from "./listAllPages";
 import {
   DISTILL_REVIEW_SESSION_QUERY_KEY,
   DISTILL_REVIEW_SESSION_QUERY_POLICY,
@@ -128,12 +128,12 @@ export function PagesOverview({
   const [openCandidateId, setOpenCandidateId] = useState<string | null>(null);
   const { hiddenKeys, hide: hideReviewItem } = useSuppressedReviewItems();
   const activePagesQuery = useQuery({
-    queryKey: ["pages", "active"],
-    queryFn: listAllActivePages,
+    queryKey: ["pages", "active", "explicit-browse"],
+    queryFn: listAllActivePagesExplicitBrowse,
   });
   const draftPagesQuery = useQuery({
-    queryKey: ["pages", "draft"],
-    queryFn: listAllDraftPages,
+    queryKey: ["pages", "draft", "explicit-browse"],
+    queryFn: listAllDraftPagesExplicitBrowse,
   });
   const pages = useMemo(
     () => Array.from(new Map([
@@ -346,10 +346,19 @@ export function PagesOverview({
                   : "";
                 const isUnconfirmed = !isDraft && page.review_status === "unconfirmed";
                 const hasCleanupSuggestion = !isDraft && cleanupSuggestionIds.has(page.id);
+                // `truth` is absent until the daemon's cutover is live for this
+                // scope (generation 0 everywhere today), so this renders
+                // nothing in production yet — see PageTruth in lib/tauri.ts.
+                const truthLabel = page.truth
+                  ? t(page.truth.supported ? "pages.overview.truth.supported" : "pages.overview.truth.provisional")
+                  : null;
+                const isReviewed = page.truth?.human_reviewed ?? false;
                 const stateLabels = [
                   isDraft ? t("pages.overview.draft") : null,
                   isUnconfirmed ? t("pages.overview.unconfirmed") : null,
                   hasCleanupSuggestion ? t("pages.overview.cleanupSuggested") : null,
+                  truthLabel,
+                  isReviewed ? t("pages.overview.truth.reviewed") : null,
                 ].filter((label): label is string => label !== null);
                 const pageActionLabel = [
                   t("pages.overview.openPage", { title: displayTitle }),
@@ -387,6 +396,18 @@ export function PagesOverview({
                             {hasCleanupSuggestion && (
                               <span className="wiki-page-state wiki-page-state--attention">
                                 {t("pages.overview.cleanupSuggested")}
+                              </span>
+                            )}
+                            {truthLabel && (
+                              <span
+                                className={`wiki-page-state wiki-page-state--truth-${page.truth?.supported ? "supported" : "provisional"}`}
+                              >
+                                {truthLabel}
+                              </span>
+                            )}
+                            {isReviewed && (
+                              <span className="wiki-page-state wiki-page-state--reviewed">
+                                {t("pages.overview.truth.reviewed")}
                               </span>
                             )}
                           </span>

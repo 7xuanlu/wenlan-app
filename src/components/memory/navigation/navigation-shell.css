@@ -341,6 +341,18 @@
   color: var(--mem-accent-warm);
 }
 
+.wiki-page-state--truth-supported {
+  color: var(--mem-accent-sage);
+}
+
+.wiki-page-state--truth-provisional {
+  color: var(--mem-accent-amber);
+}
+
+.wiki-page-state--reviewed {
+  color: var(--mem-accent-sage);
+}
+
 .wiki-page-link-title {
   overflow: hidden;
   text-overflow: ellipsis;

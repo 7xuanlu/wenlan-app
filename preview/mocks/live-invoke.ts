@@ -500,6 +500,14 @@ export const HANDLERS: Record<string, (a: any) => Promise<unknown>> = {
     post("/api/pages/search", { query: a.query, limit: a.limit ?? null, page_type: null }).then(
       (r) => r.pages ?? r,
     ),
+  // M5 truth axes (App PR) — explicit-browse counterparts for the human
+  // "browse the wiki" surface only, mirroring WenlanClient's
+  // list_pages_explicit_browse/search_pages_explicit_browse in app/src/api.rs.
+  // Same underlying route as list_pages/search_pages; the only difference is
+  // the x-wenlan-truth-contract/x-wenlan-reader-intent headers the real app
+  // sends, which this preview harness's daemon proxy doesn't model.
+  list_pages_explicit_browse: (a) => HANDLERS.list_pages(a),
+  search_pages_explicit_browse: (a) => HANDLERS.search_pages(a),
   list_recent_pages: (a) =>
     get(`/api/pages/recent${qs({ limit: a?.limit, since_ms: a?.sinceMs })}`).then(
       (r) => r.pages ?? r,
