@@ -1002,6 +1002,107 @@ describe("AtlasView", () => {
     expect(badge).toHaveAttribute("role", "alert");
   });
 
+  // Same two-triangles-one-bridge shape as mockTwoTriangles, but every
+  // entity carries a space so the cartography query actually fires (a bare
+  // mockTwoTriangles never puts the constellation-cartography query in
+  // flight — see mockOneSpaceEntity's comment above).
+  function mockTwoTrianglesInSpace(domain = "wenlan-dev") {
+    const names: Record<string, string> = {
+      a1: "Alice",
+      a2: "Anna",
+      a3: "Ada",
+      b1: "Bob",
+      b2: "Ben",
+      b3: "Bea",
+    };
+    const entities = Object.entries(names).map(([id, name]) => makeEntity({ id, name, domain }));
+    const rel = (id: string, target: string) => ({
+      id,
+      relation_type: "knows",
+      direction: "outgoing" as const,
+      entity_id: target,
+      entity_name: names[target],
+      entity_type: "concept",
+      source_agent: null,
+      created_at: Math.floor(Date.now() / 1000),
+    });
+    mockListEntities.mockResolvedValue(entities);
+    mockGetEntityDetail.mockImplementation(async (id: string) => {
+      const relations =
+        id === "a1"
+          ? [rel("r1", "a2"), rel("r2", "a3"), rel("rb", "b1")]
+          : id === "a2"
+            ? [rel("r3", "a3")]
+            : id === "b1"
+              ? [rel("r4", "b2"), rel("r5", "b3")]
+              : id === "b2"
+                ? [rel("r6", "b3")]
+                : [];
+      return { entity: entities.find((e) => e.id === id)!, observations: [], relations };
+    });
+  }
+
+  it("re-renders bridges and hulls when a space's cartography status changes, without a full remount", async () => {
+    mockTwoTrianglesInSpace();
+    // Starts on the default (empty) fallback climb: two 3-cliques, "rb" is
+    // the one cross-region bridge.
+    const { qc } = renderWithQuery(<AtlasView />);
+    await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
+    const instance = capturedSigmaInstances[0];
+    const graph = instance.graph;
+
+    expect(graph.getEdgeAttribute("rb", "bridge")).toBe(true);
+
+    // Durable arrives: the daemon puts all 6 members in ONE community, so
+    // the bridge collapses into an ordinary intra-region edge.
+    const allOneCommunity = {
+      communities: {
+        schema_version: "community-read-v1" as const,
+        communities: [
+          {
+            community_id: "one",
+            space: "wenlan-dev",
+            display_name: null,
+            member_count: 6,
+            published_generation: 1,
+            algo_version: "v1",
+            projection_version: "v1",
+          },
+        ],
+        next_cursor: null,
+      },
+      members: {
+        schema_version: "community-read-v1" as const,
+        members: ["a1", "a2", "a3", "b1", "b2", "b3"].map((node_id) => ({
+          space: "wenlan-dev",
+          node_id,
+          node_kind: "entity",
+          community_id: "one",
+          published_generation: 1,
+          attachment: "core",
+        })),
+        next_cursor: null,
+      },
+    };
+    mockListCommunities.mockResolvedValue(allOneCommunity.communities);
+    mockListCommunityMembers.mockResolvedValue(allOneCommunity.members);
+    await qc.invalidateQueries({ queryKey: ["constellation-cartography"] });
+
+    await waitFor(() => expect(graph.getEdgeAttribute("rb", "bridge")).toBe(false));
+    // Same sigma instance and the same graphology graph — no remount, no
+    // layout/camera reset.
+    expect(capturedSigmaInstances).toHaveLength(1);
+    expect(capturedSigmaInstances[0].graph).toBe(graph);
+
+    // ready -> error: the space's community read starts failing, so the
+    // renderer must fall back to the client-side climb again — bridge back.
+    mockListCommunities.mockRejectedValue(new Error("connection reset"));
+    await qc.invalidateQueries({ queryKey: ["constellation-cartography"] });
+
+    await waitFor(() => expect(graph.getEdgeAttribute("rb", "bridge")).toBe(true));
+    expect(capturedSigmaInstances).toHaveLength(1);
+  });
+
   it("aggregates worst-first across spaces: one failed space taints the badge even though another is ready", async () => {
     const entities = [
       makeEntity({ id: "e1", domain: "wenlan-dev" }),
