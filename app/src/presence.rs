@@ -41,6 +41,12 @@ const CAPABILITY_TTL_SECS: u64 = 60;
 pub const PROTOCOL_VERSION: u32 = 1;
 
 const SECRET_FILE_NAME: &str = "presence_secret";
+/// Sibling file whose only job is to be locked. It never holds secret bytes,
+/// so its own permissions carry no weight beyond tidiness.
+const SECRET_LOCK_FILE_NAME: &str = "presence_secret.lock";
+/// Prefix every staging file carries, so a sweep can recognise the ones an
+/// earlier run abandoned. Deliberately distinct from the lock file's name.
+const STAGING_PREFIX: &str = "presence_secret.staging.";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PresenceAction {
@@ -157,23 +163,92 @@ fn random_bytes<const N: usize>() -> Result<[u8; N], PresenceError> {
 #[cfg(unix)]
 fn create_owner_only(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::os::unix::fs::OpenOptionsExt;
-    let mut file = std::fs::OpenOptions::new()
+    let file = std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
         .mode(0o600)
         .open(path)?;
-    std::io::Write::write_all(&mut file, bytes)?;
-    file.sync_all()
+    write_whole_file(path, file, bytes)
 }
 
 #[cfg(not(unix))]
 fn create_owner_only(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    let mut file = std::fs::OpenOptions::new()
+    let file = std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(path)?;
-    std::io::Write::write_all(&mut file, bytes)?;
-    file.sync_all()
+    write_whole_file(path, file, bytes)
+}
+
+/// Fills a file that was just created, and deletes it if the write does not
+/// complete. A half-written file is useless to every caller, and leaving it
+/// behind would mean one orphan per failed attempt — the sweep would collect
+/// it eventually, but only on the next successful load.
+fn write_whole_file(path: &Path, mut file: std::fs::File, bytes: &[u8]) -> std::io::Result<()> {
+    let written = std::io::Write::write_all(&mut file, bytes).and_then(|()| file.sync_all());
+    if written.is_err() {
+        let _ = std::fs::remove_file(path);
+    }
+    written
+}
+
+/// Opens (creating if needed) the file whose lock serialises access to the
+/// secret. Owner-only on Unix for tidiness; it holds no secret bytes.
+#[cfg(unix)]
+fn open_lock_file(path: &Path) -> std::io::Result<std::fs::File> {
+    use std::os::unix::fs::OpenOptionsExt;
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .mode(0o600)
+        .open(path)
+}
+
+#[cfg(not(unix))]
+fn open_lock_file(path: &Path) -> std::io::Result<std::fs::File> {
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(path)
+}
+
+/// Takes the exclusive lock covering the whole read-repair-replace-create
+/// sequence, and returns the handle that holds it — dropping the handle
+/// releases the lock.
+///
+/// Atomic single steps were not enough on their own. Two callers could both
+/// read the same corrupt file, both stage a replacement, and both rename;
+/// rename is atomic but it is not compare-and-swap, so the first caller
+/// walked away with a secret that the second had already replaced on disk,
+/// and every capability it went on to sign was unverifiable. Serialising the
+/// sequence is what makes "read it, decide, act" a single decision.
+fn lock_secret_dir(dir: &Path) -> Result<std::fs::File, PresenceError> {
+    std::fs::create_dir_all(dir).map_err(|e| unavailable("create", dir, &e))?;
+    let path = dir.join(SECRET_LOCK_FILE_NAME);
+    let file = open_lock_file(&path).map_err(|e| unavailable("open lock", &path, &e))?;
+    file.lock().map_err(|e| unavailable("lock", &path, &e))?;
+    Ok(file)
+}
+
+/// Deletes staging files an earlier run abandoned. Only correct with the lock
+/// held: the one staging file that might legitimately be in flight belongs to
+/// whoever holds the lock, and that is this caller, which has not staged
+/// anything yet.
+fn sweep_staging_files(dir: &Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        if entry
+            .file_name()
+            .to_str()
+            .is_some_and(|name| name.starts_with(STAGING_PREFIX))
+        {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
 }
 
 fn secret_path_in(dir: &Path) -> PathBuf {
@@ -242,7 +317,7 @@ fn owner_only_supported() -> Result<(), PresenceError> {
 fn stage_new_secret(dir: &Path) -> Result<(PathBuf, [u8; SECRET_LEN]), PresenceError> {
     let secret = random_bytes::<SECRET_LEN>()?;
     let path = dir.join(format!(
-        "{SECRET_FILE_NAME}.{}.{}",
+        "{STAGING_PREFIX}{}.{}",
         std::process::id(),
         hex(random_bytes::<8>()?)
     ));
@@ -281,6 +356,16 @@ const FIRST_USE_RETRIES: u32 = 4;
 /// app's own data directory) on first use.
 fn load_or_create_secret_in(dir: &Path) -> Result<[u8; SECRET_LEN], PresenceError> {
     owner_only_supported()?;
+    // Held for the whole sequence below, released when this handle drops.
+    let _lock = lock_secret_dir(dir)?;
+    sweep_staging_files(dir);
+    load_or_create_secret_locked(dir)
+}
+
+/// The read-repair-replace-create sequence itself, with the caller
+/// responsible for holding the lock. Split out only so the lock's scope is
+/// impossible to misread.
+fn load_or_create_secret_locked(dir: &Path) -> Result<[u8; SECRET_LEN], PresenceError> {
     let path = secret_path_in(dir);
     for _ in 0..FIRST_USE_RETRIES {
         match std::fs::read(&path) {
@@ -724,6 +809,85 @@ mod tests {
         }
     }
 
+    /// Written out rather than taken from the implementation's constant on
+    /// purpose. This is the on-disk naming contract: a staging file a crashed
+    /// earlier build left behind carries the old name, and renaming the
+    /// constant must not quietly stop those from being swept.
+    #[cfg(unix)]
+    const STAGING_NAME_PREFIX: &str = "presence_secret.staging.";
+    #[cfg(unix)]
+    const ORPHAN_STAGING_NAME: &str = "presence_secret.staging.999.00deadbeef00";
+
+    #[cfg(unix)]
+    fn staging_files_in(dir: &Path) -> Vec<PathBuf> {
+        std::fs::read_dir(dir)
+            .unwrap()
+            .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+            .filter(|path| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.starts_with(STAGING_NAME_PREFIX))
+            })
+            .collect()
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_staging_file_left_by_an_earlier_run_is_swept_away() {
+        // A run that dies between creating a staging file and putting it in
+        // place leaves a file holding a whole, live secret. Nothing else ever
+        // collects it, so they accumulate one per crash — each owner-only, but
+        // each a secret sitting in the data directory for good.
+        let tmp = tempfile::tempdir().unwrap();
+        let orphan = tmp.path().join(ORPHAN_STAGING_NAME);
+        std::fs::write(&orphan, [7_u8; SECRET_LEN]).unwrap();
+
+        load_or_create_secret_in(tmp.path()).expect("a stale staging file must not block a load");
+
+        assert!(
+            !orphan.exists(),
+            "the orphaned staging file must be swept away"
+        );
+        assert!(staging_files_in(tmp.path()).is_empty());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_load_waits_for_whoever_holds_the_lock() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        // Every decision about the secret — read it, repair it, replace a
+        // corrupt one, create the first — happens inside this lock, so two
+        // callers can never both act on the same observation.
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().to_path_buf();
+        let held = lock_secret_dir(&dir).expect("the lock is free to start with");
+
+        let (finished, waiting) = mpsc::channel();
+        let worker_dir = dir.clone();
+        let worker = std::thread::spawn(move || {
+            let secret = load_or_create_secret_in(&worker_dir).expect("the load succeeds");
+            finished.send(()).unwrap();
+            secret
+        });
+
+        assert!(
+            waiting.recv_timeout(Duration::from_millis(250)).is_err(),
+            "a load must not proceed while another caller holds the lock",
+        );
+
+        drop(held);
+
+        // If the lock were never released this join would hang rather than
+        // fail, which the test runner surfaces as a timeout.
+        let secret = worker
+            .join()
+            .expect("the waiting load finishes once the lock frees");
+        assert_eq!(secret.len(), SECRET_LEN);
+        assert!(staging_files_in(&dir).is_empty());
+    }
+
     #[test]
     #[cfg(unix)]
     fn a_corrupt_secret_file_is_replaced_whole_rather_than_written_through() {
@@ -744,9 +908,8 @@ mod tests {
         );
         assert_eq!(std::fs::read(&path).unwrap(), secret);
         assert_eq!(mode_of(&path), 0o600);
-        assert_eq!(
-            std::fs::read_dir(tmp.path()).unwrap().count(),
-            1,
+        assert!(
+            staging_files_in(tmp.path()).is_empty(),
             "no staging file is left behind",
         );
     }
@@ -787,9 +950,8 @@ mod tests {
             [9_u8; SECRET_LEN],
             "so every later mint signs with it",
         );
-        assert_eq!(
-            std::fs::read_dir(tmp.path()).unwrap().count(),
-            1,
+        assert!(
+            staging_files_in(tmp.path()).is_empty(),
             "the discarded secret leaves no staging file behind",
         );
     }
