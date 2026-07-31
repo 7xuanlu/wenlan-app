@@ -474,4 +474,72 @@ describe("PagesOverview", () => {
     expect(await screen.findByText("No pages yet")).toBeInTheDocument();
     expect(screen.queryByText("Create a space")).not.toBeInTheDocument();
   });
+
+  it("shows both truth axes whenever the daemon attached truth state", async () => {
+    vi.mocked(listPagesExplicitBrowse).mockImplementation(async (status) => status === "draft"
+      ? []
+      : [
+          page({
+            id: "weakest",
+            title: "Weakest state",
+            truth: { supported: false, human_reviewed: false },
+          }),
+          page({
+            id: "strongest",
+            title: "Strongest state",
+            truth: { supported: true, human_reviewed: true },
+          }),
+          page({
+            id: "supported-only",
+            title: "Supported only",
+            truth: { supported: true, human_reviewed: false },
+          }),
+          page({
+            id: "reviewed-only",
+            title: "Reviewed only",
+            truth: { supported: false, human_reviewed: true },
+          }),
+        ]);
+    renderOverview();
+
+    const rowFor = async (title: string) => {
+      const action = await screen.findByRole("button", { name: new RegExp(`^Open ${title}`) });
+      const row = action.closest("tr");
+      expect(row).not.toBeNull();
+      return row!;
+    };
+
+    const weakest = await rowFor("Weakest state");
+    expect(within(weakest).getByText("Provisional")).toBeInTheDocument();
+    expect(within(weakest).getByText("Unreviewed")).toBeInTheDocument();
+
+    const strongest = await rowFor("Strongest state");
+    expect(within(strongest).getByText("Supported")).toBeInTheDocument();
+    expect(within(strongest).getByText("Reviewed")).toBeInTheDocument();
+
+    const supportedOnly = await rowFor("Supported only");
+    expect(within(supportedOnly).getByText("Supported")).toBeInTheDocument();
+    expect(within(supportedOnly).getByText("Unreviewed")).toBeInTheDocument();
+
+    const reviewedOnly = await rowFor("Reviewed only");
+    expect(within(reviewedOnly).getByText("Provisional")).toBeInTheDocument();
+    expect(within(reviewedOnly).getByText("Reviewed")).toBeInTheDocument();
+
+    expect(
+      await screen.findByRole("button", { name: "Open Weakest state · Provisional · Unreviewed" }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows no truth badge at all for a page the daemon left without truth state", async () => {
+    vi.mocked(listPagesExplicitBrowse).mockImplementation(async (status) => status === "draft"
+      ? []
+      : [page({ id: "stateless", title: "No truth state" })]);
+    renderOverview();
+
+    const row = (await screen.findByRole("button", { name: "Open No truth state" })).closest("tr");
+    expect(row).not.toBeNull();
+    for (const label of ["Supported", "Provisional", "Reviewed", "Unreviewed"]) {
+      expect(within(row!).queryByText(label)).not.toBeInTheDocument();
+    }
+  });
 });

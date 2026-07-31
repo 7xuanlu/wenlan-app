@@ -346,19 +346,26 @@ export function PagesOverview({
                   : "";
                 const isUnconfirmed = !isDraft && page.review_status === "unconfirmed";
                 const hasCleanupSuggestion = !isDraft && cleanupSuggestionIds.has(page.id);
-                // `truth` is absent until the daemon's cutover is live for this
-                // scope (generation 0 everywhere today), so this renders
-                // nothing in production yet — see PageTruth in lib/tauri.ts.
-                const truthLabel = page.truth
-                  ? t(page.truth.supported ? "pages.overview.truth.supported" : "pages.overview.truth.provisional")
+                // The daemon attaches `truth` only to a reduced listing entry,
+                // so a page without it carries no state to show and gets no
+                // badge at all — see PageTruth in lib/tauri.ts. When it is
+                // present, both axes are always shown, including their
+                // negative sides: "Provisional" is a real answer, and so is
+                // "Unreviewed". Leaving either out would let an unreviewed
+                // page read the same as a page nobody has told us about.
+                const truth = page.truth ?? null;
+                const supportLabel = truth
+                  ? t(truth.supported ? "pages.overview.truth.supported" : "pages.overview.truth.provisional")
                   : null;
-                const isReviewed = page.truth?.human_reviewed ?? false;
+                const reviewLabel = truth
+                  ? t(truth.human_reviewed ? "pages.overview.truth.reviewed" : "pages.overview.truth.unreviewed")
+                  : null;
                 const stateLabels = [
                   isDraft ? t("pages.overview.draft") : null,
                   isUnconfirmed ? t("pages.overview.unconfirmed") : null,
                   hasCleanupSuggestion ? t("pages.overview.cleanupSuggested") : null,
-                  truthLabel,
-                  isReviewed ? t("pages.overview.truth.reviewed") : null,
+                  supportLabel,
+                  reviewLabel,
                 ].filter((label): label is string => label !== null);
                 const pageActionLabel = [
                   t("pages.overview.openPage", { title: displayTitle }),
@@ -398,16 +405,18 @@ export function PagesOverview({
                                 {t("pages.overview.cleanupSuggested")}
                               </span>
                             )}
-                            {truthLabel && (
+                            {truth && supportLabel && (
                               <span
-                                className={`wiki-page-state wiki-page-state--truth-${page.truth?.supported ? "supported" : "provisional"}`}
+                                className={`wiki-page-state wiki-page-state--truth-${truth.supported ? "supported" : "provisional"}`}
                               >
-                                {truthLabel}
+                                {supportLabel}
                               </span>
                             )}
-                            {isReviewed && (
-                              <span className="wiki-page-state wiki-page-state--reviewed">
-                                {t("pages.overview.truth.reviewed")}
+                            {truth && reviewLabel && (
+                              <span
+                                className={`wiki-page-state wiki-page-state--${truth.human_reviewed ? "reviewed" : "unreviewed"}`}
+                              >
+                                {reviewLabel}
                               </span>
                             )}
                           </span>

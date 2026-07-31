@@ -353,6 +353,10 @@
   color: var(--mem-accent-sage);
 }
 
+.wiki-page-state--unreviewed {
+  color: var(--mem-text-meta-aa);
+}
+
 .wiki-page-link-title {
   overflow: hidden;
   text-overflow: ellipsis;
