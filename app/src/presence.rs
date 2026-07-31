@@ -203,9 +203,35 @@ fn repair_permissions(path: &Path) -> Result<(), PresenceError> {
         .map_err(|e| unavailable("chmod", path, &e))
 }
 
+/// Non-Unix builds never reach this — [`owner_only_supported`] refuses first —
+/// but it has to exist for the module to compile on those targets.
 #[cfg(not(unix))]
 fn repair_permissions(_path: &Path) -> Result<(), PresenceError> {
     Ok(())
+}
+
+/// Whether this platform can actually keep the secret file readable by its
+/// owner alone. That guarantee is what the whole module rests on: without it
+/// the secret is readable by anyone the parent directory's access control
+/// admits, and a capability signed with it proves nothing about who asked.
+///
+/// Unix mode bits are the only implementation here, so every other platform
+/// gets an honest refusal rather than a secret with inherited permissions and
+/// a promise the module cannot keep. Windows needs real ACL work, which is
+/// scheduled separately; until it lands, presence minting is unavailable
+/// there. Refusing is the safe direction — no caller can mint a capability
+/// that would be trusted.
+#[cfg(unix)]
+fn owner_only_supported() -> Result<(), PresenceError> {
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn owner_only_supported() -> Result<(), PresenceError> {
+    Err(PresenceError::SecretUnavailable(
+        "owner-only secret protection is not implemented on this platform; minting unavailable"
+            .to_string(),
+    ))
 }
 
 /// Writes a fresh secret into its own new file in `dir` and returns that
@@ -254,6 +280,7 @@ const FIRST_USE_RETRIES: u32 = 4;
 /// (owner-only, `0600`, never exported or synced — a plain file under the
 /// app's own data directory) on first use.
 fn load_or_create_secret_in(dir: &Path) -> Result<[u8; SECRET_LEN], PresenceError> {
+    owner_only_supported()?;
     let path = secret_path_in(dir);
     for _ in 0..FIRST_USE_RETRIES {
         match std::fs::read(&path) {
@@ -405,7 +432,7 @@ pub fn mint(request: PresenceRequest) -> Result<PresenceCapability, PresenceErro
 /// matches and is unexpired at `now`. Exercises the same binding the daemon
 /// would eventually need to check; kept `pub(crate)` since nothing outside
 /// this module's tests calls it yet.
-#[cfg(test)]
+#[cfg(all(test, unix))]
 fn verify_in(cap: &PresenceCapability, secret: &[u8], now: u64) -> bool {
     if cap.is_expired_at(now) {
         return false;
@@ -444,6 +471,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn mint_creates_an_owner_only_secret_on_first_use() {
         let tmp = tempfile::tempdir().unwrap();
         let cap = mint_in(tmp.path(), 1_000, request()).expect("mint succeeds");
@@ -464,6 +492,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn mint_reuses_the_same_secret_across_calls() {
         let tmp = tempfile::tempdir().unwrap();
         let first = mint_in(tmp.path(), 1_000, request()).unwrap();
@@ -475,6 +504,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn a_capability_is_valid_only_for_its_own_action_and_target_t4() {
         let tmp = tempfile::tempdir().unwrap();
         let cap = mint_in(tmp.path(), 1_000, request()).unwrap();
@@ -491,6 +521,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn a_capability_is_valid_only_for_its_own_base_digest_t6() {
         let tmp = tempfile::tempdir().unwrap();
         let cap = mint_in(tmp.path(), 1_000, request()).unwrap();
@@ -502,6 +533,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn a_capability_expires_sixty_seconds_after_minting_t5() {
         let tmp = tempfile::tempdir().unwrap();
         let cap = mint_in(tmp.path(), 1_000, request()).unwrap();
@@ -602,6 +634,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn a_capability_from_a_rotated_secret_does_not_verify() {
         let tmp = tempfile::tempdir().unwrap();
         let cap = mint_in(tmp.path(), 1_000, request()).unwrap();
@@ -611,6 +644,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn debug_output_never_leaks_the_mac_or_the_raw_nonce_t9() {
         let tmp = tempfile::tempdir().unwrap();
         let cap = mint_in(tmp.path(), 1_000, request()).unwrap();
@@ -718,6 +752,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn a_corrupt_secret_file_is_replaced_rather_than_trusted() {
         let tmp = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(tmp.path()).unwrap();
@@ -728,6 +763,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn a_first_use_race_never_replaces_the_secret_that_won_it() {
         // The loser of a first-use race arrives at the create path with a
         // secret already in place. It must hand back the winner's secret, not
@@ -759,6 +795,31 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(unix))]
+    fn minting_refuses_where_owner_only_protection_is_not_implemented() {
+        // Everything above this test is gated to Unix because minting itself
+        // is. On any other platform the secret file would inherit whatever the
+        // parent directory's access control grants, so the module cannot keep
+        // the promise its threat model makes and says so instead.
+        let tmp = tempfile::tempdir().unwrap();
+
+        let result = mint_in(tmp.path(), 1_000, request());
+
+        match result {
+            Err(PresenceError::SecretUnavailable(message)) => assert!(
+                message.contains("not implemented on this platform"),
+                "the refusal must name its reason, got: {message}",
+            ),
+            _ => panic!("minting must refuse where the secret cannot be kept owner-only"),
+        }
+        assert!(
+            !secret_path_in(tmp.path()).exists(),
+            "and must not leave a secret file behind",
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
     fn secret_unavailable_surfaces_as_an_error_not_a_silent_bypass() {
         // A path segment that is a file, not a directory, makes
         // `create_dir_all` for anything under it fail — the closest portable
