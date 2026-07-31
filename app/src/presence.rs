@@ -298,12 +298,17 @@ fn load_or_create_secret_in(dir: &Path) -> Result<[u8; SECRET_LEN], PresenceErro
     )))
 }
 
-/// Appends one component as its big-endian `u32` byte length followed by its
+/// Appends one component as its big-endian `u64` byte length followed by its
 /// bytes. Nothing a component contains can be read as a boundary, because the
 /// boundary is a count read before the bytes rather than a value looked for
 /// inside them.
+///
+/// The width has to be wide enough that no length can wrap it. A `u32` prefix
+/// would have signed a component of 2^32 + n bytes the same as one of n bytes,
+/// putting the boundary confusion straight back. `usize as u64` cannot lose a
+/// value on any target this app builds for, so the widening is exact.
 fn push_component(out: &mut Vec<u8>, bytes: &[u8]) {
-    out.extend_from_slice(&(bytes.len() as u32).to_be_bytes());
+    out.extend_from_slice(&(bytes.len() as u64).to_be_bytes());
     out.extend_from_slice(bytes);
 }
 
@@ -335,7 +340,7 @@ fn signed_bytes(
     let mut out = Vec::new();
     push_component(&mut out, &protocol_version.to_be_bytes());
     push_component(&mut out, action.as_str().as_bytes());
-    out.extend_from_slice(&(target_ids.len() as u32).to_be_bytes());
+    out.extend_from_slice(&(target_ids.len() as u64).to_be_bytes());
     for target_id in target_ids {
         push_component(&mut out, target_id.as_bytes());
     }
@@ -542,6 +547,50 @@ mod tests {
             mac_over(&["a"], "b\u{2}c"),
             "a target id must not borrow bytes from the base digest",
         );
+    }
+
+    #[test]
+    fn the_signed_message_layout_is_pinned_byte_for_byte() {
+        // Every length prefix is a big-endian u64, written out literally here
+        // rather than recomputed, so narrowing a prefix cannot pass unnoticed.
+        // A prefix narrow enough to wrap makes the serializer non-injective
+        // again — the exact defect the length prefixes were added to close —
+        // and no practical test can feed it a component large enough to prove
+        // that directly, so the layout itself is what gets pinned.
+        let bytes = signed_bytes(
+            1,
+            PresenceAction::ReviewPage,
+            &["a".to_string()],
+            "d",
+            "c",
+            "o",
+            &[0xab],
+            1,
+            2,
+        );
+
+        let expected = concat!(
+            "0000000000000004",
+            "00000001", // protocol version 1, as a u32
+            "000000000000000b",
+            "7265766965775f70616765", // action "review_page"
+            "0000000000000001",       // one target id follows
+            "0000000000000001",
+            "61", // target id "a"
+            "0000000000000001",
+            "64", // base digest "d"
+            "0000000000000001",
+            "63", // caller "c"
+            "0000000000000001",
+            "6f", // operation "o"
+            "0000000000000001",
+            "ab", // nonce
+            "0000000000000008",
+            "0000000000000001", // minted at 1
+            "0000000000000008",
+            "0000000000000002", // expires at 2
+        );
+        assert_eq!(hex(&bytes), expected);
     }
 
     #[test]
