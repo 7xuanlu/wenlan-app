@@ -3,6 +3,7 @@ import { describe, it, expect, vi } from "vitest";
 import Graph from "graphology";
 import type { GraphModel, GraphNode, GraphEdge } from "./model";
 import type { GraphPalette } from "./palette";
+import type { SpaceCartography } from "./community";
 import {
   communitiesFor,
   bridgeEdgeTest,
@@ -39,7 +40,7 @@ function node(id: string, overrides: Partial<GraphNode> = {}): GraphNode {
     entityType: "concept",
     confirmed: true,
     degree: 0,
-    communityId: "communityId" in overrides ? (overrides.communityId as number | null) : null,
+    space: "space" in overrides ? (overrides.space as string | null) : null,
     createdAt: 100,
     updatedAt: 200,
   };
@@ -75,8 +76,10 @@ function twoTriangles(): GraphModel {
 }
 
 describe("communitiesFor", () => {
+  const noCartography = new Map<string, SpaceCartography>();
+
   it("splits two hub-bridged triangles into two communities instead of leaking across the bridge", () => {
-    const communities = communitiesFor(twoTriangles());
+    const communities = communitiesFor(twoTriangles(), noCartography);
     const a = [communities.get("a1"), communities.get("a2"), communities.get("a3")];
     const b = [communities.get("b1"), communities.get("b2"), communities.get("b3")];
     expect(new Set(a).size).toBe(1);
@@ -96,7 +99,7 @@ describe("communitiesFor", () => {
         edge("e6", "hubB", "t3"),
       ],
     );
-    const communities = communitiesFor(m);
+    const communities = communitiesFor(m, noCartography);
     expect(communities.get("s1")).toBe(communities.get("hubA"));
     expect(communities.get("s3")).toBe(communities.get("hubA"));
     expect(communities.get("t2")).toBe(communities.get("hubB"));
@@ -122,36 +125,118 @@ describe("communitiesFor", () => {
         edge("e8", "big", "shared"),
       ],
     );
-    const communities = communitiesFor(m);
+    const communities = communitiesFor(m, noCartography);
     expect(communities.get("shared")).toBe(communities.get("hub"));
   });
 
-  it("uses daemon community ids verbatim when any node carries one, and never groups the nulls", () => {
+  it("uses the daemon's community ids verbatim for a ready space, never falling back to the climb", () => {
     const m = modelOf(
       [
-        node("x1", { communityId: 7 }),
-        node("x2", { communityId: 7 }),
-        node("x3", { communityId: 9 }),
-        node("u1"),
-        node("u2"),
+        node("x1", { space: "Work" }),
+        node("x2", { space: "Work" }),
+        node("x3", { space: "Work" }),
+        node("u1", { space: "Work" }),
+        node("u2", { space: "Work" }),
       ],
-      // Heavily connected nulls — a fallback detector would group them; the
-      // daemon path must NOT.
+      // Heavily connected — a fallback climb would group these; the ready
+      // daemon read must win regardless of edge shape.
       [edge("e1", "u1", "u2"), edge("e2", "u1", "x1")],
     );
-    const communities = communitiesFor(m);
-    expect(communities.get("x1")).toBe(7);
-    expect(communities.get("x2")).toBe(7);
-    expect(communities.get("x3")).toBe(9);
+    const cartographyBySpace = new Map<string, SpaceCartography>([
+      [
+        "Work",
+        {
+          status: "ready",
+          memberCommunityId: new Map([
+            ["x1", "c7"],
+            ["x2", "c7"],
+            ["x3", "c9"],
+          ]),
+        },
+      ],
+    ]);
+    const communities = communitiesFor(m, cartographyBySpace);
+    expect(communities.get("x1")).toBe("durable:Work:c7");
+    expect(communities.get("x2")).toBe("durable:Work:c7");
+    expect(communities.get("x3")).toBe("durable:Work:c9");
+    // A member the daemon's read never covered still gets a durable-family
+    // id — a ready space must never mix durable and fallback ids.
+    expect(communities.get("u1")).toBe("durable:Work:unassigned:u1");
+    expect(communities.get("u2")).toBe("durable:Work:unassigned:u2");
     expect(communities.get("u1")).not.toBe(communities.get("u2"));
-    expect([7, 9]).not.toContain(communities.get("u1"));
-    expect([7, 9]).not.toContain(communities.get("u2"));
+  });
+
+  it("keeps a not-ready space on the client-side fallback climb, namespaced by space", () => {
+    const m = modelOf(
+      [node("a1", { space: "Work" }), node("a2", { space: "Work" }), node("a3", { space: "Work" })],
+      [edge("e1", "a1", "a2"), edge("e2", "a2", "a3"), edge("e3", "a3", "a1")],
+    );
+    const cartographyBySpace = new Map<string, SpaceCartography>([["Work", { status: "fallback" }]]);
+    const communities = communitiesFor(m, cartographyBySpace);
+    for (const id of ["a1", "a2", "a3"]) {
+      expect(communities.get(id)).toMatch(/^fallback:Work:/);
+    }
+  });
+
+  it("resolves each space independently in one render: one ready, one still on the fallback climb", () => {
+    const m = modelOf(
+      [
+        node("r1", { space: "Ready" }),
+        node("r2", { space: "Ready" }),
+        node("f1", { space: "Fallback" }),
+        node("f2", { space: "Fallback" }),
+        node("f3", { space: "Fallback" }),
+      ],
+      [edge("e1", "f1", "f2"), edge("e2", "f2", "f3"), edge("e3", "f3", "f1")],
+    );
+    const cartographyBySpace = new Map<string, SpaceCartography>([
+      [
+        "Ready",
+        {
+          status: "ready",
+          memberCommunityId: new Map([
+            ["r1", "c1"],
+            ["r2", "c1"],
+          ]),
+        },
+      ],
+    ]);
+    const communities = communitiesFor(m, cartographyBySpace);
+    expect(communities.get("r1")).toBe("durable:Ready:c1");
+    expect(communities.get("r2")).toBe("durable:Ready:c1");
+    expect(communities.get("f1")).toMatch(/^fallback:Fallback:/);
+  });
+
+  it("never merges two spaces' fallback climbs even when both land on the same local index and an edge crosses the boundary", () => {
+    const m = modelOf(
+      [
+        node("hubA", { space: "Alpha" }),
+        node("sA1", { space: "Alpha" }),
+        node("sA2", { space: "Alpha" }),
+        node("hubB", { space: "Beta" }),
+        node("sB1", { space: "Beta" }),
+        node("sB2", { space: "Beta" }),
+      ],
+      [
+        edge("ea1", "hubA", "sA1"),
+        edge("ea2", "hubA", "sA2"),
+        edge("eb1", "hubB", "sB1"),
+        edge("eb2", "hubB", "sB2"),
+        // Crosses the space boundary — must not factor into either climb.
+        edge("cross", "hubA", "hubB"),
+      ],
+    );
+    const communities = communitiesFor(m, noCartography);
+    expect(communities.get("hubA")).toBe("fallback:Alpha:0");
+    expect(communities.get("sA1")).toBe("fallback:Alpha:0");
+    expect(communities.get("hubB")).toBe("fallback:Beta:0");
+    expect(communities.get("hubA")).not.toBe(communities.get("hubB"));
   });
 });
 
 describe("bridgeEdgeTest", () => {
   it("flags only edges spanning two regions of at least 3 members", () => {
-    const communities = communitiesFor(twoTriangles());
+    const communities = communitiesFor(twoTriangles(), new Map<string, SpaceCartography>());
     const isBridge = bridgeEdgeTest(communities);
     expect(isBridge("a1", "b1")).toBe(true);
     expect(isBridge("a1", "a2")).toBe(false);
@@ -160,12 +245,12 @@ describe("bridgeEdgeTest", () => {
 
   it("does not dress an edge into a sub-region islet as a bridge", () => {
     // Community 0 has 3 members, community 1 only 2.
-    const communities = new Map<string, number>([
-      ["r1", 0],
-      ["r2", 0],
-      ["r3", 0],
-      ["p1", 1],
-      ["p2", 1],
+    const communities = new Map<string, string>([
+      ["r1", "0"],
+      ["r2", "0"],
+      ["r3", "0"],
+      ["p1", "1"],
+      ["p2", "1"],
     ]);
     const isBridge = bridgeEdgeTest(communities);
     expect(isBridge("r1", "p1")).toBe(false);
@@ -236,15 +321,15 @@ describe("communityRegions", () => {
         ["b1", "b3"],
       ],
     );
-    const communities = new Map<string, number>([
-      ["a1", 0],
-      ["a2", 0],
-      ["a3", 0],
-      ["a4", 0],
-      ["b1", 1],
-      ["b2", 1],
-      ["b3", 1],
-      ["tiny", 2],
+    const communities = new Map<string, string>([
+      ["a1", "0"],
+      ["a2", "0"],
+      ["a3", "0"],
+      ["a4", "0"],
+      ["b1", "1"],
+      ["b2", "1"],
+      ["b3", "1"],
+      ["tiny", "2"],
     ]);
     const regions = communityRegions(graph, communities);
     expect(regions).toHaveLength(2);
@@ -260,10 +345,10 @@ describe("communityRegions", () => {
       { id: "a1", x: 0, y: 0, label: "A" },
       { id: "a2", x: 1, y: 0, label: "B" },
     ]);
-    const communities = new Map<string, number>([
-      ["a1", 0],
-      ["a2", 0],
-      ["ghost", 0],
+    const communities = new Map<string, string>([
+      ["a1", "0"],
+      ["a2", "0"],
+      ["ghost", "0"],
     ]);
     // 3 mapped members but only 2 present -> below MIN_REGION_SIZE.
     expect(communityRegions(graph, communities)).toHaveLength(0);
@@ -287,7 +372,7 @@ describe("cartographyScene", () => {
       { id: "a", x: 3, y: 4, label: "A" },
       { id: "b", x: -1, y: 0, label: "B" },
     ]);
-    const scene = cartographyScene(graph, new Map([["a", 0], ["b", 1]]));
+    const scene = cartographyScene(graph, new Map([["a", "0"], ["b", "1"]]));
     expect(scene.maxNodeRadius).toBe(5);
     expect(scene.regions).toHaveLength(0);
   });
@@ -353,10 +438,10 @@ describe("drawCartography", () => {
         ["a1", "a3"],
       ],
     );
-    const communities = new Map<string, number>([
-      ["a1", 0],
-      ["a2", 0],
-      ["a3", 0],
+    const communities = new Map<string, string>([
+      ["a1", "0"],
+      ["a2", "0"],
+      ["a3", "0"],
     ]);
     return cartographyScene(graph, communities);
   }
@@ -439,14 +524,14 @@ describe("drawCartography", () => {
         ["b1", "b3"],
       ],
     );
-    const communities = new Map<string, number>([
-      ["a1", 0],
-      ["a2", 0],
-      ["a3", 0],
-      ["a4", 0],
-      ["b1", 1],
-      ["b2", 1],
-      ["b3", 1],
+    const communities = new Map<string, string>([
+      ["a1", "0"],
+      ["a2", "0"],
+      ["a3", "0"],
+      ["a4", "0"],
+      ["b1", "1"],
+      ["b2", "1"],
+      ["b3", "1"],
     ]);
     const { ctx, texts } = mockCtx();
     drawCartography(ctx, cartographyScene(graph, communities), identity, PALETTE);
@@ -459,7 +544,7 @@ describe("drawCartography", () => {
     const { ctx } = mockCtx();
     const half = (pos: { x: number; y: number }) => ({ x: pos.x / 2, y: pos.y / 2 });
     const graph = graphOf([{ id: "a", x: 300, y: 0, label: "A" }]);
-    drawCartography(ctx, cartographyScene(graph, new Map([["a", 0]])), half, PALETTE);
+    drawCartography(ctx, cartographyScene(graph, new Map([["a", "0"]])), half, PALETTE);
     const arc = ctx.arc as ReturnType<typeof vi.fn>;
     // maxNodeRadius 300 → outer ring 315 graph units → 157.5 at half scale.
     expect(arc.mock.calls[2][2]).toBeCloseTo(157.5, 5);
