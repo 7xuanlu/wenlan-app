@@ -155,6 +155,23 @@ describe("fetchSpaceCartography", () => {
     expect(result.status).toBe("ready");
   });
 
+  // Deliberate semantic, pinned so it can't be "fixed" by accident: a
+  // community the daemon declares as empty is an EXACT match at zero members,
+  // not a suspiciously short read. It stays ready (with nothing to assign) —
+  // unlike a wholly empty response, which means no durable data was published
+  // for this space at all and classifies as fallback.
+  it("treats a community declared with member_count 0 and no member rows as ready", async () => {
+    mockListCommunities.mockResolvedValue(
+      communitiesPage({ communities: [summary({ member_count: 0 })] }),
+    );
+    mockListCommunityMembers.mockResolvedValue(membersPage());
+
+    const result = await fetchSpaceCartography("Work");
+
+    expect(result.status).toBe("ready");
+    expect(result.memberCommunityId?.size).toBe(0);
+  });
+
   it("paginates both communities and members to exhaustion before deciding", async () => {
     mockListCommunities
       .mockResolvedValueOnce(
