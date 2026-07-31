@@ -231,6 +231,55 @@ struct OnDeviceModelRequest {
     model_id: String,
 }
 
+// ── Communities (M6 cartography) ────────────────────────────────────────
+// Wire shapes hand-mirrored from `crates/wenlan-types/src/communities.rs`
+// (`community-read-v1`): the community read routes are merged to the
+// daemon but the pinned wenlan-types 0.14.1 predates the crate module —
+// same situation as the page-map types above. Read-tolerant (no
+// `deny_unknown_fields`): the daemon's `scope` field on each response and
+// any future additions are ignored rather than rejected.
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CommunitySummary {
+    pub community_id: String,
+    pub space: String,
+    pub display_name: Option<String>,
+    pub member_count: u64,
+    pub published_generation: i64,
+    pub algo_version: String,
+    pub projection_version: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CommunityListResponse {
+    pub schema_version: String,
+    pub communities: Vec<CommunitySummary>,
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CommunityMember {
+    pub space: String,
+    pub node_id: String,
+    pub node_kind: String,
+    pub community_id: String,
+    pub published_generation: i64,
+    pub attachment: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CommunityMemberCursor {
+    pub space: String,
+    pub node_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CommunityMembersResponse {
+    pub schema_version: String,
+    pub members: Vec<CommunityMember>,
+    pub next_cursor: Option<CommunityMemberCursor>,
+}
+
 impl Default for WenlanClient {
     fn default() -> Self {
         Self::new()
@@ -765,6 +814,30 @@ impl WenlanClient {
             .map_err(|e| format!("Parse {}: {}", path, e))
     }
 
+    /// Like `get_json`, but on non-2xx returns `Err(json)` where json is
+    /// `{"status":<u16>,"error":"<body text>"}` (same envelope as
+    /// `page_map_call`) instead of a formatted string. The community
+    /// readiness engine needs the raw status to distinguish an old daemon
+    /// (404/405 — route doesn't exist yet) from any other failure.
+    async fn get_json_with_status<T: DeserializeOwned>(&self, path: &str) -> Result<T, String> {
+        let resp = self
+            .client
+            .get(self.url(path))
+            .send()
+            .await
+            .map_err(|e| format!("HTTP GET {}: {}", path, e))?;
+        let status = resp.status();
+        if !status.is_success() {
+            let text = resp.text().await.unwrap_or_default();
+            return Err(
+                serde_json::json!({ "status": status.as_u16(), "error": text }).to_string(),
+            );
+        }
+        resp.json()
+            .await
+            .map_err(|e| format!("Parse {}: {}", path, e))
+    }
+
     pub async fn get_page_map(&self, page_id: &str) -> Result<serde_json::Value, String> {
         let path = format!("/api/pages/{}/map", page_id);
         self.page_map_call(reqwest::Method::GET, &path, None).await
@@ -837,6 +910,50 @@ impl WenlanClient {
         let path = format!("/api/pages/{}/map", page_id);
         self.page_map_call(reqwest::Method::DELETE, &path, Some(body))
             .await
+    }
+
+    // ── Communities (M6 cartography) ────────────────────────────────────
+
+    pub async fn list_communities(
+        &self,
+        space: &str,
+        cursor: Option<&str>,
+        limit: Option<usize>,
+    ) -> Result<CommunityListResponse, String> {
+        let mut path = format!(
+            "/api/communities?space={}",
+            percent_encode_path_segment(space)
+        );
+        if let Some(cursor) = cursor {
+            path.push_str(&format!("&cursor={}", percent_encode_path_segment(cursor)));
+        }
+        if let Some(limit) = limit {
+            path.push_str(&format!("&limit={}", limit));
+        }
+        self.get_json_with_status(&path).await
+    }
+
+    pub async fn list_community_members(
+        &self,
+        space: &str,
+        cursor: Option<&CommunityMemberCursor>,
+        limit: Option<usize>,
+    ) -> Result<CommunityMembersResponse, String> {
+        let mut path = format!(
+            "/api/communities/members?space={}",
+            percent_encode_path_segment(space)
+        );
+        if let Some(cursor) = cursor {
+            path.push_str(&format!(
+                "&cursor_space={}&cursor_node_id={}",
+                percent_encode_path_segment(&cursor.space),
+                percent_encode_path_segment(&cursor.node_id)
+            ));
+        }
+        if let Some(limit) = limit {
+            path.push_str(&format!("&limit={}", limit));
+        }
+        self.get_json_with_status(&path).await
     }
 
     pub async fn test_llm(
@@ -2246,5 +2363,111 @@ mod tests {
             page.entries[0].incoming_source_ids.as_ref().unwrap(),
             &vec!["mem-1".to_string()]
         );
+    }
+
+    #[tokio::test]
+    async fn list_communities_builds_scoped_query_and_parses_the_response() {
+        let (base_url, request) = serve_json_once(
+            r#"{"schema_version":"community-read-v1","scope":{"kind":"space","name":"Work"},"communities":[{"community_id":"c1","space":"Work","display_name":"Core","member_count":5,"published_generation":3,"algo_version":"v1","projection_version":"v1"}],"next_cursor":"c1"}"#,
+        )
+        .await;
+        let client = WenlanClient {
+            client: reqwest::Client::new(),
+            base_url,
+        };
+
+        let response = client
+            .list_communities("Work", None, None)
+            .await
+            .expect("list_communities succeeds");
+
+        assert_eq!(response.schema_version, "community-read-v1");
+        assert_eq!(response.communities.len(), 1);
+        assert_eq!(response.communities[0].community_id, "c1");
+        assert_eq!(response.communities[0].published_generation, 3);
+        assert_eq!(response.next_cursor.as_deref(), Some("c1"));
+        let request = request.await.unwrap();
+        assert_eq!(
+            request.lines().next().unwrap_or_default(),
+            "GET /api/communities?space=Work HTTP/1.1"
+        );
+    }
+
+    #[tokio::test]
+    async fn list_communities_percent_encodes_space_and_cursor_and_appends_limit() {
+        let (base_url, request) = serve_json_once(
+            r#"{"schema_version":"community-read-v1","communities":[],"next_cursor":null}"#,
+        )
+        .await;
+        let client = WenlanClient {
+            client: reqwest::Client::new(),
+            base_url,
+        };
+
+        client
+            .list_communities("Work/Clients", Some("cursor?"), Some(50))
+            .await
+            .expect("list_communities succeeds");
+
+        let request = request.await.unwrap();
+        assert_eq!(
+            request.lines().next().unwrap_or_default(),
+            "GET /api/communities?space=Work%2FClients&cursor=cursor%3F&limit=50 HTTP/1.1"
+        );
+    }
+
+    #[tokio::test]
+    async fn list_community_members_builds_scoped_query_with_cursor_and_parses_the_response() {
+        let (base_url, request) = serve_json_once(
+            r#"{"schema_version":"community-read-v1","members":[{"space":"Work","node_id":"e1","node_kind":"entity","community_id":"c1","published_generation":3,"attachment":"core"}],"next_cursor":{"space":"Work","node_id":"e2"}}"#,
+        )
+        .await;
+        let client = WenlanClient {
+            client: reqwest::Client::new(),
+            base_url,
+        };
+
+        let cursor = CommunityMemberCursor {
+            space: "Work".to_string(),
+            node_id: "e0".to_string(),
+        };
+        let response = client
+            .list_community_members("Work", Some(&cursor), Some(25))
+            .await
+            .expect("list_community_members succeeds");
+
+        assert_eq!(response.members.len(), 1);
+        assert_eq!(response.members[0].node_id, "e1");
+        assert_eq!(response.members[0].published_generation, 3);
+        assert_eq!(
+            response.next_cursor,
+            Some(CommunityMemberCursor {
+                space: "Work".to_string(),
+                node_id: "e2".to_string(),
+            })
+        );
+        let request = request.await.unwrap();
+        assert_eq!(
+            request.lines().next().unwrap_or_default(),
+            "GET /api/communities/members?space=Work&cursor_space=Work&cursor_node_id=e0&limit=25 HTTP/1.1"
+        );
+    }
+
+    #[tokio::test]
+    async fn list_communities_surfaces_status_for_an_old_daemon_missing_the_route() {
+        let (base_url, _request) =
+            serve_response_once("404 Not Found", r#"{"error":"no route"}"#).await;
+        let client = WenlanClient {
+            client: reqwest::Client::new(),
+            base_url,
+        };
+
+        let err = client
+            .list_communities("Work", None, None)
+            .await
+            .expect_err("404 surfaces as an error");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&err).expect("status envelope is JSON");
+        assert_eq!(parsed["status"], 404);
     }
 }

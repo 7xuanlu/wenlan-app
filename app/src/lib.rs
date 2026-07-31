@@ -1338,6 +1338,9 @@ pub fn run() {
             search::put_page_map_layout,
             search::patch_page_map_edge,
             search::reset_page_map,
+            // Community commands (M6 cartography)
+            search::list_communities,
+            search::list_community_members,
             // Home delta feed commands
             search::list_recent_retrievals,
             search::list_recent_changes,
