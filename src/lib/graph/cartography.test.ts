@@ -159,10 +159,11 @@ describe("communitiesFor", () => {
     expect(communities.get("x1")).toBe("durable:Work:c7");
     expect(communities.get("x2")).toBe("durable:Work:c7");
     expect(communities.get("x3")).toBe("durable:Work:c9");
-    // A member the daemon's read never covered still gets a durable-family
-    // id — a ready space must never mix durable and fallback ids.
-    expect(communities.get("u1")).toBe("durable:Work:unassigned:u1");
-    expect(communities.get("u2")).toBe("durable:Work:unassigned:u2");
+    // A member the daemon's read never covered gets its own singleton under
+    // the separate `unassigned:` family (never nested under `durable:` —
+    // see communitiesFor's collision note).
+    expect(communities.get("u1")).toBe("unassigned:Work:u1");
+    expect(communities.get("u2")).toBe("unassigned:Work:u2");
     expect(communities.get("u1")).not.toBe(communities.get("u2"));
   });
 
@@ -232,6 +233,62 @@ describe("communitiesFor", () => {
     expect(communities.get("hubB")).toBe("fallback:Beta:0");
     expect(communities.get("hubA")).not.toBe(communities.get("hubB"));
   });
+
+  it("never collides a daemon community id containing 'unassigned:' with the generated unassigned-singleton id", () => {
+    const m = modelOf([node("e1", { space: "Work" }), node("e2", { space: "Work" })], []);
+    const cartographyBySpace = new Map<string, SpaceCartography>([
+      [
+        "Work",
+        {
+          status: "ready",
+          // e1 carries a daemon-assigned id that happens to spell out the
+          // OLD unassigned marker; e2's own read never covered it, so it
+          // gets the generated unassigned singleton — the two must never
+          // resolve to the same string.
+          memberCommunityId: new Map([["e1", "unassigned:e2"]]),
+        },
+      ],
+    ]);
+    const communities = communitiesFor(m, cartographyBySpace);
+    expect(communities.get("e1")).not.toBe(communities.get("e2"));
+  });
+
+  it("never collides two different (space, communityId) pairs that concatenate to the same string", () => {
+    const withPair = (space: string, communityId: string) => {
+      const m = modelOf([node("x", { space })], []);
+      const cartographyBySpace = new Map<string, SpaceCartography>([
+        [space, { status: "ready", memberCommunityId: new Map([["x", communityId]]) }],
+      ]);
+      return communitiesFor(m, cartographyBySpace).get("x");
+    };
+    // ("a", "b:c") and ("a:b", "c") concatenate to the identical raw string
+    // under an unescaped join — they must resolve to distinct ids.
+    expect(withPair("a", "b:c")).not.toBe(withPair("a:b", "c"));
+  });
+
+  it("pools null-space nodes under a reserved sentinel that no real space (not even an empty-string one) can forge", () => {
+    const m = modelOf(
+      [
+        node("a1", { space: "Work" }),
+        node("a2", { space: "Work" }),
+        node("a3", { space: "Work" }),
+        node("n1", { space: null }),
+      ],
+      [edge("e1", "a1", "a2"), edge("e2", "a2", "a3"), edge("e3", "a3", "a1")],
+    );
+    // Even if a daemon reported cartography under the literal empty string
+    // (the space GraphNode.space can never actually equal, but the sentinel
+    // must be immune to it regardless), a null-space node must never pick
+    // it up as if it were durable.
+    const cartographyBySpace = new Map<string, SpaceCartography>([
+      ["Work", { status: "ready", memberCommunityId: new Map([["a1", "c1"], ["a2", "c1"], ["a3", "c1"]]) }],
+      ["", { status: "ready", memberCommunityId: new Map([["n1", "c9"]]) }],
+    ]);
+    const communities = communitiesFor(m, cartographyBySpace);
+    expect(communities.get("a1")).toMatch(/^durable:/);
+    expect(communities.get("n1")).toMatch(/^fallback:/);
+    expect(communities.get("n1")).not.toBe(communities.get("a1"));
+  });
 });
 
 describe("bridgeEdgeTest", () => {
@@ -255,6 +312,33 @@ describe("bridgeEdgeTest", () => {
     const isBridge = bridgeEdgeTest(communities);
     expect(isBridge("r1", "p1")).toBe(false);
     expect(isBridge("r1", "missing")).toBe(false);
+  });
+
+  it("never bridges across a space boundary, even between two real regions of the required size", () => {
+    // Two 3-member regions, one per space, joined by a cross-space edge —
+    // namespacing alone makes their community ids differ (see
+    // communitiesFor), so without an explicit same-space check this reads
+    // as two distinct real regions and gets flagged a bridge.
+    const m = modelOf(
+      [
+        node("hubA", { space: "Alpha" }),
+        node("sA1", { space: "Alpha" }),
+        node("sA2", { space: "Alpha" }),
+        node("hubB", { space: "Beta" }),
+        node("sB1", { space: "Beta" }),
+        node("sB2", { space: "Beta" }),
+      ],
+      [
+        edge("ea1", "hubA", "sA1"),
+        edge("ea2", "hubA", "sA2"),
+        edge("eb1", "hubB", "sB1"),
+        edge("eb2", "hubB", "sB2"),
+        edge("cross", "hubA", "hubB"),
+      ],
+    );
+    const communities = communitiesFor(m, new Map<string, SpaceCartography>());
+    const isBridge = bridgeEdgeTest(communities);
+    expect(isBridge("hubA", "hubB")).toBe(false);
   });
 });
 

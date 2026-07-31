@@ -88,21 +88,38 @@ function climbFallback(nodeIds: string[], edges: { source: string; target: strin
 /**
  * Node id -> opaque community id, partitioned per space (D13/App-PR: no
  * region or bridge edge may span spaces). Each space is handled
- * independently and resolves to exactly one of two id families, never both:
+ * independently and resolves to exactly one of three id families, never
+ * more than one per space:
  *
  * - READY (`cartographyBySpace.get(space)?.status === "ready"`): the
- *   daemon's own community_id, namespaced `durable:<space>:<community_id>`.
- *   A member the daemon's read didn't cover gets `durable:<space>:unassigned:
- *   <node id>` — its own singleton, but still under the `durable:` family,
- *   so a ready space never mixes durable and fallback ids.
+ *   daemon's own community_id, namespaced `durable:<enc(space)>:
+ *   <enc(community_id)>`.
+ * - a member the daemon's read didn't cover gets its own singleton under a
+ *   SEPARATE top-level family, `unassigned:<enc(space)>:<enc(node id)>` —
+ *   never nested under `durable:`, so a daemon-assigned community_id that
+ *   happens to spell out the literal string "unassigned:<id>" can't forge
+ *   one (see the collision note below).
  * - anything else (not ready — no durable data published yet, or a
  *   partial-error): the client-side fallback climb, namespaced
- *   `fallback:<space>:<local id>`.
+ *   `fallback:<enc(space)>:<enc(local id)>`.
  *
- * The space prefix makes cross-space collision structural, not just
- * unlikely: two different spaces' community/local ids can never compare
- * equal, so bridgeEdgeTest and communityRegions can't accidentally group or
- * bridge across a space boundary.
+ * Every variable component (space, community_id, node id) is
+ * encodeURIComponent-escaped before joining. That does two things:
+ *   1. Collision-proofs the join itself — encodeURIComponent never leaves a
+ *      literal ":" unescaped, so `<prefix>:<encSpace>:<encRest>` always
+ *      splits back into exactly 3 parts; two different (space, id) pairs
+ *      can never concatenate to the same raw string the way an unescaped
+ *      join would (`("a","b:c")` vs `("a:b","c")`).
+ *   2. Keeps the three top-level prefixes (`durable:`, `unassigned:`,
+ *      `fallback:`) reserved: since escaped, space/id components can never
+ *      contain an unescaped ":", no daemon-controlled string can forge a
+ *      different family's prefix.
+ * Together, two different spaces' — or families' — community/local ids can
+ * never compare equal, so bridgeEdgeTest and communityRegions can't
+ * accidentally group members across a space boundary purely from id
+ * collision (bridgeEdgeTest also checks the space explicitly — see below —
+ * since namespacing alone only prevents accidental MERGING, not a
+ * cross-space pair from being flagged a bridge).
  */
 export function communitiesFor(
   model: GraphModel,
@@ -113,6 +130,7 @@ export function communitiesFor(
 
   const result = new Map<string, string>();
   for (const [space, nodeIds] of bySpace) {
+    const encSpace = encodeURIComponent(space);
     const cartography = space !== UNSCOPED_SPACE ? cartographyBySpace.get(space) : undefined;
     if (cartography?.status === "ready" && cartography.memberCommunityId) {
       for (const id of nodeIds) {
@@ -120,24 +138,41 @@ export function communitiesFor(
         result.set(
           id,
           communityId !== undefined
-            ? `durable:${space}:${communityId}`
-            : `durable:${space}:unassigned:${id}`,
+            ? `durable:${encSpace}:${encodeURIComponent(communityId)}`
+            : `unassigned:${encSpace}:${encodeURIComponent(id)}`,
         );
       }
       continue;
     }
     const local = climbFallback(nodeIds, model.edges);
-    for (const [id, localId] of local) result.set(id, `fallback:${space}:${localId}`);
+    for (const [id, localId] of local) {
+      result.set(id, `fallback:${encSpace}:${encodeURIComponent(localId)}`);
+    }
   }
   return result;
 }
 
+/** Extract the escaped space segment from a namespaced community id
+ *  (`durable:<space>:…` / `fallback:<space>:…` / `unassigned:<space>:…`) —
+ *  every family shares this exact 3-segment shape (see communitiesFor), so
+ *  a single split index reads the space regardless of prefix. Compared
+ *  still-encoded: encodeURIComponent is injective, so two ids carry the
+ *  same original space iff their encoded segments are equal. */
+function communitySpace(id: string): string {
+  return id.split(":")[1] ?? "";
+}
+
 /**
  * Per-edge bridge test, sizes precomputed once. A bridge spans two DIFFERENT
- * communities that are both real regions (>= MIN_REGION_SIZE members) — an
- * edge poking out of a 2-node islet is not map furniture. Community ids are
- * space-namespaced (see communitiesFor), so this can never flag an edge
- * that crosses a space boundary as a bridge between two same-space regions.
+ * communities, in the SAME space, that are both real regions
+ * (>= MIN_REGION_SIZE members) — an edge poking out of a 2-node islet is
+ * not map furniture, and a cross-space edge is never a bridge no matter how
+ * large the two communities are (D13/App-PR: no bridge may span spaces).
+ * Community ids are space-namespaced (see communitiesFor), which makes two
+ * same-space communities compare unequal when they should, but a
+ * cross-space PAIR also compares unequal — namespacing alone can't tell
+ * "different community" from "different space", so the space check below
+ * is required, not redundant.
  */
 export function bridgeEdgeTest(
   communities: Map<string, string>,
@@ -153,6 +188,7 @@ export function bridgeEdgeTest(
       a !== undefined &&
       b !== undefined &&
       a !== b &&
+      communitySpace(a) === communitySpace(b) &&
       (sizes.get(a) ?? 0) >= MIN_REGION_SIZE &&
       (sizes.get(b) ?? 0) >= MIN_REGION_SIZE
     );
