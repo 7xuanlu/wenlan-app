@@ -150,52 +150,152 @@ fn random_bytes<const N: usize>() -> Result<[u8; N], PresenceError> {
     Ok(buf)
 }
 
+/// Creates a file that does not exist yet, owner-only from the moment it
+/// does, and writes `bytes` into it. `create_new` is what makes this safe to
+/// point at a shared directory: it fails rather than opening something
+/// another writer is already using.
 #[cfg(unix)]
-fn write_owner_only(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+fn create_owner_only(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::os::unix::fs::OpenOptionsExt;
     let mut file = std::fs::OpenOptions::new()
         .write(true)
-        .create(true)
-        .truncate(true)
+        .create_new(true)
         .mode(0o600)
         .open(path)?;
     std::io::Write::write_all(&mut file, bytes)?;
-    // Belt-and-braces: `mode()` only governs creation, so a pre-existing file
-    // with looser permissions from an older build is tightened explicitly.
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+    file.sync_all()
 }
 
 #[cfg(not(unix))]
-fn write_owner_only(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    std::fs::write(path, bytes)
+fn create_owner_only(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)?;
+    std::io::Write::write_all(&mut file, bytes)?;
+    file.sync_all()
 }
 
 fn secret_path_in(dir: &Path) -> PathBuf {
     dir.join(SECRET_FILE_NAME)
 }
 
+fn unavailable(what: &str, path: &Path, error: &impl std::fmt::Display) -> PresenceError {
+    PresenceError::SecretUnavailable(format!("{what} {}: {error}", path.display()))
+}
+
+/// Tightens an existing secret file to `0600` if an older build, an umask, or
+/// a restore from backup left it looser. Refusing when the repair fails is
+/// deliberate: a secret this process cannot make owner-only is one it cannot
+/// promise anything about.
+#[cfg(unix)]
+fn repair_permissions(path: &Path) -> Result<(), PresenceError> {
+    use std::os::unix::fs::PermissionsExt;
+    let mode = std::fs::metadata(path)
+        .map_err(|e| unavailable("stat", path, &e))?
+        .permissions()
+        .mode()
+        & 0o777;
+    if mode == 0o600 {
+        return Ok(());
+    }
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+        .map_err(|e| unavailable("chmod", path, &e))
+}
+
+#[cfg(not(unix))]
+fn repair_permissions(_path: &Path) -> Result<(), PresenceError> {
+    Ok(())
+}
+
+/// Writes a fresh secret into its own new file in `dir` and returns that
+/// file's path alongside the secret. The staging file is owner-only from
+/// creation and belongs to this call alone, so the caller can put it in
+/// place — by link or by rename — without the target path ever holding a
+/// half-written secret or wearing looser permissions than `0600`.
+fn stage_new_secret(dir: &Path) -> Result<(PathBuf, [u8; SECRET_LEN]), PresenceError> {
+    let secret = random_bytes::<SECRET_LEN>()?;
+    let path = dir.join(format!(
+        "{SECRET_FILE_NAME}.{}.{}",
+        std::process::id(),
+        hex(random_bytes::<8>()?)
+    ));
+    create_owner_only(&path, &secret).map_err(|e| unavailable("stage", &path, &e))?;
+    Ok((path, secret))
+}
+
+/// Creates the secret file if and only if nothing is there yet, and returns
+/// the new secret. `Ok(None)` means another caller got there first — its
+/// secret is now the one every capability must verify against, so this one is
+/// discarded rather than forced into place.
+///
+/// The link is what makes that decision the filesystem's rather than ours:
+/// `hard_link` refuses an existing target, and it publishes the staged file
+/// whole, so the secret path never appears half-written to anyone reading it.
+fn create_secret_no_overwrite(dir: &Path) -> Result<Option<[u8; SECRET_LEN]>, PresenceError> {
+    std::fs::create_dir_all(dir).map_err(|e| unavailable("create", dir, &e))?;
+    let path = secret_path_in(dir);
+    let (staged, secret) = stage_new_secret(dir)?;
+    let outcome = match std::fs::hard_link(&staged, &path) {
+        Ok(()) => Ok(Some(secret)),
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Ok(None),
+        Err(e) => Err(unavailable("link", &path, &e)),
+    };
+    let _ = std::fs::remove_file(&staged);
+    outcome
+}
+
+/// How many times to re-read after losing a first-use race. Each pass can
+/// only lose to a different caller creating the file, so a handful is far
+/// more than the situation can produce.
+const FIRST_USE_RETRIES: u32 = 4;
+
 /// Loads the per-install presence secret, generating and persisting one
 /// (owner-only, `0600`, never exported or synced — a plain file under the
 /// app's own data directory) on first use.
 fn load_or_create_secret_in(dir: &Path) -> Result<[u8; SECRET_LEN], PresenceError> {
     let path = secret_path_in(dir);
-    if let Ok(bytes) = std::fs::read(&path) {
-        if bytes.len() == SECRET_LEN {
-            let mut secret = [0_u8; SECRET_LEN];
-            secret.copy_from_slice(&bytes);
-            return Ok(secret);
+    for _ in 0..FIRST_USE_RETRIES {
+        match std::fs::read(&path) {
+            Ok(bytes) if bytes.len() == SECRET_LEN => {
+                repair_permissions(&path)?;
+                let mut secret = [0_u8; SECRET_LEN];
+                secret.copy_from_slice(&bytes);
+                return Ok(secret);
+            }
+            Ok(_) => {
+                // Wrong length means corrupt, not a partial write: the create
+                // path publishes by link, so the secret path only ever
+                // appears whole. Replacing it invalidates any outstanding
+                // capability — acceptable per D7 §5 (rotation needs no drain;
+                // capabilities live 60s) — but the replacement is staged and
+                // renamed rather than truncated in place, so the new secret is
+                // never for an instant sitting in a file that carries the old
+                // file's looser permissions.
+                let (staged, secret) = stage_new_secret(dir)?;
+                std::fs::rename(&staged, &path).map_err(|e| {
+                    let _ = std::fs::remove_file(&staged);
+                    unavailable("replace", &path, &e)
+                })?;
+                return Ok(secret);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                if let Some(secret) = create_secret_no_overwrite(dir)? {
+                    return Ok(secret);
+                }
+                // Lost the race; read the winner's secret on the next pass.
+            }
+            // Permission denied, an I/O error, anything that is not "no such
+            // file": refuse. Regenerating here would destroy a secret that is
+            // still in use and that outstanding capabilities still verify
+            // against, on nothing more than a transient failure to read it.
+            Err(e) => return Err(unavailable("read", &path, &e)),
         }
-        // Wrong length: treat as corrupt rather than trusting a truncated or
-        // concatenated secret. Falls through to regeneration below, which
-        // invalidates any outstanding capability — acceptable per D7 §5
-        // (rotation needs no drain; capabilities live 60s).
     }
-    std::fs::create_dir_all(dir)
-        .map_err(|e| PresenceError::SecretUnavailable(format!("create {}: {e}", dir.display())))?;
-    let secret = random_bytes::<SECRET_LEN>()?;
-    write_owner_only(&path, &secret)
-        .map_err(|e| PresenceError::SecretUnavailable(format!("write {}: {e}", path.display())))?;
-    Ok(secret)
+    Err(PresenceError::SecretUnavailable(format!(
+        "{}: lost the first-use race {FIRST_USE_RETRIES} times",
+        path.display()
+    )))
 }
 
 /// Appends one component as its big-endian `u32` byte length followed by its
@@ -475,6 +575,99 @@ mod tests {
         assert!(debug_output.contains(&cap.nonce_digest()));
     }
 
+    #[cfg(unix)]
+    fn mode_of(path: &Path) -> u32 {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+    }
+
+    #[cfg(unix)]
+    fn set_mode(path: &Path, mode: u32) {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
+    }
+
+    /// True when the process can read `path` despite its mode bits saying
+    /// otherwise — i.e. it is running as root, where there is no such thing
+    /// as an unreadable file to test against.
+    #[cfg(unix)]
+    fn mode_bits_are_ignored(path: &Path) -> bool {
+        std::fs::read(path).is_ok()
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_loosely_permissioned_secret_file_is_tightened_before_it_is_used() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = secret_path_in(tmp.path());
+        std::fs::write(&path, [9_u8; SECRET_LEN]).unwrap();
+        set_mode(&path, 0o644);
+
+        let secret = load_or_create_secret_in(tmp.path()).expect("an existing secret is usable");
+
+        assert_eq!(secret, [9_u8; SECRET_LEN], "the existing secret is kept");
+        assert_eq!(mode_of(&path), 0o600, "and its permissions are repaired");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_secret_that_cannot_be_read_refuses_instead_of_regenerating() {
+        // Write-only is the case that separates the two behaviours. At mode
+        // 0o000 a regenerating implementation fails anyway, because it cannot
+        // open the file for writing either; at 0o200 it succeeds, silently
+        // destroying a secret that outstanding capabilities still verify
+        // against. A read error that is not "no such file" must refuse.
+        for mode in [0o000, 0o200] {
+            let tmp = tempfile::tempdir().unwrap();
+            let path = secret_path_in(tmp.path());
+            std::fs::write(&path, [9_u8; SECRET_LEN]).unwrap();
+            set_mode(&path, mode);
+            if mode_bits_are_ignored(&path) {
+                return;
+            }
+
+            let result = mint_in(tmp.path(), 1_000, request());
+            assert!(
+                matches!(result, Err(PresenceError::SecretUnavailable(_))),
+                "mode {mode:o} must make minting unavailable, not regenerate",
+            );
+
+            set_mode(&path, 0o600);
+            assert_eq!(
+                std::fs::read(&path).unwrap(),
+                [9_u8; SECRET_LEN],
+                "mode {mode:o} must leave the unreadable secret untouched",
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_corrupt_secret_file_is_replaced_whole_rather_than_written_through() {
+        use std::os::unix::fs::MetadataExt;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let path = secret_path_in(tmp.path());
+        std::fs::write(&path, b"too-short").unwrap();
+        set_mode(&path, 0o644);
+        let corrupt_inode = std::fs::metadata(&path).unwrap().ino();
+
+        let secret = load_or_create_secret_in(tmp.path()).expect("a corrupt file is replaced");
+
+        assert_ne!(
+            std::fs::metadata(&path).unwrap().ino(),
+            corrupt_inode,
+            "the new secret must land in a fresh owner-only file, never in the loose one",
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), secret);
+        assert_eq!(mode_of(&path), 0o600);
+        assert_eq!(
+            std::fs::read_dir(tmp.path()).unwrap().count(),
+            1,
+            "no staging file is left behind",
+        );
+    }
+
     #[test]
     fn a_corrupt_secret_file_is_replaced_rather_than_trusted() {
         let tmp = tempfile::tempdir().unwrap();
@@ -483,6 +676,37 @@ mod tests {
 
         let secret = load_or_create_secret_in(tmp.path()).expect("regenerates instead of erroring");
         assert_eq!(secret.len(), SECRET_LEN);
+    }
+
+    #[test]
+    fn a_first_use_race_never_replaces_the_secret_that_won_it() {
+        // The loser of a first-use race arrives at the create path with a
+        // secret already in place. It must hand back the winner's secret, not
+        // its own: a caller holding a capability signed with a secret that no
+        // longer exists holds a capability nothing can verify.
+        let tmp = tempfile::tempdir().unwrap();
+        let path = secret_path_in(tmp.path());
+        std::fs::write(&path, [9_u8; SECRET_LEN]).unwrap();
+
+        let outcome =
+            create_secret_no_overwrite(tmp.path()).expect("losing a race is not an error");
+
+        assert!(outcome.is_none(), "the existing secret must win");
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            [9_u8; SECRET_LEN],
+            "and must survive untouched",
+        );
+        assert_eq!(
+            load_or_create_secret_in(tmp.path()).unwrap(),
+            [9_u8; SECRET_LEN],
+            "so every later mint signs with it",
+        );
+        assert_eq!(
+            std::fs::read_dir(tmp.path()).unwrap().count(),
+            1,
+            "the discarded secret leaves no staging file behind",
+        );
     }
 
     #[test]
