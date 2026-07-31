@@ -65,6 +65,13 @@ async function fetchAllCommunities(space: string): Promise<PageResult<CommunityS
     if (response.schema_version !== COMMUNITY_READ_SCHEMA_VERSION) {
       return { reason: "schema-mismatch" };
     }
+    // The daemon's `scope` isn't threaded through the Tauri command today
+    // (see app/src/api.rs's CommunityListResponse) — checking each row's own
+    // `space` field is what actually catches a daemon serving the wrong
+    // scope instead of silently mixing it into this space's read.
+    if (response.communities.some((c) => c.space !== space)) {
+      return { reason: "foreign-space" };
+    }
     rows.push(...response.communities);
     if (response.next_cursor === null) return { rows };
     cursor = response.next_cursor;
@@ -85,6 +92,9 @@ async function fetchAllMembers(space: string): Promise<PageResult<CommunityMembe
     }
     if (response.schema_version !== COMMUNITY_READ_SCHEMA_VERSION) {
       return { reason: "schema-mismatch" };
+    }
+    if (response.members.some((m) => m.space !== space)) {
+      return { reason: "foreign-space" };
     }
     rows.push(...response.members);
     if (response.next_cursor === null) return { rows };

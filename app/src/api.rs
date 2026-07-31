@@ -236,8 +236,17 @@ struct OnDeviceModelRequest {
 // (`community-read-v1`): the community read routes are merged to the
 // daemon but the pinned wenlan-types 0.14.1 predates the crate module —
 // same situation as the page-map types above. Read-tolerant (no
-// `deny_unknown_fields`): the daemon's `scope` field on each response and
-// any future additions are ignored rather than rejected.
+// `deny_unknown_fields`): any future additions are ignored rather than
+// rejected. `scope` is carried (not ignored) — these structs are
+// re-serialized verbatim for the frontend by the Tauri commands below, so a
+// field this struct doesn't declare doesn't just go unread here, it's
+// dropped from what the frontend ever sees.
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CommunityScope {
+    pub kind: String,
+    pub name: String,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CommunitySummary {
@@ -253,6 +262,8 @@ pub struct CommunitySummary {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CommunityListResponse {
     pub schema_version: String,
+    #[serde(default)]
+    pub scope: Option<CommunityScope>,
     pub communities: Vec<CommunitySummary>,
     pub next_cursor: Option<String>,
 }
@@ -276,6 +287,8 @@ pub struct CommunityMemberCursor {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CommunityMembersResponse {
     pub schema_version: String,
+    #[serde(default)]
+    pub scope: Option<CommunityScope>,
     pub members: Vec<CommunityMember>,
     pub next_cursor: Option<CommunityMemberCursor>,
 }
@@ -2386,11 +2399,43 @@ mod tests {
         assert_eq!(response.communities[0].community_id, "c1");
         assert_eq!(response.communities[0].published_generation, 3);
         assert_eq!(response.next_cursor.as_deref(), Some("c1"));
+        // The daemon's `scope` must survive the round trip — the Tauri
+        // command re-serializes this struct verbatim for the frontend, so a
+        // field the struct doesn't carry is silently dropped, not merely
+        // unread.
+        assert_eq!(
+            response.scope,
+            Some(CommunityScope {
+                kind: "space".to_string(),
+                name: "Work".to_string(),
+            })
+        );
         let request = request.await.unwrap();
         assert_eq!(
             request.lines().next().unwrap_or_default(),
             "GET /api/communities?space=Work HTTP/1.1"
         );
+    }
+
+    #[tokio::test]
+    async fn list_community_members_tolerates_a_response_with_no_scope_field() {
+        // Read-tolerant: an older daemon (or a members route that never
+        // added scope) omitting the field entirely must still parse.
+        let (base_url, _request) = serve_json_once(
+            r#"{"schema_version":"community-read-v1","members":[],"next_cursor":null}"#,
+        )
+        .await;
+        let client = WenlanClient {
+            client: reqwest::Client::new(),
+            base_url,
+        };
+
+        let response = client
+            .list_community_members("Work", None, None)
+            .await
+            .expect("list_community_members succeeds");
+
+        assert_eq!(response.scope, None);
     }
 
     #[tokio::test]

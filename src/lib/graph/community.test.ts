@@ -220,6 +220,28 @@ describe("fetchSpaceCartography", () => {
 
     expect(result).toEqual({ status: "partial-error", reason: "generation-mismatch" });
   });
+
+  it("flags a member row from a different space than requested as a partial-error instead of silently mixing spaces", async () => {
+    mockListCommunities.mockResolvedValue(communitiesPage({ communities: [summary()] }));
+    mockListCommunityMembers.mockResolvedValue(
+      membersPage({ members: [member({ node_id: "e1", space: "OtherSpace" })] }),
+    );
+
+    const result = await fetchSpaceCartography("Work");
+
+    expect(result).toEqual({ status: "partial-error", reason: "foreign-space" });
+  });
+
+  it("flags a community summary row from a different space than requested as a partial-error", async () => {
+    mockListCommunities.mockResolvedValue(
+      communitiesPage({ communities: [summary({ space: "OtherSpace" })] }),
+    );
+    mockListCommunityMembers.mockResolvedValue(membersPage());
+
+    const result = await fetchSpaceCartography("Work");
+
+    expect(result).toEqual({ status: "partial-error", reason: "foreign-space" });
+  });
 });
 
 describe("fetchCartographyForSpaces / aggregateCartographyStatus", () => {
