@@ -455,8 +455,11 @@ export default function AtlasView({ onNodeClick, focusEntityId, onBack }: AtlasV
         paletteRef.current,
       );
     };
+    // First paint is NOT drawn here. The cartography effect below runs right
+    // after this one on mount (effects fire in declaration order, and both
+    // refs above are already assigned), and its refresh() fires afterRender —
+    // so painting here as well would just compute every hull twice.
     renderer.on("afterRender", drawUnderlay);
-    drawUnderlay();
     // Default zoom: sigma's fit stretches a small cluster edge-to-edge no
     // matter how big the container (7.3 px/graph-unit in preview) — links
     // render ~5x longer than the old graph's ("too wide"). A fixed density
