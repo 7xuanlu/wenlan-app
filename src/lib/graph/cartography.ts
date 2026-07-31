@@ -25,9 +25,10 @@ function pushInto<K, V>(map: Map<K, V[]>, key: K, value: V): void {
 
 // A node whose space is unknown (a relation-only synthesized neighbor —
 // see model.ts) still needs a partition to fall into; this sentinel stands
-// in for "no space". Never collides with a real space name: AtlasView only
-// ever lists spaces filtered non-empty (`e.space ?? e.domain`, `!!s`).
-const UNSCOPED_SPACE = "";
+// in for "no space". NUL-prefixed so no real space/domain string (daemon
+// data, never NUL-bearing) can forge it — "" alone isn't safe, since a
+// daemon could in principle report an empty-string space.
+export const UNSCOPED_SPACE = "\u0000unscoped";
 
 /**
  * Steepest-ascent peak-climbing over ONE space's nodes: every node follows

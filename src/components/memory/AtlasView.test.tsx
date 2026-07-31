@@ -982,6 +982,39 @@ describe("AtlasView", () => {
     expect(await screen.findByText("Durable regions")).toBeInTheDocument();
   });
 
+  it("keeps the badge honest when a null-space relation neighbor sits beside an otherwise-ready space", async () => {
+    // "e1" carries a real space and its own community read comes back
+    // ready; "ghost" only ever appears as a relation target (model.ts
+    // synthesizes it with space: null) — the aggregate must never read as
+    // all-durable while that unreported fallback node is on the map.
+    const entity = mockOneSpaceEntity();
+    mockGetEntityDetail.mockResolvedValue({
+      entity,
+      observations: [],
+      relations: [
+        {
+          id: "rel-1",
+          relation_type: "knows",
+          direction: "outgoing" as const,
+          entity_id: "ghost",
+          entity_name: "Ghost",
+          entity_type: "concept",
+          source_agent: null,
+          created_at: Math.floor(Date.now() / 1000),
+        },
+      ],
+    });
+    const pages = readyCommunityPages("wenlan-dev");
+    mockListCommunities.mockResolvedValue(pages.communities);
+    mockListCommunityMembers.mockResolvedValue(pages.members);
+
+    renderWithQuery(<AtlasView />);
+    await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
+
+    expect(await screen.findByText("Estimated regions")).toBeInTheDocument();
+    expect(screen.queryByText("Durable regions")).not.toBeInTheDocument();
+  });
+
   it("badges the toolbar with estimated-regions while no durable data has been published for the space yet", async () => {
     mockOneSpaceEntity();
 

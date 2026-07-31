@@ -233,4 +233,15 @@ describe("fetchCartographyForSpaces / aggregateCartographyStatus", () => {
     expect(aggregateCartographyStatus(partialError)).toBe("partial-error");
     expect(aggregateCartographyStatus(new Map())).toBeNull();
   });
+
+  it("never claims all-durable while a null-space (unscoped) node is present, even when every known space is ready", () => {
+    const ready = new Map([["A", { status: "ready" as const, memberCommunityId: new Map() }]]);
+
+    expect(aggregateCartographyStatus(ready, true)).toBe("fallback");
+    expect(aggregateCartographyStatus(ready, false)).toBe("ready");
+    // No known spaces at all, but an unscoped node still exists — the
+    // aggregate must report its presence instead of null ("nothing to
+    // report on").
+    expect(aggregateCartographyStatus(new Map(), true)).toBe("fallback");
+  });
 });

@@ -145,9 +145,19 @@ export default function AtlasView({ onNodeClick, focusEntityId, onBack }: AtlasV
     enabled: spaces.length > 0,
     refetchInterval: 120_000,
   });
+  // A relation-only synthesized neighbor (model.ts's nodeFromRelation) never
+  // gets a space — it's whatever entity a detail's relation points to that
+  // isn't itself in `entities`. Whole-graph like cartographyStatus below
+  // (not scoped to spaceFilter): that node is always on the fallback climb
+  // (see cartography.ts's UNSCOPED_SPACE), so the badge must never read
+  // all-durable while it's on the map, even if every known space is ready.
+  const hasUnscopedFallback = useMemo(() => {
+    const knownIds = new Set(entities.map((e: Entity) => e.id));
+    return details.some((d: EntityDetail) => d.relations.some((r) => !knownIds.has(r.entity_id)));
+  }, [entities, details]);
   const cartographyStatus = useMemo(
-    () => aggregateCartographyStatus(cartographyBySpace),
-    [cartographyBySpace],
+    () => aggregateCartographyStatus(cartographyBySpace, hasUnscopedFallback),
+    [cartographyBySpace, hasUnscopedFallback],
   );
 
   // Scoping filters the model INPUTS: the space's own entities plus whatever
