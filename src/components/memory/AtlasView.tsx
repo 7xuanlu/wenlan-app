@@ -27,6 +27,7 @@ import {
   drawCartography,
   bridgeEdgeTest,
   regionLeader,
+  isUnscopedSpace,
   MIN_REGION_SIZE,
 } from "../../lib/graph/cartography";
 import { useGraphPalette, colorForEntityType, nodeFillFor } from "../../lib/graph/palette";
@@ -145,15 +146,21 @@ export default function AtlasView({ onNodeClick, focusEntityId, onBack }: AtlasV
     enabled: spaces.length > 0,
     refetchInterval: 120_000,
   });
-  // A relation-only synthesized neighbor (model.ts's nodeFromRelation) never
-  // gets a space — it's whatever entity a detail's relation points to that
-  // isn't itself in `entities`. Whole-graph like cartographyStatus below
-  // (not scoped to spaceFilter): that node is always on the fallback climb
-  // (see cartography.ts's UNSCOPED_SPACE), so the badge must never read
-  // all-durable while it's on the map, even if every known space is ready.
+  // Whatever lands in cartography.ts's unscoped bucket is always drawn on the
+  // fallback climb, so the badge must never read all-durable while any of it
+  // is on the map — even if every known space is ready. Two ways in, and the
+  // relation one alone is not enough: an entity's OWN space can be null or
+  // empty (model.ts's GraphNode.space), which no relation would reveal and
+  // which `spaces` above drops as falsy. Whole-graph like cartographyStatus
+  // below, not scoped to spaceFilter.
   const hasUnscopedFallback = useMemo(() => {
     const knownIds = new Set(entities.map((e: Entity) => e.id));
-    return details.some((d: EntityDetail) => d.relations.some((r) => !knownIds.has(r.entity_id)));
+    return (
+      entities.some((e: Entity) => isUnscopedSpace(e.space ?? e.domain)) ||
+      // A relation-only synthesized neighbor (model.ts's nodeFromRelation):
+      // whatever a detail's relation points at that isn't in `entities`.
+      details.some((d: EntityDetail) => d.relations.some((r) => !knownIds.has(r.entity_id)))
+    );
   }, [entities, details]);
   const cartographyStatus = useMemo(
     () => aggregateCartographyStatus(cartographyBySpace, hasUnscopedFallback),

@@ -175,12 +175,13 @@ export async function fetchCartographyForSpaces(
 
 /** Worst-first aggregate for the toolbar badge: one bad space taints the
  *  whole view rather than being averaged away. `hasUnscopedFallback` reports
- *  whether the model has any null-space node (a relation-only synthesized
- *  neighbor — see model.ts / cartography.ts's UNSCOPED_SPACE) — that bucket
- *  never has a known space to be keyed under in `bySpace`, so it can't
- *  otherwise be seen here, and it's always rendered on the fallback climb.
- *  Its presence means the aggregate can never claim all-durable. Null only
- *  when there are no known spaces AND no unscoped presence to report on. */
+ *  whether anything at all sits in cartography.ts's unscoped bucket — a
+ *  relation-only synthesized neighbor, or an entity whose own space is null
+ *  or empty (see isUnscopedSpace). That bucket has no known space to be keyed
+ *  under in `bySpace`, so it can't otherwise be seen here, and it is always
+ *  rendered on the fallback climb. Its presence means the aggregate can never
+ *  claim all-durable. Null only when there are no known spaces AND no
+ *  unscoped presence to report on. */
 export function aggregateCartographyStatus(
   bySpace: Map<string, SpaceCartography>,
   hasUnscopedFallback = false,

@@ -109,6 +109,9 @@ function makeEntity(overrides: Partial<import("../../lib/tauri").Entity> = {}): 
     name: overrides.name ?? "Entity",
     entity_type: overrides.entity_type ?? "concept",
     domain: overrides.domain ?? null,
+    // Kept distinct from domain: an entity can carry space: null or the empty
+    // string while domain says nothing, and all of those mean "unscoped".
+    space: overrides.space ?? null,
     source_agent: overrides.source_agent ?? null,
     confidence: overrides.confidence ?? null,
     confirmed: overrides.confirmed ?? false,
@@ -1021,6 +1024,27 @@ describe("AtlasView", () => {
     renderWithQuery(<AtlasView />);
     await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
 
+    expect(await screen.findByText("Estimated regions")).toBeInTheDocument();
+  });
+
+  // An entity's OWN space can be null or empty (model.ts's GraphNode.space) —
+  // it does not take a relation-only neighbor to put unscoped nodes on the
+  // map. Such a graph renders entirely on the fallback climb, so the badge
+  // must say so even though there is no relation, and no known space, to give
+  // it away.
+  it.each([
+    ["null", null],
+    ["empty-string", ""],
+  ])("badges the toolbar as estimated for a relation-free graph whose entity carries a %s space", async (_label, space) => {
+    const entity = makeEntity({ id: "e1", name: "Alice", domain: null, space });
+    mockListEntities.mockResolvedValue([entity]);
+    mockGetEntityDetail.mockResolvedValue({ entity, observations: [], relations: [] });
+
+    renderWithQuery(<AtlasView />);
+    await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
+
+    // Toolbar is provably rendered before the badge claim.
+    expect(screen.getByRole("button", { name: "Regions" })).toBeInTheDocument();
     expect(await screen.findByText("Estimated regions")).toBeInTheDocument();
   });
 
