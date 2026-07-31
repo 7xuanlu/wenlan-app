@@ -2,11 +2,18 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { i18n } from "../../i18n";
 
-vi.mock("../../lib/tauri", () => ({
-  listEntities: vi.fn(),
-  getEntityDetail: vi.fn(),
-}));
+vi.mock("../../lib/tauri", async () => {
+  const actual = await vi.importActual<typeof import("../../lib/tauri")>("../../lib/tauri");
+  return {
+    ...actual,
+    listEntities: vi.fn(),
+    getEntityDetail: vi.fn(),
+    listCommunities: vi.fn(),
+    listCommunityMembers: vi.fn(),
+  };
+});
 
 // jsdom has no WebGL context — a real Sigma would throw trying to acquire
 // one. Mocked at module level per repo convention for canvas/WebGL surfaces;
@@ -83,11 +90,13 @@ vi.mock("sigma", () => {
   return { default: SigmaMock };
 });
 
-import { listEntities, getEntityDetail } from "../../lib/tauri";
+import { listEntities, getEntityDetail, listCommunities, listCommunityMembers } from "../../lib/tauri";
 import AtlasView from "./AtlasView";
 
 const mockListEntities = vi.mocked(listEntities);
 const mockGetEntityDetail = vi.mocked(getEntityDetail);
+const mockListCommunities = vi.mocked(listCommunities);
+const mockListCommunityMembers = vi.mocked(listCommunityMembers);
 
 function renderWithQuery(ui: React.ReactElement) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
@@ -112,6 +121,19 @@ describe("AtlasView", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     capturedSigmaInstances.length = 0;
+    // Ordinary "no durable data published yet" default — most tests carry
+    // no space at all (so this never fires), and the ones that do only care
+    // about entities/relations, not cartography.
+    mockListCommunities.mockResolvedValue({
+      schema_version: "community-read-v1",
+      communities: [],
+      next_cursor: null,
+    });
+    mockListCommunityMembers.mockResolvedValue({
+      schema_version: "community-read-v1",
+      members: [],
+      next_cursor: null,
+    });
   });
 
   it("shows a distinct loading state while entities are in flight, then resolves to empty", async () => {
@@ -903,6 +925,129 @@ describe("AtlasView", () => {
     // Toolbar is provably rendered (Regions chip present) before the absence claim.
     expect(screen.getByRole("button", { name: "Regions" })).toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: "Space" })).not.toBeInTheDocument();
+  });
+
+  // A single entity carrying a space — the minimum needed to put the
+  // cartography query in flight for the badge tests below.
+  function mockOneSpaceEntity(domain = "wenlan-dev") {
+    const entity = makeEntity({ id: "e1", domain });
+    mockListEntities.mockResolvedValue([entity]);
+    mockGetEntityDetail.mockResolvedValue({ entity, observations: [], relations: [] });
+    return entity;
+  }
+
+  function readyCommunityPages(space: string) {
+    return {
+      communities: {
+        schema_version: "community-read-v1" as const,
+        communities: [
+          {
+            community_id: "c1",
+            space,
+            display_name: null,
+            member_count: 1,
+            published_generation: 1,
+            algo_version: "v1",
+            projection_version: "v1",
+          },
+        ],
+        next_cursor: null,
+      },
+      members: {
+        schema_version: "community-read-v1" as const,
+        members: [
+          {
+            space,
+            node_id: "e1",
+            node_kind: "entity",
+            community_id: "c1",
+            published_generation: 1,
+            attachment: "core",
+          },
+        ],
+        next_cursor: null,
+      },
+    };
+  }
+
+  it("badges the toolbar with durable-regions once the space's community read comes back ready", async () => {
+    mockOneSpaceEntity();
+    const pages = readyCommunityPages("wenlan-dev");
+    mockListCommunities.mockResolvedValue(pages.communities);
+    mockListCommunityMembers.mockResolvedValue(pages.members);
+
+    renderWithQuery(<AtlasView />);
+    await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
+
+    expect(await screen.findByText("Durable regions")).toBeInTheDocument();
+  });
+
+  it("badges the toolbar with estimated-regions while no durable data has been published for the space yet", async () => {
+    mockOneSpaceEntity();
+
+    renderWithQuery(<AtlasView />);
+    await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
+
+    expect(await screen.findByText("Estimated regions")).toBeInTheDocument();
+  });
+
+  it("badges the toolbar with an alerting sync-issue state when a space's community read fails", async () => {
+    mockOneSpaceEntity();
+    mockListCommunities.mockRejectedValue(new Error("connection reset"));
+
+    renderWithQuery(<AtlasView />);
+    await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
+
+    const badge = await screen.findByText("Region sync issue");
+    expect(badge).toHaveAttribute("role", "alert");
+  });
+
+  it("aggregates worst-first across spaces: one failed space taints the badge even though another is ready", async () => {
+    const entities = [
+      makeEntity({ id: "e1", domain: "wenlan-dev" }),
+      makeEntity({ id: "e2", domain: "personal" }),
+    ];
+    mockListEntities.mockResolvedValue(entities);
+    mockGetEntityDetail.mockImplementation(async (id: string) => ({
+      entity: entities.find((e) => e.id === id)!,
+      observations: [],
+      relations: [],
+    }));
+    const ready = readyCommunityPages("wenlan-dev");
+    mockListCommunities.mockImplementation(async (space: string) =>
+      space === "wenlan-dev" ? ready.communities : Promise.reject(new Error("connection reset")),
+    );
+    mockListCommunityMembers.mockImplementation(async (space: string) =>
+      space === "wenlan-dev"
+        ? ready.members
+        : { schema_version: "community-read-v1" as const, members: [], next_cursor: null },
+    );
+
+    renderWithQuery(<AtlasView />);
+    await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
+
+    expect(await screen.findByText("Region sync issue")).toBeInTheDocument();
+  });
+
+  it("renders the badge text in zh-Hans and zh-Hant, not just English", async () => {
+    mockOneSpaceEntity();
+    const pages = readyCommunityPages("wenlan-dev");
+    mockListCommunities.mockResolvedValue(pages.communities);
+    mockListCommunityMembers.mockResolvedValue(pages.members);
+
+    await i18n.changeLanguage("zh-Hans");
+    const simplified = renderWithQuery(<AtlasView />);
+    await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
+    expect(await screen.findByText("稳定区域")).toBeInTheDocument();
+    simplified.unmount();
+    capturedSigmaInstances.length = 0;
+
+    await i18n.changeLanguage("zh-Hant");
+    renderWithQuery(<AtlasView />);
+    await waitFor(() => expect(capturedSigmaInstances).toHaveLength(1));
+    expect(await screen.findByText("穩定區域")).toBeInTheDocument();
+
+    await i18n.changeLanguage("en");
   });
 
   it("jumps the camera instantly on search select under prefers-reduced-motion", async () => {

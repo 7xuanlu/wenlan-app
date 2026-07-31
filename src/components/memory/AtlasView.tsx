@@ -31,6 +31,7 @@ import {
 } from "../../lib/graph/cartography";
 import { useGraphPalette, colorForEntityType, nodeFillFor } from "../../lib/graph/palette";
 import type { GraphPalette } from "../../lib/graph/palette";
+import { fetchCartographyForSpaces, aggregateCartographyStatus } from "../../lib/graph/community";
 
 // Same 5-slot legend as the retired canvas graph (ConstellationMap): place,
 // event, and unknown types fold to neutral and get no swatch; concept is
@@ -134,6 +135,21 @@ export default function AtlasView({ onNodeClick, focusEntityId, onBack }: AtlasV
   );
   const [spaceFilter, setSpaceFilter] = useState<string | null>(null);
 
+  // D13/App-PR readiness, one fetch-and-classify per known space (community.ts):
+  // cursor-paginated to exhaustion, generation-checked, never declared ready off
+  // a partial read. Keyed on ALL known spaces regardless of spaceFilter — the
+  // toolbar badge below is a whole-graph aggregate, not scoped to the filter.
+  const { data: cartographyBySpace = new Map() } = useQuery({
+    queryKey: ["constellation-cartography", spaces],
+    queryFn: () => fetchCartographyForSpaces(spaces),
+    enabled: spaces.length > 0,
+    refetchInterval: 120_000,
+  });
+  const cartographyStatus = useMemo(
+    () => aggregateCartographyStatus(cartographyBySpace),
+    [cartographyBySpace],
+  );
+
   // Scoping filters the model INPUTS: the space's own entities plus whatever
   // bridge neighbors their relations synthesize (those carry no space of their
   // own). Regions, counts, and insights all re-derive from the scoped model.
@@ -144,13 +160,16 @@ export default function AtlasView({ onNodeClick, focusEntityId, onBack }: AtlasV
       details.filter((d: EntityDetail) => (d.entity.space ?? d.entity.domain) === spaceFilter),
     );
   }, [entities, details, spaceFilter]);
-  const communities = useMemo(() => communitiesFor(model), [model]);
+  const communities = useMemo(
+    () => communitiesFor(model, cartographyBySpace),
+    [model, cartographyBySpace],
+  );
 
   // Region count + names for the toolbar and rail — membership only, so it
   // agrees with the hulls drawCartography actually draws without needing
   // node positions; names share regionLeader with the drawn labels.
   const regionInfo = useMemo(() => {
-    const groups = new Map<number, GraphNode[]>();
+    const groups = new Map<string, GraphNode[]>();
     for (const node of model.nodes) {
       const community = communities.get(node.id);
       if (community === undefined) continue;
@@ -158,7 +177,7 @@ export default function AtlasView({ onNodeClick, focusEntityId, onBack }: AtlasV
       if (list) list.push(node);
       else groups.set(community, [node]);
     }
-    const names = new Map<number, string>();
+    const names = new Map<string, string>();
     for (const [community, members] of groups) {
       if (members.length >= MIN_REGION_SIZE) names.set(community, regionLeader(members).name);
     }
@@ -864,6 +883,30 @@ export default function AtlasView({ onNodeClick, focusEntityId, onBack }: AtlasV
               </option>
             ))}
           </select>
+        )}
+        {cartographyStatus && (
+          <span
+            role={cartographyStatus === "partial-error" ? "alert" : undefined}
+            style={{
+              fontSize: 11,
+              fontFamily: "var(--mem-font-mono)",
+              color:
+                cartographyStatus === "partial-error"
+                  ? "var(--mem-danger)"
+                  : "var(--mem-text-tertiary)",
+              border: `1px solid ${cartographyStatus === "partial-error" ? "var(--mem-danger)" : "var(--mem-border)"}`,
+              borderRadius: "var(--mem-radius-full)",
+              padding: "3px 10px",
+            }}
+          >
+            {t(
+              cartographyStatus === "ready"
+                ? "atlas.cartographyReady"
+                : cartographyStatus === "partial-error"
+                  ? "atlas.cartographyPartialError"
+                  : "atlas.cartographyFallback",
+            )}
+          </span>
         )}
         <span
           style={{
