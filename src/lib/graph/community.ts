@@ -29,6 +29,7 @@ export type PartialErrorReason =
   | "interrupted"
   | "member-count-mismatch"
   | "unknown-community"
+  | "conflicting-assignment"
   | "foreign-space";
 
 export interface SpaceCartography {
@@ -151,6 +152,14 @@ export async function fetchSpaceCartography(space: string): Promise<SpaceCartogr
     // inspect this row at all, yet the assignment would still reach the map.
     if (!declaredCommunityIds.has(member.community_id)) {
       return { status: "partial-error", reason: "unknown-community" };
+    }
+    // A node belongs to exactly one community. Two rows disagreeing about
+    // which is a contradiction the counts can't see — each community tallies
+    // the node separately, so both reconcile — and last-write-wins would pick
+    // a winner silently. Fail the space instead.
+    const assigned = memberCommunityId.get(member.node_id);
+    if (assigned !== undefined && assigned !== member.community_id) {
+      return { status: "partial-error", reason: "conflicting-assignment" };
     }
     memberCommunityId.set(member.node_id, member.community_id);
     const seen = membersByCommunity.get(member.community_id);
