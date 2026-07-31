@@ -20,6 +20,11 @@ mod indexer;
 mod lifecycle;
 pub mod mcp_config;
 pub mod plugin_install;
+// M5 presence-capability minting (D7): not wired to any tauri::command yet,
+// since no daemon endpoint exists to submit the resulting mutation to. See
+// the module doc comment.
+#[allow(dead_code)]
+mod presence;
 pub mod privacy;
 pub mod remote_access;
 mod search;
@@ -1329,6 +1334,8 @@ pub fn run() {
             search::delete_page,
             search::list_pages,
             search::search_pages,
+            search::list_pages_explicit_browse,
+            search::search_pages_explicit_browse,
             // Page map commands
             search::get_page_map,
             search::improve_page_map,

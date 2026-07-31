@@ -3789,6 +3789,38 @@ pub async fn search_pages(
     Ok(resp.pages)
 }
 
+/// Explicit-browse counterpart of `list_pages`, for the human "browse the
+/// wiki" surface (`PagesOverview.tsx`) only — never an automatic/background
+/// reader. Declares the M5 truth contract and human-intent marker
+/// (`crate::api::WenlanClient::list_pages_explicit_browse`) so a post-cutover
+/// daemon may attach `truth` to entries it would otherwise hide; a no-op
+/// today since the durable cutover generation is 0 everywhere in production.
+#[tauri::command]
+pub async fn list_pages_explicit_browse(
+    state: tauri::State<'_, State>,
+    status: Option<String>,
+    domain: Option<String>,
+    limit: Option<usize>,
+    offset: Option<usize>,
+) -> Result<Vec<crate::api::PageWithTruth>, String> {
+    let client = state.read().await.client.clone();
+    client
+        .list_pages_explicit_browse(status.as_deref(), domain.as_deref(), limit, offset)
+        .await
+}
+
+/// Explicit-browse counterpart of `search_pages`; see
+/// [`list_pages_explicit_browse`].
+#[tauri::command]
+pub async fn search_pages_explicit_browse(
+    state: tauri::State<'_, State>,
+    query: String,
+    limit: Option<usize>,
+) -> Result<Vec<crate::api::PageWithTruth>, String> {
+    let client = state.read().await.client.clone();
+    client.search_pages_explicit_browse(query, limit).await
+}
+
 #[tauri::command]
 pub async fn get_page_sources(
     state: tauri::State<'_, State>,
