@@ -26,7 +26,9 @@ export type PartialErrorReason =
   | "old-daemon"
   | "schema-mismatch"
   | "generation-mismatch"
-  | "interrupted";
+  | "interrupted"
+  | "member-count-mismatch"
+  | "foreign-space";
 
 export interface SpaceCartography {
   status: CartographyStatus;
@@ -63,6 +65,13 @@ async function fetchAllCommunities(space: string): Promise<PageResult<CommunityS
     if (response.schema_version !== COMMUNITY_READ_SCHEMA_VERSION) {
       return { reason: "schema-mismatch" };
     }
+    // The daemon's `scope` isn't threaded through the Tauri command today
+    // (see app/src/api.rs's CommunityListResponse) — checking each row's own
+    // `space` field is what actually catches a daemon serving the wrong
+    // scope instead of silently mixing it into this space's read.
+    if (response.communities.some((c) => c.space !== space)) {
+      return { reason: "foreign-space" };
+    }
     rows.push(...response.communities);
     if (response.next_cursor === null) return { rows };
     cursor = response.next_cursor;
@@ -83,6 +92,9 @@ async function fetchAllMembers(space: string): Promise<PageResult<CommunityMembe
     }
     if (response.schema_version !== COMMUNITY_READ_SCHEMA_VERSION) {
       return { reason: "schema-mismatch" };
+    }
+    if (response.members.some((m) => m.space !== space)) {
+      return { reason: "foreign-space" };
     }
     rows.push(...response.members);
     if (response.next_cursor === null) return { rows };
@@ -122,6 +134,7 @@ export async function fetchSpaceCartography(space: string): Promise<SpaceCartogr
   const [currentGeneration] = generations;
 
   const memberCommunityId = new Map<string, string>();
+  const actualCounts = new Map<string, number>();
   for (const member of members.rows) {
     // Covers both a mid-pagination generation bump on the member stream and
     // a member page landing on a generation the summary read never saw.
@@ -129,6 +142,18 @@ export async function fetchSpaceCartography(space: string): Promise<SpaceCartogr
       return { status: "partial-error", reason: "generation-mismatch" };
     }
     memberCommunityId.set(member.node_id, member.community_id);
+    actualCounts.set(member.community_id, (actualCounts.get(member.community_id) ?? 0) + 1);
+  }
+
+  // Generation agreement alone doesn't prove the member read is COMPLETE for
+  // each community — a daemon that drops rows mid-drain (or reports a stale
+  // next_cursor: null) still agrees on generation while quietly delivering
+  // fewer members than the summary promised. Reconcile every community's
+  // drained count against its own member_count before trusting the read.
+  for (const community of communities.rows) {
+    if ((actualCounts.get(community.community_id) ?? 0) !== community.member_count) {
+      return { status: "partial-error", reason: "member-count-mismatch" };
+    }
   }
 
   return { status: "ready", memberCommunityId };
@@ -149,16 +174,23 @@ export async function fetchCartographyForSpaces(
 }
 
 /** Worst-first aggregate for the toolbar badge: one bad space taints the
- *  whole view rather than being averaged away. Null when there are no known
- *  spaces to report on. */
+ *  whole view rather than being averaged away. `hasUnscopedFallback` reports
+ *  whether the model has any null-space node (a relation-only synthesized
+ *  neighbor — see model.ts / cartography.ts's UNSCOPED_SPACE) — that bucket
+ *  never has a known space to be keyed under in `bySpace`, so it can't
+ *  otherwise be seen here, and it's always rendered on the fallback climb.
+ *  Its presence means the aggregate can never claim all-durable. Null only
+ *  when there are no known spaces AND no unscoped presence to report on. */
 export function aggregateCartographyStatus(
   bySpace: Map<string, SpaceCartography>,
+  hasUnscopedFallback = false,
 ): CartographyStatus | null {
-  if (bySpace.size === 0) return null;
+  if (bySpace.size === 0 && !hasUnscopedFallback) return null;
   let worst: CartographyStatus = "ready";
   for (const { status } of bySpace.values()) {
     if (status === "partial-error") return "partial-error";
     if (status === "fallback") worst = "fallback";
   }
+  if (hasUnscopedFallback && worst === "ready") worst = "fallback";
   return worst;
 }

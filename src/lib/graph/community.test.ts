@@ -72,7 +72,9 @@ describe("fetchSpaceCartography", () => {
   });
 
   it("parses a drained, generation-consistent read as ready with the member->community map", async () => {
-    mockListCommunities.mockResolvedValue(communitiesPage({ communities: [summary()] }));
+    mockListCommunities.mockResolvedValue(
+      communitiesPage({ communities: [summary({ member_count: 2 })] }),
+    );
     mockListCommunityMembers.mockResolvedValue(
       membersPage({ members: [member({ node_id: "e1" }), member({ node_id: "e2" })] }),
     );
@@ -82,6 +84,34 @@ describe("fetchSpaceCartography", () => {
     expect(result.status).toBe("ready");
     expect(result.memberCommunityId?.get("e1")).toBe("c1");
     expect(result.memberCommunityId?.get("e2")).toBe("c1");
+  });
+
+  it("flags a community whose drained member rows fall short of its summary member_count as a partial-error, not vacuously ready", async () => {
+    mockListCommunities.mockResolvedValue(
+      communitiesPage({ communities: [summary({ member_count: 3 })] }),
+    );
+    // Pagination drains to next_cursor: null after only 2 rows — the daemon
+    // said 3.
+    mockListCommunityMembers.mockResolvedValue(
+      membersPage({ members: [member({ node_id: "e1" }), member({ node_id: "e2" })] }),
+    );
+
+    const result = await fetchSpaceCartography("Work");
+
+    expect(result).toEqual({ status: "partial-error", reason: "member-count-mismatch" });
+  });
+
+  it("returns ready when every community's drained member count matches its summary", async () => {
+    mockListCommunities.mockResolvedValue(
+      communitiesPage({ communities: [summary({ member_count: 2 })] }),
+    );
+    mockListCommunityMembers.mockResolvedValue(
+      membersPage({ members: [member({ node_id: "e1" }), member({ node_id: "e2" })] }),
+    );
+
+    const result = await fetchSpaceCartography("Work");
+
+    expect(result.status).toBe("ready");
   });
 
   it("paginates both communities and members to exhaustion before deciding", async () => {
@@ -190,6 +220,28 @@ describe("fetchSpaceCartography", () => {
 
     expect(result).toEqual({ status: "partial-error", reason: "generation-mismatch" });
   });
+
+  it("flags a member row from a different space than requested as a partial-error instead of silently mixing spaces", async () => {
+    mockListCommunities.mockResolvedValue(communitiesPage({ communities: [summary()] }));
+    mockListCommunityMembers.mockResolvedValue(
+      membersPage({ members: [member({ node_id: "e1", space: "OtherSpace" })] }),
+    );
+
+    const result = await fetchSpaceCartography("Work");
+
+    expect(result).toEqual({ status: "partial-error", reason: "foreign-space" });
+  });
+
+  it("flags a community summary row from a different space than requested as a partial-error", async () => {
+    mockListCommunities.mockResolvedValue(
+      communitiesPage({ communities: [summary({ space: "OtherSpace" })] }),
+    );
+    mockListCommunityMembers.mockResolvedValue(membersPage());
+
+    const result = await fetchSpaceCartography("Work");
+
+    expect(result).toEqual({ status: "partial-error", reason: "foreign-space" });
+  });
 });
 
 describe("fetchCartographyForSpaces / aggregateCartographyStatus", () => {
@@ -232,5 +284,16 @@ describe("fetchCartographyForSpaces / aggregateCartographyStatus", () => {
     expect(aggregateCartographyStatus(fallback)).toBe("fallback");
     expect(aggregateCartographyStatus(partialError)).toBe("partial-error");
     expect(aggregateCartographyStatus(new Map())).toBeNull();
+  });
+
+  it("never claims all-durable while a null-space (unscoped) node is present, even when every known space is ready", () => {
+    const ready = new Map([["A", { status: "ready" as const, memberCommunityId: new Map() }]]);
+
+    expect(aggregateCartographyStatus(ready, true)).toBe("fallback");
+    expect(aggregateCartographyStatus(ready, false)).toBe("ready");
+    // No known spaces at all, but an unscoped node still exists — the
+    // aggregate must report its presence instead of null ("nothing to
+    // report on").
+    expect(aggregateCartographyStatus(new Map(), true)).toBe("fallback");
   });
 });

@@ -145,9 +145,19 @@ export default function AtlasView({ onNodeClick, focusEntityId, onBack }: AtlasV
     enabled: spaces.length > 0,
     refetchInterval: 120_000,
   });
+  // A relation-only synthesized neighbor (model.ts's nodeFromRelation) never
+  // gets a space — it's whatever entity a detail's relation points to that
+  // isn't itself in `entities`. Whole-graph like cartographyStatus below
+  // (not scoped to spaceFilter): that node is always on the fallback climb
+  // (see cartography.ts's UNSCOPED_SPACE), so the badge must never read
+  // all-durable while it's on the map, even if every known space is ready.
+  const hasUnscopedFallback = useMemo(() => {
+    const knownIds = new Set(entities.map((e: Entity) => e.id));
+    return details.some((d: EntityDetail) => d.relations.some((r) => !knownIds.has(r.entity_id)));
+  }, [entities, details]);
   const cartographyStatus = useMemo(
-    () => aggregateCartographyStatus(cartographyBySpace),
-    [cartographyBySpace],
+    () => aggregateCartographyStatus(cartographyBySpace, hasUnscopedFallback),
+    [cartographyBySpace, hasUnscopedFallback],
   );
 
   // Scoping filters the model INPUTS: the space's own entities plus whatever
@@ -164,6 +174,13 @@ export default function AtlasView({ onNodeClick, focusEntityId, onBack }: AtlasV
     () => communitiesFor(model, cartographyBySpace),
     [model, cartographyBySpace],
   );
+  // Mirrors `communities` for the mount effect's afterRender closure (see
+  // the cartography-refresh effect below, by the theme-flip effect) — a
+  // space's durable status arriving or regressing must repaint bridges and
+  // hulls without tearing down the sim/camera, so drawUnderlay reads this
+  // ref at PAINT time instead of closing over the `communities` value that
+  // was current when the sigma renderer was built.
+  const communitiesRef = useRef<Map<string, string>>(communities);
 
   // Region count + names for the toolbar and rail — membership only, so it
   // agrees with the hulls drawCartography actually draws without needing
@@ -426,7 +443,7 @@ export default function AtlasView({ onNodeClick, focusEntityId, onBack }: AtlasV
       ctx.clearRect(0, 0, width, height);
       drawCartography(
         ctx,
-        cartographyScene(graph, communities),
+        cartographyScene(graph, communitiesRef.current),
         (pos) => renderer.graphToViewport(pos),
         paletteRef.current,
       );
@@ -618,6 +635,27 @@ export default function AtlasView({ onNodeClick, focusEntityId, onBack }: AtlasV
     // with the palette paletteRef now carries.
     renderer.refresh();
   }, [palette]);
+
+  // Cartography arriving or regressing (fallback -> ready, or ready -> a
+  // partial-error) must repaint bridges + hulls WITHOUT tearing down the
+  // sim/camera — the mount effect above only rebuilds on `model` changing,
+  // so a `cartographyBySpace` refetch that flips a space's status never
+  // reaches the renderer otherwise. Same "recolor in place" shape as the
+  // theme-flip effect: update edge attributes, point communitiesRef at the
+  // fresh map (drawUnderlay reads it at paint time), then refresh.
+  useEffect(() => {
+    communitiesRef.current = communities;
+    const graph = graphRef.current;
+    const renderer = sigmaRef.current;
+    if (!graph || !renderer) return;
+    const isBridge = bridgeEdgeTest(communities);
+    graph.updateEachEdgeAttributes((edgeKey, attrs) => {
+      const [source, target] = graph.extremities(edgeKey);
+      const bridge = isBridge(source, target);
+      return { ...attrs, bridge, color: bridge ? paletteRef.current.bridge : paletteRef.current.edge };
+    });
+    renderer.refresh();
+  }, [communities]);
 
   useEffect(() => {
     const underlay = underlayRef.current;
