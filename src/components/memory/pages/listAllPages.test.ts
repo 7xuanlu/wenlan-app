@@ -1,8 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { listPages, type Page } from "../../../lib/tauri";
-import { listAllActivePages, listAllDraftPages } from "./listAllPages";
+import { listPages, listPagesExplicitBrowse, type Page } from "../../../lib/tauri";
+import {
+  listAllActivePages,
+  listAllActivePagesExplicitBrowse,
+  listAllDraftPages,
+  listAllDraftPagesExplicitBrowse,
+} from "./listAllPages";
 
-vi.mock("../../../lib/tauri", () => ({ listPages: vi.fn() }));
+vi.mock("../../../lib/tauri", () => ({ listPages: vi.fn(), listPagesExplicitBrowse: vi.fn() }));
 
 function page(id: string): Page {
   return {
@@ -82,5 +87,32 @@ describe("listAllDraftPages", () => {
 
     expect(result).toHaveLength(500);
     expect(listPages).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("listAllActivePagesExplicitBrowse / listAllDraftPagesExplicitBrowse", () => {
+  beforeEach(() => {
+    vi.mocked(listPages).mockReset();
+    vi.mocked(listPagesExplicitBrowse).mockReset();
+  });
+
+  it("paginates active pages via the explicit-browse command, never the automatic one", async () => {
+    vi.mocked(listPagesExplicitBrowse).mockResolvedValueOnce([page("page-0")]);
+
+    const result = await listAllActivePagesExplicitBrowse();
+
+    expect(result).toHaveLength(1);
+    expect(listPagesExplicitBrowse).toHaveBeenCalledWith("active", undefined, 500, 0);
+    expect(listPages).not.toHaveBeenCalled();
+  });
+
+  it("paginates draft pages via the explicit-browse command, never the automatic one", async () => {
+    vi.mocked(listPagesExplicitBrowse).mockResolvedValueOnce([{ ...page("draft-0"), status: "draft" }]);
+
+    const result = await listAllDraftPagesExplicitBrowse();
+
+    expect(result).toHaveLength(1);
+    expect(listPagesExplicitBrowse).toHaveBeenCalledWith("draft", undefined, 500, 0);
+    expect(listPages).not.toHaveBeenCalled();
   });
 });

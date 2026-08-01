@@ -988,6 +988,16 @@ export interface PageCitation {
   scope: "sentence" | "paragraph";
 }
 
+/** M5 truth axes for a page: `supported` is machine-derived (fail-closed),
+ *  `human_reviewed` is set only by explicit human action. Hand-mirrored from
+ *  `crates/wenlan-types/src/pages.rs` (`Page.truth`), which the pinned
+ *  wenlan-types release predates — same situation as the page-map and
+ *  community types elsewhere in this file. */
+export interface PageTruth {
+  supported: boolean;
+  human_reviewed: boolean;
+}
+
 export interface Page {
   id: string;
   title: string;
@@ -1011,6 +1021,11 @@ export interface Page {
   stale_reason?: string | null;
   user_edited?: boolean;
   citations?: PageCitation[];
+  /** Present only from explicit-browse routes, and only once the daemon's
+   *  truth cutover is live for the scope (generation 0 everywhere today, so
+   *  always absent in production). Missing/undefined, never a bare `null`
+   *  vs. absent distinction the UI needs to care about. */
+  truth?: PageTruth | null;
 }
 
 export interface CreatePageInput {
@@ -1813,6 +1828,31 @@ export async function listConcepts(
   offset?: number,
 ): Promise<Page[]> {
   return listPages(status, domain, limit, offset);
+}
+
+// ── Explicit-browse truth reads (M5 App PR) ─────────────────────────────
+// Dedicated commands for the human "browse the wiki" surface only — never an
+// automatic/background reader — so the daemon's truth-marker refusal (any
+// route not shaped for it rejects the request) can never trip on a polling
+// call site. See `list_pages_explicit_browse`/`search_pages_explicit_browse`
+// in `app/src/api.rs` for the route-safety verification.
+
+export async function listPagesExplicitBrowse(
+  status?: string,
+  domain?: string,
+  limit?: number,
+  offset?: number,
+): Promise<Page[]> {
+  const pages = await invoke<Page[]>("list_pages_explicit_browse", { status, domain, limit, offset });
+  return withDomainArray(pages);
+}
+
+export async function searchPagesExplicitBrowse(
+  query: string,
+  limit?: number,
+): Promise<Page[]> {
+  const pages = await invoke<Page[]>("search_pages_explicit_browse", { query, limit: limit ?? 5 });
+  return withDomainArray(pages);
 }
 
 // ── Home delta feed ────────────────────────────────────────────────────

@@ -285,6 +285,12 @@ const en = {
         page: "Page",
         entity: "Entity",
       },
+      truth: {
+        supported: "Supported",
+        provisional: "Provisional",
+        reviewed: "Reviewed",
+        unreviewed: "Unreviewed",
+      },
       loading: "Loading pages…",
       error: "Pages couldn't be loaded.",
       empty: "No pages yet",
@@ -394,6 +400,7 @@ const en = {
     exportToVault: "Export to {{vault}}",
     exportUnavailable: "Add an Obsidian source in Settings to export",
     loadError: "Could not load this page.",
+    markPageReviewed: "Mark page reviewed",
     retry: "Try again",
     saveError: "Could not save this page. Try again.",
     editor: {
@@ -1826,6 +1833,12 @@ const zhHans = {
         page: "页面",
         entity: "实体",
       },
+      truth: {
+        supported: "已核实",
+        provisional: "待核实",
+        reviewed: "已复核",
+        unreviewed: "未复核",
+      },
       loading: "正在载入页面…",
       error: "无法载入页面。",
       empty: "还没有页面",
@@ -1935,6 +1948,7 @@ const zhHans = {
     exportToVault: "导出到 {{vault}}",
     exportUnavailable: "请先在设置中添加 Obsidian 来源",
     loadError: "无法加载此页面。",
+    markPageReviewed: "标记页面已复核",
     retry: "重试",
     saveError: "无法保存此页面，请重试。",
     editor: {
@@ -3341,6 +3355,12 @@ const zhHant = {
         page: "頁面",
         entity: "實體",
       },
+      truth: {
+        supported: "已核實",
+        provisional: "待核實",
+        reviewed: "已覆核",
+        unreviewed: "未覆核",
+      },
       loading: "正在載入頁面…",
       error: "無法載入頁面。",
       empty: "還沒有頁面",
@@ -3450,6 +3470,7 @@ const zhHant = {
     exportToVault: "匯出到 {{vault}}",
     exportUnavailable: "請先在設定中新增 Obsidian 來源",
     loadError: "無法載入此頁面。",
+    markPageReviewed: "標記頁面已覆核",
     retry: "再試一次",
     saveError: "無法儲存此頁面，請再試一次。",
     editor: {

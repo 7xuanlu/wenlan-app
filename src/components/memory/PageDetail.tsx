@@ -1612,6 +1612,18 @@ export default function PageDetail({
                       </button>
                     ))
                   )}
+                  {/* Dormant until the daemon reports durable PR-C cutover
+                      enabled for this page's scope (M5 App PR, D2/D7) — no
+                      such readiness signal exists yet, so this stays
+                      disabled unconditionally rather than guessing at one. */}
+                  <button
+                    className="page-detail-mobile-menu-item"
+                    disabled
+                    role="menuitem"
+                    type="button"
+                  >
+                    {t("pageDetail.markPageReviewed")}
+                  </button>
                   <button
                     className="page-detail-menu-danger"
                     disabled={

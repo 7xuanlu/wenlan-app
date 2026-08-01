@@ -18,10 +18,17 @@ class HttpError extends Error {
   }
 }
 
-async function http(method: string, path: string, body?: unknown): Promise<any> {
+async function http(
+  method: string,
+  path: string,
+  body?: unknown,
+  extraHeaders?: Record<string, string>,
+): Promise<any> {
+  const headers: Record<string, string> = { ...extraHeaders };
+  if (body !== undefined) headers["content-type"] = "application/json";
   const res = await fetch(`/daemon${path}`, {
     method,
-    headers: body !== undefined ? { "content-type": "application/json" } : undefined,
+    headers: Object.keys(headers).length > 0 ? headers : undefined,
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   const text = await res.text();
@@ -36,6 +43,16 @@ async function http(method: string, path: string, body?: unknown): Promise<any> 
 }
 const get = (p: string) => http("GET", p);
 const post = (p: string, b: unknown = {}) => http("POST", p, b);
+
+/** What `WenlanClient::get_json_explicit_browse` and its POST counterpart send
+ *  (app/src/api.rs): the truth-contract version, and the declaration that a
+ *  human asked for this read. Only the explicit-browse handlers below carry
+ *  them — an unmarked read that arrived with them would be the preview harness
+ *  telling the daemon something the app never says. */
+const EXPLICIT_BROWSE_HEADERS: Record<string, string> = {
+  "x-wenlan-truth-contract": "1",
+  "x-wenlan-reader-intent": "explicit",
+};
 const put = (p: string, b: unknown = {}) => http("PUT", p, b);
 const del = (p: string) => http("DELETE", p);
 
@@ -268,18 +285,19 @@ function samePreviewPageScope(
 async function listAllRemotePages(
   status: string,
   domain: string | null,
+  headers?: Record<string, string>,
 ): Promise<Record<string, unknown>[]> {
   const pages: Record<string, unknown>[] = [];
   const seenIds = new Set<string>();
   let offset = 0;
 
   while (true) {
-    const wire = await get(`/api/pages${qs({
+    const wire = await http("GET", `/api/pages${qs({
       status,
       domain,
       limit: PAGE_BATCH_SIZE,
       offset,
-    })}`);
+    })}`, undefined, headers);
     const batch = (Array.isArray(wire?.pages) ? wire.pages : wire) as unknown;
     if (!Array.isArray(batch)) return pages;
 
@@ -295,6 +313,43 @@ async function listAllRemotePages(
     if (batch.length < PAGE_BATCH_SIZE || added === 0) return pages;
     offset += batch.length;
   }
+}
+
+/** The Page listing both `list_pages` and `list_pages_explicit_browse` serve:
+ *  the daemon's pages merged with the preview's locally authored ones. The
+ *  only difference between the two commands is `headers`. */
+async function listPagesVia(
+  a: Args,
+  headers: Record<string, string> | undefined,
+): Promise<Record<string, unknown>[]> {
+  const status = typeof a?.status === "string" ? a.status : "active";
+  const domain = normalizedSpace(a?.domain);
+  const remote = await listAllRemotePages(status, domain, headers);
+  const local = [...PREVIEW_AUTHORED_PAGES.values()].filter((page) => {
+    const statusMatches = page.status === status;
+    const domainMatches = !domain || page.domain === domain || page.space === domain;
+    return statusMatches && domainMatches;
+  });
+  const localIds = new Set(local.map((page) => page.id));
+  const combined = [...local, ...remote.filter((page) => !localIds.has(page.id))];
+  const offset = typeof a?.offset === "number" ? a.offset : 0;
+  const limit = typeof a?.limit === "number" ? a.limit : undefined;
+  return combined.slice(offset, limit === undefined ? undefined : offset + limit);
+}
+
+/** Page search, shared by `search_pages` and its explicit-browse counterpart
+ *  on the same terms as `listPagesVia`. */
+async function searchPagesVia(
+  a: Args,
+  headers: Record<string, string> | undefined,
+): Promise<unknown> {
+  const wire = await http(
+    "POST",
+    "/api/pages/search",
+    { query: a?.query, limit: a?.limit ?? null, page_type: null },
+    headers,
+  );
+  return wire?.pages ?? wire;
 }
 
 function downloadComplete(): boolean {
@@ -481,25 +536,17 @@ export const HANDLERS: Record<string, (a: any) => Promise<unknown>> = {
     PREVIEW_PAGE_DRAFT_CREATE_REQUESTS.set(id, null);
     return Promise.resolve(null);
   },
-  list_pages: async (a) => {
-    const status = typeof a?.status === "string" ? a.status : "active";
-    const domain = normalizedSpace(a?.domain);
-    const remote = await listAllRemotePages(status, domain);
-    const local = [...PREVIEW_AUTHORED_PAGES.values()].filter((page) => {
-      const statusMatches = page.status === status;
-      const domainMatches = !domain || page.domain === domain || page.space === domain;
-      return statusMatches && domainMatches;
-    });
-    const localIds = new Set(local.map((page) => page.id));
-    const combined = [...local, ...remote.filter((page) => !localIds.has(page.id))];
-    const offset = typeof a?.offset === "number" ? a.offset : 0;
-    const limit = typeof a?.limit === "number" ? a.limit : undefined;
-    return combined.slice(offset, limit === undefined ? undefined : offset + limit);
-  },
-  search_pages: (a) =>
-    post("/api/pages/search", { query: a.query, limit: a.limit ?? null, page_type: null }).then(
-      (r) => r.pages ?? r,
-    ),
+  list_pages: (a) => listPagesVia(a, undefined),
+  search_pages: (a) => searchPagesVia(a, undefined),
+  // M5 truth axes (App PR) — explicit-browse counterparts for the human
+  // "browse the wiki" surface only, mirroring WenlanClient's
+  // list_pages_explicit_browse/search_pages_explicit_browse in app/src/api.rs.
+  // Same routes as list_pages/search_pages, plus the two headers that tell the
+  // daemon a human asked. Those headers are the whole difference between the
+  // two pairs, so a preview that dropped them would show provisional pages
+  // filtered out exactly where the app shows them.
+  list_pages_explicit_browse: (a) => listPagesVia(a, EXPLICIT_BROWSE_HEADERS),
+  search_pages_explicit_browse: (a) => searchPagesVia(a, EXPLICIT_BROWSE_HEADERS),
   list_recent_pages: (a) =>
     get(`/api/pages/recent${qs({ limit: a?.limit, since_ms: a?.sinceMs })}`).then(
       (r) => r.pages ?? r,

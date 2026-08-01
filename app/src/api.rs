@@ -293,6 +293,61 @@ pub struct CommunityMembersResponse {
     pub next_cursor: Option<CommunityMemberCursor>,
 }
 
+// ── M5 truth axes (App PR) ──────────────────────────────────────────────
+// `Page.truth: Option<PageTruth>` is hand-mirrored from
+// `crates/wenlan-types/src/pages.rs` — same situation as the page-map and
+// community types above: the field is merged to the daemon but the pinned
+// wenlan-types 0.14.1 predates it, and bumping the pin is known to break
+// search.rs. `list_pages`/`search_pages` deserialize through
+// `PageWithTruth` below instead of the pinned `wenlan_types::pages::Page`
+// so the field isn't silently dropped.
+//
+// The daemon only ever populates this on an `EntryOnly`-reduced listing
+// entry (`crates/wenlan-core/src/truth_adapter.rs::reduce_to_entry`), which
+// requires the durable cutover generation to be >= 1 — permanently 0 in
+// production today (`docs/plans/2026-07-28-m5-prc-adapters.md`). `None`
+// otherwise, including on every full-page fetch (`get_page`), so the field
+// is naturally absent everywhere until the daemon's PR-C ceremony ships.
+
+/// Both M5 truth axes for one page. Mirrors `wenlan_types::pages::PageTruth`.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PageTruth {
+    pub supported: bool,
+    pub human_reviewed: bool,
+}
+
+/// Header declaring this client renders both M5 truth axes.
+/// Mirrors `wenlan_core::truth_contract::CONTRACT_HEADER`.
+const TRUTH_CONTRACT_HEADER: &str = "x-wenlan-truth-contract";
+/// Mirrors `wenlan_core::truth_contract::TRUTH_CONTRACT_VERSION`.
+const TRUTH_CONTRACT_VERSION: &str = "1";
+/// Header marking a call as a human-initiated explicit browse rather than an
+/// automatic/background read. Mirrors `wenlan_core::truth_contract::INTENT_HEADER`.
+const TRUTH_INTENT_HEADER: &str = "x-wenlan-reader-intent";
+/// Mirrors `wenlan_core::truth_contract::INTENT_MARKER_VALUE`.
+const TRUTH_INTENT_EXPLICIT: &str = "explicit";
+
+/// A page carrying its wire-typed fields plus the M5 truth axes, via
+/// `#[serde(flatten)]` so the JSON shape stays byte-identical to a plain
+/// `wenlan_types::pages::Page` with one additional sibling `truth` field —
+/// callers that only read typed `Page` fields (title, summary, ...) are
+/// unaffected; only the two explicit-browse listing calls need the wider
+/// type.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PageWithTruth {
+    #[serde(flatten)]
+    pub page: wenlan_types::pages::Page,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub truth: Option<PageTruth>,
+}
+
+/// Wire-compatible with `wenlan_types::responses::SearchPagesResponse`, but
+/// each page captures `truth` via [`PageWithTruth`].
+#[derive(Debug, Clone, Deserialize)]
+struct SearchPagesResponseWithTruth {
+    pages: Vec<PageWithTruth>,
+}
+
 impl Default for WenlanClient {
     fn default() -> Self {
         Self::new()
@@ -849,6 +904,115 @@ impl WenlanClient {
         resp.json()
             .await
             .map_err(|e| format!("Parse {}: {}", path, e))
+    }
+
+    /// Declares M5 truth-contract support and marks the call as a
+    /// human-initiated explicit browse (`crates/wenlan-core/src/truth_contract.rs`).
+    /// Only for a `Collection`- or `NamedPage`-shaped route a human directly
+    /// triggered by navigating to a page list or a specific page — never for
+    /// an automatic/background read, which must keep receiving `Automatic`
+    /// (provisional pages excluded) exactly as before M5. Sending this on a
+    /// route with no truth adapter makes the daemon refuse the whole
+    /// request, so callers must be routes the reader manifest classifies
+    /// `Collection`/`NamedPage`/`CollectionAndNamedPage` — verified for
+    /// `GET /api/pages` and `POST /api/pages/search` against
+    /// `crates/wenlan-core/src/truth_manifest.rs` before this method's two
+    /// call sites were added.
+    async fn get_json_explicit_browse<T: DeserializeOwned>(&self, path: &str) -> Result<T, String> {
+        let resp = self
+            .client
+            .get(self.url(path))
+            .header(TRUTH_CONTRACT_HEADER, TRUTH_CONTRACT_VERSION)
+            .header(TRUTH_INTENT_HEADER, TRUTH_INTENT_EXPLICIT)
+            .send()
+            .await
+            .map_err(|e| format!("HTTP GET {}: {}", path, e))?;
+        if !resp.status().is_success() {
+            return Err(format!("HTTP GET {} returned {}", path, resp.status()));
+        }
+        resp.json()
+            .await
+            .map_err(|e| format!("Parse {}: {}", path, e))
+    }
+
+    /// POST counterpart of [`get_json_explicit_browse`]; same headers, same
+    /// caller obligation to only target a `Collection`/`NamedPage`-shaped
+    /// route (verified for `POST /api/pages/search`).
+    async fn post_json_explicit_browse<Req: Serialize, Resp: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &Req,
+    ) -> Result<Resp, String> {
+        let resp = self
+            .client
+            .post(self.url(path))
+            .header(TRUTH_CONTRACT_HEADER, TRUTH_CONTRACT_VERSION)
+            .header(TRUTH_INTENT_HEADER, TRUTH_INTENT_EXPLICIT)
+            .json(body)
+            .send()
+            .await
+            .map_err(|e| format!("HTTP POST {}: {}", path, e))?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            return Err(format!("HTTP POST {} returned {}: {}", path, status, text));
+        }
+        resp.json()
+            .await
+            .map_err(|e| format!("Parse {}: {}", path, e))
+    }
+
+    /// Explicit-browse counterpart of `list_pages` (`search.rs`): same query,
+    /// but declares the M5 truth contract and the human-intent marker so a
+    /// post-cutover daemon may attach `truth` to entries it would otherwise
+    /// hide. For the human "browse the wiki" surface only — never a
+    /// polling/automatic reader (see `get_json_explicit_browse`).
+    pub async fn list_pages_explicit_browse(
+        &self,
+        status: Option<&str>,
+        domain: Option<&str>,
+        limit: Option<usize>,
+        offset: Option<usize>,
+    ) -> Result<Vec<PageWithTruth>, String> {
+        let mut params: Vec<String> = Vec::new();
+        if let Some(s) = status {
+            params.push(format!("status={}", s));
+        }
+        if let Some(d) = domain {
+            params.push(format!("domain={}", d));
+        }
+        if let Some(l) = limit {
+            params.push(format!("limit={}", l));
+        }
+        if let Some(o) = offset {
+            params.push(format!("offset={}", o));
+        }
+        let path = if params.is_empty() {
+            "/api/pages".to_string()
+        } else {
+            format!("/api/pages?{}", params.join("&"))
+        };
+        let resp: SearchPagesResponseWithTruth = self.get_json_explicit_browse(&path).await?;
+        Ok(resp.pages)
+    }
+
+    /// Explicit-browse counterpart of `search_pages` (`search.rs`); see
+    /// [`list_pages_explicit_browse`].
+    pub async fn search_pages_explicit_browse(
+        &self,
+        query: String,
+        limit: Option<usize>,
+    ) -> Result<Vec<PageWithTruth>, String> {
+        let req = wenlan_types::requests::SearchPagesRequest {
+            query,
+            limit,
+            page_type: None,
+            space: None,
+        };
+        let resp: SearchPagesResponseWithTruth = self
+            .post_json_explicit_browse("/api/pages/search", &req)
+            .await?;
+        Ok(resp.pages)
     }
 
     pub async fn get_page_map(&self, page_id: &str) -> Result<serde_json::Value, String> {
@@ -2514,5 +2678,88 @@ mod tests {
         let parsed: serde_json::Value =
             serde_json::from_str(&err).expect("status envelope is JSON");
         assert_eq!(parsed["status"], 404);
+    }
+
+    #[tokio::test]
+    async fn list_pages_explicit_browse_sends_the_truth_contract_and_intent_headers() {
+        let (base_url, request) = serve_json_once(
+            r#"{"pages":[{"id":"p1","title":"P1","summary":null,"content":"","entity_id":null,"domain":null,"source_memory_ids":[],"version":1,"status":"active","created_at":"","last_compiled":"","last_modified":"","sources_updated_count":0,"user_edited":false,"truth":{"supported":false,"human_reviewed":false}}]}"#,
+        )
+        .await;
+        let client = WenlanClient {
+            client: reqwest::Client::new(),
+            base_url,
+        };
+
+        let pages = client
+            .list_pages_explicit_browse(Some("active"), None, Some(10), None)
+            .await
+            .expect("list_pages_explicit_browse succeeds");
+
+        assert_eq!(pages.len(), 1);
+        assert_eq!(pages[0].page.id, "p1");
+        assert_eq!(
+            pages[0].truth,
+            Some(PageTruth {
+                supported: false,
+                human_reviewed: false
+            })
+        );
+        let request = request.await.unwrap();
+        assert_eq!(
+            request.lines().next().unwrap_or_default(),
+            "GET /api/pages?status=active&limit=10 HTTP/1.1"
+        );
+        assert!(request
+            .lines()
+            .any(|line| line.eq_ignore_ascii_case("x-wenlan-truth-contract: 1")));
+        assert!(request
+            .lines()
+            .any(|line| line.eq_ignore_ascii_case("x-wenlan-reader-intent: explicit")));
+    }
+
+    #[tokio::test]
+    async fn list_pages_explicit_browse_defaults_truth_to_none_when_the_daemon_omits_it() {
+        let (base_url, _request) = serve_json_once(
+            r#"{"pages":[{"id":"p1","title":"P1","summary":null,"content":"","entity_id":null,"domain":null,"source_memory_ids":[],"version":1,"status":"active","created_at":"","last_compiled":"","last_modified":"","sources_updated_count":0,"user_edited":false}]}"#,
+        )
+        .await;
+        let client = WenlanClient {
+            client: reqwest::Client::new(),
+            base_url,
+        };
+
+        let pages = client
+            .list_pages_explicit_browse(None, None, None, None)
+            .await
+            .expect("list_pages_explicit_browse succeeds");
+
+        assert_eq!(pages[0].truth, None);
+    }
+
+    #[tokio::test]
+    async fn search_pages_explicit_browse_sends_the_truth_contract_and_intent_headers() {
+        let (base_url, request) = serve_json_once(r#"{"pages":[]}"#).await;
+        let client = WenlanClient {
+            client: reqwest::Client::new(),
+            base_url,
+        };
+
+        client
+            .search_pages_explicit_browse("hello".to_string(), Some(5))
+            .await
+            .expect("search_pages_explicit_browse succeeds");
+
+        let request = request.await.unwrap();
+        assert_eq!(
+            request.lines().next().unwrap_or_default(),
+            "POST /api/pages/search HTTP/1.1"
+        );
+        assert!(request
+            .lines()
+            .any(|line| line.eq_ignore_ascii_case("x-wenlan-truth-contract: 1")));
+        assert!(request
+            .lines()
+            .any(|line| line.eq_ignore_ascii_case("x-wenlan-reader-intent: explicit")));
     }
 }
