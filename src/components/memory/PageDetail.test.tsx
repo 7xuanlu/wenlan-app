@@ -15,6 +15,10 @@ import {
 } from "./editor/editorTestUtils";
 
 vi.mock("../../lib/tauri", () => ({
+  // Fails closed, which is what an older or unreachable daemon looks like:
+  // the review action stays disabled unless a test opts in.
+  pageReviewSupported: vi.fn().mockResolvedValue(false),
+  reviewPage: vi.fn(),
   getPage: vi.fn().mockResolvedValue({
     id: "concept_abc",
     title: "libSQL Architecture",
@@ -943,5 +947,89 @@ describe("PageDetail", () => {
     await screen.findByText("libSQL stores vectors");
     expect(getPageSources).toHaveBeenCalledTimes(1);
     expect(getPageSources).toHaveBeenCalledWith("concept_abc");
+  });
+
+  describe("marking a page reviewed", () => {
+    async function openPageActions(user: ReturnType<typeof userEvent.setup>) {
+      await screen.findByText("libSQL Architecture");
+      await user.click(screen.getByRole("button", { name: "Page actions" }));
+      return screen.getByRole("menuitem", { name: "Mark page reviewed" });
+    }
+
+    it("stays disabled while the daemon cannot record reviews", async () => {
+      // The gate fails closed: `pageReviewSupported` resolves false in the
+      // module mock, which is what a pre-cutover or unreachable daemon looks
+      // like. Marking a page reviewed there records something no surface can
+      // show, so the action explains itself rather than pretending to work.
+      const { user } = renderWithQuery(<PageDetail {...defaultProps} />);
+
+      const action = await openPageActions(user);
+
+      expect(action).toBeDisabled();
+      expect(action).toHaveAttribute(
+        "title",
+        "This version of Wenlan cannot record page reviews yet.",
+      );
+    });
+
+    it("sends the content on screen, not just the page id", async () => {
+      // The mark is bound to the exact text the reader had in front of them.
+      // Passing anything else either fails as stale or, worse, attributes
+      // their approval to content they never saw.
+      const { pageReviewSupported, reviewPage, getPage } = await import("../../lib/tauri");
+      (pageReviewSupported as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+      (reviewPage as ReturnType<typeof vi.fn>).mockResolvedValue({
+        kind: "applied",
+        reviewed_page_version: 4,
+      });
+      const { content } = await (getPage as ReturnType<typeof vi.fn>)("concept_abc");
+      const { user } = renderWithQuery(<PageDetail {...defaultProps} />);
+
+      const action = await openPageActions(user);
+      await waitFor(() => expect(action).toBeEnabled());
+      await user.click(action);
+
+      await screen.findByText("Marked as reviewed.");
+      expect(reviewPage).toHaveBeenCalledWith("concept_abc", content);
+    });
+
+    it("offers a reload when the page moved on under the reader", async () => {
+      const { pageReviewSupported, reviewPage, getPage } = await import("../../lib/tauri");
+      (pageReviewSupported as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+      (reviewPage as ReturnType<typeof vi.fn>).mockResolvedValue({ kind: "stale" });
+      const { user } = renderWithQuery(<PageDetail {...defaultProps} />);
+
+      const action = await openPageActions(user);
+      await waitFor(() => expect(action).toBeEnabled());
+      await user.click(action);
+
+      await screen.findByText(/This page changed after you opened it/);
+      const fetchesBefore = (getPage as ReturnType<typeof vi.fn>).mock.calls.length;
+      await user.click(screen.getByRole("button", { name: "Reload" }));
+
+      // The reload has to actually re-read the page; a notice that only
+      // dismisses itself would leave the reader looking at the same stale text
+      // and clicking review again forever.
+      await waitFor(() =>
+        expect((getPage as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(
+          fetchesBefore,
+        ),
+      );
+      expect(screen.queryByText(/This page changed after you opened it/)).toBeNull();
+    });
+
+    it("reads an already-recorded review as done rather than as a failure", async () => {
+      const { pageReviewSupported, reviewPage } = await import("../../lib/tauri");
+      (pageReviewSupported as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+      (reviewPage as ReturnType<typeof vi.fn>).mockResolvedValue({ kind: "replayed" });
+      const { user } = renderWithQuery(<PageDetail {...defaultProps} />);
+
+      const action = await openPageActions(user);
+      await waitFor(() => expect(action).toBeEnabled());
+      await user.click(action);
+
+      await screen.findByText("This page was already marked as reviewed.");
+      expect(screen.queryByRole("button", { name: "Reload" })).toBeNull();
+    });
   });
 });

@@ -1663,6 +1663,58 @@ export async function getPage(id: string): Promise<Page | null> {
   return page ? withDomain(page) : null;
 }
 
+/**
+ * What the daemon answered when asked to mark a page human-reviewed.
+ *
+ * Every variant but `applied` is a refusal the user is told something
+ * different about, which is why this is a tagged union rather than a boolean
+ * plus an error string. Binding spec:
+ * `docs/plans/2026-07-27-m5-presence-threat-model.md` in the daemon repo.
+ */
+export type PageReviewOutcome =
+  /** The mark landed. A retry of one that already succeeded arrives here too. */
+  | { kind: "applied"; reviewed_page_version: number }
+  /** The page changed after it was read, so the approval is about text nobody
+   *  is looking at any more. Reload and ask again. */
+  | { kind: "stale" }
+  /** The capability's sixty seconds ran out in flight. Clicking again mints a
+   *  fresh one, so this one is worth retrying as-is. */
+  | { kind: "expired" }
+  /** The capability did not verify, or named a page the daemon does not have. */
+  | { kind: "invalid" }
+  /** Its one-shot nonce was already spent. */
+  | { kind: "replayed" }
+  /** The daemon cannot check presence at all — the install secret is missing
+   *  or unreadable. Not a licence to proceed. */
+  | { kind: "unavailable" }
+  /** This daemon has no review route; it predates the endpoint. */
+  | { kind: "unsupported" };
+
+/**
+ * Marks a page human-reviewed.
+ *
+ * `content` is the body the caller actually rendered. It is not decoration:
+ * the Tauri backend hashes it and binds the presence capability to that exact
+ * text, so passing anything other than what the human read either fails as
+ * `stale` or, worse, attributes their approval to content they never saw.
+ *
+ * The capability itself is minted and submitted entirely inside the Rust
+ * backend and never crosses this boundary in either direction (threat model
+ * T1) — which is why this takes a page and its content, and not a token.
+ */
+export async function reviewPage(id: string, content: string): Promise<PageReviewOutcome> {
+  return invoke<PageReviewOutcome>("review_page", { pageId: id, content });
+}
+
+/**
+ * Whether this daemon's M5 truth cutover is live. `false` for a daemon that
+ * predates the field, one still at generation 0, and one that could not read
+ * its own generation — three situations with one honest reading.
+ */
+export async function pageReviewSupported(): Promise<boolean> {
+  return invoke<boolean>("page_review_supported");
+}
+
 export async function createPage(input: CreatePageInput): Promise<CreatePageResponse> {
   const normalizedSpace = input.space?.trim() || null;
   const result = await invoke<Omit<CreatePageResponse, "warnings"> & { warnings?: string[] }>("create_page", {
