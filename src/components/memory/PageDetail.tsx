@@ -290,15 +290,21 @@ export default function PageDetail({
   });
 
   // Fails closed on purpose, exactly like `useDaemonVersion`: an unreachable
-  // or older daemon leaves this undefined, and undefined must read as "not
-  // available" rather than "unknown, offer it anyway". Marking a page reviewed
-  // before the truth cutover is live records something no surface can show.
-  const { data: reviewSupported } = useQuery({
+  // daemon leaves this undefined, and undefined must read as "not available"
+  // rather than "unknown, offer it anyway". The backend answers with WHY it is
+  // unavailable, because the two reasons send you to different places — one is
+  // fixed by upgrading the daemon, the other cannot be fixed here at all.
+  const { data: reviewAvailability } = useQuery({
     queryKey: ["page-review-supported"],
     queryFn: pageReviewSupported,
     staleTime: 60_000,
     retry: 1,
   });
+  const reviewSupported = reviewAvailability === "ready";
+  const reviewUnavailableReason =
+    reviewAvailability === "platform_unsupported"
+      ? t("pageDetail.reviewUnsupportedPlatform")
+      : t("pageDetail.reviewUnsupported");
 
   useEffect(() => {
     if (page == null) return;
@@ -1680,7 +1686,7 @@ export default function PageDetail({
                       title={
                         reviewSupported
                           ? t("pageDetail.markPageReviewed")
-                          : t("pageDetail.reviewUnsupported")
+                          : reviewUnavailableReason
                       }
                       type="button"
                     >
@@ -1779,8 +1785,23 @@ export default function PageDetail({
             <button
               className="ml-2 underline"
               onClick={() => {
-                setReviewNotice(null);
-                void refetchPage();
+                // Clear only once the reload has actually landed. Dropping the
+                // warning first and firing the refetch into the void leaves the
+                // worst state on screen: the same stale text, no warning, and a
+                // Review action that looks ready to approve content the daemon
+                // has already refused once.
+                void (async () => {
+                  const reloaded = await refetchPage();
+                  if (reloaded.isError) {
+                    setReviewNotice({
+                      kind: "error",
+                      message: t("pageDetail.reviewReloadFailed"),
+                      offerReload: true,
+                    });
+                    return;
+                  }
+                  setReviewNotice(null);
+                })();
               }}
               type="button"
             >

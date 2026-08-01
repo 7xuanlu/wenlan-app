@@ -689,15 +689,20 @@ impl WenlanClient {
         self.get_json("/api/status").await
     }
 
-    /// The daemon's M5 truth state as reported, or `None` when it does not
-    /// report one.
+    /// The daemon's M5 truth state as reported, or `None` when it reports none.
     ///
-    /// `None` means only that the field was absent — an older daemon. It does
-    /// NOT mean the cutover has not run: a daemon at generation 0 still sends
-    /// the field, and `Some(TruthStatus { cutover_generation: 0, .. })` is the
-    /// answer it deserves. Collapsing that into `None` would tell a caller the
-    /// daemon is too old when it is merely pre-ceremony, and those two want
-    /// opposite handling.
+    /// `None` conflates two daemons, and the caller cannot separate them from
+    /// here: one predates the truth contract, and one carries it but has not
+    /// run its cutover ceremony. `handle_status`
+    /// (`crates/wenlan-server/src/routes.rs:127`) omits the field below
+    /// generation 1 on purpose, so "absent" is the only spelling of "not live"
+    /// and a pre-ceremony daemon is indistinguishable from an ancient one on
+    /// this endpoint alone.
+    ///
+    /// So `Some` proves the daemon is current; `None` proves nothing. Anything
+    /// gating a feature on daemon support needs a second signal for the `None`
+    /// case — see `page_review::review_availability`, which falls through to
+    /// the version floor.
     pub async fn truth_status(&self) -> Result<Option<TruthStatus>, String> {
         let envelope: StatusTruthEnvelope = self.get_json("/api/status").await?;
         Ok(envelope.truth)
@@ -2915,12 +2920,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_daemon_before_its_cutover_still_reports_a_truth_status() {
-        // Generation 0 is a daemon that carries the truth contract and has not
-        // run the ceremony yet — which is exactly when an operator is doing the
-        // reviewing that the ceremony later consumes. Reporting it as `None`
-        // would make the app treat that daemon as too old and take the Review
-        // action away at the one moment it matters most.
+    async fn a_generation_zero_truth_status_parses_rather_than_erroring() {
+        // FORWARD-COMPAT COVERAGE, NOT DAEMON BEHAVIOUR. The pinned daemon
+        // never sends this: `handle_status` filters `generation > 0` before
+        // building the field, so generation 0 goes out as an absent `truth`.
+        // This pins that if that ever changes, the app reads the number instead
+        // of failing to parse the response — it must not be read as evidence
+        // that a pre-ceremony daemon is distinguishable here. It is not, which
+        // is why `review_availability` carries a version floor.
         let (base_url, _request) = serve_response_once(
             "200 OK",
             r#"{"is_running":true,"files_indexed":0,"files_total":0,"sources_connected":[],"truth":{"cutover_generation":0,"contract_version":1}}"#,
@@ -2942,9 +2949,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_daemon_that_omits_the_truth_field_reports_none() {
-        // The only thing `None` is allowed to mean: a daemon predating the
-        // truth contract, and therefore predating the review route it shipped
-        // alongside.
+        // What a real pre-ceremony daemon sends, and what an ancient one sends:
+        // the same thing. Nothing downstream may treat this as "too old".
         let (base_url, _request) = serve_response_once(
             "200 OK",
             r#"{"is_running":true,"files_indexed":0,"files_total":0,"sources_connected":[]}"#,

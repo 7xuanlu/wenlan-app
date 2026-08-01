@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import type { AppLocale } from "../../src/i18n/locales";
-import type { MemoryItem, PageReviewOutcome } from "../../src/lib/tauri";
+import type { MemoryItem, PageReviewAvailability, PageReviewOutcome } from "../../src/lib/tauri";
 import type { SpacesNavigationFixture } from "../fixtures/spacesNavigation";
 
 export type MockCommandCall = {
@@ -25,7 +25,7 @@ export type TauriMockPageScenario = {
    * comparing content, as the daemon does.
    */
   readonly pageReview?: {
-    readonly supported?: boolean;
+    readonly availability?: PageReviewAvailability;
     readonly outcome?: PageReviewOutcome;
   };
   readonly firstWriteRemoteMutation?: {

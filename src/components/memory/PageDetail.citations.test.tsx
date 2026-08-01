@@ -22,7 +22,7 @@ const tauriMocks = vi.hoisted(() => ({
 vi.mock("../../lib/tauri", () => ({
   // Fails closed, which is what an older or unreachable daemon looks like:
   // the review action stays disabled unless a test opts in.
-  pageReviewSupported: vi.fn().mockResolvedValue(false),
+  pageReviewSupported: vi.fn().mockResolvedValue("daemon_unsupported"),
   reviewPage: vi.fn(),
   ...tauriMocks,
   FACET_COLORS: {},

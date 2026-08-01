@@ -190,7 +190,7 @@ export class TauriMockRuntime {
       case "update_page": return this.updatePage(args);
       case "delete_page": return this.deletePage(args);
       case "redistill_page": return this.redistillPage(args);
-      case "page_review_supported": return this.pageScenario.pageReview?.supported ?? true;
+      case "page_review_supported": return this.pageScenario.pageReview?.availability ?? "ready";
       case "review_page": return this.reviewPage(args);
       case "get_page_map": return this.pageMaps.get(args);
       case "improve_page_map": return this.pageMaps.improve(args);

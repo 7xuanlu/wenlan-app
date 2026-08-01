@@ -95,31 +95,93 @@ pub async fn review_page(
     client.review_page(&page_id, &body).await
 }
 
-/// Whether this daemon carries the page-review route.
+/// The first released daemon containing `POST /api/pages/{id}/review`.
 ///
-/// The question is whether the route EXISTS, not whether the truth cutover has
-/// run. Those come apart, and getting it backwards is worse than it looks:
-/// pre-cutover human reviews are the input the cutover ceremony consumes, so a
-/// gate that waits for `cutover_generation > 0` disables the action during
-/// exactly the window when reviewing is the operator's job.
+/// The route landed in wenlan `1c903bec` (#418). `version.txt` at that commit
+/// reads 0.15.2 and `v0.15.2` is one of its ancestors, so #418 missed that
+/// release and — the repo bumps patch on every release — ships in 0.15.3.
+const REVIEW_DAEMON_FLOOR: &str = "0.15.3";
+
+/// Mirrors `daemon_version_supports_page_edit` in `search.rs`, including its
+/// treatment of pre-releases: a `-dev` build is not the released artifact the
+/// floor names, so it does not clear it.
+fn daemon_version_supports_review(version: &str) -> bool {
+    let Ok(candidate) = semver::Version::parse(version) else {
+        return false;
+    };
+    let floor = semver::Version::parse(REVIEW_DAEMON_FLOOR)
+        .expect("review daemon floor is a static valid SemVer");
+
+    candidate.pre.is_empty() && candidate >= floor
+}
+
+/// Why the Review action is or is not offered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PageReviewAvailability {
+    Ready,
+    /// This daemon has no review route — too old, or unreachable.
+    DaemonUnsupported,
+    /// This build cannot mint a capability at all, on any daemon.
+    PlatformUnsupported,
+}
+
+/// Whether a review can succeed right now, and if not, which fact stops it.
 ///
-/// `truth.is_some()` is the probe because the daemon shipped its truth field
-/// and `POST /api/pages/{id}/review` in one commit (wenlan `1c903bec`, #418) —
-/// which makes the field's presence necessary and sufficient, not merely a
-/// hint. It is also the negotiation the daemon asks for: `StatusResponse`
-/// carries a `capabilities` list documented "clients must negotiate against
-/// this list instead of inferring support from a version string", and #418
-/// published no capability string for the route, leaving the truth field as
-/// the only structural signal on offer. A version floor would work today and
-/// contradict that contract tomorrow.
+/// Two independent things must hold, and they fail for unrelated reasons, so
+/// the UI is told which one gave way rather than being handed a bare false.
 ///
-/// Fails closed. An unreachable daemon errors out and reads the same as one
-/// too old to answer, and if a daemon ever did carry the route without the
-/// field, the click returns 404 and the UI says so.
+/// **Can this build mint?** Checked first because it is local, free, and
+/// nothing remote can overturn it: where `owner_only_supported` refuses, every
+/// mint fails and no daemon upgrade helps.
+///
+/// **Does this daemon have the route?** Two signals, because neither alone is
+/// enough. `truth.is_some()` proves it — the daemon shipped its truth field
+/// and the review route in one commit (wenlan `1c903bec`, #418) — but it does
+/// NOT disprove it: `handle_status` (`crates/wenlan-server/src/routes.rs:127`)
+/// deliberately omits the field below generation 1, so a daemon that has the
+/// route but has not run its cutover ceremony reports no truth at all. Gating
+/// on the field alone would disable the action for a pre-ceremony operator,
+/// who is exactly the person whose reviews the ceremony later consumes. The
+/// version floor is what covers that daemon.
+///
+/// The durable answer is a `page_review` capability string in the daemon's
+/// `capabilities` list, which `StatusResponse` already tells clients to
+/// negotiate against instead of inferring support from a version. #418 did not
+/// publish one; when it does, this collapses back to one check.
+///
+/// Fails closed: an unreachable daemon answers neither probe and reads the
+/// same as one too old.
+pub(crate) async fn review_availability(
+    client: &crate::api::WenlanClient,
+) -> PageReviewAvailability {
+    if !crate::presence::minting_supported() {
+        return PageReviewAvailability::PlatformUnsupported;
+    }
+
+    if matches!(client.truth_status().await, Ok(Some(_))) {
+        return PageReviewAvailability::Ready;
+    }
+
+    match client.health().await {
+        Ok(health) if daemon_version_supports_review(&health.version) => {
+            PageReviewAvailability::Ready
+        }
+        _ => PageReviewAvailability::DaemonUnsupported,
+    }
+}
+
+/// Whether the Review action can be offered, and why not when it cannot.
+///
+/// Delegates without adding anything: the decision and both probes live in
+/// [`review_availability`], which the tests drive directly against a fake
+/// daemon. Nothing here is worth a second implementation to get wrong.
 #[tauri::command]
-pub async fn page_review_supported(state: tauri::State<'_, State>) -> Result<bool, String> {
+pub async fn page_review_supported(
+    state: tauri::State<'_, State>,
+) -> Result<PageReviewAvailability, String> {
     let client = state.read().await.client.clone();
-    Ok(client.truth_status().await?.is_some())
+    Ok(review_availability(&client).await)
 }
 
 #[cfg(test)]
@@ -169,5 +231,143 @@ mod tests {
             operation_id("p1", &content_digest("body")),
             operation_id("p2", &content_digest("body")),
         );
+    }
+
+    /// A daemon that answers `/api/status` and `/api/health` by path, as many
+    /// times as asked. The readiness probe makes up to two requests and their
+    /// order is its business, not the test's.
+    async fn serve_daemon(
+        status_body: &'static str,
+        health_body: &'static str,
+    ) -> (String, tokio::task::JoinHandle<()>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let handle = tokio::spawn(async move {
+            loop {
+                let Ok((mut stream, _)) = listener.accept().await else {
+                    return;
+                };
+                let mut buf = [0_u8; 2048];
+                let Ok(n) = stream.read(&mut buf).await else {
+                    continue;
+                };
+                let request = String::from_utf8_lossy(&buf[..n]).to_string();
+                let body = if request.contains("/api/health") {
+                    health_body
+                } else {
+                    status_body
+                };
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = stream.write_all(response.as_bytes()).await;
+            }
+        });
+        (format!("http://{}", addr), handle)
+    }
+
+    fn client_for(base_url: String) -> crate::api::WenlanClient {
+        crate::api::WenlanClient::with_base_url(base_url)
+    }
+
+    const NO_TRUTH: &str =
+        r#"{"is_running":true,"files_indexed":0,"files_total":0,"sources_connected":[]}"#;
+    const WITH_TRUTH: &str = r#"{"is_running":true,"files_indexed":0,"files_total":0,"sources_connected":[],"truth":{"cutover_generation":3,"contract_version":1}}"#;
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn a_daemon_before_its_cutover_can_still_take_reviews() {
+        // The regression this pair exists for. `handle_status` omits the truth
+        // field below generation 1, so a daemon carrying the review route but
+        // not yet its ceremony sends no truth at all — and gating on that field
+        // alone disabled the action for the operator whose reviews the ceremony
+        // is about to consume. The version is what says the route is there.
+        let (base_url, _server) = serve_daemon(
+            NO_TRUTH,
+            r#"{"status":"ok","db_initialized":true,"version":"0.15.3"}"#,
+        )
+        .await;
+
+        assert_eq!(
+            review_availability(&client_for(base_url)).await,
+            PageReviewAvailability::Ready,
+        );
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn a_daemon_that_reports_its_cutover_needs_no_version_check() {
+        let (base_url, _server) = serve_daemon(
+            WITH_TRUTH,
+            r#"{"status":"ok","db_initialized":true,"version":"0.0.1"}"#,
+        )
+        .await;
+
+        assert_eq!(
+            review_availability(&client_for(base_url)).await,
+            PageReviewAvailability::Ready,
+        );
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn a_daemon_below_the_floor_with_no_cutover_is_unsupported() {
+        let (base_url, _server) = serve_daemon(
+            NO_TRUTH,
+            r#"{"status":"ok","db_initialized":true,"version":"0.15.2"}"#,
+        )
+        .await;
+
+        assert_eq!(
+            review_availability(&client_for(base_url)).await,
+            PageReviewAvailability::DaemonUnsupported,
+        );
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn an_unreachable_daemon_is_unsupported_rather_than_ready() {
+        // Fail closed. Nothing is listening on this port.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base_url = format!("http://{}", listener.local_addr().unwrap());
+        drop(listener);
+
+        assert_eq!(
+            review_availability(&client_for(base_url)).await,
+            PageReviewAvailability::DaemonUnsupported,
+        );
+    }
+
+    #[tokio::test]
+    #[cfg(not(unix))]
+    async fn a_platform_that_cannot_mint_says_so_instead_of_blaming_the_daemon() {
+        // On Windows every mint refuses (`presence::owner_only_supported`), so
+        // a daemon new enough to take the review still cannot be offered one.
+        // Telling the user to upgrade the daemon would send them after the
+        // wrong thing.
+        let (base_url, _server) = serve_daemon(
+            WITH_TRUTH,
+            r#"{"status":"ok","db_initialized":true,"version":"9.9.9"}"#,
+        )
+        .await;
+
+        assert_eq!(
+            review_availability(&client_for(base_url)).await,
+            PageReviewAvailability::PlatformUnsupported,
+        );
+    }
+
+    #[test]
+    fn the_floor_is_the_first_release_carrying_the_route() {
+        assert!(daemon_version_supports_review("0.15.3"));
+        assert!(daemon_version_supports_review("0.16.0"));
+        assert!(!daemon_version_supports_review("0.15.2"));
+        // A pre-release of the floor is not the released artifact it names.
+        assert!(!daemon_version_supports_review("0.15.3-dev"));
+        assert!(!daemon_version_supports_review("not-a-version"));
     }
 }

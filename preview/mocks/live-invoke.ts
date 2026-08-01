@@ -588,9 +588,6 @@ export const HANDLERS: Record<string, (a: any) => Promise<unknown>> = {
   },
   get_page_revisions: (a) => get(`/api/pages/${enc(a.pageId)}/revisions`),
   redistill_page: (a) => post(`/api/distill/${enc(a.pageId)}`, {}),
-  // Readiness is a plain read, so preview can answer it truthfully. Submitting
-  // a review is not — see `review_page` in DEFAULTS.
-  page_review_supported: () => get("/api/status").then((r) => r?.truth != null),
   update_page: async (a) => {
     const health = await get("/api/health");
     const reportedVersion = String(health?.version ?? "");
@@ -1043,7 +1040,16 @@ export const DEFAULTS: Record<string, unknown> = {
   // here can mint one — and `unavailable` is exactly the protocol's answer for
   // "presence cannot be established", so this is the true answer in this
   // environment rather than a stand-in for one.
-  review_page: { kind: "unavailable" },
+  // Both review commands are fixtures rather than daemon reads. Readiness was
+  // briefly a live `/api/status` call, which made the Review action's state in
+  // preview depend on whether the developer happened to have a current daemon
+  // running — so the surface designers look at changed shape under them for
+  // reasons that had nothing to do with the design. Submitting is a fixture for
+  // the stronger reason that it cannot be done truthfully here at all: a real
+  // review needs a minted capability, and preview has no Tauri backend to mint
+  // one. Nothing is submitted; this is the success affordance, not a success.
+  page_review_supported: "ready",
+  review_page: { kind: "applied", reviewed_page_version: 1 },
   acknowledge_guarded_quit_request: true,
   cancel_guarded_quit_request: true,
   quit_wenlan_full: null,

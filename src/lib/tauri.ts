@@ -1706,13 +1706,20 @@ export async function reviewPage(id: string, content: string): Promise<PageRevie
   return invoke<PageReviewOutcome>("review_page", { pageId: id, content });
 }
 
-/**
- * Whether this daemon's M5 truth cutover is live. `false` for a daemon that
- * predates the field, one still at generation 0, and one that could not read
- * its own generation — three situations with one honest reading.
- */
-export async function pageReviewSupported(): Promise<boolean> {
-  return invoke<boolean>("page_review_supported");
+/** Whether a review can succeed, and when it cannot, which fact stops it. */
+export type PageReviewAvailability =
+  /** Both the daemon and this build can carry it through. */
+  | "ready"
+  /** No review route on this daemon — too old, or unreachable. Fixable by
+   *  upgrading, so the copy points there. */
+  | "daemon_unsupported"
+  /** This build cannot mint a capability on any daemon (owner-only secret
+   *  protection is Unix-only today), so upgrading the daemon would not help
+   *  and the copy must not suggest it. */
+  | "platform_unsupported";
+
+export async function pageReviewSupported(): Promise<PageReviewAvailability> {
+  return invoke<PageReviewAvailability>("page_review_supported");
 }
 
 export async function createPage(input: CreatePageInput): Promise<CreatePageResponse> {

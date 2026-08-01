@@ -325,6 +325,19 @@ fn owner_only_supported() -> Result<(), PresenceError> {
     ))
 }
 
+/// Whether this build can mint at all, answerable without touching the disk.
+///
+/// The UI needs this before offering a review: on a platform where
+/// `owner_only_supported` refuses, every mint fails and no daemon upgrade
+/// changes that, so an enabled control would be a promise nothing can keep.
+/// Callers get a bool because the reason is a build-time fact about the
+/// platform, not a diagnosis of this run — and the message inside the error
+/// names an unimplemented feature, which is not something to put in front of
+/// someone reading a page.
+pub fn minting_supported() -> bool {
+    owner_only_supported().is_ok()
+}
+
 /// Writes a fresh secret into its own new file in `dir` and returns that
 /// file's path alongside the secret. The staging file is owner-only from
 /// creation and belongs to this call alone, so the caller can put it in
