@@ -36,6 +36,7 @@ export const REVIEW_COMMAND_CAPABILITIES = {
   ],
   wikiAndPages: [
     "list_pages",
+    "list_pages_explicit_browse",
     "get_page",
     "create_page",
     "update_page",

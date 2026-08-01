@@ -183,7 +183,7 @@ export class TauriMockRuntime {
         recommended_builtin: "",
       };
       case "record_page_editor_diagnostic": return null;
-      case "list_pages": return this.listPages(args);
+      case "list_pages": case "list_pages_explicit_browse": return this.listPages(args);
       case "get_page": return this.pages.find((page) => page.id === requiredString(command, args, "id")) ?? null;
       case "create_page": return this.createPage(args);
       case "update_page": return this.updatePage(args);
