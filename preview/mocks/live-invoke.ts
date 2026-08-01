@@ -588,6 +588,9 @@ export const HANDLERS: Record<string, (a: any) => Promise<unknown>> = {
   },
   get_page_revisions: (a) => get(`/api/pages/${enc(a.pageId)}/revisions`),
   redistill_page: (a) => post(`/api/distill/${enc(a.pageId)}`, {}),
+  // Readiness is a plain read, so preview can answer it truthfully. Submitting
+  // a review is not — see `review_page` in DEFAULTS.
+  page_review_supported: () => get("/api/status").then((r) => r?.truth != null),
   update_page: async (a) => {
     const health = await get("/api/health");
     const reportedVersion = String(health?.version ?? "");
@@ -1035,6 +1038,12 @@ export const DEFAULTS: Record<string, unknown> = {
   get_skip_title_patterns: [],
   suggest_tags: [],
   record_page_editor_diagnostic: null,
+  // Preview runs in a browser with no Tauri backend, and only that backend
+  // holds the install secret a presence capability is signed with. Nothing
+  // here can mint one — and `unavailable` is exactly the protocol's answer for
+  // "presence cannot be established", so this is the true answer in this
+  // environment rather than a stand-in for one.
+  review_page: { kind: "unavailable" },
   acknowledge_guarded_quit_request: true,
   cancel_guarded_quit_request: true,
   quit_wenlan_full: null,
