@@ -95,12 +95,27 @@ pub async fn review_page(
     client.review_page(&page_id, &body).await
 }
 
-/// Whether this daemon's M5 truth cutover is live.
+/// Whether this daemon carries the page-review route.
 ///
-/// `false` covers a daemon that predates the field, one still at generation 0,
-/// and one that could not read its own generation. `human_reviewed` means
-/// nothing before the cutover, so offering the action there would be offering
-/// a gesture with no effect anybody could observe.
+/// The question is whether the route EXISTS, not whether the truth cutover has
+/// run. Those come apart, and getting it backwards is worse than it looks:
+/// pre-cutover human reviews are the input the cutover ceremony consumes, so a
+/// gate that waits for `cutover_generation > 0` disables the action during
+/// exactly the window when reviewing is the operator's job.
+///
+/// `truth.is_some()` is the probe because the daemon shipped its truth field
+/// and `POST /api/pages/{id}/review` in one commit (wenlan `1c903bec`, #418) —
+/// which makes the field's presence necessary and sufficient, not merely a
+/// hint. It is also the negotiation the daemon asks for: `StatusResponse`
+/// carries a `capabilities` list documented "clients must negotiate against
+/// this list instead of inferring support from a version string", and #418
+/// published no capability string for the route, leaving the truth field as
+/// the only structural signal on offer. A version floor would work today and
+/// contradict that contract tomorrow.
+///
+/// Fails closed. An unreachable daemon errors out and reads the same as one
+/// too old to answer, and if a daemon ever did carry the route without the
+/// field, the click returns 404 and the UI says so.
 #[tauri::command]
 pub async fn page_review_supported(state: tauri::State<'_, State>) -> Result<bool, String> {
     let client = state.read().await.client.clone();

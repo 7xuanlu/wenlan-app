@@ -689,18 +689,18 @@ impl WenlanClient {
         self.get_json("/api/status").await
     }
 
-    /// The daemon's M5 truth-cutover state, or `None` when it is not live.
+    /// The daemon's M5 truth state as reported, or `None` when it does not
+    /// report one.
     ///
-    /// Three situations share that one answer, on purpose: a daemon that
-    /// predates the field omits it, a daemon still at generation 0 omits it,
-    /// and a daemon that could not read its own generation omits it. A client
-    /// that cannot confirm the cutover is live must behave as though it is
-    /// not, so all three collapse to `None` here rather than being teased
-    /// apart into a distinction no caller could act on.
+    /// `None` means only that the field was absent — an older daemon. It does
+    /// NOT mean the cutover has not run: a daemon at generation 0 still sends
+    /// the field, and `Some(TruthStatus { cutover_generation: 0, .. })` is the
+    /// answer it deserves. Collapsing that into `None` would tell a caller the
+    /// daemon is too old when it is merely pre-ceremony, and those two want
+    /// opposite handling.
     pub async fn truth_status(&self) -> Result<Option<TruthStatus>, String> {
         let envelope: StatusTruthEnvelope = self.get_json("/api/status").await?;
-        // The redundant floor for a daemon that sent a zero anyway.
-        Ok(envelope.truth.filter(|t| t.cutover_generation > 0))
+        Ok(envelope.truth)
     }
 
     /// Submits a minted page-review capability to `POST /api/pages/{id}/review`.
@@ -2915,22 +2915,47 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_daemon_that_cannot_confirm_the_cutover_reads_as_not_live() {
-        // Omitted (predates the field, or generation 0) and an explicit zero
-        // are one answer, because a client that cannot confirm the cutover is
-        // live must behave as though it is not.
-        for body in [
-            r#"{"is_running":true,"files_indexed":0,"files_total":0,"sources_connected":[]}"#,
+    async fn a_daemon_before_its_cutover_still_reports_a_truth_status() {
+        // Generation 0 is a daemon that carries the truth contract and has not
+        // run the ceremony yet — which is exactly when an operator is doing the
+        // reviewing that the ceremony later consumes. Reporting it as `None`
+        // would make the app treat that daemon as too old and take the Review
+        // action away at the one moment it matters most.
+        let (base_url, _request) = serve_response_once(
+            "200 OK",
             r#"{"is_running":true,"files_indexed":0,"files_total":0,"sources_connected":[],"truth":{"cutover_generation":0,"contract_version":1}}"#,
-        ] {
-            let (base_url, _request) = serve_response_once("200 OK", body).await;
-            let client = WenlanClient {
-                client: reqwest::Client::new(),
-                base_url,
-            };
+        )
+        .await;
+        let client = WenlanClient {
+            client: reqwest::Client::new(),
+            base_url,
+        };
 
-            assert_eq!(client.truth_status().await.expect("status parses"), None);
-        }
+        assert_eq!(
+            client.truth_status().await.expect("status parses"),
+            Some(TruthStatus {
+                cutover_generation: 0,
+                contract_version: 1,
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn a_daemon_that_omits_the_truth_field_reports_none() {
+        // The only thing `None` is allowed to mean: a daemon predating the
+        // truth contract, and therefore predating the review route it shipped
+        // alongside.
+        let (base_url, _request) = serve_response_once(
+            "200 OK",
+            r#"{"is_running":true,"files_indexed":0,"files_total":0,"sources_connected":[]}"#,
+        )
+        .await;
+        let client = WenlanClient {
+            client: reqwest::Client::new(),
+            base_url,
+        };
+
+        assert_eq!(client.truth_status().await.expect("status parses"), None);
     }
 
     #[tokio::test]
