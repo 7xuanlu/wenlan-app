@@ -99,7 +99,10 @@ pub async fn review_page(
 ///
 /// The route landed in wenlan `1c903bec` (#418). `version.txt` at that commit
 /// reads 0.15.2 and `v0.15.2` is one of its ancestors, so #418 missed that
-/// release and — the repo bumps patch on every release — ships in 0.15.3.
+/// release and — the repo bumps patch on every release — lands in the next.
+/// Release PR #419 publishes exactly that 0.15.3 from a main already
+/// containing `1c903bec`, so any daemon reporting 0.15.3 or above necessarily
+/// carries the route.
 const REVIEW_DAEMON_FLOOR: &str = "0.15.3";
 
 /// Mirrors `daemon_version_supports_page_edit` in `search.rs`, including its
@@ -138,12 +141,16 @@ pub enum PageReviewAvailability {
 /// **Does this daemon have the route?** Two signals, because neither alone is
 /// enough. `truth.is_some()` proves it — the daemon shipped its truth field
 /// and the review route in one commit (wenlan `1c903bec`, #418) — but it does
-/// NOT disprove it: `handle_status` (`crates/wenlan-server/src/routes.rs:127`)
-/// deliberately omits the field below generation 1, so a daemon that has the
-/// route but has not run its cutover ceremony reports no truth at all. Gating
-/// on the field alone would disable the action for a pre-ceremony operator,
-/// who is exactly the person whose reviews the ceremony later consumes. The
-/// version floor is what covers that daemon.
+/// NOT disprove it. `handle_status`
+/// (`crates/wenlan-server/src/routes.rs:133-138`) filters `generation > 0`
+/// before building the field, and the daemon pins that on purpose:
+/// `truth_status_test.rs:74`, `status_omits_truth_until_the_cutover_is_live`,
+/// asserts the key is absent at generation 0 — "reported the same way an old
+/// daemon reports it: not at all". So `truth.is_some()` is exactly
+/// `generation > 0`, and a daemon carrying the route but not yet its cutover
+/// ceremony reports no truth whatsoever. Gating on the field alone disables
+/// the action for a pre-ceremony operator, who is precisely the person whose
+/// reviews the ceremony later consumes. The version floor covers that daemon.
 ///
 /// The durable answer is a `page_review` capability string in the daemon's
 /// `capabilities` list, which `StatusResponse` already tells clients to

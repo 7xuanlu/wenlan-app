@@ -694,10 +694,10 @@ impl WenlanClient {
     /// `None` conflates two daemons, and the caller cannot separate them from
     /// here: one predates the truth contract, and one carries it but has not
     /// run its cutover ceremony. `handle_status`
-    /// (`crates/wenlan-server/src/routes.rs:127`) omits the field below
-    /// generation 1 on purpose, so "absent" is the only spelling of "not live"
-    /// and a pre-ceremony daemon is indistinguishable from an ancient one on
-    /// this endpoint alone.
+    /// (`crates/wenlan-server/src/routes.rs:133-138`) filters `generation > 0`
+    /// before building the field, and `truth_status_test.rs:74` pins it, so
+    /// "absent" is the only spelling of "not live" and a pre-ceremony daemon is
+    /// indistinguishable from an ancient one on this endpoint alone.
     ///
     /// So `Some` proves the daemon is current; `None` proves nothing. Anything
     /// gating a feature on daemon support needs a second signal for the `None`
@@ -2919,33 +2919,14 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn a_generation_zero_truth_status_parses_rather_than_erroring() {
-        // FORWARD-COMPAT COVERAGE, NOT DAEMON BEHAVIOUR. The pinned daemon
-        // never sends this: `handle_status` filters `generation > 0` before
-        // building the field, so generation 0 goes out as an absent `truth`.
-        // This pins that if that ever changes, the app reads the number instead
-        // of failing to parse the response — it must not be read as evidence
-        // that a pre-ceremony daemon is distinguishable here. It is not, which
-        // is why `review_availability` carries a version floor.
-        let (base_url, _request) = serve_response_once(
-            "200 OK",
-            r#"{"is_running":true,"files_indexed":0,"files_total":0,"sources_connected":[],"truth":{"cutover_generation":0,"contract_version":1}}"#,
-        )
-        .await;
-        let client = WenlanClient {
-            client: reqwest::Client::new(),
-            base_url,
-        };
-
-        assert_eq!(
-            client.truth_status().await.expect("status parses"),
-            Some(TruthStatus {
-                cutover_generation: 0,
-                contract_version: 1,
-            })
-        );
-    }
+    // There is deliberately no generation-0 test here. The daemon cannot send
+    // that shape — `handle_status` filters `generation > 0`, and
+    // `truth_status_test.rs:74` (`status_omits_truth_until_the_cutover_is_live`)
+    // asserts the key is absent — so a test pinning how the app reads it would
+    // be pinning a forbidden shape, and would assert nothing beyond serde
+    // reading an `i64`. An earlier revision of this file had one, and its
+    // existence is what made a pre-ceremony daemon look distinguishable from an
+    // ancient one. It is not.
 
     #[tokio::test]
     async fn a_daemon_that_omits_the_truth_field_reports_none() {
