@@ -11,17 +11,14 @@
 //! spec: `docs/plans/2026-07-27-m5-presence-threat-model.md` (in the
 //! `wenlan` daemon repo).
 //!
-//! **Minting only.** The daemon validates a capability, consumes its nonce
-//! inside the mutation transaction, and writes the resulting `attests` edge
-//! or `human_reviewed` flag — but as of this PR there is no daemon HTTP route
-//! or wire request/response type for either mutation (checked against
-//! `crates/wenlan-server/src/routes.rs` and `crates/wenlan-types/src/requests.rs`
-//! on the daemon's `origin/main`; neither declares an attest/review path).
-//! So this module stops at minting a correctly-bound, correctly-redacted
-//! capability — there is nothing to submit it to yet, and inventing an
-//! endpoint contract here would be exactly the "compatibility shortcut" the
-//! frozen M5 goal prompt forbids. The `PagesOverview`/`PageDetail` actions
-//! this would back stay disabled in the UI; no Tauri command calls `mint`.
+//! **Minting, plus the one wire shape a minted capability may take.** The
+//! daemon half landed as `POST /api/pages/{id}/review` (daemon PR #418), so
+//! the page-review action now has somewhere to go. [`mint_page_review`] mints
+//! a capability and renders it as that route's request body in a single call,
+//! and [`PresenceCapability`] itself never leaves this module — which is what
+//! keeps T1 structural rather than a rule every future call site has to
+//! remember. The claim-attest half still has no daemon route, so
+//! [`PresenceAction::AttestClaim`] stays mint-only.
 
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -328,6 +325,19 @@ fn owner_only_supported() -> Result<(), PresenceError> {
     ))
 }
 
+/// Whether this build can mint at all, answerable without touching the disk.
+///
+/// The UI needs this before offering a review: on a platform where
+/// `owner_only_supported` refuses, every mint fails and no daemon upgrade
+/// changes that, so an enabled control would be a promise nothing can keep.
+/// Callers get a bool because the reason is a build-time fact about the
+/// platform, not a diagnosis of this run — and the message inside the error
+/// names an unimplemented feature, which is not something to put in front of
+/// someone reading a page.
+pub fn minting_supported() -> bool {
+    owner_only_supported().is_ok()
+}
+
 /// Writes a fresh secret into its own new file in `dir` and returns that
 /// file's path alongside the secret. The staging file is owner-only from
 /// creation and belongs to this call alone, so the caller can put it in
@@ -524,12 +534,117 @@ fn mint_in(
     })
 }
 
-/// Mints a capability for `request` against the real per-install secret and
-/// the real clock. Not called from any `#[tauri::command]` today — see the
-/// module doc comment for why (no daemon endpoint exists yet to submit the
-/// resulting mutation to).
-pub fn mint(request: PresenceRequest) -> Result<PresenceCapability, PresenceError> {
-    mint_in(&app_data_dir(), now_unix_secs(), request)
+/// The identity this app signs with. It is half of the
+/// `(caller_id, operation_id)` key the daemon looks a retry up by (D7 §6), so
+/// it has to be the same string across restarts and installs of the app: a
+/// value that changed per run would make every retry look like a first
+/// execution, and the replay path could never fire.
+const CALLER_ID: &str = "wenlan-app";
+
+/// One minted capability in the shape the daemon deserializes
+/// (`wenlan_types::requests::PresenceCapability`), with the nonce and the MAC
+/// as lowercase hex because JSON has no bytes.
+///
+/// Private to this module, and the only `Serialize` thing here. The capability
+/// it is rendered from still refuses `Serialize`, so the compile-time T1
+/// guarantee is unchanged; this type exists to be handed straight to the HTTP
+/// client by the same call that minted it, and nothing else can build one.
+#[derive(serde::Serialize)]
+struct CapabilityWire {
+    protocol_version: u32,
+    action: &'static str,
+    target_ids: Vec<String>,
+    base_digest: String,
+    caller_id: String,
+    operation_id: String,
+    minted_at: u64,
+    expires_at: u64,
+    nonce: String,
+    mac: String,
+}
+
+/// The body of `POST /api/pages/{id}/review`, mirroring
+/// `wenlan_types::requests::ReviewPageRequest`.
+///
+/// Hand-mirrored rather than imported for the same reason as `PageWithTruth`
+/// in `api.rs`: the type is merged to the daemon but the pinned wenlan-types
+/// 0.14.1 predates it. It would not help to import it anyway — the daemon's
+/// copy is `Deserialize`-only on purpose, and this side is the one that has to
+/// serialize.
+///
+/// Its field is private, so the only way to obtain one is
+/// [`mint_page_review`]. A body therefore cannot exist without a freshly
+/// minted, correctly-bound capability behind it.
+#[derive(serde::Serialize)]
+pub struct ReviewPageBody {
+    presence: CapabilityWire,
+}
+
+/// Mints a page-review capability against the real per-install secret and the
+/// real clock, and renders it as the request body for that page's review
+/// route.
+///
+/// Minting and rendering are one call because separating them would mean
+/// handing a [`PresenceCapability`] to somebody, and the moment a capability
+/// has a caller it has a call site that could return it. `target_ids` is
+/// exactly `[page_id]`, which is what the daemon demands of a `review_page`
+/// capability — a capability naming more targets is not a capability for
+/// fewer.
+pub fn mint_page_review(
+    page_id: &str,
+    base_digest: &str,
+    operation_id: &str,
+) -> Result<ReviewPageBody, PresenceError> {
+    mint_page_review_in(
+        &app_data_dir(),
+        now_unix_secs(),
+        page_id,
+        base_digest,
+        operation_id,
+    )
+}
+
+/// A body minted against a throwaway secret directory. For tests in other
+/// modules that need a well-formed body and do not care what it signs.
+#[cfg(test)]
+pub(crate) fn test_review_body(dir: &Path, page_id: &str) -> ReviewPageBody {
+    mint_page_review_in(dir, 1_000, page_id, "digest-a", "op-1").expect("mint succeeds")
+}
+
+/// [`mint_page_review`] with the secret's directory and the clock injected, so
+/// tests can exercise the wire shape without touching process state.
+fn mint_page_review_in(
+    dir: &Path,
+    now: u64,
+    page_id: &str,
+    base_digest: &str,
+    operation_id: &str,
+) -> Result<ReviewPageBody, PresenceError> {
+    let capability = mint_in(
+        dir,
+        now,
+        PresenceRequest {
+            action: PresenceAction::ReviewPage,
+            target_ids: vec![page_id.to_string()],
+            base_digest: base_digest.to_string(),
+            caller_id: CALLER_ID.to_string(),
+            operation_id: operation_id.to_string(),
+        },
+    )?;
+    Ok(ReviewPageBody {
+        presence: CapabilityWire {
+            protocol_version: capability.protocol_version,
+            action: capability.action.as_str(),
+            target_ids: capability.target_ids,
+            base_digest: capability.base_digest,
+            caller_id: capability.caller_id,
+            operation_id: capability.operation_id,
+            minted_at: capability.minted_at,
+            expires_at: capability.expires_at,
+            nonce: hex(capability.nonce),
+            mac: hex(capability.mac),
+        },
+    })
 }
 
 /// Recomputes a capability's HMAC against `secret` and reports whether it
@@ -572,6 +687,109 @@ mod tests {
             caller_id: "app".to_string(),
             operation_id: "op-1".to_string(),
         }
+    }
+
+    /// The daemon reads the nonce and the MAC with `hex::decode`. This is the
+    /// same operation, written out because the app does not depend on `hex`.
+    #[cfg(unix)]
+    fn unhex(s: &str) -> Vec<u8> {
+        s.as_bytes()
+            .chunks(2)
+            .map(|pair| {
+                let pair = std::str::from_utf8(pair).expect("hex is ASCII");
+                u8::from_str_radix(pair, 16).expect("hex digit")
+            })
+            .collect()
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn the_review_body_is_the_shape_the_daemon_deserializes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let body = mint_page_review_in(tmp.path(), 1_000, "page-7", "digest-z", "op-9").unwrap();
+
+        let wire = serde_json::to_value(&body).unwrap();
+        let presence = &wire["presence"];
+        assert_eq!(presence["protocol_version"], 1);
+        // The exact string the daemon matches on; a capability for the other
+        // action is invalid for this one (T4).
+        assert_eq!(presence["action"], "review_page");
+        // Exactly the one page, because that is the demand the daemon builds.
+        assert_eq!(presence["target_ids"], serde_json::json!(["page-7"]));
+        assert_eq!(presence["base_digest"], "digest-z");
+        assert_eq!(presence["caller_id"], CALLER_ID);
+        assert_eq!(presence["operation_id"], "op-9");
+        assert_eq!(presence["minted_at"], 1_000);
+        assert_eq!(presence["expires_at"], 1_060);
+        // Lowercase hex of 16 nonce bytes and a 32-byte MAC.
+        assert_eq!(presence["nonce"].as_str().unwrap().len(), NONCE_LEN * 2);
+        assert_eq!(presence["mac"].as_str().unwrap().len(), 64);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_review_body_verifies_against_the_secret_the_daemon_reads() {
+        // The two processes never compare notes: if a signed field stopped
+        // reaching the wire under the name the daemon reads, the only symptom
+        // in production would be every review returning `presence_invalid`,
+        // with nothing saying which side moved. So this rebuilds the signed
+        // message out of the JSON the daemon will actually receive, and checks
+        // that the MAC still verifies.
+        //
+        // It does not pin the component ORDER — it calls `signed_bytes` and so
+        // moves with it. `the_signed_message_layout_is_pinned_byte_for_byte`
+        // is the tooth that holds the layout against the daemon's copy.
+        let tmp = tempfile::tempdir().unwrap();
+        let body = mint_page_review_in(tmp.path(), 1_000, "page-7", "digest-z", "op-9").unwrap();
+        let wire = serde_json::to_value(&body).unwrap();
+        let presence = &wire["presence"];
+        let text = |field: &str| {
+            presence[field]
+                .as_str()
+                .unwrap_or_else(|| panic!("the daemon reads `{field}`; it is not on the wire"))
+                .to_string()
+        };
+        let number = |field: &str| {
+            presence[field]
+                .as_u64()
+                .unwrap_or_else(|| panic!("the daemon reads `{field}`; it is not on the wire"))
+        };
+
+        let secret = load_or_create_secret_in(tmp.path()).unwrap();
+        let nonce = unhex(&text("nonce"));
+        let expected = signed_bytes(
+            number("protocol_version") as u32,
+            PresenceAction::ReviewPage,
+            &["page-7".to_string()],
+            &text("base_digest"),
+            &text("caller_id"),
+            &text("operation_id"),
+            &nonce,
+            number("minted_at"),
+            number("expires_at"),
+        );
+        let mut mac = HmacSha256::new_from_slice(&secret).unwrap();
+        mac.update(&expected);
+        assert!(
+            mac.verify_slice(&unhex(&text("mac"))).is_ok(),
+            "the daemon must be able to recompute this body's MAC",
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn every_review_body_carries_its_own_nonce() {
+        // The nonce is what makes a capability one-shot (T3). Two gestures that
+        // happen to name the same page and content must still be two
+        // capabilities, or the second is a replay of the first.
+        let tmp = tempfile::tempdir().unwrap();
+        let first = mint_page_review_in(tmp.path(), 1_000, "page-7", "digest-z", "op-9").unwrap();
+        let second = mint_page_review_in(tmp.path(), 1_000, "page-7", "digest-z", "op-9").unwrap();
+
+        assert_ne!(
+            serde_json::to_value(&first).unwrap()["presence"]["nonce"],
+            serde_json::to_value(&second).unwrap()["presence"]["nonce"],
+        );
     }
 
     #[test]
