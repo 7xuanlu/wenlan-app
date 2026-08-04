@@ -2,16 +2,12 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  listPagesExplicitBrowse,
+  listConcepts,
   listEntities,
   listRecentChanges,
   type Concept,
   type Entity,
-  type PageTruth,
 } from "../../lib/tauri";
-import { useTruthStatus } from "../../hooks/useTruthStatus";
-import { PageTruthBadges } from "./PageTruthBadges";
-import { EXPLICIT_BROWSE_QUERY_POLICY } from "./pages/listAllPages";
 
 interface Props {
   onSelectPage?: (pageId: string) => void;
@@ -47,7 +43,6 @@ interface Insight {
   timestampMs?: number;
   conceptId?: string;
   entityId?: string;
-  truth?: PageTruth | null;
 }
 
 function relativeDate(isoOrMs: string | number): string {
@@ -91,7 +86,6 @@ function buildInsights(
       sortMs: Date.parse(c.created_at),
       timestampMs: Date.parse(c.created_at),
       conceptId: c.id,
-      truth: c.truth,
     }));
 
   // Category 2: Stabilizing
@@ -111,7 +105,6 @@ function buildInsights(
       sortMs: Date.parse(c.last_modified),
       timestampMs: Date.parse(c.last_modified),
       conceptId: c.id,
-      truth: c.truth,
     }));
 
   // Category 3: Recurring theme
@@ -159,8 +152,8 @@ function buildInsights(
 export function ConnectionsList({ onSelectPage, onSelectEntity }: Props) {
   const { data: concepts = [] } = useQuery({
     queryKey: ["connections-concepts"],
-    queryFn: () => listPagesExplicitBrowse("active", undefined, 30),
-    ...EXPLICIT_BROWSE_QUERY_POLICY,
+    queryFn: () => listConcepts("active", undefined, 30),
+    refetchInterval: 30_000,
   });
 
   // listRecentChanges is loaded so react-query doesn't double-fetch with RefiningList
@@ -213,7 +206,6 @@ function InsightRow({
   onSelectEntity?: (entityId: string) => void;
 }) {
   const [hover, setHover] = useState(false);
-  const { cutoverLive } = useTruthStatus();
 
   function handleClick() {
     if (insight.category === "recurring") {
@@ -271,7 +263,6 @@ function InsightRow({
           >
             {insight.nounPhrase}
           </span>
-          <PageTruthBadges cutoverLive={cutoverLive} truth={insight.truth} />
           <span
             style={{
               fontFamily: "var(--mem-font-body)",

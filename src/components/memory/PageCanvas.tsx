@@ -444,7 +444,7 @@ function PageCanvasInner({
       x: number;
       y: number;
     }) => {
-      const page = await getPage(pageId, "explicit");
+      const page = await getPage(pageId);
       const content = page?.content ?? "";
       const next = withHeading(content, label);
       // A new box is a new section, so the page text gains the heading. The

@@ -11,8 +11,6 @@ import {
 } from "../../lib/tauri";
 import { truncateReviewText } from "./ReviewDialog";
 import { relativeMs } from "./page/format";
-import { PageTruthBadges } from "./PageTruthBadges";
-import { useTruthStatus } from "../../hooks/useTruthStatus";
 
 const secondaryTextStyle: React.CSSProperties = {
   fontFamily: "var(--mem-font-body)",
@@ -105,7 +103,6 @@ function RecentRevisionRow({
   onClick: (pageId: string) => void;
 }) {
   const { t } = useTranslation();
-  const { cutoverLive } = useTruthStatus();
   const tone = CHANGE_TONE[change.change_kind];
   return (
     <button
@@ -141,7 +138,6 @@ function RecentRevisionRow({
       >
         {change.title}
       </span>
-      <PageTruthBadges cutoverLive={cutoverLive} truth={change.truth} />
       <span
         style={{
           fontSize: 11,

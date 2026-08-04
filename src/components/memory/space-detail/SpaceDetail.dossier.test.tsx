@@ -11,7 +11,7 @@ vi.mock("../../../lib/tauri", () => ({
   dismissPendingRevision: vi.fn(), FACET_COLORS: {}, getNurtureCards: vi.fn().mockResolvedValue([]),
   getPendingRevision: vi.fn().mockResolvedValue(null), getSpace: vi.fn(),
   getVersionChain: vi.fn().mockResolvedValue([]), listEntities: vi.fn(),
-  listMemoriesRich: vi.fn(), listPages: vi.fn(), listPagesExplicitBrowse: vi.fn(), listSpaces: vi.fn(),
+  listMemoriesRich: vi.fn(), listPages: vi.fn(), listSpaces: vi.fn(),
   getTruthStatus: vi.fn().mockResolvedValue(null), pinMemory: vi.fn(),
   setStability: vi.fn(), STABILITY_TIERS: {}, unpinMemory: vi.fn(),
   updateMemory: vi.fn(), updateSpace: vi.fn(),
@@ -23,7 +23,6 @@ import {
   listEntities,
   listMemoriesRich,
   listPages,
-  listPagesExplicitBrowse,
   listSpaces,
 } from "../../../lib/tauri";
 import SpaceDetail from "../SpaceDetail";
@@ -74,9 +73,6 @@ describe("SpaceDetail editorial dossier", () => {
     vi.mocked(listMemoriesRich).mockResolvedValue([memory]);
     vi.mocked(listEntities).mockResolvedValue([]);
     vi.mocked(listPages).mockResolvedValue([]);
-    vi.mocked(listPagesExplicitBrowse).mockImplementation(
-      (status, domain, limit, offset) => listPages(status, domain, limit, offset),
-    );
     vi.mocked(listSpaces).mockResolvedValue([baseSpace]);
   });
 
@@ -106,7 +102,7 @@ describe("SpaceDetail editorial dossier", () => {
     expect(screen.getAllByText("250")).not.toHaveLength(0);
     expect(screen.getByText("8")).toBeInTheDocument();
     expect(screen.getAllByText("Jul 9, 2026")).not.toHaveLength(0);
-    expect(listPagesExplicitBrowse).toHaveBeenCalledWith("active", "Wenlan", 1_000);
+    expect(listPages).toHaveBeenCalledWith("active", "Wenlan", 1_000);
 
     const css = readFileSync(resolve("src/components/memory/space-detail/space-detail-header.css"), "utf8");
     expect(css).toMatch(/\.space-dossier-metrics dd\s*\{[^}]*font:\s*15px var\(--mem-font-mono\)[^}]*font-variant-numeric:\s*tabular-nums/s);

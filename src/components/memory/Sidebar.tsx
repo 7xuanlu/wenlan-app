@@ -91,7 +91,7 @@ export default function Sidebar({
     refetchInterval: 10000,
   });
   const { data: pages = [] } = useQuery({
-    queryKey: ["pages", "active"],
+    queryKey: ["pages", "active", "explicit-browse"],
     queryFn: listAllActivePagesExplicitBrowse,
     ...EXPLICIT_BROWSE_QUERY_POLICY,
   });

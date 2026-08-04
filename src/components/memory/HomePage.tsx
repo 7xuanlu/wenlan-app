@@ -13,11 +13,9 @@ import {
   type Page,
 } from "../../lib/tauri";
 import {
-  EXPLICIT_BROWSE_QUERY_POLICY,
-  listAllActivePagesExplicitBrowse,
+  listAllActivePages,
 } from "./pages/listAllPages";
 import { useTruthStatus } from "../../hooks/useTruthStatus";
-import { PageTruthBadges } from "./PageTruthBadges";
 import { Greeting } from "./Greeting";
 import { useReviewQueue, reviewItemId, type ReviewItem } from "./useReviewQueue";
 import ReviewDialog, {
@@ -84,8 +82,8 @@ export default function HomePage({
 
   const { data: recentConcepts = [], isLoading: recentConceptsLoading } = useQuery({
     queryKey: ["recent-concepts"],
-    queryFn: listAllActivePagesExplicitBrowse,
-    ...EXPLICIT_BROWSE_QUERY_POLICY,
+    queryFn: listAllActivePages,
+    refetchInterval: 10_000,
   });
 
   const { data: stats } = useQuery({
@@ -199,7 +197,6 @@ export default function HomePage({
           pages={recentlyRefinedPages}
           stats={stats}
           onSelectPage={onSelectPage}
-          truthCutoverLive={cutoverLive}
           onOpenDistillReview={onOpenDistillReview}
           onOpenMemory={onNavigateMemory}
         />
@@ -357,7 +354,6 @@ function WikiHome({
   onSelectPage,
   onOpenDistillReview,
   onOpenMemory,
-  truthCutoverLive,
 }: {
   allPages: Page[];
   pages: Page[];
@@ -365,7 +361,6 @@ function WikiHome({
   onSelectPage?: (pageId: string) => void;
   onOpenDistillReview?: () => void;
   onOpenMemory?: (sourceId: string) => void;
-  truthCutoverLive: boolean;
 }) {
   const [containerRef, isWideLayout] = useElementMinWidth<HTMLDivElement>(820);
   const {
@@ -425,7 +420,6 @@ function WikiHome({
           pages={pages}
           onSelectPage={onSelectPage}
           isWideLayout={isWideLayout}
-          truthCutoverLive={truthCutoverLive}
         />
         <NeedsReviewRail
           items={decisionItems}
@@ -522,12 +516,10 @@ function PageList({
   pages,
   onSelectPage,
   isWideLayout,
-  truthCutoverLive,
 }: {
   pages: Page[];
   onSelectPage?: (pageId: string) => void;
   isWideLayout: boolean;
-  truthCutoverLive: boolean;
 }) {
   const { t } = useTranslation();
   if (!pages.length) return null;
@@ -585,9 +577,6 @@ function PageList({
                 >
                   {page.title}
                 </p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <PageTruthBadges cutoverLive={truthCutoverLive} truth={page.truth} />
-                </div>
                 <p
                   className="truncate"
                   style={{

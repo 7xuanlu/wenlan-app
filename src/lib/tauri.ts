@@ -32,8 +32,6 @@ export interface SearchResult {
   is_recap?: boolean;
   structured_fields?: string | null;  // JSON string from Rust
   retrieval_cue?: string | null;
-  /** Additive page truth when a future explicit search response carries it. */
-  truth?: PageTruth | null;
 }
 
 export interface TruthStatus {
@@ -1958,7 +1956,6 @@ export interface PageChange {
   title: string;
   change_kind: PageChangeKind;
   changed_at_ms: number;
-  truth?: PageTruth | null;
 }
 
 /** @deprecated Use {@link PageChange} instead. */
@@ -1990,7 +1987,6 @@ export interface RecentActivityItem {
   snippet: string | null;
   timestamp_ms: number;
   badge: ActivityBadge;
-  truth?: PageTruth | null;
 }
 
 export async function listRecentMemories(
@@ -2478,7 +2474,6 @@ export interface AgentActivityItem {
   query: string | null;
   detail: string | null;
   memory_titles: string[];
-  truth?: PageTruth | null;
 }
 
 export async function listAgentActivity(

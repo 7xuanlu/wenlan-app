@@ -8,7 +8,7 @@ import {
   getSpace,
   listEntities,
   listMemoriesRich,
-  listPagesExplicitBrowse,
+  listPages,
   updateSpace,
   type Space,
 } from "../../lib/tauri";
@@ -17,7 +17,6 @@ import { useTruthStatus } from "../../hooks/useTruthStatus";
 import { SpaceDossierContent } from "./space-detail/SpaceDossierContent";
 import { SpaceDossierHeader } from "./space-detail/SpaceDossierHeader";
 import { SPACE_DETAIL_KEY_COPY, type SpaceDetailCopy } from "./space-detail/copy";
-import { EXPLICIT_BROWSE_QUERY_POLICY } from "./pages/listAllPages";
 import {
   MEMORY_FETCH_LIMIT,
   PAGE_FETCH_LIMIT,
@@ -76,8 +75,8 @@ export default function SpaceDetail({
   });
   const pagesQuery = useQuery({
     queryKey: ["space-pages", spaceName],
-    queryFn: () => listPagesExplicitBrowse("active", spaceName, PAGE_FETCH_LIMIT),
-    ...EXPLICIT_BROWSE_QUERY_POLICY,
+    queryFn: () => listPages("active", spaceName, PAGE_FETCH_LIMIT),
+    refetchInterval: 10_000,
   });
   const reportedSpaceIdRef = useRef<string | null>(null);
 

@@ -2,8 +2,6 @@
 import { useState } from "react";
 import type { SearchResult } from "../lib/tauri";
 import { highlightTerms, relevanceLabel } from "../lib/highlight";
-import { useTruthStatus } from "../hooks/useTruthStatus";
-import { PageTruthBadges } from "./memory/PageTruthBadges";
 
 interface ResultCardProps {
   result: SearchResult;
@@ -46,7 +44,6 @@ export default function ResultCard({
 }: ResultCardProps) {
   const [hovered, setHovered] = useState(false);
   const [copied, setCopied] = useState(false);
-  const { cutoverLive } = useTruthStatus();
 
   function handleCopy(e: React.MouseEvent) {
     e.stopPropagation();
@@ -84,9 +81,6 @@ export default function ResultCard({
           <span className="text-[13px] font-medium text-[var(--text-primary)] truncate">
             {result.title}
           </span>
-          {result.source === "page" && (
-            <PageTruthBadges cutoverLive={cutoverLive} truth={result.truth} />
-          )}
         </div>
 
         {/* Badges row */}
