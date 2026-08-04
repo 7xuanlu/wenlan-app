@@ -23,9 +23,9 @@ export type MockFailure = {
 export type TauriMockPageScenario = {
   readonly daemonVersion?: string;
   readonly saveDaemonVersion?: string;
-  /** `null` models a daemon before durable M5 cutover; omitted is live. */
+  /** `null` models a daemon before durable M5 cutover; omitted uses that default. */
   readonly truthStatus?: TruthStatus | null;
-  /** Optional page-backed results used to prove automatic-context filtering. */
+  /** Optional page-backed results used by automatic-search contract scenarios. */
   readonly automaticPageSearchPages?: readonly KnowledgePage[];
   /**
    * Page-review readiness and refusals. `supported` drives the daemon-cutover

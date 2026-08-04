@@ -189,7 +189,7 @@ export class TauriMockRuntime {
         return this.pages.find((page) => page.id === requiredString(command, args, "id")) ?? null;
       case "get_truth_status":
         return this.pageScenario.truthStatus === undefined
-          ? { cutover_generation: 1, contract_version: 1 }
+          ? null
           : this.pageScenario.truthStatus;
       case "create_page": return this.createPage(args);
       case "update_page": return this.updatePage(args);
@@ -955,7 +955,7 @@ export class TauriMockRuntime {
 
   private truthCutoverLive(): boolean {
     const status = this.pageScenario.truthStatus;
-    return status === undefined || (status !== null && status.cutover_generation > 0);
+    return status !== undefined && status !== null && status.cutover_generation > 0;
   }
 
 }

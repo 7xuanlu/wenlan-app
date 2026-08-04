@@ -571,4 +571,19 @@ describe("PagesOverview", () => {
       expect(within(row!).queryByText(label)).not.toBeInTheDocument();
     }
   });
+
+  it("stays badge-free when pre-cutover status hides truth from page data", async () => {
+    vi.mocked(getTruthStatus).mockResolvedValue(null);
+    vi.mocked(listPagesExplicitBrowse).mockImplementation(async (status) => status === "draft"
+      ? []
+      : [page({
+          id: "pre-cutover",
+          title: "Pre-cutover page",
+          truth: { supported: true, human_reviewed: true },
+        })]);
+    renderOverview();
+
+    expect(await screen.findByRole("button", { name: "Open Pre-cutover page" })).toBeInTheDocument();
+    expect(document.querySelectorAll('[data-testid^="page-truth-"]')).toHaveLength(0);
+  });
 });

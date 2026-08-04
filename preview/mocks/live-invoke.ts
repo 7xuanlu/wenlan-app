@@ -1048,7 +1048,7 @@ export const DEFAULTS: Record<string, unknown> = {
   get_skip_title_patterns: [],
   suggest_tags: [],
   record_page_editor_diagnostic: null,
-  get_truth_status: { cutover_generation: 1, contract_version: 1 },
+  get_truth_status: null,
   // Preview runs in a browser with no Tauri backend, and only that backend
   // holds the install secret a presence capability is signed with. Nothing
   // here can mint one — and `unavailable` is exactly the protocol's answer for

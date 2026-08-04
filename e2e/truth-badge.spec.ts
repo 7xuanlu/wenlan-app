@@ -85,7 +85,7 @@ test("pre-cutover stays inert while explicit page browsing remains intact", asyn
   expect(browserErrors.consoleErrors).toEqual([]);
 });
 
-test("cutover-live shows both independent truth axes and filters automatic pages", async ({ page }) => {
+test("cutover-live shows both independent truth axes while automatic search stays unmarked", async ({ page }) => {
   const browserErrors = collectBrowserErrors(page);
   const pages = truthPages();
   const controller = await installTauriMock(page, {
@@ -116,12 +116,9 @@ test("cutover-live shows both independent truth axes and filters automatic pages
     await expect(row.getByTestId("page-truth-review")).toHaveAttribute("aria-label", reviewLabel);
   }
 
-  const automaticResults = await automaticSearch(page);
-  expect(automaticResults.map((result) => result.title)).toEqual([
-    "Truth badge supported and unreviewed",
-    "Truth badge supported and reviewed",
-  ]);
-  expect(controller.calls().map((call) => call.command)).toContain("search");
+  await automaticSearch(page);
+  const searchCall = controller.calls().find((call) => call.command === "search");
+  expect(searchCall?.args).toEqual({ query: "truth badge", limit: 10, sourceFilter: null });
   expect(controller.calls().map((call) => call.command)).toContain("list_pages_explicit_browse");
 
   await page.screenshot({ path: `${evidenceDirectory}/cutover-live.png`, fullPage: true });
