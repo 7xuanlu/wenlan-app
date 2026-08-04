@@ -998,7 +998,7 @@ pub async fn search_memory(
         query: req.query,
         limit: req.limit.unwrap_or(10),
         memory_type: req.memory_type,
-        space: req.domain.into(),
+        space: req.domain,
         source_agent: req.source_agent,
         rerank: false,
     };
@@ -1173,7 +1173,7 @@ pub async fn list_memories_cmd(
     let s = state.read().await;
     let daemon_req = requests::ListMemoriesRequest {
         memory_type,
-        space: domain.into(),
+        space: domain,
         limit: limit.unwrap_or(200),
         confirmed,
     };
@@ -1308,7 +1308,7 @@ pub async fn update_memory_cmd(
     let s = state.read().await;
     let req = requests::UpdateMemoryRequest {
         content,
-        space: domain.into(),
+        space: domain,
         confirmed,
         memory_type,
     };
