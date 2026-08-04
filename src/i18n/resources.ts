@@ -286,6 +286,8 @@ const en = {
         entity: "Entity",
       },
       truth: {
+        supportAxis: "Source support",
+        humanReviewAxis: "Human review",
         supported: "Supported",
         provisional: "Provisional",
         reviewed: "Reviewed",
@@ -415,6 +417,8 @@ const en = {
     reviewUnavailable:
       "Wenlan could not confirm the review came from this app. Restart Wenlan and try again.",
     reviewUnsupported: "This version of Wenlan cannot record page reviews yet.",
+    reviewUnsupportedCutover:
+      "Page reviews are not available until verification enforcement is enabled.",
     reviewUnsupportedPlatform: "Marking pages reviewed is not available on this platform yet.",
     saveError: "Could not save this page. Try again.",
     editor: {
@@ -1848,6 +1852,8 @@ const zhHans = {
         entity: "实体",
       },
       truth: {
+        supportAxis: "来源支持",
+        humanReviewAxis: "人工复核",
         supported: "已核实",
         provisional: "待核实",
         reviewed: "已复核",
@@ -1974,6 +1980,7 @@ const zhHans = {
     reviewStale: "打开后此页面已变更，因此未标记。请重新加载以复核当前版本。",
     reviewUnavailable: "Wenlan 无法确认此次复核来自本应用。请重启 Wenlan 后重试。",
     reviewUnsupported: "此版本的 Wenlan 尚不支持记录页面复核。",
+    reviewUnsupportedCutover: "在启用验证强制执行之前，页面复核不可用。",
     reviewUnsupportedPlatform: "此平台暂不支持标记页面已复核。",
     saveError: "无法保存此页面，请重试。",
     editor: {
@@ -3381,6 +3388,8 @@ const zhHant = {
         entity: "實體",
       },
       truth: {
+        supportAxis: "來源支持",
+        humanReviewAxis: "人工覆核",
         supported: "已核實",
         provisional: "待核實",
         reviewed: "已覆核",
@@ -3507,6 +3516,7 @@ const zhHant = {
     reviewStale: "開啟後此頁面已變更，因此未標記。請重新載入以覆核目前版本。",
     reviewUnavailable: "Wenlan 無法確認此次覆核來自本應用程式。請重新啟動 Wenlan 後再試一次。",
     reviewUnsupported: "此版本的 Wenlan 尚不支援記錄頁面覆核。",
+    reviewUnsupportedCutover: "在啟用驗證強制執行之前，頁面覆核無法使用。",
     reviewUnsupportedPlatform: "此平台暫不支援標記頁面已覆核。",
     saveError: "無法儲存此頁面，請再試一次。",
     editor: {

@@ -5,7 +5,13 @@ import { TauriMockRuntime } from "../e2e/tauriMock/runtime";
 import { isReviewCommand } from "./commandCapabilities";
 
 export function createReviewRuntime(): TauriMockRuntime {
-  return new TauriMockRuntime(createSpacesNavigationFixture());
+  // The review flavor exercises the post-cutover surface (its spec drives
+  // "Mark page reviewed"), so it opts into cutover-live explicitly — the
+  // runtime's default scenario is pre-cutover, where review actions stay
+  // dormant.
+  return new TauriMockRuntime(createSpacesNavigationFixture(), [], [], {
+    truthStatus: { cutover_generation: 1, contract_version: 1 },
+  });
 }
 
 let runtime = createReviewRuntime();

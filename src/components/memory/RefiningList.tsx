@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useMemo, useState } from "react";
 import type { Page, PageChange } from "../../lib/tauri";
+import { useTruthStatus } from "../../hooks/useTruthStatus";
+import { PageTruthBadges } from "./PageTruthBadges";
 
 interface Props {
   changes: PageChange[];
@@ -186,6 +188,7 @@ function RefiningItem({
   isLast: boolean;
 }) {
   const [hover, setHover] = useState(false);
+  const { cutoverLive } = useTruthStatus();
   const clickable = Boolean(onSelectPage);
   const explanation = explanationFor(change, page);
 
@@ -216,6 +219,7 @@ function RefiningItem({
         >
           {change.title}
         </span>
+        <PageTruthBadges cutoverLive={cutoverLive} truth={page?.truth} />
         <span
           style={{
             fontFamily: "var(--mem-font-body)",

@@ -9,6 +9,8 @@ vi.mock("../../lib/tauri", () => ({
   listMemoriesRich: vi.fn(),
   listEntities: vi.fn(),
   listPages: vi.fn().mockResolvedValue([]),
+  listPagesExplicitBrowse: vi.fn().mockResolvedValue([]),
+  getTruthStatus: vi.fn().mockResolvedValue(null),
   getNurtureCards: vi.fn().mockResolvedValue([]),
   setStability: vi.fn(),
   updateSpace: vi.fn(),

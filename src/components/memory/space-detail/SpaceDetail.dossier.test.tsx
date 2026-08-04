@@ -11,13 +11,20 @@ vi.mock("../../../lib/tauri", () => ({
   dismissPendingRevision: vi.fn(), FACET_COLORS: {}, getNurtureCards: vi.fn().mockResolvedValue([]),
   getPendingRevision: vi.fn().mockResolvedValue(null), getSpace: vi.fn(),
   getVersionChain: vi.fn().mockResolvedValue([]), listEntities: vi.fn(),
-  listMemoriesRich: vi.fn(), listPages: vi.fn(), listSpaces: vi.fn(), pinMemory: vi.fn(),
+  listMemoriesRich: vi.fn(), listPages: vi.fn(), listSpaces: vi.fn(),
+  getTruthStatus: vi.fn().mockResolvedValue(null), pinMemory: vi.fn(),
   setStability: vi.fn(), STABILITY_TIERS: {}, unpinMemory: vi.fn(),
   updateMemory: vi.fn(), updateSpace: vi.fn(),
 }));
 
 import type { Entity, MemoryItem, Page, Space } from "../../../lib/tauri";
-import { getSpace, listEntities, listMemoriesRich, listPages, listSpaces } from "../../../lib/tauri";
+import {
+  getSpace,
+  listEntities,
+  listMemoriesRich,
+  listPages,
+  listSpaces,
+} from "../../../lib/tauri";
 import SpaceDetail from "../SpaceDetail";
 import { SPACE_DETAIL_TEST_COPY } from "./testTranslation";
 

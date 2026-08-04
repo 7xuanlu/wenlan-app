@@ -12,6 +12,7 @@ const agentsMock = vi.hoisted(() => vi.fn());
 vi.mock("../../lib/tauri", () => ({
   listAgentActivity: activityMock,
   listAgents: agentsMock,
+  getTruthStatus: vi.fn().mockResolvedValue(null),
 }));
 
 const agent = (name: string, displayName: string | null): AgentConnection => ({

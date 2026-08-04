@@ -734,6 +734,17 @@ pub async fn get_index_status(state: tauri::State<'_, State>) -> Result<IndexSta
     Ok(merge_daemon_status(local, daemon))
 }
 
+/// Read the daemon's explicit M5 cutover signal. Presence is the only
+/// affirmative answer: an omitted field means the daemon is pre-cutover or
+/// too old, and every UI capability must remain inert in either case.
+#[tauri::command]
+pub async fn get_truth_status(
+    state: tauri::State<'_, State>,
+) -> Result<Option<crate::api::TruthStatus>, String> {
+    let client = state.read().await.client.clone();
+    client.truth_status().await
+}
+
 fn merge_daemon_status(mut local: IndexStatus, daemon: responses::StatusResponse) -> IndexStatus {
     local.files_indexed = daemon.files_indexed;
     local.sources_connected = daemon.sources_connected;
@@ -937,6 +948,9 @@ pub async fn list_sources(state: tauri::State<'_, State>) -> Result<Vec<SourceSt
 // ── Search ────────────────────────────────────────────────────────────
 
 #[tauri::command]
+/// Automatic search is intentionally unmarked. The daemon's post-cutover
+/// reader policy removes provisional supplemental pages before this response
+/// reaches search, recall, or agent-context consumers.
 pub async fn search(
     state: tauri::State<'_, State>,
     query: String,
@@ -973,6 +987,8 @@ fn search_memory_results_from_response(resp: responses::SearchMemoryResponse) ->
 }
 
 #[tauri::command]
+/// Same automatic reader contract as [`search`], including supplemental page
+/// results. Do not turn this into an explicit-browse request.
 pub async fn search_memory(
     state: tauri::State<'_, State>,
     req: SearchMemoryRequest,
@@ -2870,6 +2886,28 @@ pub async fn get_page(
                 Ok(None)
             } else {
                 Err(format!("get_page failed: {}", msg))
+            }
+        }
+    }
+}
+
+/// Explicit-browse by-id page read. The unmarked `get_page` command remains
+/// the automatic/default path and therefore stays protected by the daemon's
+/// post-cutover provisional-page filter.
+#[tauri::command]
+pub async fn get_page_explicit_browse(
+    state: tauri::State<'_, State>,
+    id: String,
+) -> Result<Option<serde_json::Value>, String> {
+    let client = state.read().await.client.clone();
+    match client.get_page_explicit_browse(&id).await {
+        Ok(wire) => Ok(page_from_wire(wire)),
+        Err(e) => {
+            let msg = e.to_string();
+            if msg.contains("404") || msg.to_lowercase().contains("not found") {
+                Ok(None)
+            } else {
+                Err(format!("get_page_explicit_browse failed: {}", msg))
             }
         }
     }

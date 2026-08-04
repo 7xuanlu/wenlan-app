@@ -457,7 +457,7 @@ export const PageDraftEditor = forwardRef<PageDraftEditorHandle, PageDraftEditor
     const { t } = useTranslation();
     const draftQuery = useQuery({
       queryKey: ["page-draft", draftId],
-      queryFn: () => getPage(draftId!),
+      queryFn: () => getPage(draftId!, "explicit"),
       enabled: Boolean(draftId),
       retry: false,
     });

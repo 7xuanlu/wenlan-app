@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import type { Page } from "../../lib/tauri";
+import { PageTruthBadges } from "./PageTruthBadges";
 
 export type RecentPagesProps = {
   readonly ariaLabel: string;
   readonly currentPageId: string | null;
   readonly onSelectPage: (page: Page) => void;
   readonly pages: readonly Page[];
+  readonly truthCutoverLive?: boolean;
 };
 
 export function RecentPages({
@@ -13,6 +15,7 @@ export function RecentPages({
   currentPageId,
   onSelectPage,
   pages,
+  truthCutoverLive = false,
 }: RecentPagesProps) {
   const recent: Page[] = [];
   const seenIds = new Set<string>();
@@ -44,7 +47,14 @@ export function RecentPages({
             }}
             type="button"
           >
-            <span className="truncate pl-[18px]">{page.title}</span>
+            <span className="min-w-0 pl-[18px]">
+              <span className="block truncate">{page.title}</span>
+              <PageTruthBadges
+                cutoverLive={truthCutoverLive}
+                truth={page.truth}
+                wrapperClassName="mt-1 flex flex-wrap gap-2"
+              />
+            </span>
           </button>
         );
       })}

@@ -13,6 +13,7 @@ import {
   type Space,
 } from "../../lib/tauri";
 import { RawMemoriesSection } from "./space-detail/RawMemoriesSection";
+import { useTruthStatus } from "../../hooks/useTruthStatus";
 import { SpaceDossierContent } from "./space-detail/SpaceDossierContent";
 import { SpaceDossierHeader } from "./space-detail/SpaceDossierHeader";
 import { SPACE_DETAIL_KEY_COPY, type SpaceDetailCopy } from "./space-detail/copy";
@@ -55,6 +56,7 @@ export default function SpaceDetail({
   spaceName,
 }: SpaceDetailProps) {
   const { i18n } = useTranslation();
+  const { cutoverLive } = useTruthStatus();
   const queryClient = useQueryClient();
   const spaceQuery = useQuery({
     queryKey: ["space", spaceName],
@@ -167,6 +169,7 @@ export default function SpaceDetail({
         locale={i18n.language}
         navigation={{ onEntityClick, onSelectPage, ...(onReviewAll ? { onReviewAll } : {}) }}
         pages={pages}
+        truthCutoverLive={cutoverLive}
       />
       <RawMemoriesSection
         copy={copy}

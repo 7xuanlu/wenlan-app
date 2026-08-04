@@ -23,6 +23,8 @@ vi.mock("../../lib/tauri", async () => {
     listRecentMemories: vi.fn(),
     listUnconfirmedMemories: vi.fn(),
     listPages: vi.fn(),
+    listPagesExplicitBrowse: vi.fn(),
+    getTruthStatus: vi.fn().mockResolvedValue(null),
     listConcepts: vi.fn(),
     listRecentChanges: vi.fn(),
     listRecentRelations: vi.fn(),
@@ -99,6 +101,9 @@ beforeEach(async () => {
   vi.mocked(tauri.listRecentMemories).mockResolvedValue([]);
   vi.mocked(tauri.listUnconfirmedMemories).mockResolvedValue([]);
   vi.mocked(tauri.listPages).mockResolvedValue([]);
+  vi.mocked(tauri.listPagesExplicitBrowse).mockImplementation(
+    (status, domain, limit, offset) => tauri.listPages(status, domain, limit, offset),
+  );
   vi.mocked(tauri.listConcepts).mockResolvedValue([]);
   vi.mocked(tauri.listRecentChanges).mockResolvedValue([]);
   vi.mocked(tauri.getPageSources).mockResolvedValue([]);
@@ -1087,7 +1092,7 @@ describe("HomePage redesign", () => {
       await screen.findByRole("button", { name: /Review Thin scratch page/ }),
     );
 
-    expect(tauri.getPage).toHaveBeenCalledWith("page-thin");
+    expect(tauri.getPage).toHaveBeenCalledWith("page-thin", "explicit");
     expect(tauri.getPage).not.toHaveBeenCalledWith("memory-evidence");
 
     const dialog = await screen.findByRole("dialog");

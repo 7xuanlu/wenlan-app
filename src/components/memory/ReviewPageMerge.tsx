@@ -8,7 +8,9 @@ import {
   type Page,
   type PageSourceWithMemory,
 } from "../../lib/tauri";
+import { useTruthStatus } from "../../hooks/useTruthStatus";
 import { truncateReviewText } from "./ReviewDialog";
+import { PageTruthBadges } from "./PageTruthBadges";
 
 /** Reused verbatim from ReviewDialog's diff vocabulary. Not exported there
  * (ReviewDialog.tsx:307-318), so replicated here — the AFTER pane is the one
@@ -196,6 +198,7 @@ function BeforePane({
   onOpenPage: (pageId: string) => void;
 }) {
   const { t } = useTranslation();
+  const { cutoverLive } = useTruthStatus();
   const box: React.CSSProperties = { ...paneStyle, borderTop: `2px solid ${borderColor}` };
 
   return (
@@ -241,6 +244,11 @@ function BeforePane({
           >
             {page.title}
           </button>
+          <PageTruthBadges
+            cutoverLive={cutoverLive}
+            truth={page.truth}
+            wrapperStyle={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 6 }}
+          />
           <div
             style={{
               fontFamily: "var(--mem-font-mono)",
@@ -421,13 +429,13 @@ export function PageMergeStripOff({
 
   const keepPageQ = useQuery({
     queryKey: ["page", keepId],
-    queryFn: () => getPage(keepId),
+    queryFn: () => getPage(keepId, "explicit"),
     enabled: Boolean(keepId),
     staleTime: 60_000,
   });
   const retirePageQ = useQuery({
     queryKey: ["page", retireId],
-    queryFn: () => getPage(retireId),
+    queryFn: () => getPage(retireId, "explicit"),
     enabled: Boolean(retireId),
     staleTime: 60_000,
   });

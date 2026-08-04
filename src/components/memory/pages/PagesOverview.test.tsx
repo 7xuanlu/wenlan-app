@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   distillReview,
+  getTruthStatus,
   listPagesExplicitBrowse,
   listRefinements,
   listSpaces,
@@ -16,6 +17,7 @@ import { DISTILL_REVIEW_SESSION_QUERY_KEY } from "./pageReviewSignals";
 vi.mock("../../../lib/tauri", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../../lib/tauri")>()),
   distillReview: vi.fn(),
+  getTruthStatus: vi.fn().mockResolvedValue({ cutover_generation: 1, contract_version: 1 }),
   listPagesExplicitBrowse: vi.fn(),
   listRefinements: vi.fn(),
   listSpaces: vi.fn(),
@@ -72,6 +74,7 @@ describe("PagesOverview", () => {
     vi.mocked(listRefinements).mockReset();
     vi.mocked(listRefinements).mockResolvedValue({ proposals: [] });
     vi.mocked(distillReview).mockReset();
+    vi.mocked(getTruthStatus).mockResolvedValue({ cutover_generation: 1, contract_version: 1 });
     vi.mocked(listSpaces).mockReset();
     vi.mocked(listSpaces).mockResolvedValue([]);
   });
@@ -567,5 +570,20 @@ describe("PagesOverview", () => {
     for (const label of ["Supported", "Provisional", "Reviewed", "Unreviewed"]) {
       expect(within(row!).queryByText(label)).not.toBeInTheDocument();
     }
+  });
+
+  it("stays badge-free when pre-cutover status hides truth from page data", async () => {
+    vi.mocked(getTruthStatus).mockResolvedValue(null);
+    vi.mocked(listPagesExplicitBrowse).mockImplementation(async (status) => status === "draft"
+      ? []
+      : [page({
+          id: "pre-cutover",
+          title: "Pre-cutover page",
+          truth: { supported: true, human_reviewed: true },
+        })]);
+    renderOverview();
+
+    expect(await screen.findByRole("button", { name: "Open Pre-cutover page" })).toBeInTheDocument();
+    expect(document.querySelectorAll('[data-testid^="page-truth-"]')).toHaveLength(0);
   });
 });

@@ -12,7 +12,10 @@ import {
   type MemoryStats,
   type Page,
 } from "../../lib/tauri";
-import { listAllActivePages } from "./pages/listAllPages";
+import {
+  listAllActivePages,
+} from "./pages/listAllPages";
+import { useTruthStatus } from "../../hooks/useTruthStatus";
 import { Greeting } from "./Greeting";
 import { useReviewQueue, reviewItemId, type ReviewItem } from "./useReviewQueue";
 import ReviewDialog, {
@@ -64,6 +67,7 @@ export default function HomePage({
   onOpenDistillReview,
 }: HomePageProps) {
   const { t } = useTranslation();
+  const { cutoverLive } = useTruthStatus();
   const { data: retrievals = [] } = useQuery({
     queryKey: ["recentRetrievals"],
     queryFn: () => listRecentRetrievals(12),
@@ -200,6 +204,7 @@ export default function HomePage({
         {shouldShowFirstConceptModal && firstConcept && (
           <FirstPageModal
             page={firstConcept}
+            truthCutoverLive={cutoverLive}
             onOpen={(id) => {
               localStorage.removeItem(FIRST_CONCEPT_SHOWN_KEY);
               acknowledge("first-concept");
@@ -260,6 +265,7 @@ export default function HomePage({
       {shouldShowFirstConceptModal && firstConcept && (
         <FirstPageModal
           page={firstConcept}
+          truthCutoverLive={cutoverLive}
           onOpen={(id) => {
             localStorage.removeItem(FIRST_CONCEPT_SHOWN_KEY);
             acknowledge("first-concept");

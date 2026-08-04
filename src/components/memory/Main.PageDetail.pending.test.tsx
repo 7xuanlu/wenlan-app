@@ -30,9 +30,11 @@ vi.mock("../../lib/tauri", async (importOriginal) => ({
     confirmed: 0,
     domains: [],
   }),
+  getTruthStatus: vi.fn().mockResolvedValue(null),
   search: vi.fn().mockResolvedValue([]),
   searchEntities: vi.fn().mockResolvedValue([]),
   searchPages: vi.fn().mockResolvedValue([]),
+  searchPagesExplicitBrowse: vi.fn().mockResolvedValue([]),
   openFile: vi.fn().mockResolvedValue(undefined),
   deleteFileChunks: vi.fn().mockResolvedValue(undefined),
 }));

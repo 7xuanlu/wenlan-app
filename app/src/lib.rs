@@ -1166,6 +1166,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             search::search,
             search::get_index_status,
+            search::get_truth_status,
             search::add_watch_path,
             search::remove_watch_path,
             search::reindex,
@@ -1321,6 +1322,7 @@ pub fn run() {
             search::get_rejection_log,
             // Page commands
             search::get_page,
+            search::get_page_explicit_browse,
             search::create_page,
             search::create_page_draft,
             search::update_page_draft,

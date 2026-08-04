@@ -2,8 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { formatLocaleDate } from "../../../lib/dateFormat";
+import { useTruthStatus } from "../../../hooks/useTruthStatus";
 import { listRefinements, type DistillReviewResponse, type Page } from "../../../lib/tauri";
 import ReviewDialog from "../ReviewDialog";
+import { PageTruthBadges } from "../PageTruthBadges";
 import { reviewSuppressKey, useSuppressedReviewItems } from "../reviewSuppression";
 import { REVIEW_QUEUE_LIMIT, reviewItemId, type ReviewItem } from "../useReviewQueue";
 import {
@@ -124,6 +126,7 @@ export function PagesOverview({
   onSelectSpace,
 }: PagesOverviewProps) {
   const { i18n, t } = useTranslation();
+  const { cutoverLive } = useTruthStatus();
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [spaceFilter, setSpaceFilter] = useState("all");
@@ -360,10 +363,11 @@ export function PagesOverview({
                 // "Unreviewed". Leaving either out would let an unreviewed
                 // page read the same as a page nobody has told us about.
                 const truth = page.truth ?? null;
-                const supportLabel = truth
+                const truthVisible = cutoverLive && truth !== null;
+                const supportLabel = truthVisible
                   ? t(truth.supported ? "pages.overview.truth.supported" : "pages.overview.truth.provisional")
                   : null;
-                const reviewLabel = truth
+                const reviewLabel = truthVisible
                   ? t(truth.human_reviewed ? "pages.overview.truth.reviewed" : "pages.overview.truth.unreviewed")
                   : null;
                 const stateLabels = [
@@ -411,20 +415,7 @@ export function PagesOverview({
                                 {t("pages.overview.cleanupSuggested")}
                               </span>
                             )}
-                            {truth && supportLabel && (
-                              <span
-                                className={`wiki-page-state wiki-page-state--truth-${truth.supported ? "supported" : "provisional"}`}
-                              >
-                                {supportLabel}
-                              </span>
-                            )}
-                            {truth && reviewLabel && (
-                              <span
-                                className={`wiki-page-state wiki-page-state--${truth.human_reviewed ? "reviewed" : "unreviewed"}`}
-                              >
-                                {reviewLabel}
-                              </span>
-                            )}
+                            <PageTruthBadges cutoverLive={cutoverLive} truth={truth} />
                           </span>
                         </button>
                         {page.summary && <p>{page.summary}</p>}

@@ -18,12 +18,18 @@ const { listAgentsMock, listAllActivePagesMock, listSpacesMock } = vi.hoisted(()
 
 vi.mock("../../lib/tauri", () => ({
   getMemoryStats: vi.fn().mockResolvedValue({ total: 0, new_today: 0, confirmed: 0, domains: [] }),
+  getTruthStatus: vi.fn().mockResolvedValue(null),
   listAgents: listAgentsMock,
   listSpaces: listSpacesMock,
 }));
 
 vi.mock("./pages/listAllPages", () => ({
+  EXPLICIT_BROWSE_QUERY_POLICY: {
+    refetchOnReconnect: false,
+    refetchOnWindowFocus: false,
+  },
   listAllActivePages: listAllActivePagesMock,
+  listAllActivePagesExplicitBrowse: listAllActivePagesMock,
 }));
 
 vi.mock("./IdentityCard", async () => {

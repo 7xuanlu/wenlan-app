@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import type { AppLocale } from "../../src/i18n/locales";
-import type { MemoryItem, PageReviewAvailability, PageReviewOutcome } from "../../src/lib/tauri";
+import type {
+  MemoryItem,
+  Page as KnowledgePage,
+  PageReviewAvailability,
+  PageReviewOutcome,
+  TruthStatus,
+} from "../../src/lib/tauri";
 import type { SpacesNavigationFixture } from "../fixtures/spacesNavigation";
 
 export type MockCommandCall = {
@@ -17,6 +23,10 @@ export type MockFailure = {
 export type TauriMockPageScenario = {
   readonly daemonVersion?: string;
   readonly saveDaemonVersion?: string;
+  /** `null` models a daemon before durable M5 cutover; omitted uses that default. */
+  readonly truthStatus?: TruthStatus | null;
+  /** Optional page-backed results used by automatic-search contract scenarios. */
+  readonly automaticPageSearchPages?: readonly KnowledgePage[];
   /**
    * Page-review readiness and refusals. `supported` drives the daemon-cutover
    * gate; `outcome` forces one answer for the refusals a fixture cannot

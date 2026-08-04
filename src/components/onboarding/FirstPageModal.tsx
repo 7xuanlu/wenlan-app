@@ -1,25 +1,29 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
+import type { PageTruth } from "../../lib/tauri";
+import { PageTruthBadges } from "../memory/PageTruthBadges";
 
 interface Page {
   id: string;
   title: string;
   summary?: string | null;
   source_memory_ids: string[];
+  truth?: PageTruth | null;
 }
 
 interface Props {
   page: Page;
   onOpen: (pageId: string) => void;
   onDismiss: () => void;
+  truthCutoverLive?: boolean;
 }
 
 /** CSS selector matching all focusable elements we care about cycling through. */
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-export function FirstPageModal({ page, onOpen, onDismiss }: Props) {
+export function FirstPageModal({ page, onOpen, onDismiss, truthCutoverLive = false }: Props) {
   const { t } = useTranslation();
   const dialogRef = useRef<HTMLDivElement | null>(null);
 
@@ -114,6 +118,11 @@ export function FirstPageModal({ page, onOpen, onDismiss }: Props) {
         >
           {page.title}
         </h2>
+        <PageTruthBadges
+          cutoverLive={truthCutoverLive}
+          truth={page.truth}
+          wrapperStyle={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "0 0 12px" }}
+        />
         {page.summary && (
           <p
             style={{
