@@ -18,6 +18,8 @@ vi.mock("../../../lib/tauri", () => ({
   listEntities: vi.fn(),
   listMemoriesRich: vi.fn(),
   listPages: vi.fn(),
+  listPagesExplicitBrowse: vi.fn(),
+  getTruthStatus: vi.fn().mockResolvedValue(null),
   pinMemory: vi.fn().mockResolvedValue(undefined),
   setStability: vi.fn(),
   STABILITY_TIERS: {},
@@ -33,6 +35,7 @@ import {
   listEntities,
   listMemoriesRich,
   listPages,
+  listPagesExplicitBrowse,
   updateSpace,
 } from "../../../lib/tauri";
 import SpaceDetail from "../SpaceDetail";
@@ -122,6 +125,9 @@ describe("SpaceDetail existing behavior", () => {
     vi.mocked(listMemoriesRich).mockResolvedValue([memory]);
     vi.mocked(listEntities).mockResolvedValue([entity]);
     vi.mocked(listPages).mockResolvedValue([page]);
+    vi.mocked(listPagesExplicitBrowse).mockImplementation(
+      (status, domain, limit, offset) => listPages(status, domain, limit, offset),
+    );
   });
 
   it("keeps a suggested space through confirmSpace", async () => {

@@ -286,6 +286,8 @@ const en = {
         entity: "Entity",
       },
       truth: {
+        supportAxis: "Source support",
+        humanReviewAxis: "Human review",
         supported: "Supported",
         provisional: "Provisional",
         reviewed: "Reviewed",
@@ -1848,6 +1850,8 @@ const zhHans = {
         entity: "实体",
       },
       truth: {
+        supportAxis: "来源支持",
+        humanReviewAxis: "人工复核",
         supported: "已核实",
         provisional: "待核实",
         reviewed: "已复核",
@@ -3381,6 +3385,8 @@ const zhHant = {
         entity: "實體",
       },
       truth: {
+        supportAxis: "來源支持",
+        humanReviewAxis: "人工覆核",
         supported: "已核實",
         provisional: "待核實",
         reviewed: "已覆核",

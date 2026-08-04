@@ -32,6 +32,13 @@ export interface SearchResult {
   is_recap?: boolean;
   structured_fields?: string | null;  // JSON string from Rust
   retrieval_cue?: string | null;
+  /** Additive page truth when a future explicit search response carries it. */
+  truth?: PageTruth | null;
+}
+
+export interface TruthStatus {
+  cutover_generation: number;
+  contract_version: number;
 }
 
 export interface IndexStatus {
@@ -75,6 +82,8 @@ export async function search(
   limit?: number,
   sourceFilter?: string,
 ): Promise<SearchResult[]> {
+  // Automatic/context read: the daemon filters provisional supplemental pages
+  // after cutover. Explicit wiki browsing uses searchPagesExplicitBrowse below.
   const results = await invoke<SearchResult[]>("search", {
     query,
     limit: limit ?? 10,
@@ -85,6 +94,11 @@ export async function search(
 
 export async function getIndexStatus(): Promise<IndexStatus> {
   return invoke("get_index_status");
+}
+
+/** The daemon reports this object only after durable M5 cutover. */
+export async function getTruthStatus(): Promise<TruthStatus | null> {
+  return invoke<TruthStatus | null>("get_truth_status");
 }
 
 export async function addWatchPath(path: string): Promise<void> {
@@ -864,6 +878,8 @@ export interface ListPageRevisionsResponse {
   user_edited: boolean;
   stale_reason?: string | null;
   entries: PageChangelogEntry[];
+  /** Optional page-level axes on an explicit revision response. */
+  truth?: PageTruth | null;
 }
 
 // ── Memory Page ─────────────────────────────────────────────────────
@@ -990,9 +1006,8 @@ export interface PageCitation {
 
 /** M5 truth axes for a page: `supported` is machine-derived (fail-closed),
  *  `human_reviewed` is set only by explicit human action. Hand-mirrored from
- *  `crates/wenlan-types/src/pages.rs` (`Page.truth`), which the pinned
- *  wenlan-types release predates — same situation as the page-map and
- *  community types elsewhere in this file. */
+ *  `crates/wenlan-types/src/pages.rs` (`Page.truth`), published in the
+ *  wenlan-types 0.15.3 contract. */
 export interface PageTruth {
   supported: boolean;
   human_reviewed: boolean;
@@ -1021,10 +1036,8 @@ export interface Page {
   stale_reason?: string | null;
   user_edited?: boolean;
   citations?: PageCitation[];
-  /** Present only from explicit-browse routes, and only once the daemon's
-   *  truth cutover is live for the scope (generation 0 everywhere today, so
-   *  always absent in production). Missing/undefined, never a bare `null`
-   *  vs. absent distinction the UI needs to care about. */
+  /** Present only from explicit-browse routes once the daemon's truth cutover
+   *  is live for the scope. Missing/undefined keeps the UI inert. */
   truth?: PageTruth | null;
 }
 
@@ -1658,9 +1671,18 @@ export async function dismissEntitySuggestion(id: string): Promise<RejectRefinem
 
 // ===== Pages =====
 
-export async function getPage(id: string): Promise<Page | null> {
-  const page = await invoke<Page | null>("get_page", { id });
+export async function getPage(
+  id: string,
+  intent: "automatic" | "explicit" = "automatic",
+): Promise<Page | null> {
+  const command = intent === "explicit" ? "get_page_explicit_browse" : "get_page";
+  const page = await invoke<Page | null>(command, { id });
   return page ? withDomain(page) : null;
+}
+
+/** Human page detail read; unlike getPage, declares explicit browse intent. */
+export async function getPageExplicitBrowse(id: string): Promise<Page | null> {
+  return getPage(id, "explicit");
 }
 
 /**
@@ -1936,6 +1958,7 @@ export interface PageChange {
   title: string;
   change_kind: PageChangeKind;
   changed_at_ms: number;
+  truth?: PageTruth | null;
 }
 
 /** @deprecated Use {@link PageChange} instead. */
@@ -1967,6 +1990,7 @@ export interface RecentActivityItem {
   snippet: string | null;
   timestamp_ms: number;
   badge: ActivityBadge;
+  truth?: PageTruth | null;
 }
 
 export async function listRecentMemories(
@@ -2454,6 +2478,7 @@ export interface AgentActivityItem {
   query: string | null;
   detail: string | null;
   memory_titles: string[];
+  truth?: PageTruth | null;
 }
 
 export async function listAgentActivity(

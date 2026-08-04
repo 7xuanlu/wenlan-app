@@ -10,6 +10,8 @@ import {
 } from "../../lib/tauri";
 import { resolveAgentDisplayName } from "../../lib/agents";
 import { Select } from "./settings/primitives";
+import { PageTruthBadges } from "./PageTruthBadges";
+import { useTruthStatus } from "../../hooks/useTruthStatus";
 
 interface ActivityFeedProps {
   onNavigateMemory: (sourceId: string) => void;
@@ -612,6 +614,7 @@ function ActivityEntry({
   onNavigateMemory: (sourceId: string) => void;
 }) {
   const { t, i18n } = useTranslation();
+  const { cutoverLive } = useTruthStatus();
   const color = accentColor(item.action);
   const memoryIds = parseMemoryIds(item.memory_ids);
   const isPageEvent =
@@ -746,6 +749,7 @@ function ActivityEntry({
               >
                 {truncate(pageTitle, 48)}
               </span>
+              <PageTruthBadges cutoverLive={cutoverLive} truth={item.truth} />
             </span>
           </div>
         )}

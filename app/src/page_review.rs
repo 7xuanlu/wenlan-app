@@ -95,29 +95,6 @@ pub async fn review_page(
     client.review_page(&page_id, &body).await
 }
 
-/// The first released daemon containing `POST /api/pages/{id}/review`.
-///
-/// The route landed in wenlan `1c903bec` (#418). `version.txt` at that commit
-/// reads 0.15.2 and `v0.15.2` is one of its ancestors, so #418 missed that
-/// release and — the repo bumps patch on every release — lands in the next.
-/// Release PR #419 publishes exactly that 0.15.3 from a main already
-/// containing `1c903bec`, so any daemon reporting 0.15.3 or above necessarily
-/// carries the route.
-const REVIEW_DAEMON_FLOOR: &str = "0.15.3";
-
-/// Mirrors `daemon_version_supports_page_edit` in `search.rs`, including its
-/// treatment of pre-releases: a `-dev` build is not the released artifact the
-/// floor names, so it does not clear it.
-fn daemon_version_supports_review(version: &str) -> bool {
-    let Ok(candidate) = semver::Version::parse(version) else {
-        return false;
-    };
-    let floor = semver::Version::parse(REVIEW_DAEMON_FLOOR)
-        .expect("review daemon floor is a static valid SemVer");
-
-    candidate.pre.is_empty() && candidate >= floor
-}
-
 /// Why the Review action is or is not offered.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -138,24 +115,10 @@ pub enum PageReviewAvailability {
 /// nothing remote can overturn it: where `owner_only_supported` refuses, every
 /// mint fails and no daemon upgrade helps.
 ///
-/// **Does this daemon have the route?** Two signals, because neither alone is
-/// enough. `truth.is_some()` proves it — the daemon shipped its truth field
-/// and the review route in one commit (wenlan `1c903bec`, #418) — but it does
-/// NOT disprove it. `handle_status`
-/// (`crates/wenlan-server/src/routes.rs:133-138`) filters `generation > 0`
-/// before building the field, and the daemon pins that on purpose:
-/// `truth_status_test.rs:74`, `status_omits_truth_until_the_cutover_is_live`,
-/// asserts the key is absent at generation 0 — "reported the same way an old
-/// daemon reports it: not at all". So `truth.is_some()` is exactly
-/// `generation > 0`, and a daemon carrying the route but not yet its cutover
-/// ceremony reports no truth whatsoever. Gating on the field alone disables
-/// the action for a pre-ceremony operator, who is precisely the person whose
-/// reviews the ceremony later consumes. The version floor covers that daemon.
-///
-/// The durable answer is a `page_review` capability string in the daemon's
-/// `capabilities` list, which `StatusResponse` already tells clients to
-/// negotiate against instead of inferring support from a version. #418 did not
-/// publish one; when it does, this collapses back to one check.
+/// **Is semantic enforcement live?** The daemon's omitted `truth` field is the
+/// fail-closed answer for both an old daemon and a v0 daemon before its cutover
+/// ceremony. A route/version floor cannot replace this check: D7 says the
+/// action stays inert until durable cutover is reported.
 ///
 /// Fails closed: an unreachable daemon answers neither probe and reads the
 /// same as one too old.
@@ -166,14 +129,8 @@ pub(crate) async fn review_availability(
         return PageReviewAvailability::PlatformUnsupported;
     }
 
-    if matches!(client.truth_status().await, Ok(Some(_))) {
-        return PageReviewAvailability::Ready;
-    }
-
-    match client.health().await {
-        Ok(health) if daemon_version_supports_review(&health.version) => {
-            PageReviewAvailability::Ready
-        }
+    match client.truth_status().await {
+        Ok(Some(status)) if status.cutover_live() => PageReviewAvailability::Ready,
         _ => PageReviewAvailability::DaemonUnsupported,
     }
 }
@@ -287,12 +244,9 @@ mod tests {
 
     #[tokio::test]
     #[cfg(unix)]
-    async fn a_daemon_before_its_cutover_can_still_take_reviews() {
-        // The regression this pair exists for. `handle_status` omits the truth
-        // field below generation 1, so a daemon carrying the review route but
-        // not yet its ceremony sends no truth at all — and gating on that field
-        // alone disabled the action for the operator whose reviews the ceremony
-        // is about to consume. The version is what says the route is there.
+    async fn a_daemon_before_its_cutover_cannot_take_reviews() {
+        // The route existing is not enough. D7 keeps this mutation inert until
+        // the daemon reports durable truth enforcement live.
         let (base_url, _server) = serve_daemon(
             NO_TRUTH,
             r#"{"status":"ok","db_initialized":true,"version":"0.15.3"}"#,
@@ -301,7 +255,7 @@ mod tests {
 
         assert_eq!(
             review_availability(&client_for(base_url)).await,
-            PageReviewAvailability::Ready,
+            PageReviewAvailability::DaemonUnsupported,
         );
     }
 
@@ -322,7 +276,7 @@ mod tests {
 
     #[tokio::test]
     #[cfg(unix)]
-    async fn a_daemon_below_the_floor_with_no_cutover_is_unsupported() {
+    async fn a_daemon_without_cutover_is_unsupported_regardless_of_version() {
         let (base_url, _server) = serve_daemon(
             NO_TRUTH,
             r#"{"status":"ok","db_initialized":true,"version":"0.15.2"}"#,
@@ -366,15 +320,5 @@ mod tests {
             review_availability(&client_for(base_url)).await,
             PageReviewAvailability::PlatformUnsupported,
         );
-    }
-
-    #[test]
-    fn the_floor_is_the_first_release_carrying_the_route() {
-        assert!(daemon_version_supports_review("0.15.3"));
-        assert!(daemon_version_supports_review("0.16.0"));
-        assert!(!daemon_version_supports_review("0.15.2"));
-        // A pre-release of the floor is not the released artifact it names.
-        assert!(!daemon_version_supports_review("0.15.3-dev"));
-        assert!(!daemon_version_supports_review("not-a-version"));
     }
 }

@@ -41,7 +41,7 @@ async function http(
   }
   return text ? JSON.parse(text) : null;
 }
-const get = (p: string) => http("GET", p);
+const get = (p: string, headers?: Record<string, string>) => http("GET", p, undefined, headers);
 const post = (p: string, b: unknown = {}) => http("POST", p, b);
 
 /** What `WenlanClient::get_json_explicit_browse` and its POST counterpart send
@@ -369,6 +369,19 @@ export const HANDLERS: Record<string, (a: any) => Promise<unknown>> = {
     if (PREVIEW_DELETED_PAGE_IDS.has(id)) return null;
     try {
       const wire = await get(`/api/pages/${enc(a.id)}`);
+      return wire?.page ?? null;
+    } catch (e) {
+      if (e instanceof HttpError && e.status === 404) return null;
+      throw e;
+    }
+  },
+  get_page_explicit_browse: async (a) => {
+    const id = String(a.id);
+    const previewPage = PREVIEW_AUTHORED_PAGES.get(id);
+    if (previewPage) return previewPage;
+    if (PREVIEW_DELETED_PAGE_IDS.has(id)) return null;
+    try {
+      const wire = await get(`/api/pages/${enc(a.id)}`, EXPLICIT_BROWSE_HEADERS);
       return wire?.page ?? null;
     } catch (e) {
       if (e instanceof HttpError && e.status === 404) return null;
@@ -1035,6 +1048,7 @@ export const DEFAULTS: Record<string, unknown> = {
   get_skip_title_patterns: [],
   suggest_tags: [],
   record_page_editor_diagnostic: null,
+  get_truth_status: { cutover_generation: 1, contract_version: 1 },
   // Preview runs in a browser with no Tauri backend, and only that backend
   // holds the install secret a presence capability is signed with. Nothing
   // here can mint one — and `unavailable` is exactly the protocol's answer for

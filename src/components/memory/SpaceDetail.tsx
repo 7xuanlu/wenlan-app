@@ -8,14 +8,16 @@ import {
   getSpace,
   listEntities,
   listMemoriesRich,
-  listPages,
+  listPagesExplicitBrowse,
   updateSpace,
   type Space,
 } from "../../lib/tauri";
 import { RawMemoriesSection } from "./space-detail/RawMemoriesSection";
+import { useTruthStatus } from "../../hooks/useTruthStatus";
 import { SpaceDossierContent } from "./space-detail/SpaceDossierContent";
 import { SpaceDossierHeader } from "./space-detail/SpaceDossierHeader";
 import { SPACE_DETAIL_KEY_COPY, type SpaceDetailCopy } from "./space-detail/copy";
+import { EXPLICIT_BROWSE_QUERY_POLICY } from "./pages/listAllPages";
 import {
   MEMORY_FETCH_LIMIT,
   PAGE_FETCH_LIMIT,
@@ -55,6 +57,7 @@ export default function SpaceDetail({
   spaceName,
 }: SpaceDetailProps) {
   const { i18n } = useTranslation();
+  const { cutoverLive } = useTruthStatus();
   const queryClient = useQueryClient();
   const spaceQuery = useQuery({
     queryKey: ["space", spaceName],
@@ -73,8 +76,8 @@ export default function SpaceDetail({
   });
   const pagesQuery = useQuery({
     queryKey: ["space-pages", spaceName],
-    queryFn: () => listPages("active", spaceName, PAGE_FETCH_LIMIT),
-    refetchInterval: 10_000,
+    queryFn: () => listPagesExplicitBrowse("active", spaceName, PAGE_FETCH_LIMIT),
+    ...EXPLICIT_BROWSE_QUERY_POLICY,
   });
   const reportedSpaceIdRef = useRef<string | null>(null);
 
@@ -167,6 +170,7 @@ export default function SpaceDetail({
         locale={i18n.language}
         navigation={{ onEntityClick, onSelectPage, ...(onReviewAll ? { onReviewAll } : {}) }}
         pages={pages}
+        truthCutoverLive={cutoverLive}
       />
       <RawMemoriesSection
         copy={copy}

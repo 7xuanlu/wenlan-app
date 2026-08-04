@@ -47,6 +47,8 @@ vi.mock("../../lib/tauri", () => ({
   getMemoryStats: vi.fn().mockResolvedValue({ total: 0, new_today: 0, confirmed: 0, domains: [] }),
   searchEntities: vi.fn().mockResolvedValue([]),
   searchPages: vi.fn().mockResolvedValue([]),
+  searchPagesExplicitBrowse: vi.fn().mockResolvedValue([]),
+  getTruthStatus: vi.fn().mockResolvedValue(null),
   listSpaces: listSpacesMock,
   openFile: openFileMock,
   deleteFileChunks: vi.fn().mockResolvedValue(undefined),

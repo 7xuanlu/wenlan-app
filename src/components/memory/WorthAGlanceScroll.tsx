@@ -3,6 +3,8 @@ import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import type { ActivityKind, RecentActivityItem } from "../../lib/tauri";
 import { updateMemory, getMemoryDetail } from "../../lib/tauri";
+import { useTruthStatus } from "../../hooks/useTruthStatus";
+import { PageTruthBadges } from "./PageTruthBadges";
 
 export type WorthAGlanceItem = RecentActivityItem & {
   reviewKind?: "pending_revision" | "refinement";
@@ -146,6 +148,7 @@ function WorthAGlanceCard({
 }) {
   const [hover, setHover] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const { cutoverLive } = useTruthStatus();
   const isPendingRevision = item.reviewKind === "pending_revision";
   const isRefinement = item.reviewKind === "refinement";
   const isReviewAction = isPendingRevision || isRefinement;
@@ -214,6 +217,9 @@ function WorthAGlanceCard({
         >
           {title}
         </span>
+        {item.kind === "concept" && (
+          <PageTruthBadges cutoverLive={cutoverLive} truth={item.truth} />
+        )}
       </div>
 
       {showSnippet && (

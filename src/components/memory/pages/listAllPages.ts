@@ -47,9 +47,9 @@ export const EXPLICIT_BROWSE_QUERY_POLICY = {
   refetchOnWindowFocus: false,
 } as const;
 
-/** Explicit-browse counterparts, for the human "browse the wiki" surface
- *  (`PagesOverview.tsx`) only — see `listPagesExplicitBrowse` in
- *  `lib/tauri.ts` for why this must never back an automatic/polling read. */
+/** Explicit-browse counterparts for visible human page surfaces — see
+ *  `listPagesExplicitBrowse` in `lib/tauri.ts` for why their query policy
+ *  must never turn them into automatic/polling reads. */
 export function listAllActivePagesExplicitBrowse(): Promise<Page[]> {
   return listAllPagesWithStatus("active", listPagesExplicitBrowse);
 }

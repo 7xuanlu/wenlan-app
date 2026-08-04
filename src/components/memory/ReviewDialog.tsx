@@ -199,7 +199,7 @@ async function fetchReviewName(
   id: string,
 ): Promise<{ name: string | null; text: string | null }> {
   if (lookup === "page") {
-    const page = await getPage(id);
+    const page = await getPage(id, "explicit");
     return { name: page?.title ?? null, text: null };
   }
   if (lookup === "entity") {
@@ -575,7 +575,7 @@ export default function ReviewDialog({
   const archivePageId = pageKeepOrArchiveId(item);
   const archivePage = useQuery({
     queryKey: ["page", archivePageId],
-    queryFn: () => getPage(archivePageId as string),
+    queryFn: () => getPage(archivePageId as string, "explicit"),
     enabled: archivePageId != null,
   });
 

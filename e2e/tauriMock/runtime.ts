@@ -185,7 +185,12 @@ export class TauriMockRuntime {
       };
       case "record_page_editor_diagnostic": return null;
       case "list_pages": case "list_pages_explicit_browse": return this.listPages(args);
-      case "get_page": return this.pages.find((page) => page.id === requiredString(command, args, "id")) ?? null;
+      case "get_page": case "get_page_explicit_browse":
+        return this.pages.find((page) => page.id === requiredString(command, args, "id")) ?? null;
+      case "get_truth_status":
+        return this.pageScenario.truthStatus === undefined
+          ? { cutover_generation: 1, contract_version: 1 }
+          : this.pageScenario.truthStatus;
       case "create_page": return this.createPage(args);
       case "update_page": return this.updatePage(args);
       case "delete_page": return this.deletePage(args);
@@ -927,7 +932,30 @@ export class TauriMockRuntime {
     const query = requiredString("search", args, "query").toLowerCase();
     const limit = optionalValue(args, "limit");
     const results = this.memories.filter((memory) => `${memory.title} ${memory.content}`.toLowerCase().includes(query) || query.includes("ada"));
-    return results.slice(0, typeof limit === "number" ? limit : 10).map((memory, index) => ({ id: `chunk-${index}`, content: memory.content, source: "fixture.md", source_id: memory.source_id, title: memory.title, url: null, chunk_index: 0, last_modified: memory.last_modified, score: 0.94, memory_type: memory.memory_type, entity_id: query.includes("ada") ? "entity-ada" : null, is_archived: false }));
+    const pageResults = (this.pageScenario.automaticPageSearchPages ?? [])
+      .filter((page) => `${page.title} ${page.content}`.toLowerCase().includes(query))
+      .filter((page) => !this.truthCutoverLive() || page.truth?.supported !== false)
+      .map((page, index) => ({
+        id: `page-result-${index}`,
+        content: page.content,
+        source: "page",
+        source_id: page.id,
+        title: page.title,
+        url: null,
+        chunk_index: 0,
+        last_modified: Date.parse(page.last_modified),
+        score: 0.94,
+        truth: page.truth ?? null,
+      }));
+    return [
+      ...results.map((memory, index) => ({ id: `chunk-${index}`, content: memory.content, source: "fixture.md", source_id: memory.source_id, title: memory.title, url: null, chunk_index: 0, last_modified: memory.last_modified, score: 0.94, memory_type: memory.memory_type, entity_id: query.includes("ada") ? "entity-ada" : null, is_archived: false })),
+      ...pageResults,
+    ].slice(0, typeof limit === "number" ? limit : 10);
+  }
+
+  private truthCutoverLive(): boolean {
+    const status = this.pageScenario.truthStatus;
+    return status === undefined || (status !== null && status.cutover_generation > 0);
   }
 
 }

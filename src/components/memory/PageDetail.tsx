@@ -31,6 +31,8 @@ import ContentRenderer from "./ContentRenderer";
 import RelatedPages from "./page/RelatedPages";
 import PageInfo from "./page/PageInfo";
 import { pageReviewNotice, type PageReviewNotice } from "./page/pageReviewNotice";
+import { PageTruthBadges } from "./PageTruthBadges";
+import { useTruthStatus } from "../../hooks/useTruthStatus";
 import { RailPanelTitle } from "./MemoryDetailPrimitives";
 import { processCitations, stripCitationLinks } from "../../lib/pageCitations";
 import CitationChip from "./page/CitationChip";
@@ -286,7 +288,7 @@ export default function PageDetail({
     refetch: refetchPage,
   } = useQuery({
     queryKey: ["page", pageId],
-    queryFn: () => getPage(pageId),
+    queryFn: () => getPage(pageId, "explicit"),
   });
 
   // Fails closed on purpose, exactly like `useDaemonVersion`: an unreachable
@@ -294,13 +296,15 @@ export default function PageDetail({
   // rather than "unknown, offer it anyway". The backend answers with WHY it is
   // unavailable, because the two reasons send you to different places — one is
   // fixed by upgrading the daemon, the other cannot be fixed here at all.
+  const { cutoverLive } = useTruthStatus();
   const { data: reviewAvailability } = useQuery({
     queryKey: ["page-review-supported"],
     queryFn: pageReviewSupported,
     staleTime: 60_000,
     retry: 1,
+    enabled: cutoverLive,
   });
-  const reviewSupported = reviewAvailability === "ready";
+  const reviewSupported = cutoverLive && reviewAvailability === "ready";
   const reviewUnavailableReason =
     reviewAvailability === "platform_unsupported"
       ? t("pageDetail.reviewUnsupportedPlatform")
@@ -494,7 +498,7 @@ export default function PageDetail({
           : { kind: "loading", operationId },
       );
       try {
-        const latest = await getPage(pageId);
+        const latest = await getPage(pageId, "explicit");
         const current = saveStateRef.current;
         if (
           current.phase !== "conflict" ||
@@ -1366,6 +1370,9 @@ export default function PageDetail({
                     : t("pageDetail.dateline.updating")}
                 </span>
               )}
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <PageTruthBadges cutoverLive={cutoverLive} truth={page.truth} />
             </div>
           </div>
 

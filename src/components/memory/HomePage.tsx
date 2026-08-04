@@ -12,7 +12,12 @@ import {
   type MemoryStats,
   type Page,
 } from "../../lib/tauri";
-import { listAllActivePages } from "./pages/listAllPages";
+import {
+  EXPLICIT_BROWSE_QUERY_POLICY,
+  listAllActivePagesExplicitBrowse,
+} from "./pages/listAllPages";
+import { useTruthStatus } from "../../hooks/useTruthStatus";
+import { PageTruthBadges } from "./PageTruthBadges";
 import { Greeting } from "./Greeting";
 import { useReviewQueue, reviewItemId, type ReviewItem } from "./useReviewQueue";
 import ReviewDialog, {
@@ -64,6 +69,7 @@ export default function HomePage({
   onOpenDistillReview,
 }: HomePageProps) {
   const { t } = useTranslation();
+  const { cutoverLive } = useTruthStatus();
   const { data: retrievals = [] } = useQuery({
     queryKey: ["recentRetrievals"],
     queryFn: () => listRecentRetrievals(12),
@@ -78,8 +84,8 @@ export default function HomePage({
 
   const { data: recentConcepts = [], isLoading: recentConceptsLoading } = useQuery({
     queryKey: ["recent-concepts"],
-    queryFn: listAllActivePages,
-    refetchInterval: 10_000,
+    queryFn: listAllActivePagesExplicitBrowse,
+    ...EXPLICIT_BROWSE_QUERY_POLICY,
   });
 
   const { data: stats } = useQuery({
@@ -193,6 +199,7 @@ export default function HomePage({
           pages={recentlyRefinedPages}
           stats={stats}
           onSelectPage={onSelectPage}
+          truthCutoverLive={cutoverLive}
           onOpenDistillReview={onOpenDistillReview}
           onOpenMemory={onNavigateMemory}
         />
@@ -200,6 +207,7 @@ export default function HomePage({
         {shouldShowFirstConceptModal && firstConcept && (
           <FirstPageModal
             page={firstConcept}
+            truthCutoverLive={cutoverLive}
             onOpen={(id) => {
               localStorage.removeItem(FIRST_CONCEPT_SHOWN_KEY);
               acknowledge("first-concept");
@@ -260,6 +268,7 @@ export default function HomePage({
       {shouldShowFirstConceptModal && firstConcept && (
         <FirstPageModal
           page={firstConcept}
+          truthCutoverLive={cutoverLive}
           onOpen={(id) => {
             localStorage.removeItem(FIRST_CONCEPT_SHOWN_KEY);
             acknowledge("first-concept");
@@ -348,6 +357,7 @@ function WikiHome({
   onSelectPage,
   onOpenDistillReview,
   onOpenMemory,
+  truthCutoverLive,
 }: {
   allPages: Page[];
   pages: Page[];
@@ -355,6 +365,7 @@ function WikiHome({
   onSelectPage?: (pageId: string) => void;
   onOpenDistillReview?: () => void;
   onOpenMemory?: (sourceId: string) => void;
+  truthCutoverLive: boolean;
 }) {
   const [containerRef, isWideLayout] = useElementMinWidth<HTMLDivElement>(820);
   const {
@@ -414,6 +425,7 @@ function WikiHome({
           pages={pages}
           onSelectPage={onSelectPage}
           isWideLayout={isWideLayout}
+          truthCutoverLive={truthCutoverLive}
         />
         <NeedsReviewRail
           items={decisionItems}
@@ -510,10 +522,12 @@ function PageList({
   pages,
   onSelectPage,
   isWideLayout,
+  truthCutoverLive,
 }: {
   pages: Page[];
   onSelectPage?: (pageId: string) => void;
   isWideLayout: boolean;
+  truthCutoverLive: boolean;
 }) {
   const { t } = useTranslation();
   if (!pages.length) return null;
@@ -571,6 +585,9 @@ function PageList({
                 >
                   {page.title}
                 </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <PageTruthBadges cutoverLive={truthCutoverLive} truth={page.truth} />
+                </div>
                 <p
                   className="truncate"
                   style={{

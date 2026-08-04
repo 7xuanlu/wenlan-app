@@ -9,13 +9,14 @@ import {
   getMemoryStats,
   openFile,
   searchEntities,
-  searchPages,
+  searchPagesExplicitBrowse,
   type Page,
   type SearchResult,
   type Space,
 } from "../../lib/tauri";
 import ActivityFeed from "./ActivityFeed";
 import { useSearch } from "../../hooks/useSearch";
+import { useTruthStatus } from "../../hooks/useTruthStatus";
 import EntityDetail from "./EntityDetail";
 import MemoryStream from "./MemoryStream";
 import type { SortMode } from "./MemoryStream";
@@ -25,6 +26,7 @@ import MemoryStatusBar from "./MemoryStatusBar";
 import MemorySearchResult from "./MemorySearchResult";
 import MemoryDetail from "./MemoryDetail";
 import PageDetail from "./PageDetail";
+import { PageTruthBadges } from "./PageTruthBadges";
 import DistillReviewPanel from "./DistillReviewPanel";
 import SettingsPage from "./SettingsPage";
 import { ImportView } from "./ImportView";
@@ -89,6 +91,7 @@ export default function Main({
   onRegisterQuitGuard,
 }: MainProps) {
   const { t } = useTranslation();
+  const { cutoverLive } = useTruthStatus();
   const queryClient = useQueryClient();
   const mainContentRef = useRef<HTMLElement>(null);
   const pageDraftEditorRef = useRef<PageDraftEditorHandle>(null);
@@ -398,8 +401,10 @@ export default function Main({
   });
 
   const { data: conceptResults = [] } = useQuery({
-    queryKey: ["searchPages", debouncedEntityQuery],
-    queryFn: () => searchPages(debouncedEntityQuery, 5),
+    queryKey: ["searchPages", "explicit-browse", debouncedEntityQuery],
+    queryFn: () => searchPagesExplicitBrowse(debouncedEntityQuery, 5),
+    refetchOnReconnect: false,
+    refetchOnWindowFocus: false,
     enabled: debouncedEntityQuery.length > 0,
   });
 
@@ -767,6 +772,7 @@ export default function Main({
                           <span style={{ fontFamily: "var(--mem-font-body)", fontSize: "13px", fontWeight: 500, color: "var(--mem-text)" }}>
                             {c.title}
                           </span>
+                          <PageTruthBadges cutoverLive={cutoverLive} truth={c.truth} />
                           {c.domain && (
                             <span style={{ fontFamily: "var(--mem-font-mono)", fontSize: "10px", color: "var(--mem-text-tertiary)" }}>
                               {c.domain}

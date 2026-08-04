@@ -281,6 +281,7 @@ describe("PageDraftEditor", () => {
 
     await waitFor(() => expect(getPage).toHaveBeenCalledWith(
       expect.stringMatching(/^page_[0-9a-f-]+$/),
+      "explicit",
     ));
     const getPageCalls = vi.mocked(getPage).mock.calls;
     const reconciledId = getPageCalls[getPageCalls.length - 1]?.[0];
@@ -302,7 +303,7 @@ describe("PageDraftEditor", () => {
 
     await userEvent.click(await screen.findByRole("button", { name: "Publish" }));
 
-    await waitFor(() => expect(getPage).toHaveBeenLastCalledWith("draft-1"));
+    await waitFor(() => expect(getPage).toHaveBeenLastCalledWith("draft-1", "explicit"));
     expect(onPublished).toHaveBeenCalledWith("draft-1");
     expect(onOpenExisting).not.toHaveBeenCalled();
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["pages", "active"] });

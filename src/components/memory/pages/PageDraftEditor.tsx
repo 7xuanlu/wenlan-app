@@ -193,7 +193,7 @@ const HydratedPageDraftEditor = forwardRef<PageDraftEditorHandle, HydratedEditor
       if (!identity.draftId) return;
       setReloadError(false);
       try {
-        const latest = await getPage(identity.draftId);
+        const latest = await getPage(identity.draftId, "explicit");
         if (!latest || latest.status !== "draft") {
           setReloadError(true);
           return;
@@ -267,7 +267,7 @@ const HydratedPageDraftEditor = forwardRef<PageDraftEditorHandle, HydratedEditor
             && code !== "page_title_conflict"
           ) {
             try {
-              const reconciled = await getPage(attemptedDraftId);
+      const reconciled = await getPage(attemptedDraftId, "explicit");
               if (
                 reconciled?.status === "active"
                 && attemptedVersion !== null
@@ -457,7 +457,7 @@ export const PageDraftEditor = forwardRef<PageDraftEditorHandle, PageDraftEditor
     const { t } = useTranslation();
     const draftQuery = useQuery({
       queryKey: ["page-draft", draftId],
-      queryFn: () => getPage(draftId!),
+    queryFn: () => getPage(draftId!, "explicit"),
       enabled: Boolean(draftId),
       retry: false,
     });

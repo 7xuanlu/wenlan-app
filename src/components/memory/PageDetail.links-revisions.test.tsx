@@ -12,6 +12,7 @@ import {
 
 const tauriMocks = vi.hoisted(() => ({
   getPage: vi.fn(),
+  getTruthStatus: vi.fn(),
   getPageSources: vi.fn(),
   listRegisteredSources: vi.fn(),
   getPageLinks: vi.fn(),
@@ -78,6 +79,7 @@ describe("PageDetail page links", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     tauriMocks.getPage.mockResolvedValue(LINKED_PAGE);
+    tauriMocks.getTruthStatus.mockResolvedValue(null);
     tauriMocks.getPageSources.mockResolvedValue([]);
     tauriMocks.listRegisteredSources.mockResolvedValue([]);
     tauriMocks.getPageLinks.mockResolvedValue({ outbound: [], inbound: [] });

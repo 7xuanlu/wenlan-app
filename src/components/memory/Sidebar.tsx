@@ -12,7 +12,11 @@ import { RecentSpaces } from "./RecentSpaces";
 import { PrimaryNavigation } from "./navigation/PrimaryNavigation";
 import { ReviewEnvironmentBadge } from "./navigation/ReviewEnvironmentBadge";
 import type { GlobalNavigation } from "./navigation/viewState";
-import { listAllActivePages } from "./pages/listAllPages";
+import {
+  EXPLICIT_BROWSE_QUERY_POLICY,
+  listAllActivePagesExplicitBrowse,
+} from "./pages/listAllPages";
+import { useTruthStatus } from "../../hooks/useTruthStatus";
 
 interface SidebarProps {
   readonly activeNavigation?: GlobalNavigation | null;
@@ -79,6 +83,7 @@ export default function Sidebar({
   recentSpacesRevision: _recentSpacesRevision = 0,
 }: SidebarProps) {
   const { t } = useTranslation();
+  const { cutoverLive } = useTruthStatus();
   const asideRef = useRef<HTMLElement>(null);
   const { data: _stats } = useQuery({
     queryKey: ["memoryStats"],
@@ -87,7 +92,8 @@ export default function Sidebar({
   });
   const { data: pages = [] } = useQuery({
     queryKey: ["pages", "active"],
-    queryFn: listAllActivePages,
+    queryFn: listAllActivePagesExplicitBrowse,
+    ...EXPLICIT_BROWSE_QUERY_POLICY,
   });
   const { data: spaces = [] } = useQuery({ queryKey: ["spaces"], queryFn: listSpaces });
   const pageHistory = readRecentPageHistory({ pages });
@@ -190,6 +196,7 @@ export default function Sidebar({
                   currentPageId={currentPageId}
                   onSelectPage={closeAfterNavigation(onSelectPage, closeOverlay)}
                   pages={recentPages}
+                  truthCutoverLive={cutoverLive}
                 />
               </section>
             ) : undefined}

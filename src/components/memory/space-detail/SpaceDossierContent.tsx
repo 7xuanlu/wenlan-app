@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { useState } from "react";
 import type { Entity, Page } from "../../../lib/tauri";
+import { PageTruthBadges } from "../PageTruthBadges";
 import type { SpaceDetailCopy } from "./copy";
 import {
   KEY_ENTITY_LIMIT,
@@ -23,6 +24,7 @@ type SpaceDossierContentProps = {
   readonly locale: string;
   readonly navigation: SpaceDossierNavigation;
   readonly pages: readonly Page[];
+  readonly truthCutoverLive: boolean;
 };
 
 function PageIcon() {
@@ -39,6 +41,7 @@ export function SpaceDossierContent({
   locale,
   navigation,
   pages,
+  truthCutoverLive,
 }: SpaceDossierContentProps) {
   const [showAllEntities, setShowAllEntities] = useState(false);
   const recentPages = recentlyRefinedPages(pages);
@@ -61,7 +64,12 @@ export function SpaceDossierContent({
               return (
                 <button key={page.id} onClick={() => navigation.onSelectPage(page.id)} type="button">
                   <PageIcon />
-                  <span className="space-dossier-page-title">{page.title}</span>
+                  <span className="space-dossier-page-title">
+                    {page.title}
+                    <span className="mt-1 flex flex-wrap gap-2">
+                      <PageTruthBadges cutoverLive={truthCutoverLive} truth={page.truth} />
+                    </span>
+                  </span>
                   <span className="space-dossier-page-meta">
                     <span>{copy.sourceCount(page.source_memory_ids.length)}</span>
                     <time dateTime={page.last_modified}>{formatLocalCalendarDate(timestamp, locale)}</time>
@@ -83,7 +91,12 @@ export function SpaceDossierContent({
               {reviewPages.map((page) => (
                 <button key={page.id} onClick={() => navigation.onSelectPage(page.id)} type="button">
                   <PageIcon />
-                  <span>{page.title}</span>
+                  <span>
+                    {page.title}
+                    <span className="mt-1 flex flex-wrap gap-2">
+                      <PageTruthBadges cutoverLive={truthCutoverLive} truth={page.truth} />
+                    </span>
+                  </span>
                   <small>{copy.reasons[reviewReasonName(page)]}</small>
                 </button>
               ))}

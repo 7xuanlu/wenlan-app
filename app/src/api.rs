@@ -294,13 +294,9 @@ pub struct CommunityMembersResponse {
 }
 
 // ── M5 truth axes (App PR) ──────────────────────────────────────────────
-// `Page.truth: Option<PageTruth>` is hand-mirrored from
-// `crates/wenlan-types/src/pages.rs` — same situation as the page-map and
-// community types above: the field is merged to the daemon but the pinned
-// wenlan-types 0.14.1 predates it, and bumping the pin is known to break
-// search.rs. `list_pages`/`search_pages` deserialize through
-// `PageWithTruth` below instead of the pinned `wenlan_types::pages::Page`
-// so the field isn't silently dropped.
+// The app now pins the first published wenlan-types release containing the
+// M5 wire contract. Keep these aliases public so the Tauri boundary and the
+// TypeScript wrappers name the same daemon-owned shapes.
 //
 // The daemon only ever populates this on an `EntryOnly`-reduced listing
 // entry (`crates/wenlan-core/src/truth_adapter.rs::reduce_to_entry`), which
@@ -309,12 +305,8 @@ pub struct CommunityMembersResponse {
 // otherwise, including on every full-page fetch (`get_page`), so the field
 // is naturally absent everywhere until the daemon's PR-C ceremony ships.
 
-/// Both M5 truth axes for one page. Mirrors `wenlan_types::pages::PageTruth`.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-pub struct PageTruth {
-    pub supported: bool,
-    pub human_reviewed: bool,
-}
+/// Both M5 truth axes for one page.
+pub type PageTruth = wenlan_types::pages::PageTruth;
 
 /// Header declaring this client renders both M5 truth axes.
 /// Mirrors `wenlan_core::truth_contract::CONTRACT_HEADER`.
@@ -327,19 +319,9 @@ const TRUTH_INTENT_HEADER: &str = "x-wenlan-reader-intent";
 /// Mirrors `wenlan_core::truth_contract::INTENT_MARKER_VALUE`.
 const TRUTH_INTENT_EXPLICIT: &str = "explicit";
 
-/// A page carrying its wire-typed fields plus the M5 truth axes, via
-/// `#[serde(flatten)]` so the JSON shape stays byte-identical to a plain
-/// `wenlan_types::pages::Page` with one additional sibling `truth` field —
-/// callers that only read typed `Page` fields (title, summary, ...) are
-/// unaffected; only the two explicit-browse listing calls need the wider
-/// type.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PageWithTruth {
-    #[serde(flatten)]
-    pub page: wenlan_types::pages::Page,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub truth: Option<PageTruth>,
-}
+/// Explicit-browse page responses already carry the optional M5 axes in
+/// wenlan-types 0.15.3.
+pub type PageWithTruth = wenlan_types::pages::Page;
 
 /// Wire-compatible with `wenlan_types::responses::SearchPagesResponse`, but
 /// each page captures `truth` via [`PageWithTruth`].
@@ -348,23 +330,8 @@ struct SearchPagesResponseWithTruth {
     pages: Vec<PageWithTruth>,
 }
 
-/// Where the daemon stands on the M5 truth cutover. Mirrors
-/// `wenlan_types::responses::TruthStatus`, hand-copied for the same reason as
-/// [`PageTruth`]: the pinned wenlan-types 0.14.1 predates the field.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-pub struct TruthStatus {
-    pub cutover_generation: i64,
-    pub contract_version: u32,
-}
-
-/// `/api/status`, read for the one field the pinned `StatusResponse` cannot
-/// see. Everything else on that response already has a typed reader; this
-/// deliberately ignores all of it rather than shadowing the pinned type.
-#[derive(Debug, Clone, Deserialize)]
-struct StatusTruthEnvelope {
-    #[serde(default)]
-    truth: Option<TruthStatus>,
-}
+/// Where the daemon stands on the M5 truth cutover.
+pub type TruthStatus = wenlan_types::responses::TruthStatus;
 
 /// What a successful page review recorded. Mirrors
 /// `wenlan_types::responses::PageReviewReceipt`.
@@ -699,13 +666,11 @@ impl WenlanClient {
     /// "absent" is the only spelling of "not live" and a pre-ceremony daemon is
     /// indistinguishable from an ancient one on this endpoint alone.
     ///
-    /// So `Some` proves the daemon is current; `None` proves nothing. Anything
-    /// gating a feature on daemon support needs a second signal for the `None`
-    /// case — see `page_review::review_availability`, which falls through to
-    /// the version floor.
+    /// So `Some` proves the daemon is current and live; `None` keeps every
+    /// truth-dependent surface inert.
     pub async fn truth_status(&self) -> Result<Option<TruthStatus>, String> {
-        let envelope: StatusTruthEnvelope = self.get_json("/api/status").await?;
-        Ok(envelope.truth)
+        let status: wenlan_types::responses::StatusResponse = self.get_json("/api/status").await?;
+        Ok(status.truth)
     }
 
     /// Submits a minted page-review capability to `POST /api/pages/{id}/review`.
@@ -1135,6 +1100,18 @@ impl WenlanClient {
         resp.json()
             .await
             .map_err(|e| format!("Parse {}: {}", path, e))
+    }
+
+    /// Explicit-browse counterpart of the by-id page read. A human who
+    /// navigated from a truth-aware page surface is allowed to see a
+    /// provisional page, with both axes attached after cutover; automatic
+    /// callers continue to use the unmarked `get_page` command.
+    pub async fn get_page_explicit_browse(
+        &self,
+        page_id: &str,
+    ) -> Result<serde_json::Value, String> {
+        let path = format!("/api/pages/{}", percent_encode_path_segment(page_id));
+        self.get_json_explicit_browse(&path).await
     }
 
     /// Explicit-browse counterpart of `list_pages` (`search.rs`): same query,
@@ -3061,7 +3038,7 @@ mod tests {
             .expect("list_pages_explicit_browse succeeds");
 
         assert_eq!(pages.len(), 1);
-        assert_eq!(pages[0].page.id, "p1");
+        assert_eq!(pages[0].id, "p1");
         assert_eq!(
             pages[0].truth,
             Some(PageTruth {
@@ -3099,6 +3076,36 @@ mod tests {
             .expect("list_pages_explicit_browse succeeds");
 
         assert_eq!(pages[0].truth, None);
+    }
+
+    #[tokio::test]
+    async fn get_page_explicit_browse_sends_the_truth_contract_and_intent_headers() {
+        let (base_url, request) = serve_json_once(
+            r#"{"page":{"id":"page/1","title":"P1","summary":null,"content":"","entity_id":null,"space":null,"source_memory_ids":[],"version":1,"status":"active","created_at":"","last_compiled":"","last_modified":"","sources_updated_count":0,"user_edited":false,"truth":{"supported":false,"human_reviewed":true}}}"#,
+        )
+        .await;
+        let client = WenlanClient {
+            client: reqwest::Client::new(),
+            base_url,
+        };
+
+        let page = client
+            .get_page_explicit_browse("page/1")
+            .await
+            .expect("get_page_explicit_browse succeeds");
+
+        assert_eq!(page["page"]["truth"]["supported"], false);
+        let request = request.await.unwrap();
+        assert_eq!(
+            request.lines().next().unwrap_or_default(),
+            "GET /api/pages/page%2F1 HTTP/1.1"
+        );
+        assert!(request
+            .lines()
+            .any(|line| line.eq_ignore_ascii_case("x-wenlan-truth-contract: 1")));
+        assert!(request
+            .lines()
+            .any(|line| line.eq_ignore_ascii_case("x-wenlan-reader-intent: explicit")));
     }
 
     #[tokio::test]

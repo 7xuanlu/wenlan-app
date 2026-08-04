@@ -18,6 +18,7 @@ vi.mock("../../lib/tauri", () => ({
   // Fails closed, which is what an older or unreachable daemon looks like:
   // the review action stays disabled unless a test opts in.
   pageReviewSupported: vi.fn().mockResolvedValue("daemon_unsupported"),
+  getTruthStatus: vi.fn().mockResolvedValue({ cutover_generation: 1, contract_version: 1 }),
   reviewPage: vi.fn(),
   getPage: vi.fn().mockResolvedValue({
     id: "concept_abc",

@@ -734,6 +734,17 @@ pub async fn get_index_status(state: tauri::State<'_, State>) -> Result<IndexSta
     Ok(merge_daemon_status(local, daemon))
 }
 
+/// Read the daemon's explicit M5 cutover signal. Presence is the only
+/// affirmative answer: an omitted field means the daemon is pre-cutover or
+/// too old, and every UI capability must remain inert in either case.
+#[tauri::command]
+pub async fn get_truth_status(
+    state: tauri::State<'_, State>,
+) -> Result<Option<crate::api::TruthStatus>, String> {
+    let client = state.read().await.client.clone();
+    client.truth_status().await
+}
+
 fn merge_daemon_status(mut local: IndexStatus, daemon: responses::StatusResponse) -> IndexStatus {
     local.files_indexed = daemon.files_indexed;
     local.sources_connected = daemon.sources_connected;
@@ -937,6 +948,9 @@ pub async fn list_sources(state: tauri::State<'_, State>) -> Result<Vec<SourceSt
 // ── Search ────────────────────────────────────────────────────────────
 
 #[tauri::command]
+/// Automatic search is intentionally unmarked. The daemon's post-cutover
+/// reader policy removes provisional supplemental pages before this response
+/// reaches search, recall, or agent-context consumers.
 pub async fn search(
     state: tauri::State<'_, State>,
     query: String,
@@ -973,6 +987,8 @@ fn search_memory_results_from_response(resp: responses::SearchMemoryResponse) ->
 }
 
 #[tauri::command]
+/// Same automatic reader contract as [`search`], including supplemental page
+/// results. Do not turn this into an explicit-browse request.
 pub async fn search_memory(
     state: tauri::State<'_, State>,
     req: SearchMemoryRequest,
@@ -982,7 +998,7 @@ pub async fn search_memory(
         query: req.query,
         limit: req.limit.unwrap_or(10),
         memory_type: req.memory_type,
-        space: req.domain,
+        space: req.domain.into(),
         source_agent: req.source_agent,
         rerank: false,
     };
@@ -1039,7 +1055,7 @@ pub async fn store_memory(
     let daemon_req = requests::StoreMemoryRequest {
         content: req.content,
         memory_type: req.memory_type,
-        space: req.domain,
+        space: req.domain.into(),
         source_agent: req.source_agent,
         title: req.title,
         confidence: req.confidence,
@@ -1157,7 +1173,7 @@ pub async fn list_memories_cmd(
     let s = state.read().await;
     let daemon_req = requests::ListMemoriesRequest {
         memory_type,
-        space: domain,
+        space: domain.into(),
         limit: limit.unwrap_or(200),
         confirmed,
     };
@@ -1292,7 +1308,7 @@ pub async fn update_memory_cmd(
     let s = state.read().await;
     let req = requests::UpdateMemoryRequest {
         content,
-        space: domain,
+        space: domain.into(),
         confirmed,
         memory_type,
     };
@@ -1521,6 +1537,7 @@ pub async fn import_memories_cmd(
         source,
         content,
         label: _label,
+        space: Default::default(),
     };
     let result: responses::ImportMemoriesResponse =
         s.client.post_json("/api/import/memories", &req).await?;
@@ -1619,7 +1636,7 @@ pub async fn create_entity_cmd(
     let req = requests::CreateEntityRequest {
         name,
         entity_type,
-        space: domain,
+        space: domain.into(),
         source_agent: None,
         confidence: None,
     };
@@ -2874,6 +2891,28 @@ pub async fn get_page(
     }
 }
 
+/// Explicit-browse by-id page read. The unmarked `get_page` command remains
+/// the automatic/default path and therefore stays protected by the daemon's
+/// post-cutover provisional-page filter.
+#[tauri::command]
+pub async fn get_page_explicit_browse(
+    state: tauri::State<'_, State>,
+    id: String,
+) -> Result<Option<serde_json::Value>, String> {
+    let client = state.read().await.client.clone();
+    match client.get_page_explicit_browse(&id).await {
+        Ok(wire) => Ok(page_from_wire(wire)),
+        Err(e) => {
+            let msg = e.to_string();
+            if msg.contains("404") || msg.to_lowercase().contains("not found") {
+                Ok(None)
+            } else {
+                Err(format!("get_page_explicit_browse failed: {}", msg))
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod get_page_tests {
     use super::*;
@@ -2905,10 +2944,12 @@ fn authored_page_request(
         content: content.trim().to_string(),
         summary: None,
         entity_id: None,
-        space: space.and_then(|value| {
-            let normalized = value.trim();
-            (!normalized.is_empty()).then(|| normalized.to_string())
-        }),
+        space: space
+            .and_then(|value| {
+                let normalized = value.trim();
+                (!normalized.is_empty()).then(|| normalized.to_string())
+            })
+            .into(),
         source_memory_ids: Vec::new(),
         creation_kind: Some("authored".to_string()),
         workspace: None,
@@ -4850,6 +4891,9 @@ mod status_response_tests {
                 model_id: "bge-reranker".to_string(),
             },
             reranker_mode: "lite".to_string(),
+            on_device_inference: Default::default(),
+            capabilities: Vec::new(),
+            truth: None,
         };
 
         let merged = merge_daemon_status(local, daemon);
