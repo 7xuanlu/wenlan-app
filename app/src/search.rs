@@ -982,7 +982,7 @@ pub async fn search_memory(
         query: req.query,
         limit: req.limit.unwrap_or(10),
         memory_type: req.memory_type,
-        space: req.domain,
+        space: req.domain.into(),
         source_agent: req.source_agent,
         rerank: false,
     };
@@ -1039,7 +1039,7 @@ pub async fn store_memory(
     let daemon_req = requests::StoreMemoryRequest {
         content: req.content,
         memory_type: req.memory_type,
-        space: req.domain,
+        space: req.domain.into(),
         source_agent: req.source_agent,
         title: req.title,
         confidence: req.confidence,
@@ -1157,7 +1157,7 @@ pub async fn list_memories_cmd(
     let s = state.read().await;
     let daemon_req = requests::ListMemoriesRequest {
         memory_type,
-        space: domain,
+        space: domain.into(),
         limit: limit.unwrap_or(200),
         confirmed,
     };
@@ -1292,7 +1292,7 @@ pub async fn update_memory_cmd(
     let s = state.read().await;
     let req = requests::UpdateMemoryRequest {
         content,
-        space: domain,
+        space: domain.into(),
         confirmed,
         memory_type,
     };
@@ -1521,6 +1521,7 @@ pub async fn import_memories_cmd(
         source,
         content,
         label: _label,
+        space: Default::default(),
     };
     let result: responses::ImportMemoriesResponse =
         s.client.post_json("/api/import/memories", &req).await?;
@@ -1619,7 +1620,7 @@ pub async fn create_entity_cmd(
     let req = requests::CreateEntityRequest {
         name,
         entity_type,
-        space: domain,
+        space: domain.into(),
         source_agent: None,
         confidence: None,
     };
@@ -2905,10 +2906,12 @@ fn authored_page_request(
         content: content.trim().to_string(),
         summary: None,
         entity_id: None,
-        space: space.and_then(|value| {
-            let normalized = value.trim();
-            (!normalized.is_empty()).then(|| normalized.to_string())
-        }),
+        space: space
+            .and_then(|value| {
+                let normalized = value.trim();
+                (!normalized.is_empty()).then(|| normalized.to_string())
+            })
+            .into(),
         source_memory_ids: Vec::new(),
         creation_kind: Some("authored".to_string()),
         workspace: None,
@@ -3996,6 +3999,81 @@ pub async fn export_page_to_obsidian(
 }
 
 #[cfg(test)]
+mod space_write_serialization_tests {
+    use serde::Serialize;
+    use serde_json::Value;
+    use wenlan_types::{requests, WriteSpaceTarget};
+
+    fn wire<T: Serialize>(request: T) -> Value {
+        serde_json::to_value(request).expect("request serializes")
+    }
+
+    #[test]
+    fn store_memory_none_maps_to_inherit_and_omits_space() {
+        // In 0.14.1, Option<String>::None serialized as "space": null,
+        // selecting Uncategorized. In 0.15.3, None -> Inherit and omission
+        // lets the daemon inherit the request context.
+        let request = requests::StoreMemoryRequest {
+            content: "memory".to_string(),
+            memory_type: None,
+            space: None::<String>.into(),
+            source_agent: None,
+            title: None,
+            confidence: None,
+            supersedes: None,
+            entity: None,
+            entity_id: None,
+            structured_fields: None,
+            retrieval_cue: None,
+        };
+
+        assert!(!wire(request).as_object().unwrap().contains_key("space"));
+    }
+
+    #[test]
+    fn create_entity_none_maps_to_inherit_and_omits_space() {
+        let request = requests::CreateEntityRequest {
+            name: "Entity".to_string(),
+            entity_type: "topic".to_string(),
+            space: None::<String>.into(),
+            source_agent: None,
+            confidence: None,
+        };
+
+        assert!(!wire(request).as_object().unwrap().contains_key("space"));
+    }
+
+    #[test]
+    fn create_relation_request_has_no_space_field_in_published_wire_shape() {
+        // The published 0.15.3 CreateRelationRequest has no space axis: its
+        // route derives context from the related entities. Keep this absence
+        // pinned rather than inventing a None/null routing claim for a type
+        // that cannot carry space.
+        let request: requests::CreateRelationRequest = serde_json::from_value(serde_json::json!({
+            "from_entity": "from",
+            "to_entity": "to",
+            "relation_type": "related_to",
+            "space": null,
+        }))
+        .expect("relation request deserializes");
+
+        assert!(!wire(request).as_object().unwrap().contains_key("space"));
+    }
+
+    #[test]
+    fn import_memories_none_maps_to_inherit_and_omits_space() {
+        let request = requests::ImportMemoriesRequest {
+            source: "import".to_string(),
+            content: "memory".to_string(),
+            label: None,
+            space: WriteSpaceTarget::default(),
+        };
+
+        assert!(!wire(request).as_object().unwrap().contains_key("space"));
+    }
+}
+
+#[cfg(test)]
 mod export_command_type_tests {
     use super::*;
 
@@ -4850,6 +4928,9 @@ mod status_response_tests {
                 model_id: "bge-reranker".to_string(),
             },
             reranker_mode: "lite".to_string(),
+            on_device_inference: Default::default(),
+            capabilities: Vec::new(),
+            truth: None,
         };
 
         let merged = merge_daemon_status(local, daemon);
