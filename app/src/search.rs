@@ -4037,6 +4037,81 @@ pub async fn export_page_to_obsidian(
 }
 
 #[cfg(test)]
+mod space_write_serialization_tests {
+    use serde::Serialize;
+    use serde_json::Value;
+    use wenlan_types::{requests, WriteSpaceTarget};
+
+    fn wire<T: Serialize>(request: T) -> Value {
+        serde_json::to_value(request).expect("request serializes")
+    }
+
+    #[test]
+    fn store_memory_none_maps_to_inherit_and_omits_space() {
+        // In 0.14.1, Option<String>::None serialized as "space": null,
+        // selecting Uncategorized. In 0.15.3, None -> Inherit and omission
+        // lets the daemon inherit the request context.
+        let request = requests::StoreMemoryRequest {
+            content: "memory".to_string(),
+            memory_type: None,
+            space: None::<String>.into(),
+            source_agent: None,
+            title: None,
+            confidence: None,
+            supersedes: None,
+            entity: None,
+            entity_id: None,
+            structured_fields: None,
+            retrieval_cue: None,
+        };
+
+        assert!(!wire(request).as_object().unwrap().contains_key("space"));
+    }
+
+    #[test]
+    fn create_entity_none_maps_to_inherit_and_omits_space() {
+        let request = requests::CreateEntityRequest {
+            name: "Entity".to_string(),
+            entity_type: "topic".to_string(),
+            space: None::<String>.into(),
+            source_agent: None,
+            confidence: None,
+        };
+
+        assert!(!wire(request).as_object().unwrap().contains_key("space"));
+    }
+
+    #[test]
+    fn create_relation_request_has_no_space_field_in_published_wire_shape() {
+        // The published 0.15.3 CreateRelationRequest has no space axis: its
+        // route derives context from the related entities. Keep this absence
+        // pinned rather than inventing a None/null routing claim for a type
+        // that cannot carry space.
+        let request: requests::CreateRelationRequest = serde_json::from_value(serde_json::json!({
+            "from_entity": "from",
+            "to_entity": "to",
+            "relation_type": "related_to",
+            "space": null,
+        }))
+        .expect("relation request deserializes");
+
+        assert!(!wire(request).as_object().unwrap().contains_key("space"));
+    }
+
+    #[test]
+    fn import_memories_none_maps_to_inherit_and_omits_space() {
+        let request = requests::ImportMemoriesRequest {
+            source: "import".to_string(),
+            content: "memory".to_string(),
+            label: None,
+            space: WriteSpaceTarget::default(),
+        };
+
+        assert!(!wire(request).as_object().unwrap().contains_key("space"));
+    }
+}
+
+#[cfg(test)]
 mod export_command_type_tests {
     use super::*;
 
