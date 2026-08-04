@@ -49,9 +49,11 @@ export function RecentPages({
           >
             <span className="min-w-0 pl-[18px]">
               <span className="block truncate">{page.title}</span>
-              <span className="mt-1 flex flex-wrap gap-2">
-                <PageTruthBadges cutoverLive={truthCutoverLive} truth={page.truth} />
-              </span>
+              <PageTruthBadges
+                cutoverLive={truthCutoverLive}
+                truth={page.truth}
+                wrapperClassName="mt-1 flex flex-wrap gap-2"
+              />
             </span>
           </button>
         );

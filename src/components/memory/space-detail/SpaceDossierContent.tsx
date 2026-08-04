@@ -66,9 +66,11 @@ export function SpaceDossierContent({
                   <PageIcon />
                   <span className="space-dossier-page-title">
                     {page.title}
-                    <span className="mt-1 flex flex-wrap gap-2">
-                      <PageTruthBadges cutoverLive={truthCutoverLive} truth={page.truth} />
-                    </span>
+                    <PageTruthBadges
+                      cutoverLive={truthCutoverLive}
+                      truth={page.truth}
+                      wrapperClassName="mt-1 flex flex-wrap gap-2"
+                    />
                   </span>
                   <span className="space-dossier-page-meta">
                     <span>{copy.sourceCount(page.source_memory_ids.length)}</span>
@@ -93,9 +95,11 @@ export function SpaceDossierContent({
                   <PageIcon />
                   <span>
                     {page.title}
-                    <span className="mt-1 flex flex-wrap gap-2">
-                      <PageTruthBadges cutoverLive={truthCutoverLive} truth={page.truth} />
-                    </span>
+                    <PageTruthBadges
+                      cutoverLive={truthCutoverLive}
+                      truth={page.truth}
+                      wrapperClassName="mt-1 flex flex-wrap gap-2"
+                    />
                   </span>
                   <small>{copy.reasons[reviewReasonName(page)]}</small>
                 </button>

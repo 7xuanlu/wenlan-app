@@ -118,9 +118,11 @@ export function FirstPageModal({ page, onOpen, onDismiss, truthCutoverLive = fal
         >
           {page.title}
         </h2>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "0 0 12px" }}>
-          <PageTruthBadges cutoverLive={truthCutoverLive} truth={page.truth} />
-        </div>
+        <PageTruthBadges
+          cutoverLive={truthCutoverLive}
+          truth={page.truth}
+          wrapperStyle={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "0 0 12px" }}
+        />
         {page.summary && (
           <p
             style={{

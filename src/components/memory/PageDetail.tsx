@@ -1373,9 +1373,11 @@ export default function PageDetail({
                 </span>
               )}
             </div>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <PageTruthBadges cutoverLive={cutoverLive} truth={page.truth} />
-            </div>
+            <PageTruthBadges
+              cutoverLive={cutoverLive}
+              truth={page.truth}
+              wrapperClassName="mt-2 flex flex-wrap items-center gap-2"
+            />
           </div>
 
           {!editing && (

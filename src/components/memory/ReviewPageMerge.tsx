@@ -244,9 +244,11 @@ function BeforePane({
           >
             {page.title}
           </button>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 6 }}>
-            <PageTruthBadges cutoverLive={cutoverLive} truth={page.truth} />
-          </div>
+          <PageTruthBadges
+            cutoverLive={cutoverLive}
+            truth={page.truth}
+            wrapperStyle={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 6 }}
+          />
           <div
             style={{
               fontFamily: "var(--mem-font-mono)",

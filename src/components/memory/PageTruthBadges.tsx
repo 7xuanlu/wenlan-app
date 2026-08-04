@@ -1,10 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import type { CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import type { PageTruth } from "../../lib/tauri";
 
 interface PageTruthBadgesProps {
   readonly cutoverLive: boolean;
   readonly truth?: PageTruth | null;
+  /**
+   * Optional layout wrapper, emitted ONLY when the badges themselves render.
+   * Call sites must not wrap this component in their own always-rendered
+   * spacer element: an empty wrapper with margins shifts pre-cutover layout,
+   * breaking the "byte-identical before cutover" invariant (caught by the
+   * spaces-navigation visual spec).
+   */
+  readonly wrapperClassName?: string;
+  readonly wrapperStyle?: CSSProperties;
 }
 
 /**
@@ -13,7 +23,12 @@ interface PageTruthBadgesProps {
  * review_status is a separate legacy curation axis and never feeds either
  * label here.
  */
-export function PageTruthBadges({ cutoverLive, truth }: PageTruthBadgesProps) {
+export function PageTruthBadges({
+  cutoverLive,
+  truth,
+  wrapperClassName,
+  wrapperStyle,
+}: PageTruthBadgesProps) {
   const { t } = useTranslation();
   if (!cutoverLive || !truth) return null;
 
@@ -24,7 +39,7 @@ export function PageTruthBadges({ cutoverLive, truth }: PageTruthBadgesProps) {
     ? t("pages.overview.truth.reviewed")
     : t("pages.overview.truth.unreviewed");
 
-  return (
+  const badges = (
     <>
       <span
         aria-label={`${t("pages.overview.truth.supportAxis")}: ${supportLabel}`}
@@ -42,4 +57,13 @@ export function PageTruthBadges({ cutoverLive, truth }: PageTruthBadgesProps) {
       </span>
     </>
   );
+
+  if (wrapperClassName || wrapperStyle) {
+    return (
+      <span className={wrapperClassName} style={wrapperStyle}>
+        {badges}
+      </span>
+    );
+  }
+  return badges;
 }
