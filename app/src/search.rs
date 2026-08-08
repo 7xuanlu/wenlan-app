@@ -5036,34 +5036,50 @@ mod avatar_path_tests {
     use super::*;
     use std::ffi::OsString;
 
-    fn restore_env(key: &str, previous: Option<OsString>) {
-        match previous {
-            Some(value) => std::env::set_var(key, value),
-            None => std::env::remove_var(key),
+    /// Restores captured env vars on drop, so a panicking assert mid-test
+    /// doesn't leak mutated env into the next `#[serial]` test.
+    struct EnvVarGuard {
+        saved: Vec<(&'static str, Option<OsString>)>,
+    }
+
+    impl EnvVarGuard {
+        fn capture(keys: &[&'static str]) -> Self {
+            Self {
+                saved: keys
+                    .iter()
+                    .map(|&key| (key, std::env::var_os(key)))
+                    .collect(),
+            }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            for (key, value) in &self.saved {
+                match value {
+                    Some(value) => std::env::set_var(key, value),
+                    None => std::env::remove_var(key),
+                }
+            }
         }
     }
 
     #[test]
     #[serial_test::serial]
     fn avatar_storage_dir_prefers_wenlan_data_dir() {
-        let previous_wenlan = std::env::var_os("WENLAN_DATA_DIR");
-        let previous_origin = std::env::var_os("ORIGIN_DATA_DIR");
+        let _env_guard = EnvVarGuard::capture(&["WENLAN_DATA_DIR", "ORIGIN_DATA_DIR"]);
         let tmp = tempfile::tempdir().unwrap();
 
         std::env::set_var("WENLAN_DATA_DIR", tmp.path());
         std::env::set_var("ORIGIN_DATA_DIR", "/tmp/legacy-origin-avatar-root");
 
         assert_eq!(avatar_storage_dir(), tmp.path().join("avatars"));
-
-        restore_env("WENLAN_DATA_DIR", previous_wenlan);
-        restore_env("ORIGIN_DATA_DIR", previous_origin);
     }
 
     #[test]
     #[serial_test::serial]
     fn avatar_storage_dir_prefers_wenlan_data_dir_when_both_are_set() {
-        let previous_wenlan = std::env::var_os("WENLAN_DATA_DIR");
-        let previous_origin = std::env::var_os("ORIGIN_DATA_DIR");
+        let _env_guard = EnvVarGuard::capture(&["WENLAN_DATA_DIR", "ORIGIN_DATA_DIR"]);
         let current = tempfile::tempdir().unwrap();
         let legacy = tempfile::tempdir().unwrap();
 
@@ -5071,25 +5087,18 @@ mod avatar_path_tests {
         std::env::set_var("ORIGIN_DATA_DIR", legacy.path());
 
         assert_eq!(avatar_storage_dir(), current.path().join("avatars"));
-
-        restore_env("WENLAN_DATA_DIR", previous_wenlan);
-        restore_env("ORIGIN_DATA_DIR", previous_origin);
     }
 
     #[test]
     #[serial_test::serial]
     fn avatar_storage_dir_falls_back_to_legacy_origin_data_dir() {
-        let previous_wenlan = std::env::var_os("WENLAN_DATA_DIR");
-        let previous_origin = std::env::var_os("ORIGIN_DATA_DIR");
+        let _env_guard = EnvVarGuard::capture(&["WENLAN_DATA_DIR", "ORIGIN_DATA_DIR"]);
         let tmp = tempfile::tempdir().unwrap();
 
         std::env::remove_var("WENLAN_DATA_DIR");
         std::env::set_var("ORIGIN_DATA_DIR", tmp.path());
 
         assert_eq!(avatar_storage_dir(), tmp.path().join("avatars"));
-
-        restore_env("WENLAN_DATA_DIR", previous_wenlan);
-        restore_env("ORIGIN_DATA_DIR", previous_origin);
     }
 
     #[test]
@@ -5107,8 +5116,7 @@ mod avatar_path_tests {
     #[test]
     #[serial_test::serial]
     fn resolves_missing_legacy_avatar_to_wenlan_copy() {
-        let previous_wenlan = std::env::var_os("WENLAN_DATA_DIR");
-        let previous_origin = std::env::var_os("ORIGIN_DATA_DIR");
+        let _env_guard = EnvVarGuard::capture(&["WENLAN_DATA_DIR", "ORIGIN_DATA_DIR"]);
         let current = tempfile::tempdir().unwrap();
         let legacy = tempfile::tempdir().unwrap();
         let filename = "57515813-4419-4116-bea6-21bc66e1a511.jpg";
@@ -5131,16 +5139,12 @@ mod avatar_path_tests {
                     .to_string()
             )
         );
-
-        restore_env("WENLAN_DATA_DIR", previous_wenlan);
-        restore_env("ORIGIN_DATA_DIR", previous_origin);
     }
 
     #[test]
     #[serial_test::serial]
     fn does_not_resolve_arbitrary_missing_path_to_avatar_copy() {
-        let previous_wenlan = std::env::var_os("WENLAN_DATA_DIR");
-        let previous_origin = std::env::var_os("ORIGIN_DATA_DIR");
+        let _env_guard = EnvVarGuard::capture(&["WENLAN_DATA_DIR", "ORIGIN_DATA_DIR"]);
         let current = tempfile::tempdir().unwrap();
         let filename = "same-name.jpg";
 
@@ -5155,16 +5159,12 @@ mod avatar_path_tests {
             resolve_profile_avatar_path(Some(arbitrary_path.to_string_lossy().to_string())),
             None
         );
-
-        restore_env("WENLAN_DATA_DIR", previous_wenlan);
-        restore_env("ORIGIN_DATA_DIR", previous_origin);
     }
 
     #[test]
     #[serial_test::serial]
     fn does_not_resolve_non_origin_avatar_dir_to_wenlan_copy() {
-        let previous_wenlan = std::env::var_os("WENLAN_DATA_DIR");
-        let previous_origin = std::env::var_os("ORIGIN_DATA_DIR");
+        let _env_guard = EnvVarGuard::capture(&["WENLAN_DATA_DIR", "ORIGIN_DATA_DIR"]);
         let current = tempfile::tempdir().unwrap();
         let other = tempfile::tempdir().unwrap();
         let filename = "same-name.jpg";
@@ -5184,9 +5184,6 @@ mod avatar_path_tests {
             resolve_profile_avatar_path(Some(non_origin_avatar_path.to_string_lossy().to_string())),
             None
         );
-
-        restore_env("WENLAN_DATA_DIR", previous_wenlan);
-        restore_env("ORIGIN_DATA_DIR", previous_origin);
     }
 }
 

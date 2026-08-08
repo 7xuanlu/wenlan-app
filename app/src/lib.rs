@@ -1569,6 +1569,34 @@ mod platform_tests {
 mod tests {
     use super::*;
 
+    /// Restores captured env vars on drop, so a panicking assert mid-test
+    /// doesn't leak mutated env into the next `#[serial]` test.
+    struct EnvVarGuard {
+        saved: Vec<(&'static str, Option<std::ffi::OsString>)>,
+    }
+
+    impl EnvVarGuard {
+        fn capture(keys: &[&'static str]) -> Self {
+            Self {
+                saved: keys
+                    .iter()
+                    .map(|&key| (key, std::env::var_os(key)))
+                    .collect(),
+            }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            for (key, value) in &self.saved {
+                match value {
+                    Some(value) => std::env::set_var(key, value),
+                    None => std::env::remove_var(key),
+                }
+            }
+        }
+    }
+
     #[test]
     fn visible_main_window_uses_regular_activation_policy() {
         assert!(matches!(
@@ -1673,22 +1701,13 @@ mod tests {
             "WENLAN_DATA_DIR",
             "WENLAN_DEV_STATE_DIR",
         ];
-        let previous: Vec<_> = keys
-            .iter()
-            .map(|key| (*key, std::env::var_os(key)))
-            .collect();
+        let _env_guard = EnvVarGuard::capture(&keys);
         for key in keys {
             std::env::remove_var(key);
         }
 
         let result = validate_debug_runtime_isolation();
 
-        for (key, value) in previous {
-            match value {
-                Some(value) => std::env::set_var(key, value),
-                None => std::env::remove_var(key),
-            }
-        }
         assert!(result.is_err());
     }
 
@@ -1705,10 +1724,7 @@ mod tests {
             "WENLAN_DATA_DIR",
             "WENLAN_DEV_STATE_DIR",
         ];
-        let previous: Vec<_> = keys
-            .iter()
-            .map(|key| (*key, std::env::var_os(key)))
-            .collect();
+        let _env_guard = EnvVarGuard::capture(&keys);
         let tmp = tempfile::tempdir().unwrap();
         let state = tmp.path().join("state");
         let data = state.join("data");
@@ -1723,12 +1739,6 @@ mod tests {
 
         let result = validate_debug_runtime_isolation();
 
-        for (key, value) in previous {
-            match value {
-                Some(value) => std::env::set_var(key, value),
-                None => std::env::remove_var(key),
-            }
-        }
         assert_eq!(result, Ok(()));
     }
 
@@ -1746,10 +1756,7 @@ mod tests {
             "WENLAN_DATA_DIR",
             "WENLAN_DEV_STATE_DIR",
         ];
-        let previous: Vec<_> = keys
-            .iter()
-            .map(|key| (*key, std::env::var_os(key)))
-            .collect();
+        let _env_guard = EnvVarGuard::capture(&keys);
         let tmp = tempfile::tempdir().unwrap();
         let fake_home = tmp.path().join("home");
         let production_roots = production_runtime_roots(Some(fake_home.clone()), None);
@@ -1778,13 +1785,6 @@ mod tests {
         for production_root in production_roots {
             std::env::set_var("WENLAN_DATA_DIR", production_root);
             assert!(validate_debug_runtime_isolation().is_err());
-        }
-
-        for (key, value) in previous {
-            match value {
-                Some(value) => std::env::set_var(key, value),
-                None => std::env::remove_var(key),
-            }
         }
     }
 
