@@ -1888,11 +1888,33 @@ mod tests {
     }
 
     #[test]
+    #[cfg(debug_assertions)]
+    #[serial_test::serial]
     fn test_find_available_port_returns_first_available() {
+        let tmp = tempfile::tempdir().unwrap();
+        let _home = HomeGuard::set(tmp.path());
+
+        // Hold an OS-assigned ephemeral port and scan from there, instead of
+        // hardcoding the app's own 18080-18083 default range: that range
+        // flakes when something else already holds all four ports
+        // (multi-agent machine load; characterized 2026-08-01). Retry the
+        // bind if the OS hands out a port in the top 3 of u16's range: the
+        // 4-port scan window would overflow, and port_range_start() ignores
+        // an override past `u16::MAX - 3` anyway.
+        let (_held, held_port) = loop {
+            let held = TcpListener::bind("127.0.0.1:0").unwrap();
+            let held_port = held.local_addr().unwrap().port();
+            if held_port <= u16::MAX - 3 {
+                break (held, held_port);
+            }
+        };
+        std::env::set_var("WENLAN_DEV_REMOTE_PORT_START", held_port.to_string());
+
         let port = find_available_port();
         assert!(port.is_some());
         let p = port.unwrap();
-        assert!((PORT_RANGE_START..=PORT_RANGE_START + 3).contains(&p));
+        assert_ne!(p, held_port, "must skip the port already held");
+        assert!((held_port..=held_port + 3).contains(&p));
     }
 
     #[test]
