@@ -1894,13 +1894,9 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let _home = HomeGuard::set(tmp.path());
 
-        // Hold an OS-assigned ephemeral port and scan from there, instead of
-        // hardcoding the app's own 18080-18083 default range: that range
-        // flakes when something else already holds all four ports
-        // (multi-agent machine load; characterized 2026-08-01). Retry the
-        // bind if the OS hands out a port in the top 3 of u16's range: the
-        // 4-port scan window would overflow, and port_range_start() ignores
-        // an override past `u16::MAX - 3` anyway.
+        // Scan from an OS-assigned held port instead of the fixed default range,
+        // which flakes under machine load. Re-bind if the port is above
+        // u16::MAX - 3: the 4-port scan window would overflow.
         let (_held, held_port) = loop {
             let held = TcpListener::bind("127.0.0.1:0").unwrap();
             let held_port = held.local_addr().unwrap().port();
