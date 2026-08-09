@@ -1,28 +1,11 @@
-# wenlan-app
+# Wenlan Desktop — moved
 
-Desktop client for [Wenlan](https://github.com/7xuanlu/wenlan). Where Personal AI Memory Compounds.
+This repository is archived. The Wenlan desktop app now lives in the main monorepo:
 
-Tauri 2 + React 19. Talks to the Wenlan daemon over HTTP at `localhost:7878`.
+**→ [7xuanlu/wenlan](https://github.com/7xuanlu/wenlan)** (app crate in `app/`)
 
-## Build
+- **Downloads**: get the latest `.dmg` from the [wenlan releases page](https://github.com/7xuanlu/wenlan/releases/latest).
+- **Existing installs**: apps installed from this repo's releases (2026-07-01 or later) auto-update into the unified releases automatically — no action needed. The update manifest here stays in place for that purpose.
+- **Issues / contributions**: open them on [7xuanlu/wenlan](https://github.com/7xuanlu/wenlan).
 
-```bash
-pnpm install
-pnpm dev:all   # launches an isolated worktree daemon + Tauri app
-```
-
-`pnpm dev:all` is the supported development entry point. It keeps development
-ports, data, process ownership, app identity, MCP sockets, and Remote Access
-state separate from the installed production runtime.
-
-## Development documentation
-
-- [Windows development and native smoke testing](docs/windows-development.md)
-  covers the physical Windows setup, sibling backend build, WebView2 live
-  smoke, GPU status, and known test gaps.
-
-## License
-
-AGPL-3.0-only. See [LICENSE](LICENSE).
-
-Forked from [7xuanlu/origin](https://github.com/7xuanlu/origin) at SHA `1be677bd26417c5ff1b33b449bc1e2922568c3ca`.
+The release history below remains for reference; releases from v0.15.8 onward are published only on the monorepo.
